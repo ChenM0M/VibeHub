@@ -53,6 +53,61 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'VibeCoding Launcher ${{ github.ref_name }}'
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 为了双重保险，保留这个权限声明
+permissions:
+  contents: write
+
+env:
+# 必须显式传递 Token，否则有 permissions 也没用！
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'VibeCoding Launcher ${{ github.ref_name }}'
           releaseBody: |
             ## 🚀 What's New
             Auto-generated release.
@@ -62,7 +117,7 @@ jobs:
       - name: Prepare Portable Version (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
-          copy src-tauri\target\release\vibe-coding-launcher.exe src-tauri\target\release\bundle\nsis\VibeCoding-Launcher-Portable.exe
+          copy src-tauri\target\release\vibe-coding-launcher.exe VibeCoding-Launcher-Portable.exe
         shell: cmd
 
       - name: Upload Portable as Additional Asset (Windows)
@@ -70,7 +125,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-portable
-          path: src-tauri\target\release\bundle\nsis\VibeCoding-Launcher-Portable.exe
+          path: VibeCoding-Launcher-Portable.exe
 
       - name: Attach Portable to Release (Windows)
         if: matrix.platform == 'windows-latest'
@@ -78,7 +133,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         with:
-          files: src-tauri\target\release\bundle\nsis\VibeCoding-Launcher-Portable.exe
+          files: VibeCoding-Launcher-Portable.exe
           tag_name: ${{ github.ref_name }}
           draft: true
           fail_on_unmatched_files: true
