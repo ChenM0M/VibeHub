@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+
+env:
+# 必须显式传递 Token，否则有 permissions 也没用！
+GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+
+
 jobs:
   release:
     strategy:
