@@ -16,7 +16,10 @@ export function ProjectEditDialog({ isOpen, onClose, project }: ProjectEditDialo
     const { config, updateProject } = useAppStore();
     const [name, setName] = useState(project.name);
     const [description, setDescription] = useState(project.description || '');
-    const [selectedTags, setSelectedTags] = useState<string[]>(project.tags);
+    const [selectedTags, setSelectedTags] = useState<string[]>(project.tags || []);
+    const [icon, setIcon] = useState(project.icon || '');
+    const [coverImage, setCoverImage] = useState(project.cover_image || '');
+    const [themeColor, setThemeColor] = useState(project.theme_color || '');
 
     if (!config) return null;
 
@@ -25,7 +28,10 @@ export function ProjectEditDialog({ isOpen, onClose, project }: ProjectEditDialo
             ...project,
             name,
             description,
-            tags: selectedTags
+            tags: selectedTags,
+            icon: icon || undefined,
+            cover_image: coverImage || undefined,
+            theme_color: themeColor || undefined
         });
         onClose();
     };
@@ -62,8 +68,8 @@ export function ProjectEditDialog({ isOpen, onClose, project }: ProjectEditDialo
                             <label htmlFor="icon" className="text-sm font-medium">Icon URL (Optional)</label>
                             <Input
                                 id="icon"
-                                value={project.icon || ''}
-                                onChange={(e) => updateProject({ ...project, icon: e.target.value })}
+                                value={icon}
+                                onChange={(e) => setIcon(e.target.value)}
                                 placeholder="https://example.com/icon.png"
                             />
                         </div>
@@ -72,8 +78,8 @@ export function ProjectEditDialog({ isOpen, onClose, project }: ProjectEditDialo
                             <label htmlFor="cover" className="text-sm font-medium">Cover Image URL (Optional)</label>
                             <Input
                                 id="cover"
-                                value={project.cover_image || ''}
-                                onChange={(e) => updateProject({ ...project, cover_image: e.target.value })}
+                                value={coverImage}
+                                onChange={(e) => setCoverImage(e.target.value)}
                                 placeholder="https://example.com/cover.jpg"
                             />
                         </div>
@@ -83,15 +89,15 @@ export function ProjectEditDialog({ isOpen, onClose, project }: ProjectEditDialo
                             <div className="flex gap-2">
                                 <Input
                                     id="theme"
-                                    value={project.theme_color || ''}
-                                    onChange={(e) => updateProject({ ...project, theme_color: e.target.value })}
+                                    value={themeColor}
+                                    onChange={(e) => setThemeColor(e.target.value)}
                                     placeholder="#RRGGBB"
                                     className="flex-1"
                                 />
                                 <input
                                     type="color"
-                                    value={project.theme_color || '#000000'}
-                                    onChange={(e) => updateProject({ ...project, theme_color: e.target.value })}
+                                    value={themeColor || '#000000'}
+                                    onChange={(e) => setThemeColor(e.target.value)}
                                     className="h-10 w-10 p-1 rounded border cursor-pointer"
                                 />
                             </div>

@@ -79,5 +79,24 @@
             "envVars": "环境变量",
             "addEnv": "添加变量"
         }
+    },
+    "gateway": {
+        "title": "AI 网关",
+        "subtitle": "管理本地 AI 代理和供应商",
+        "runningOn": "运行端口",
+        "totalRequests": "总请求数",
+        "activeProviders": "活跃供应商",
+        "providers": "供应商列表",
+        "addProvider": "添加供应商",
+        "noProviders": "未配置供应商。请添加一个以开始使用。",
+        "form": {
+            "addTitle": "添加供应商",
+            "editTitle": "编辑供应商",
+            "name": "名称",
+            "baseUrl": "基础 URL",
+            "apiKey": "API 密钥",
+            "cancel": "取消",
+            "save": "保存"
+        }
     }
 }

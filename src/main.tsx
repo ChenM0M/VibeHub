@@ -3,13 +3,14 @@ import ReactDOM from 'react-dom/client';
 import { Layout } from '@/components/Layout';
 import { Home } from '@/pages/Home';
 import { Settings } from '@/pages/Settings';
+import { Gateway } from '@/pages/Gateway';
 import { useAppStore } from '@/stores/appStore';
 import '@/styles/globals.css';
 import './i18n';
 
 function App() {
     const { initializeApp, config } = useAppStore();
-    const [currentPage, setCurrentPage] = useState<'home' | 'settings'>('home');
+    const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'gateway'>('home');
     const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
@@ -31,11 +32,9 @@ function App() {
             currentPage={currentPage}
             onNavigate={setCurrentPage}
         >
-            {currentPage === 'home' ? (
-                <Home searchQuery={searchQuery} />
-            ) : (
-                <Settings />
-            )}
+            {currentPage === 'home' && <Home searchQuery={searchQuery} />}
+            {currentPage === 'settings' && <Settings />}
+            {currentPage === 'gateway' && <Gateway />}
         </Layout>
     );
 }
