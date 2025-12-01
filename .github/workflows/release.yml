@@ -4,11 +4,10 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-
 jobs:
   release:
+    permissions:
+      contents: write  # 👈 移到这里，权限锁定更精准
     strategy:
       fail-fast: false
       matrix:
@@ -53,7 +52,6 @@ jobs:
             
             - **New Features / 新功能**:
               - [Feature 1]
-              - [Feature 2]
             - **Bug Fixes / 修复**:
               - [Fix 1]
             
@@ -91,5 +89,7 @@ jobs:
       - name: Upload Assets
         if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # 👈 这里必须加 Token
         with:
           files: VibeCoding-Launcher-Portable.exe
