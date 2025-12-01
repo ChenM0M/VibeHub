@@ -4,10 +4,12 @@ on:
     tags:
       - 'v*'
 
+# 为了双重保险，保留这个权限声明
+permissions:
+  contents: write
+
 jobs:
   release:
-    permissions:
-      contents: write  # 👈 移到这里，权限锁定更精准
     strategy:
       fail-fast: false
       matrix:
@@ -43,40 +45,14 @@ jobs:
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 👇 关键修改：这里换成了你刚刚设置的 MY_RELEASE_TOKEN
+          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'VibeCoding Launcher ${{ github.ref_name }}'
           releaseBody: |
-            ## 🚀 What's New / 更新内容
-            
-            - **New Features / 新功能**:
-              - [Feature 1]
-            - **Bug Fixes / 修复**:
-              - [Fix 1]
-            
-            ---
-            
-            ## 📦 Downloads / 下载说明
-            
-            ### Windows
-            - **Installer (`.msi` / `.exe`)**: Standard installer. / 标准安装包，推荐大多数用户使用。
-            - **Portable (`-Portable.exe`)**: Run directly without installation. / 绿色版，解压即用。
-            
-            ### macOS
-            - **App (`.dmg`)**: Drag to Applications to install. / 拖入应用程序文件夹即可安装。
-            
-            ### Linux
-            - **Debian (`.deb`)**: For Debian/Ubuntu based systems. / 适用于 Debian/Ubuntu 系统。
-            - **AppImage**: Portable executable for most Linux distros. / 适用于大多数 Linux 发行版的便携包。
-            
-            ---
-            
-            ## 🛠 Usage / 使用说明
-            
-            1. Download the file corresponding to your system. / 下载对应您系统的文件。
-            2. Install or run directly. / 安装或直接运行。
-            3. Enjoy! / 尽情使用！
+            ## 🚀 What's New
+            Auto-generated release.
           releaseDraft: true
           prerelease: false
 
@@ -90,6 +66,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # 👈 这里必须加 Token
+          # 👇 关键修改：这里也换成 MY_RELEASE_TOKEN
+          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         with:
           files: VibeCoding-Launcher-Portable.exe
