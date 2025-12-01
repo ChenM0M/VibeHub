@@ -1,7 +1,7 @@
 use crate::models::{Project, ProjectMetadata, ProjectType};
 use anyhow::Result;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use walkdir::WalkDir;
 
 pub struct Scanner;
@@ -130,7 +130,7 @@ impl Scanner {
                 }
             }
             ProjectType::Python => {
-                let setup_py = path.join("setup.py");
+                let _setup_py = path.join("setup.py");
                 let pyproject = path.join("pyproject.toml");
                 
                 // Try pyproject.toml first
