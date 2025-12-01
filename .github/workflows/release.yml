@@ -8,11 +8,9 @@ on:
 permissions:
   contents: write
 
-
 env:
 # 必须显式传递 Token，否则有 permissions 也没用！
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
-
 
 jobs:
   release:
@@ -51,7 +49,6 @@ jobs:
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
-          # 👇 关键修改：这里换成了你刚刚设置的 MY_RELEASE_TOKEN
           GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
@@ -62,6 +59,24 @@ jobs:
           releaseDraft: true
           prerelease: false
 
+      - name: Prepare Portable Version (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          copy src-tauri\target\release\vibe-coding-launcher.exe src-tauri\target\release\bundle\nsis\VibeCoding-Launcher-Portable.exe
+        shell: cmd
+
+      - name: Upload Portable as Additional Asset (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable
+          path: src-tauri\target\release\bundle\nsis\VibeCoding-Launcher-Portable.exe
+
+      - name: Attach Portable to Release (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         with:
           files: src-tauri\target\release\bundle\nsis\VibeCoding-Launcher-Portable.exe
           tag_name: ${{ github.ref_name }}
