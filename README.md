@@ -18,7 +18,7 @@
 
 ## 📦 下载
 
-前往 [Releases](https://github.com/YOUR_USERNAME/VBdingHome/releases) 页面下载最新版本：
+前往 [Releases]() 页面下载最新版本：
 
 - **Windows**: `VibeCoding-Launcher-Windows-Portable.zip` (推荐) 或 `.msi` 安装包
 - **macOS**: `.dmg` 或 `.app.tar.gz`
