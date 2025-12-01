@@ -94,7 +94,7 @@ impl Launcher {
                 cmd.current_dir(project_path);
                 
                 // Detach process
-                use std::os::windows::process::CommandExt;
+                // use std::os::windows::process::CommandExt;
                 // const DETACHED_PROCESS: u32 = 0x00000008;
                 // cmd.creation_flags(DETACHED_PROCESS);
                 
