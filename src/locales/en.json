@@ -1,0 +1,83 @@
+{
+    "common": {
+        "settings": "Settings",
+        "workspaces": "Workspaces",
+        "tags": "Tags",
+        "launch": "Launch",
+        "general": "General",
+        "cancel": "Cancel",
+        "confirm": "Confirm",
+        "delete": "Delete",
+        "edit": "Edit",
+        "save": "Save",
+        "add": "Add",
+        "search": "Search",
+        "loading": "Loading...",
+        "error": "Error",
+        "success": "Success"
+    },
+    "home": {
+        "title": "Projects",
+        "searchPlaceholder": "Search projects...",
+        "starredProjects": "Starred Projects",
+        "allProjects": "All Projects",
+        "noProjects": "No projects found",
+        "scan": "Scan",
+        "refresh": "Refresh"
+    },
+    "project": {
+        "launch": "Launch",
+        "openInExplorer": "Open in Explorer",
+        "openInTerminal": "Open in Terminal",
+        "star": "Star",
+        "unstar": "Unstar",
+        "edit": "Edit Project",
+        "tags": "Tags"
+    },
+    "settings": {
+        "title": "Settings",
+        "subtitle": "Manage workspaces, tags, and application preferences.",
+        "workspaces": {
+            "title": "Workspace Directories",
+            "subtitle": "Add folders containing your projects. We will automatically scan them.",
+            "add": "Add Workspace",
+            "noWorkspaces": "No workspaces configured. Add one to get started."
+        },
+        "tags": {
+            "title": "Tag Management",
+            "subtitle": "Create and manage tags for categorizing projects.",
+            "add": "New Tag"
+        },
+        "appearance": {
+            "title": "Appearance",
+            "subtitle": "Customize the application theme.",
+            "light": "Light",
+            "dark": "Dark",
+            "auto": "System",
+            "language": "Language",
+            "languageSubtitle": "Choose the display language of the application."
+        }
+    },
+    "tag": {
+        "editTitle": "Edit Tag",
+        "createTitle": "New Tag",
+        "name": "Name",
+        "color": "Color",
+        "category": "Category",
+        "categories": {
+            "workspace": "Workspace",
+            "ide": "IDE",
+            "cli": "CLI",
+            "environment": "Environment",
+            "startup": "Startup",
+            "custom": "Custom"
+        },
+        "config": {
+            "title": "Configuration",
+            "executable": "Executable",
+            "arguments": "Arguments",
+            "envVars": "Environment Variables",
+            "addEnv": "Add Variable"
+        }
+    }
+}

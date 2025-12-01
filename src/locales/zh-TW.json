@@ -1,0 +1,84 @@
+{
+    "common": {
+        "settings": "設定",
+        "workspaces": "工作區",
+        "tags": "標籤",
+        "launch": "啟動",
+        "general": "一般",
+        "cancel": "取消",
+        "confirm": "確定",
+        "delete": "刪除",
+        "edit": "編輯",
+        "save": "儲存",
+        "add": "新增",
+        "search": "搜尋",
+        "loading": "載入中...",
+        "error": "錯誤",
+        "success": "成功"
+    },
+    "home": {
+        "title": "專案",
+        "searchPlaceholder": "搜尋專案...",
+        "starredProjects": "收藏專案",
+        "allProjects": "所有專案",
+        "totalProjects": "總專案數",
+        "noProjects": "暫無專案",
+        "scan": "掃描",
+        "refresh": "重新整理"
+    },
+    "project": {
+        "launch": "啟動",
+        "openInExplorer": "在檔案總管中開啟",
+        "openInTerminal": "在終端機中開啟",
+        "star": "收藏",
+        "unstar": "取消收藏",
+        "edit": "編輯專案",
+        "tags": "標籤"
+    },
+    "settings": {
+        "title": "設定",
+        "subtitle": "管理工作區、標籤和應用程式偏好設定。",
+        "workspaces": {
+            "title": "工作區目錄",
+            "subtitle": "新增包含專案的資料夾。我們會自動掃描這些目錄。",
+            "add": "新增工作區",
+            "noWorkspaces": "暫無工作區，請新增一個目錄開始使用。"
+        },
+        "tags": {
+            "title": "標籤管理",
+            "subtitle": "建立和管理用於分類專案的標籤。",
+            "add": "新建標籤"
+        },
+        "appearance": {
+            "title": "外觀",
+            "subtitle": "自訂應用程式的主題。",
+            "light": "淺色",
+            "dark": "深色",
+            "auto": "跟隨系統",
+            "language": "語言",
+            "languageSubtitle": "選擇應用程式的顯示語言。"
+        }
+    },
+    "tag": {
+        "editTitle": "編輯標籤",
+        "createTitle": "新建標籤",
+        "name": "名稱",
+        "color": "顏色",
+        "category": "分類",
+        "categories": {
+            "workspace": "工作區",
+            "ide": "IDE",
+            "cli": "命令列",
+            "environment": "環境",
+            "startup": "啟動",
+            "custom": "自訂"
+        },
+        "config": {
+            "title": "配置",
+            "executable": "執行檔",
+            "arguments": "參數",
+            "envVars": "環境變數",
+            "addEnv": "新增變數"
+        }
+    }
+}

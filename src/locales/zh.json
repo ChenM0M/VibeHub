@@ -1,0 +1,83 @@
+{
+    "common": {
+        "settings": "设置",
+        "workspaces": "工作区",
+        "tags": "标签",
+        "launch": "启动",
+        "general": "常规",
+        "cancel": "取消",
+        "confirm": "确定",
+        "delete": "删除",
+        "edit": "编辑",
+        "save": "保存",
+        "add": "添加",
+        "search": "搜索",
+        "loading": "加载中...",
+        "error": "错误",
+        "success": "成功"
+    },
+    "home": {
+        "title": "项目",
+        "searchPlaceholder": "搜索项目...",
+        "starredProjects": "收藏项目",
+        "allProjects": "所有项目",
+        "noProjects": "暂无项目",
+        "scan": "扫描",
+        "refresh": "刷新"
+    },
+    "project": {
+        "launch": "启动",
+        "openInExplorer": "在资源管理器中打开",
+        "openInTerminal": "在终端中打开",
+        "star": "收藏",
+        "unstar": "取消收藏",
+        "edit": "编辑项目",
+        "tags": "标签"
+    },
+    "settings": {
+        "title": "设置",
+        "subtitle": "管理工作区、标签和应用程序偏好设置。",
+        "workspaces": {
+            "title": "工作区目录",
+            "subtitle": "添加包含项目的文件夹。我们会自动扫描这些目录。",
+            "add": "添加工作区",
+            "noWorkspaces": "暂无工作区，请添加一个目录开始使用。"
+        },
+        "tags": {
+            "title": "标签管理",
+            "subtitle": "创建和管理用于分类项目的标签。",
+            "add": "新建标签"
+        },
+        "appearance": {
+            "title": "外观",
+            "subtitle": "自定义应用程序的主题。",
+            "light": "浅色",
+            "dark": "深色",
+            "auto": "跟随系统",
+            "language": "语言",
+            "languageSubtitle": "选择应用程序的显示语言。"
+        }
+    },
+    "tag": {
+        "editTitle": "编辑标签",
+        "createTitle": "新建标签",
+        "name": "名称",
+        "color": "颜色",
+        "category": "分类",
+        "categories": {
+            "workspace": "工作区",
+            "ide": "IDE",
+            "cli": "命令行",
+            "environment": "环境",
+            "startup": "启动",
+            "custom": "自定义"
+        },
+        "config": {
+            "title": "配置",
+            "executable": "可执行文件",
+            "arguments": "参数",
+            "envVars": "环境变量",
+            "addEnv": "添加变量"
+        }
+    }
+}
