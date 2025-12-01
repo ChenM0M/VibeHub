@@ -62,24 +62,6 @@ jobs:
           releaseDraft: true
           prerelease: false
 
-      - name: Prepare Portable Version (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          copy src-tauri\target\release\vibe-coding-launcher.exe src-tauri\target\release\bundle\nsis\VibeCoding-Launcher-Portable.exe
-        shell: cmd
-
-      - name: Upload Portable as Additional Asset (Windows)
-        if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v3
-        with:
-          name: windows-portable
-          path: src-tauri\target\release\bundle\nsis\VibeCoding-Launcher-Portable.exe
-
-      - name: Attach Portable to Release (Windows)
-        if: matrix.platform == 'windows-latest'
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         with:
           files: src-tauri\target\release\bundle\nsis\VibeCoding-Launcher-Portable.exe
           tag_name: ${{ github.ref_name }}
