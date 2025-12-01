@@ -4,10 +4,11 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -62,7 +63,7 @@ jobs:
             
             ### Windows
             - **Installer (`.msi` / `.exe`)**: Standard installer. / 标准安装包，推荐大多数用户使用。
-            - **Portable**: If available, run directly without installation. / 绿色版，解压即用（如果提供）。
+            - **Portable (`-Portable.exe`)**: Run directly without installation. / 绿色版，解压即用。
             
             ### macOS
             - **App (`.dmg`)**: Drag to Applications to install. / 拖入应用程序文件夹即可安装。
@@ -80,3 +81,15 @@ jobs:
             3. Enjoy! / 尽情使用！
           releaseDraft: true
           prerelease: false
+
+      - name: Upload Portable (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          copy src-tauri\target\release\vibe-coding-launcher.exe VibeCoding-Launcher-Portable.exe
+        shell: cmd
+
+      - name: Upload Assets
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: VibeCoding-Launcher-Portable.exe
