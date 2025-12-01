@@ -59,6 +59,7 @@ pub enum ProjectType {
     Ruby,
     Php,
     Unknown,
+    Other,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

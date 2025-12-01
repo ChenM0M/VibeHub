@@ -34,7 +34,7 @@ interface HomeProps {
 
 export function Home({ searchQuery }: HomeProps) {
     const { t } = useTranslation();
-    const { config, reorderProjects, refreshConfig } = useAppStore();
+    const { config, reorderProjects, refreshConfig, selectedWorkspaceId } = useAppStore();
     const [launchProject, setLaunchProject] = useState<Project | null>(null);
     const [isScanning, setIsScanning] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
@@ -91,14 +91,52 @@ export function Home({ searchQuery }: HomeProps) {
 
     if (!config) return null;
 
-    const filteredProjects = config.projects.filter((p) =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.path.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    const selectedWorkspace = config.workspaces.find(w => w.id === selectedWorkspaceId);
+
+    const filteredProjects = config.projects.filter((p) => {
+        // Filter by workspace if selected
+        if (selectedWorkspaceId) {
+            // Check if project path starts with workspace path
+            // Normalize paths for comparison (simple string check for now, ideally use path lib)
+            // We assume paths are absolute.
+            // Actually, we should check if the project belongs to the workspace.
+            // The scanner logic ensures projects in workspace have paths inside it.
+            // But we can also check if the project path contains the workspace path.
+            // A safer check:
+            if (selectedWorkspace) {
+                const wsPath = selectedWorkspace.path.replace(/\\/g, '/').toLowerCase();
+                const projPath = p.path.replace(/\\/g, '/').toLowerCase();
+                if (!projPath.startsWith(wsPath)) {
+                    return false;
+                }
+            }
+        }
+
+        return (
+            p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            p.path.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            p.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
+        );
+    });
 
     const starredProjects = filteredProjects.filter(p => p.starred);
     const otherProjects = filteredProjects.filter(p => !p.starred);
+
+    // Helper to get display path
+    const getDisplayPath = (projectPath: string) => {
+        if (selectedWorkspace) {
+            // Show relative path
+            // Remove workspace path from project path
+            let relative = projectPath.replace(selectedWorkspace.path, '');
+            // Remove leading slash/backslash
+            if (relative.startsWith('\\') || relative.startsWith('/')) {
+                relative = relative.substring(1);
+            }
+            // If empty (root), show "./"
+            return relative || './';
+        }
+        return projectPath;
+    };
 
     return (
         <ContextMenu>
@@ -109,21 +147,22 @@ export function Home({ searchQuery }: HomeProps) {
                     onDragLeave={onDragLeave}
                     onDrop={onDrop}
                 >
-                    {isDragging && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-50 rounded-xl border-2 border-dashed border-primary">
-                            <div className="text-center animate-in fade-in zoom-in duration-300">
-                                <FolderOpen className="h-16 w-16 mx-auto text-primary mb-4" />
-                                <h3 className="text-xl font-semibold">{t('home.dropTitle')}</h3>
-                                <p className="text-muted-foreground">{t('home.dropDescription')}</p>
-                            </div>
-                        </div>
-                    )}
+                    {/* ... drag overlay ... */}
 
                     <div className="flex items-center justify-between">
                         <div>
-                            <h1 className="text-3xl font-bold tracking-tight">{t('home.title')}</h1>
-                            <p className="text-muted-foreground mt-1">
-                                {filteredProjects.length} {t('home.totalProjects')}
+                            <h1 className="text-3xl font-bold tracking-tight">
+                                {selectedWorkspace ? selectedWorkspace.name : t('home.title')}
+                            </h1>
+                            <p className="text-muted-foreground mt-1 flex items-center gap-2">
+                                {selectedWorkspace && (
+                                    <span className="bg-muted px-2 py-0.5 rounded text-xs font-mono">
+                                        {selectedWorkspace.path}
+                                    </span>
+                                )}
+                                <span>
+                                    {filteredProjects.length} {t('home.totalProjects')}
+                                </span>
                             </p>
                         </div>
                         <Button variant="outline" onClick={handleRefresh} disabled={isScanning}>
@@ -150,7 +189,7 @@ export function Home({ searchQuery }: HomeProps) {
                                         {starredProjects.map((project) => (
                                             <SortableProjectCard
                                                 key={project.id}
-                                                project={project}
+                                                project={{ ...project, path: getDisplayPath(project.path) }}
                                                 onLaunch={() => setLaunchProject(project)}
                                             />
                                         ))}
@@ -174,7 +213,7 @@ export function Home({ searchQuery }: HomeProps) {
                                         {otherProjects.map((project) => (
                                             <SortableProjectCard
                                                 key={project.id}
-                                                project={project}
+                                                project={{ ...project, path: getDisplayPath(project.path) }}
                                                 onLaunch={() => setLaunchProject(project)}
                                             />
                                         ))}

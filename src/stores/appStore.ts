@@ -6,9 +6,11 @@ interface AppState {
     config: AppConfig | null;
     isLoading: boolean;
     error: string | null;
+    selectedWorkspaceId: string | null;
 
     initializeApp: () => Promise<void>;
     refreshConfig: () => Promise<void>;
+    setSelectedWorkspaceId: (id: string | null) => void;
 
     addWorkspace: (name: string, path: string, autoScan: boolean) => Promise<void>;
     removeWorkspace: (id: string) => Promise<void>;
@@ -35,6 +37,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     config: null,
     isLoading: false,
     error: null,
+    selectedWorkspaceId: null,
+
+    setSelectedWorkspaceId: (id) => set({ selectedWorkspaceId: id }),
 
     initializeApp: async () => {
         try {
@@ -68,17 +73,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         try {
             await tauriApi.addWorkspace(name, path, autoScan);
             if (autoScan) {
-                const projects = await tauriApi.scanWorkspace(path);
-                // We need to add these projects to the state/backend
-                // The backend scan_workspace just returns them, doesn't save them automatically to config
-                // So we iterate and save them
-                for (const p of projects) {
-                    // Check if project already exists to avoid duplicates based on path
-                    const exists = get().config?.projects.some(existing => existing.path === p.path);
-                    if (!exists) {
-                        await tauriApi.updateProject(p);
-                    }
-                }
+                // Backend now handles saving scanned projects automatically
+                await tauriApi.scanWorkspace(path);
             }
             await get().refreshConfig();
         } catch (error) {

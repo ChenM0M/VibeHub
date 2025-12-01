@@ -79,5 +79,24 @@
             "envVars": "Environment Variables",
             "addEnv": "Add Variable"
         }
+    },
+    "gateway": {
+        "title": "AI Gateway",
+        "subtitle": "Manage your local AI proxy and providers",
+        "runningOn": "Running on",
+        "totalRequests": "Total Requests",
+        "activeProviders": "Active Providers",
+        "providers": "Providers",
+        "addProvider": "Add Provider",
+        "noProviders": "No providers configured. Add one to get started.",
+        "form": {
+            "addTitle": "Add Provider",
+            "editTitle": "Edit Provider",
+            "name": "Name",
+            "baseUrl": "Base URL",
+            "apiKey": "API Key",
+            "cancel": "Cancel",
+            "save": "Save"
+        }
     }
 }

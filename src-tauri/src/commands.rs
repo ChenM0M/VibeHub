@@ -32,8 +32,101 @@ pub async fn save_config(
 pub async fn scan_workspace(
     path: String,
     max_depth: usize,
+    state: State<'_, AppState>,
 ) -> Result<Vec<Project>, String> {
-    Scanner::scan_directory(&path, max_depth).map_err(|e| e.to_string())
+    let scanned_projects = Scanner::scan_directory(&path, max_depth).map_err(|e| e.to_string())?;
+    
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut config = storage.load_config().map_err(|e| e.to_string())?;
+    
+    // Normalize workspace path for comparison
+    let ws_path = std::path::Path::new(&path);
+    let ws_path_str = ws_path.to_string_lossy().to_string();
+    
+    // Helper to clean path for comparison (remove \\?\ prefix)
+    let clean_path = |p: &str| -> String {
+        if p.starts_with(r"\\?\") {
+            p[4..].to_string()
+        } else {
+            p.to_string()
+        }
+    };
+
+    // 1. Identify existing projects that are children of this workspace
+    // We'll rebuild the projects list
+    // Unused variables removed
+    
+    // Separate projects into "related to this workspace" and "others"
+    // Related = path starts with workspace path (loosely)
+    // Actually, simpler: We iterate all config projects. 
+    // If a project is in the scanned list (by clean path), we update and keep it.
+    // If a project is NOT in scanned list BUT is a child of this workspace, we drop it (it's junk or deleted).
+    // If a project is unrelated, we keep it.
+    
+    // To do this efficiently:
+    // Create a map of scanned projects by clean path
+    let mut scanned_map: std::collections::HashMap<String, Project> = std::collections::HashMap::new();
+    for p in scanned_projects {
+        scanned_map.insert(p.path.clone(), p);
+    }
+    
+    let mut final_projects = Vec::new();
+    let mut processed_scanned_paths = std::collections::HashSet::new();
+
+    for existing in &config.projects {
+        let existing_clean = clean_path(&existing.path);
+        
+        // Check if this existing project belongs to the workspace being scanned
+        // We assume it belongs if it's a direct child or inside the path
+        // Since we only scan depth 1, we can check if parent dir matches workspace
+        let is_in_workspace = std::path::Path::new(&existing_clean)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string() == ws_path_str || existing_clean.starts_with(&ws_path_str))
+            .unwrap_or(false);
+
+        if is_in_workspace {
+            // It belongs to this workspace. Check if it's in the new scan result.
+            if let Some(scanned) = scanned_map.get(&existing_clean) {
+                // It exists in scan. Update it.
+                let mut updated = existing.clone();
+                updated.path = scanned.path.clone(); // Ensure clean path
+                updated.project_type = scanned.project_type.clone();
+                updated.metadata = scanned.metadata.clone();
+                if scanned.description.is_some() {
+                    updated.description = scanned.description.clone();
+                }
+                final_projects.push(updated);
+                processed_scanned_paths.insert(existing_clean);
+            } else {
+                // It's in the workspace but NOT in the scan result.
+                // This means it's either deleted or ignored (junk).
+                // User wants "truthful update", so we REMOVE it.
+                println!("Removing project no longer found/valid: {}", existing.name);
+                // Do not add to final_projects
+            }
+        } else {
+            // Unrelated project, keep as is
+            final_projects.push(existing.clone());
+        }
+    }
+    
+    // Add new projects that weren't in config
+    // Fix: Iterate by reference to avoid moving scanned_map
+    for (path, project) in &scanned_map {
+        if !processed_scanned_paths.contains(path) {
+            final_projects.push(project.clone());
+        }
+    }
+    
+    config.projects = final_projects.clone();
+    storage.save_config(&config).map_err(|e| e.to_string())?;
+    
+    // Return only the projects for this workspace (scanned ones)
+    let result: Vec<Project> = final_projects.into_iter()
+        .filter(|p| scanned_map.contains_key(&p.path))
+        .collect();
+        
+    Ok(result)
 }
 
 #[tauri::command]
@@ -85,6 +178,25 @@ pub async fn update_project(
     }
     
     storage.save_config(&config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn refresh_project(
+    project_id: String,
+    state: State<'_, AppState>,
+) -> Result<Project, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut config = storage.load_config().map_err(|e| e.to_string())?;
+    
+    let project = config.projects.iter_mut().find(|p| p.id == project_id)
+        .ok_or("Project not found")?;
+        
+    Scanner::refresh_project(project);
+    let updated_project = project.clone();
+    
+    storage.save_config(&config).map_err(|e| e.to_string())?;
+    
+    Ok(updated_project)
 }
 
 #[tauri::command]

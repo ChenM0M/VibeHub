@@ -2,22 +2,37 @@ use crate::models::{Project, ProjectMetadata, ProjectType};
 use anyhow::Result;
 use std::fs;
 use std::path::Path;
-use walkdir::WalkDir;
+
 
 pub struct Scanner;
 
 impl Scanner {
-    pub fn scan_directory(path: &str, max_depth: usize) -> Result<Vec<Project>> {
+    pub fn scan_directory(path: &str, _max_depth: usize) -> Result<Vec<Project>> {
         let mut projects = Vec::new();
+        let abs_path = fs::canonicalize(path)?;
         
-        for entry in WalkDir::new(path)
-            .max_depth(max_depth)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            if entry.file_type().is_dir() {
-                if let Some(project) = Self::detect_project(entry.path()) {
+        // User requested to just take all directories under the scanned directory
+        // So we iterate immediate children only
+        for entry in fs::read_dir(abs_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.is_dir() {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                
+                // Filter out hidden directories and common build artifacts
+                if name.starts_with('.') || 
+                   name == "node_modules" || 
+                   name == "target" || 
+                   name == "dist" || 
+                   name == "build" ||
+                   name == "venv" ||
+                   name == "bin" ||
+                   name == "obj" {
+                    continue;
+                }
+
+                if let Some(project) = Self::detect_project(&path) {
                     projects.push(project);
                 }
             }
@@ -26,13 +41,35 @@ impl Scanner {
         Ok(projects)
     }
 
+    pub fn refresh_project(project: &mut Project) {
+        let path = Path::new(&project.path);
+        if path.exists() {
+            if let Some(pt) = Self::detect_project_type(path) {
+                project.project_type = pt.clone();
+                project.metadata = Self::extract_metadata(path, &pt);
+                if project.description.is_none() {
+                    project.description = Self::extract_description(path, &pt);
+                }
+            }
+        }
+    }
+
     fn detect_project(path: &Path) -> Option<Project> {
-        let project_type = Self::detect_project_type(path)?;
+        // We now accept any directory as a project, defaulting to "Other" if no specific type detected
+        let project_type = Self::detect_project_type(path).unwrap_or(ProjectType::Other);
         
         let name = path
             .file_name()?
             .to_string_lossy()
             .to_string();
+        
+        // Clean path: remove Windows long path prefix \\?\ if present
+        let path_str = path.to_string_lossy().to_string();
+        let clean_path = if path_str.starts_with(r"\\?\") {
+            path_str[4..].to_string()
+        } else {
+            path_str
+        };
         
         let metadata = Self::extract_metadata(path, &project_type);
         
@@ -40,7 +77,7 @@ impl Scanner {
             id: uuid::Uuid::new_v4().to_string(),
             name,
             description: Self::extract_description(path, &project_type),
-            path: path.to_string_lossy().to_string(),
+            path: clean_path,
             project_type,
             tags: Vec::new(),
             last_opened: None,
@@ -101,6 +138,10 @@ impl Scanner {
             return Some(ProjectType::Php);
         }
         
+        // Default to Other if it's a directory but matches none of the above
+        // The caller (detect_project) handles the fallback, but here we return None to indicate "unknown specific type"
+        // Wait, detect_project calls this. If I return None, detect_project uses unwrap_or(Other).
+        // So I can just return None here.
         None
     }
 

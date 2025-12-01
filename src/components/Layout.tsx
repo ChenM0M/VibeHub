@@ -5,8 +5,8 @@ import { Header } from './Header';
 interface LayoutProps {
     children: React.ReactNode;
     onSearch: (query: string) => void;
-    currentPage: 'home' | 'settings';
-    onNavigate: (page: 'home' | 'settings') => void;
+    currentPage: 'home' | 'settings' | 'gateway';
+    onNavigate: (page: 'home' | 'settings' | 'gateway') => void;
 }
 
 export function Layout({ children, onSearch, currentPage, onNavigate }: LayoutProps) {

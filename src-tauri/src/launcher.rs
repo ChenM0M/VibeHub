@@ -43,65 +43,47 @@ impl Launcher {
     fn launch_windows(executable: &str, config: &TagConfig, category: &TagCategory, project_path: &str) -> Result<bool> {
         println!("Launching on Windows: exe={}, path={}, category={:?}", executable, project_path, category);
         
-        match category {
-            TagCategory::Cli | TagCategory::Startup => {
-                // For CLI and Startup scripts, open a new CMD window
-                // cmd /C start "Title" /D "path" exe args...
-                let mut cmd = Command::new("cmd");
-                cmd.arg("/C");
-                cmd.arg("start");
-                cmd.arg(format!("VibeCoding - {}", executable)); // Title
-                cmd.arg("/D");
-                cmd.arg(project_path);
-                cmd.arg(executable);
-                
-                if let Some(args) = &config.args {
-                    for arg in args {
-                        cmd.arg(arg);
-                    }
-                }
-                
-                // For CLI tools, we don't automatically append project path as arg unless specified
-                // But environment variables need to be set? 
-                // cmd /C start inherits env? Yes.
-                // But we can't easily set per-command env vars with `start` unless we wrap in a block.
-                // For now, let's assume global env is enough or user puts env in args.
-                
-                let child = cmd.spawn()?;
-                Ok(child.id() > 0)
-            },
-            _ => {
-                // For IDEs and others, launch directly
-                let mut cmd = Command::new(executable);
-                
-                if let Some(args) = &config.args {
-                    for arg in args {
-                        cmd.arg(arg);
-                    }
-                }
-                
-                // For IDEs, append project path if not explicitly disabled (we assume enabled for now)
-                if matches!(category, TagCategory::Ide) {
-                    cmd.arg(project_path);
-                }
-                
-                if let Some(env) = &config.env {
-                    for (key, value) in env {
-                        cmd.env(key, value);
-                    }
-                }
-                
-                cmd.current_dir(project_path);
-                
-                // Detach process
-                // use std::os::windows::process::CommandExt;
-                // const DETACHED_PROCESS: u32 = 0x00000008;
-                // cmd.creation_flags(DETACHED_PROCESS);
-                
-                let child = cmd.spawn()?;
-                Ok(child.id() > 0)
+        // Unified launch strategy using `cmd /C start`
+        // This ensures:
+        // 1. Environment variables are correctly inherited
+        // 2. Batch files (like code.cmd) work as well as .exe
+        // 3. GUI apps launch independently
+        // 4. CLI apps get their own window
+        
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C");
+        cmd.arg("start");
+        cmd.arg(format!("VibeCoding - {}", executable)); // Title (first quoted arg)
+        cmd.arg("/D");
+        cmd.arg(project_path); // Working directory
+        
+        // The executable to run
+        cmd.arg(executable);
+        
+        // User arguments
+        if let Some(args) = &config.args {
+            for arg in args {
+                cmd.arg(arg);
             }
         }
+        
+        // For IDEs, append project path as an argument
+        if matches!(category, TagCategory::Ide) {
+            cmd.arg(project_path);
+        }
+        
+        // Apply environment variables to the cmd process
+        // The started process inherits these
+        if let Some(env) = &config.env {
+            for (key, value) in env {
+                cmd.env(key, value);
+            }
+        }
+        
+        println!("Executing command: {:?}", cmd);
+        
+        let child = cmd.spawn()?;
+        Ok(child.id() > 0)
     }
 
     #[cfg(target_os = "macos")]

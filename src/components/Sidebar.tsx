@@ -6,26 +6,40 @@ import {
     Settings,
     LayoutGrid,
     ChevronRight,
-    ChevronDown
+    ChevronDown,
+    Activity
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
 import { useTranslation } from 'react-i18next';
+import { TagEditDialog } from './TagEditDialog';
+import { Tag } from '@/types';
+import { invoke } from '@tauri-apps/api/core';
 
 interface SidebarProps {
     className?: string;
-    onNavigate: (page: 'home' | 'settings') => void;
-    currentPage: 'home' | 'settings';
+    onNavigate: (page: 'home' | 'settings' | 'gateway') => void;
+    currentPage: 'home' | 'settings' | 'gateway';
 }
 
 export function Sidebar({ className, onNavigate, currentPage }: SidebarProps) {
     const { t } = useTranslation();
-    const { config } = useAppStore();
+    const { config, refreshConfig, selectedWorkspaceId, setSelectedWorkspaceId } = useAppStore();
     const [expandedWorkspaces, setExpandedWorkspaces] = useState<boolean>(true);
     const [expandedTags, setExpandedTags] = useState<boolean>(true);
+    const [editingTag, setEditingTag] = useState<Tag | null>(null);
 
     const workspaces = config?.workspaces || [];
     const tags = config?.tags || [];
+
+    const handleSaveTag = async (tag: Tag) => {
+        try {
+            await invoke('update_tag', { tag });
+            await refreshConfig();
+        } catch (error) {
+            console.error('Failed to update tag:', error);
+        }
+    };
 
     return (
         <div className={cn("w-64 glass border-r border-border/50 h-full flex flex-col", className)}>
@@ -39,12 +53,23 @@ export function Sidebar({ className, onNavigate, currentPage }: SidebarProps) {
 
                 <div className="space-y-1">
                     <Button
-                        variant={currentPage === 'home' ? "secondary" : "ghost"}
+                        variant={currentPage === 'home' && !selectedWorkspaceId ? "secondary" : "ghost"}
                         className="w-full justify-start rounded-lg"
-                        onClick={() => onNavigate('home')}
+                        onClick={() => {
+                            setSelectedWorkspaceId(null);
+                            onNavigate('home');
+                        }}
                     >
                         <LayoutGrid className="mr-2 h-4 w-4" />
-                        {t('common.workspaces')} {/* Using 'workspaces' as 'Projects' placeholder or add 'projects' key */}
+                        {t('common.workspaces')}
+                    </Button>
+                    <Button
+                        variant={currentPage === 'gateway' ? "secondary" : "ghost"}
+                        className="w-full justify-start rounded-lg"
+                        onClick={() => onNavigate('gateway')}
+                    >
+                        <Activity className="mr-2 h-4 w-4" />
+                        {t('gateway.title', 'AI Gateway')}
                     </Button>
                     <Button
                         variant={currentPage === 'settings' ? "secondary" : "ghost"}
@@ -82,9 +107,24 @@ export function Sidebar({ className, onNavigate, currentPage }: SidebarProps) {
                                 <div className="text-xs text-muted-foreground italic px-2 py-1">{t('settings.workspaces.noWorkspaces')}</div>
                             ) : (
                                 workspaces.map(ws => (
-                                    <div key={ws.id} className="group flex items-center justify-between px-2 py-1.5 text-sm rounded-md hover:bg-accent/50 cursor-pointer transition-colors">
+                                    <div
+                                        key={ws.id}
+                                        className={cn(
+                                            "group flex items-center justify-between px-2 py-1.5 text-sm rounded-md hover:bg-accent/50 cursor-pointer transition-colors",
+                                            selectedWorkspaceId === ws.id && "bg-accent text-accent-foreground font-medium"
+                                        )}
+                                        onClick={() => {
+                                            setSelectedWorkspaceId(
+                                                selectedWorkspaceId === ws.id ? null : ws.id
+                                            );
+                                            if (currentPage !== 'home') onNavigate('home');
+                                        }}
+                                    >
                                         <div className="flex items-center overflow-hidden">
-                                            <Folder className="mr-2 h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                            <Folder className={cn(
+                                                "mr-2 h-3.5 w-3.5 flex-shrink-0",
+                                                selectedWorkspaceId === ws.id ? "text-primary" : "text-muted-foreground"
+                                            )} />
                                             <span className="truncate">{ws.name}</span>
                                         </div>
                                     </div>
@@ -118,7 +158,11 @@ export function Sidebar({ className, onNavigate, currentPage }: SidebarProps) {
                                 <div className="text-xs text-muted-foreground italic px-2 py-1">No tags</div>
                             ) : (
                                 tags.map(tag => (
-                                    <div key={tag.id} className="flex items-center px-2 py-1.5 text-sm rounded-md hover:bg-accent/50 cursor-pointer transition-colors">
+                                    <div
+                                        key={tag.id}
+                                        className="flex items-center px-2 py-1.5 text-sm rounded-md hover:bg-accent/50 cursor-pointer transition-colors"
+                                        onClick={() => setEditingTag(tag)}
+                                    >
                                         <div className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: tag.color, boxShadow: `0 0 8px ${tag.color}50` }} />
                                         <span className="truncate">{tag.name}</span>
                                     </div>
@@ -134,6 +178,13 @@ export function Sidebar({ className, onNavigate, currentPage }: SidebarProps) {
                     v0.1.0 Portable
                 </div>
             </div>
+
+            <TagEditDialog
+                tag={editingTag || undefined}
+                open={!!editingTag}
+                onOpenChange={(open) => !open && setEditingTag(null)}
+                onSave={handleSaveTag}
+            />
         </div>
     );
 }

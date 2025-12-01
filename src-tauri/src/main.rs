@@ -6,10 +6,12 @@ mod launcher;
 mod models;
 mod scanner;
 mod storage;
+mod gateway;
 
 use commands::AppState;
 use storage::Storage;
 use std::sync::Mutex;
+use tauri::Manager;
 
 fn main() {
     let storage = Storage::new().expect("Failed to initialize storage");
@@ -17,6 +19,10 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            gateway::init(app.handle());
+            Ok(())
+        })
         .manage(AppState {
             storage: Mutex::new(storage),
         })
@@ -27,6 +33,7 @@ fn main() {
             commands::add_workspace,
             commands::remove_workspace,
             commands::update_project,
+            commands::refresh_project,
             commands::delete_project,
             commands::add_tag,
             commands::update_tag,
@@ -39,6 +46,9 @@ fn main() {
             commands::toggle_project_star,
             commands::initialize_default_configs,
             commands::set_theme,
+            gateway::get_gateway_config,
+            gateway::save_gateway_config,
+            gateway::get_gateway_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
