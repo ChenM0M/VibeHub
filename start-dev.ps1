@@ -1,9 +1,9 @@
-# VibeCoding Launcher - Development Server
+# VibeHub - Development Server
 # Usage: .\start-dev.ps1
 
 Write-Host ""
 Write-Host "========================================"
-Write-Host "  VibeCoding Launcher - Dev Server"
+Write-Host "  VibeHub - Dev Server"
 Write-Host "========================================"
 Write-Host ""
 

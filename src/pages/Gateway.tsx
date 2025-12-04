@@ -5,7 +5,7 @@ import { listen } from '@tauri-apps/api/event';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Server, Coins, Database, Zap, Bot, MessageSquare, Code2 } from 'lucide-react';
+import { Server, Coins, Database, Zap, Bot, MessageSquare, Code2, Copy, Check } from 'lucide-react';
 import { GatewayConfig, Provider, GatewayStats } from '@/types/gateway';
 import { ProviderForm } from '@/components/gateway/ProviderForm';
 import { StatsCard } from '@/components/gateway/StatsCard';
@@ -27,6 +27,14 @@ export function Gateway() {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingProvider, setEditingProvider] = useState<Provider | undefined>(undefined);
     const [providerStatuses, setProviderStatuses] = useState<Record<string, string>>({});
+    const [copiedPort, setCopiedPort] = useState<string | null>(null);
+
+    const copyToClipboard = async (port: number) => {
+        const url = `http://localhost:${port}`;
+        await navigator.clipboard.writeText(url);
+        setCopiedPort(String(port));
+        setTimeout(() => setCopiedPort(null), 2000);
+    };
 
     const loadConfig = async () => {
         try {
@@ -123,12 +131,12 @@ export function Gateway() {
         : '0';
 
     return (
-        <div className="space-y-6 p-8 max-w-[1600px] mx-auto">
+        <div className="space-y-6 p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto overflow-x-hidden">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">{t('gateway.title')}</h1>
                     <p className="text-muted-foreground mt-2">
-                        {t('gateway.subtitle')}
+                        {t('gateway.subtitle')} <span className="text-green-600 dark:text-green-400 font-medium">{t('gateway.noSecretNeeded')}</span>
                     </p>
                 </div>
             </div>
@@ -151,7 +159,18 @@ export function Gateway() {
                     </CardHeader>
                     <CardContent>
                         <div className="flex items-center justify-between">
-                            <code className="text-sm text-muted-foreground">:{config.anthropic_port}</code>
+                            <button
+                                onClick={() => copyToClipboard(config.anthropic_port)}
+                                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors group"
+                                title={t('gateway.copyUrl')}
+                            >
+                                <code>:{config.anthropic_port}</code>
+                                {copiedPort === String(config.anthropic_port) ? (
+                                    <Check className="h-3.5 w-3.5 text-green-500" />
+                                ) : (
+                                    <Copy className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                )}
+                            </button>
                             <Badge variant={config.anthropic_enabled ? "default" : "secondary"}>
                                 {config.anthropic_enabled ? t('common.running') : t('common.stopped')}
                             </Badge>
@@ -178,7 +197,18 @@ export function Gateway() {
                     </CardHeader>
                     <CardContent>
                         <div className="flex items-center justify-between">
-                            <code className="text-sm text-muted-foreground">:{config.responses_port}</code>
+                            <button
+                                onClick={() => copyToClipboard(config.responses_port)}
+                                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors group"
+                                title={t('gateway.copyUrl')}
+                            >
+                                <code>:{config.responses_port}</code>
+                                {copiedPort === String(config.responses_port) ? (
+                                    <Check className="h-3.5 w-3.5 text-green-500" />
+                                ) : (
+                                    <Copy className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                )}
+                            </button>
                             <Badge variant={config.responses_enabled ? "default" : "secondary"}>
                                 {config.responses_enabled ? t('common.running') : t('common.stopped')}
                             </Badge>
@@ -205,7 +235,18 @@ export function Gateway() {
                     </CardHeader>
                     <CardContent>
                         <div className="flex items-center justify-between">
-                            <code className="text-sm text-muted-foreground">:{config.chat_port}</code>
+                            <button
+                                onClick={() => copyToClipboard(config.chat_port)}
+                                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors group"
+                                title={t('gateway.copyUrl')}
+                            >
+                                <code>:{config.chat_port}</code>
+                                {copiedPort === String(config.chat_port) ? (
+                                    <Check className="h-3.5 w-3.5 text-green-500" />
+                                ) : (
+                                    <Copy className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                )}
+                            </button>
                             <Badge variant={config.chat_enabled ? "default" : "secondary"}>
                                 {config.chat_enabled ? t('common.running') : t('common.stopped')}
                             </Badge>
@@ -218,7 +259,7 @@ export function Gateway() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
                 <StatsCard
                     title={t('gateway.totalRequests')}
                     value={stats?.total_requests.toLocaleString() || '0'}
@@ -245,7 +286,7 @@ export function Gateway() {
                 />
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-7">
+            <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
                 <RequestChart data={stats?.hourly_activity || []} />
                 <ProviderList
                     providers={config.providers}
@@ -270,8 +311,8 @@ export function Gateway() {
                     <CardDescription>{t('gateway.realtimeLog')}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="rounded-md border">
-                        <div className="grid grid-cols-9 gap-4 p-4 font-medium text-sm bg-muted/50 border-b">
+                    <div className="overflow-x-auto">
+                        <div className="grid grid-cols-9 gap-4 p-4 font-medium text-sm bg-muted/50 border-b min-w-[900px]">
                             <div>{t('gateway.time')}</div>
                             <div>{t('gateway.type')}</div>
                             <div>{t('gateway.client')}</div>

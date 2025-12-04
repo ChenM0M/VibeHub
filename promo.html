@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibeHub Media Kit v8.1 - Export Fixed</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #050505;
+            --bg-panel: #0A0A0A;
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-highlight: rgba(255, 255, 255, 0.15);
+
+            --rust-color: #E57324;
+            --react-color: #61DAFB;
+            --tauri-color: #24C8DB;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Premium Glass Card - Adjusted for html2canvas (no backdrop-filter support) */
+        .bento-card {
+            background: #111;
+            /* Solid fallback for export reliability */
+            background: linear-gradient(180deg, rgba(20, 20, 20, 0.95) 0%, rgba(10, 10, 10, 0.98) 100%);
+            border: 1px solid var(--border-subtle);
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 8px 40px -12px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .bento-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            opacity: 0.5;
+        }
+
+        /* Grid Background */
+        .bg-grid-subtle {
+            background-size: 40px 40px;
+            background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+        }
+
+        /* Utilities */
+        .text-gradient-blue {
+            color: #60A5FA;
+        }
+
+        .text-gradient-purple {
+            color: #A78BFA;
+        }
+
+        .text-gradient-green {
+            color: #34D399;
+        }
+
+        /* Mock UI Elements */
+        .mock-window {
+            background: #1a1a1a;
+            /* Lighter background for visibility */
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.9);
+            overflow: hidden;
+        }
+
+        .mock-header {
+            height: 36px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            gap: 6px;
+        }
+
+        .window-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .dot-red {
+            background: #EF4444;
+        }
+
+        .dot-yellow {
+            background: #EAB308;
+        }
+
+        .dot-green {
+            background: #22C55E;
+        }
+
+        .mock-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            border: 1px solid;
+        }
+
+        .tag-vscode {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.2);
+            color: #60A5FA;
+        }
+
+        .tag-npm {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.2);
+            color: #F87171;
+        }
+
+        .tag-rust {
+            background: rgba(249, 115, 22, 0.1);
+            border-color: rgba(249, 115, 22, 0.2);
+            color: #FB923C;
+        }
+
+        .ai-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .toggle-switch {
+            width: 32px;
+            height: 18px;
+            background: #22C55E;
+            border-radius: 999px;
+            position: relative;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 14px;
+            height: 14px;
+            background: white;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen p-12">
+
+    <!-- Header -->
+    <div class="fixed top-0 left-0 w-full z-50 bg-black/80 backdrop-blur-xl border-b border-white/5">
+        <div class="max-w-[1400px] mx-auto px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-xs font-bold">V</div>
+                <span class="font-bold text-sm tracking-wide text-gray-300">VibeHub Media Kit v8.1</span>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="downloadAll('en')"
+                    class="px-4 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-xs font-medium transition">Download
+                    All EN</button>
+                <button onclick="downloadAll('cn')"
+                    class="px-4 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded text-xs font-medium transition">下载所有中文图</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="h-20"></div>
+
+    <div class="max-w-[1400px] mx-auto grid grid-cols-1 gap-24 pb-32">
+
+        <!-- ========================================== -->
+        <!-- 1. REPO HEADER (Redesigned with AI Gateway) -->
+        <!-- ========================================== -->
+        <div class="space-y-4">
+            <div class="flex justify-between items-end border-b border-white/5 pb-4">
+                <h3 class="text-xl font-bold text-white">1. Repository Header</h3>
+                <div class="flex gap-4">
+                    <button onclick="download('repo-header-en')"
+                        class="text-xs text-gray-500 hover:text-white transition">EN</button>
+                    <button onclick="download('repo-header-cn')"
+                        class="text-xs text-gray-500 hover:text-white transition">CN</button>
+                    <button onclick="download('repo-header-v-en')"
+                        class="text-xs text-gray-500 hover:text-white transition">EN Vertical</button>
+                    <button onclick="download('repo-header-v-cn')"
+                        class="text-xs text-gray-500 hover:text-white transition">CN Vertical</button>
+                </div>
+            </div>
+
+            <!-- EN Horizontal -->
+            <div id="repo-header-en"
+                class="relative w-[1280px] h-[640px] bg-[#050505] overflow-hidden border border-white/5 rounded-xl">
+                <div class="absolute inset-0 bg-grid-subtle opacity-50"></div>
+                <div
+                    class="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-blue-900/10 blur-[150px] rounded-full">
+                </div>
+                <div
+                    class="absolute bottom-[-20%] left-[-10%] w-[600px] h-[600px] bg-purple-900/10 blur-[150px] rounded-full">
+                </div>
+
+                <div class="relative z-10 h-full flex items-center px-16 justify-between">
+                    <!-- Left: Typography -->
+                    <div class="flex flex-col gap-6 max-w-xl z-20">
+                        <h1
+                            class="text-8xl font-black tracking-tighter text-white leading-none flex items-center gap-4">
+                            Vibe<span style="color: #8B5CF6;">Hub</span>
+                        </h1>
+                        <p class="text-2xl text-gray-300 font-light leading-relaxed">
+                            Your Local Command Center. <br>
+                            <span class="text-white font-medium">Infinite Possibilities.</span>
+                        </p>
+                        <p class="text-base text-gray-500 leading-relaxed max-w-md">
+                            Manage projects with flexible tags. One-click to launch IDEs, scripts, or the built-in
+                            <span class="text-blue-400 font-medium">AI Gateway</span>.
+                        </p>
+
+                        <div class="flex gap-3 pt-2">
+                            <div
+                                class="px-3 py-1 rounded bg-white/5 border border-white/10 text-xs font-mono text-gray-400">
+                                #LocalFirst</div>
+                            <div
+                                class="px-3 py-1 rounded bg-white/5 border border-white/10 text-xs font-mono text-gray-400">
+                                #TagSystem</div>
+                            <div
+                                class="px-3 py-1 rounded bg-white/5 border border-white/10 text-xs font-mono text-gray-400">
+                                #AIGateway</div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Visual (Stacked Windows) -->
+                    <div class="relative w-[650px] h-[500px] flex items-center justify-center">
+
+                        <!-- Layer 1: AI Gateway Dashboard (Back) -->
+                        <!-- Removed opacity-80 to fix text readability in export. Added darker overlay effect via background color if needed, but keeping it clear is better. -->
+                        <div
+                            class="absolute top-10 right-0 w-[500px] h-[340px] mock-window transform scale-95 z-0 border border-blue-500/20">
+                            <div class="mock-header">
+                                <div class="window-dot dot-red"></div>
+                                <div class="window-dot dot-yellow"></div>
+                                <div class="window-dot dot-green"></div>
+                                <span class="text-xs text-gray-500 ml-2">AI Gateway Dashboard</span>
+                            </div>
+                            <div class="p-6">
+                                <div class="flex justify-between items-center mb-6">
+                                    <h3 class="text-lg font-bold text-white">AI Gateway</h3>
+                                    <div class="text-xs text-green-400 flex items-center gap-1">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div> Active
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4 mb-6">
+                                    <div class="ai-card">
+                                        <div class="text-xs text-gray-500 mb-1">Total Requests</div>
+                                        <div class="text-xl font-mono font-bold text-white">1,248</div>
+                                    </div>
+                                    <div class="ai-card">
+                                        <div class="text-xs text-gray-500 mb-1">Token Usage</div>
+                                        <div class="text-xl font-mono font-bold text-white">8.5M</div>
+                                    </div>
+                                </div>
+                                <div class="space-y-3">
+                                    <div class="ai-card flex justify-between items-center py-3">
+                                        <div class="flex items-center gap-3">
+                                            <div
+                                                class="w-8 h-8 rounded bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold text-xs">
+                                                C</div>
+                                            <div>
+                                                <div class="text-sm font-bold text-white">Claude Code</div>
+                                                <div class="text-[10px] text-gray-500">Port: 12345</div>
+                                            </div>
+                                        </div>
+                                        <div class="toggle-switch"></div>
+                                    </div>
+                                    <div class="ai-card flex justify-between items-center py-3">
+                                        <div class="flex items-center gap-3">
+                                            <div
+                                                class="w-8 h-8 rounded bg-green-500/20 flex items-center justify-center text-green-400 font-bold text-xs">
+                                                O</div>
+                                            <div>
+                                                <div class="text-sm font-bold text-white">OpenAI Chat</div>
+                                                <div class="text-[10px] text-gray-500">Port: 12346</div>
+                                            </div>
+                                        </div>
+                                        <div class="toggle-switch"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Layer 2: Project Launcher (Front) -->
+                        <div
+                            class="absolute bottom-20 left-10 w-[420px] mock-window z-10 shadow-2xl border border-white/10 transform -rotate-2">
+                            <div class="mock-header bg-[#18181b]">
+                                <div class="window-dot dot-red"></div>
+                                <div class="window-dot dot-yellow"></div>
+                                <div class="window-dot dot-green"></div>
+                                <span class="text-xs text-gray-500 ml-2">VibeHub Launcher</span>
+                            </div>
+                            <div class="p-6 bg-[#18181b]">
+                                <div class="flex justify-between items-start mb-6">
+                                    <div class="flex items-center gap-4">
+                                        <div
+                                            class="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+                                            V</div>
+                                        <div>
+                                            <h3 class="text-lg font-bold text-white">VibeHub</h3>
+                                            <p class="text-xs text-gray-500 font-mono">~/Dev/VibeHub</p>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]">
+                                    </div>
+                                </div>
+
+                                <!-- Tags -->
+                                <div class="flex flex-wrap gap-2 mb-6">
+                                    <span class="mock-tag tag-vscode">VSCode</span>
+                                    <span class="mock-tag tag-rust">Rust</span>
+                                    <span class="mock-tag tag-npm">npm run dev</span>
+                                    <span class="mock-tag border border-white/10 text-gray-400">+ Add Tag</span>
+                                </div>
+
+                                <!-- Action Button -->
+                                <div
+                                    class="w-full py-2.5 bg-white text-black font-bold text-center rounded-lg text-sm hover:bg-gray-200 transition cursor-pointer flex items-center justify-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                    快速启动
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CN Horizontal -->
+            <div id="repo-header-cn"
+                class="relative w-[1280px] h-[640px] bg-[#050505] overflow-hidden border border-white/5 rounded-xl mt-8">
+                <div class="absolute inset-0 bg-grid-subtle opacity-50"></div>
+                <div
+                    class="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-purple-900/10 blur-[150px] rounded-full">
+                </div>
+                <div
+                    class="absolute bottom-[-20%] left-[-10%] w-[600px] h-[600px] bg-blue-900/10 blur-[150px] rounded-full">
+                </div>
+
+                <div class="relative z-10 h-full flex items-center px-16 justify-between">
+                    <!-- Left: Typography -->
+                    <div class="flex flex-col gap-6 max-w-xl z-20">
+                        <h1
+                            class="text-8xl font-black tracking-tighter text-white leading-none flex items-center gap-4">
+                            Vibe<span style="color: #3B82F6;">Hub</span>
+                        </h1>
+                        <p class="text-2xl text-gray-300 font-light leading-relaxed">
+                            你的本地指挥中心。<br>
+                            <span class="text-white font-medium">解锁无限可能。</span>
+                        </p>
+                        <p class="text-base text-gray-500 leading-relaxed max-w-md">
+                            灵活标签管理项目。一键启动 IDE、脚本或内置的
+                            <span class="text-blue-400 font-medium">AI 网关</span>。
+                        </p>
+
+                        <div class="flex gap-3 pt-2">
+                            <div
+                                class="px-3 py-1 rounded bg-white/5 border border-white/10 text-xs font-mono text-gray-400">
+                                #本地优先</div>
+                            <div
+                                class="px-3 py-1 rounded bg-white/5 border border-white/10 text-xs font-mono text-gray-400">
+                                #标签系统</div>
+                            <div
+                                class="px-3 py-1 rounded bg-white/5 border border-white/10 text-xs font-mono text-gray-400">
+                                #AI网关</div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Visual (Stacked Windows) -->
+                    <div class="relative w-[650px] h-[500px] flex items-center justify-center">
+
+                        <!-- Layer 1: AI Gateway Dashboard (Back) -->
+                        <div
+                            class="absolute top-10 right-0 w-[500px] h-[340px] mock-window transform scale-95 z-0 border border-blue-500/20">
+                            <div class="mock-header">
+                                <div class="window-dot dot-red"></div>
+                                <div class="window-dot dot-yellow"></div>
+                                <div class="window-dot dot-green"></div>
+                                <span class="text-xs text-gray-500 ml-2">AI 网关仪表盘</span>
+                            </div>
+                            <div class="p-6">
+                                <div class="flex justify-between items-center mb-6">
+                                    <h3 class="text-lg font-bold text-white">AI 网关</h3>
+                                    <div class="text-xs text-green-400 flex items-center gap-1">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div> 运行中
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4 mb-6">
+                                    <div class="ai-card">
+                                        <div class="text-xs text-gray-500 mb-1">总请求数</div>
+                                        <div class="text-xl font-mono font-bold text-white">1,248</div>
+                                    </div>
+                                    <div class="ai-card">
+                                        <div class="text-xs text-gray-500 mb-1">Token 用量</div>
+                                        <div class="text-xl font-mono font-bold text-white">8.5M</div>
+                                    </div>
+                                </div>
+                                <div class="space-y-3">
+                                    <div class="ai-card flex justify-between items-center py-3">
+                                        <div class="flex items-center gap-3">
+                                            <div
+                                                class="w-8 h-8 rounded bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold text-xs">
+                                                C</div>
+                                            <div>
+                                                <div class="text-sm font-bold text-white">Claude Code</div>
+                                                <div class="text-[10px] text-gray-500">端口: 12345</div>
+                                            </div>
+                                        </div>
+                                        <div class="toggle-switch"></div>
+                                    </div>
+                                    <div class="ai-card flex justify-between items-center py-3">
+                                        <div class="flex items-center gap-3">
+                                            <div
+                                                class="w-8 h-8 rounded bg-green-500/20 flex items-center justify-center text-green-400 font-bold text-xs">
+                                                O</div>
+                                            <div>
+                                                <div class="text-sm font-bold text-white">OpenAI Chat</div>
+                                                <div class="text-[10px] text-gray-500">端口: 12346</div>
+                                            </div>
+                                        </div>
+                                        <div class="toggle-switch"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Layer 2: Project Launcher (Front) -->
+                        <div
+                            class="absolute bottom-20 left-10 w-[420px] mock-window z-10 shadow-2xl border border-white/10 transform -rotate-2">
+                            <div class="mock-header bg-[#18181b]">
+                                <div class="window-dot dot-red"></div>
+                                <div class="window-dot dot-yellow"></div>
+                                <div class="window-dot dot-green"></div>
+                                <span class="text-xs text-gray-500 ml-2">VibeHub 启动器</span>
+                            </div>
+                            <div class="p-6 bg-[#18181b]">
+                                <div class="flex justify-between items-start mb-6">
+                                    <div class="flex items-center gap-4">
+                                        <div
+                                            class="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+                                            V</div>
+                                        <div>
+                                            <h3 class="text-lg font-bold text-white">VibeHub</h3>
+                                            <p class="text-xs text-gray-500 font-mono">~/Dev/VibeHub</p>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]">
+                                    </div>
+                                </div>
+
+                                <!-- Tags -->
+                                <div class="flex flex-wrap gap-2 mb-6">
+                                    <span class="mock-tag tag-vscode">VSCode</span>
+                                    <span class="mock-tag tag-rust">Rust</span>
+                                    <span class="mock-tag tag-npm">npm run dev</span>
+                                    <span class="mock-tag border border-white/10 text-gray-400">+ Add Tag</span>
+                                </div>
+
+                                <!-- Action Button -->
+                                <div
+                                    class="w-full py-2.5 bg-white text-black font-bold text-center rounded-lg text-sm hover:bg-gray-200 transition cursor-pointer flex items-center justify-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                    快速启动
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- 2. TECH STACK -->
+        <!-- ========================================== -->
+        <div class="space-y-4">
+            <div class="flex justify-between items-end border-b border-white/5 pb-4">
+                <h3 class="text-xl font-bold text-white">2. Tech Stack</h3>
+                <div class="flex gap-4">
+                    <button onclick="download('tech-en')"
+                        class="text-xs text-gray-500 hover:text-white transition">EN</button>
+                    <button onclick="download('tech-cn')"
+                        class="text-xs text-gray-500 hover:text-white transition">CN</button>
+                </div>
+            </div>
+
+            <!-- EN Horizontal -->
+            <div id="tech-en"
+                class="relative w-[1280px] h-[640px] bg-[#050505] overflow-hidden border border-white/5 rounded-xl flex items-center justify-center">
+                <div class="absolute inset-0 bg-grid-subtle opacity-30"></div>
+                <div class="relative z-10 grid grid-cols-3 gap-8 w-full max-w-5xl px-12">
+                    <div
+                        class="bento-card p-10 rounded-2xl flex flex-col items-center text-center group hover:border-orange-500/30 transition-colors duration-500">
+                        <div class="w-24 h-24 mb-8 relative">
+                            <div
+                                class="absolute inset-0 bg-orange-500/20 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                            </div>
+                            <svg class="w-full h-full text-[#E57324] relative z-10" viewBox="0 0 100 100"
+                                fill="currentColor">
+                                <path
+                                    d="M50 3C24.038 3 3 24.038 3 50c0 25.963 21.038 47 47 47 25.963 0 47-21.037 47-47 0-25.962-21.037-47-47-47zm0 10c20.43 0 37 16.57 37 37S70.43 87 50 87 13 70.43 13 50 29.57 13 50 13zm-6 15v10h12c6.627 0 12 5.373 12 12s-5.373 12-12 12H44v10h-8V28h8z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-3xl font-bold text-white mb-3">Rust</h3>
+                        <p class="text-gray-400 leading-relaxed">Powered by Rust for <span
+                                style="color: #FB923C;">blazing fast</span> performance.</p>
+                    </div>
+                    <div
+                        class="bento-card p-10 rounded-2xl flex flex-col items-center text-center group hover:border-blue-500/30 transition-colors duration-500">
+                        <div class="w-24 h-24 mb-8 relative">
+                            <div
+                                class="absolute inset-0 bg-blue-500/20 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                            </div>
+                            <svg class="w-full h-full text-[#61DAFB] relative z-10" viewBox="0 0 841.9 595.3"
+                                fill="none" stroke="currentColor" stroke-width="25">
+                                <ellipse cx="420.9" cy="297.6" rx="100" ry="100" fill="currentColor" stroke="none" />
+                                <ellipse cx="420.9" cy="297.6" rx="380" ry="110" />
+                                <ellipse cx="420.9" cy="297.6" rx="380" ry="110" transform="rotate(60 420.9 297.6)" />
+                                <ellipse cx="420.9" cy="297.6" rx="380" ry="110" transform="rotate(120 420.9 297.6)" />
+                            </svg>
+                        </div>
+                        <h3 class="text-3xl font-bold text-white mb-3">React</h3>
+                        <p class="text-gray-400 leading-relaxed">Built with React for a <span
+                                style="color: #60A5FA;">modern</span> UI.</p>
+                    </div>
+                    <div
+                        class="bento-card p-10 rounded-2xl flex flex-col items-center text-center group hover:border-teal-500/30 transition-colors duration-500">
+                        <div class="w-24 h-24 mb-8 relative">
+                            <div
+                                class="absolute inset-0 bg-teal-500/20 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                            </div>
+                            <svg class="w-full h-full text-[#24C8DB] relative z-10" viewBox="0 0 256 256"
+                                fill="currentColor">
+                                <path
+                                    d="M128 0L248 64V192L128 256L8 192V64L128 0ZM128 28.8L36.8 76.8V179.2L128 227.2L219.2 179.2V76.8L128 28.8Z" />
+                                <path d="M128 70L180 100V160L128 190L76 160V100L128 70Z" fill-opacity="0.5" />
+                            </svg>
+                        </div>
+                        <h3 class="text-3xl font-bold text-white mb-3">Tauri</h3>
+                        <p class="text-gray-400 leading-relaxed"><span style="color: #2DD4BF;">Tiny bundle sizes</span>
+                            and native OS integration.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CN Horizontal -->
+            <div id="tech-cn"
+                class="relative w-[1280px] h-[640px] bg-[#050505] overflow-hidden border border-white/5 rounded-xl flex items-center justify-center mt-8">
+                <div class="absolute inset-0 bg-grid-subtle opacity-30"></div>
+                <div class="relative z-10 grid grid-cols-3 gap-8 w-full max-w-5xl px-12">
+                    <div
+                        class="bento-card p-10 rounded-2xl flex flex-col items-center text-center group hover:border-orange-500/30 transition-colors duration-500">
+                        <div class="w-24 h-24 mb-8 relative">
+                            <div
+                                class="absolute inset-0 bg-orange-500/20 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                            </div>
+                            <svg class="w-full h-full text-[#E57324] relative z-10" viewBox="0 0 100 100"
+                                fill="currentColor">
+                                <path
+                                    d="M50 3C24.038 3 3 24.038 3 50c0 25.963 21.038 47 47 47 25.963 0 47-21.037 47-47 0-25.962-21.037-47-47-47zm0 10c20.43 0 37 16.57 37 37S70.43 87 50 87 13 70.43 13 50 29.57 13 50 13zm-6 15v10h12c6.627 0 12 5.373 12 12s-5.373 12-12 12H44v10h-8V28h8z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-3xl font-bold text-white mb-3">Rust</h3>
+                        <p class="text-gray-400 leading-relaxed">基于 Rust 构建，提供<span
+                                style="color: #FB923C;">闪电般</span>的性能。</p>
+                    </div>
+                    <div
+                        class="bento-card p-10 rounded-2xl flex flex-col items-center text-center group hover:border-blue-500/30 transition-colors duration-500">
+                        <div class="w-24 h-24 mb-8 relative">
+                            <div
+                                class="absolute inset-0 bg-blue-500/20 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                            </div>
+                            <svg class="w-full h-full text-[#61DAFB] relative z-10" viewBox="0 0 841.9 595.3"
+                                fill="none" stroke="currentColor" stroke-width="25">
+                                <ellipse cx="420.9" cy="297.6" rx="100" ry="100" fill="currentColor" stroke="none" />
+                                <ellipse cx="420.9" cy="297.6" rx="380" ry="110" />
+                                <ellipse cx="420.9" cy="297.6" rx="380" ry="110" transform="rotate(60 420.9 297.6)" />
+                                <ellipse cx="420.9" cy="297.6" rx="380" ry="110" transform="rotate(120 420.9 297.6)" />
+                            </svg>
+                        </div>
+                        <h3 class="text-3xl font-bold text-white mb-3">React</h3>
+                        <p class="text-gray-400 leading-relaxed">使用 React 打造<span
+                                style="color: #60A5FA;">现代化</span>用户界面。</p>
+                    </div>
+                    <div
+                        class="bento-card p-10 rounded-2xl flex flex-col items-center text-center group hover:border-teal-500/30 transition-colors duration-500">
+                        <div class="w-24 h-24 mb-8 relative">
+                            <div
+                                class="absolute inset-0 bg-teal-500/20 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                            </div>
+                            <svg class="w-full h-full text-[#24C8DB] relative z-10" viewBox="0 0 256 256"
+                                fill="currentColor">
+                                <path
+                                    d="M128 0L248 64V192L128 256L8 192V64L128 0ZM128 28.8L36.8 76.8V179.2L128 227.2L219.2 179.2V76.8L128 28.8Z" />
+                                <path d="M128 70L180 100V160L128 190L76 160V100L128 70Z" fill-opacity="0.5" />
+                            </svg>
+                        </div>
+                        <h3 class="text-3xl font-bold text-white mb-3">Tauri</h3>
+                        <p class="text-gray-400 leading-relaxed">实现<span style="color: #2DD4BF;">极小体积</span>与原生集成。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- 3. ALL-IN-ONE OVERVIEW -->
+        <!-- ========================================== -->
+        <div class="space-y-4">
+            <div class="flex justify-between items-end border-b border-white/5 pb-4">
+                <h3 class="text-xl font-bold text-white">3. All-In-One Overview</h3>
+                <div class="flex gap-4">
+                    <button onclick="download('overview-en')"
+                        class="text-xs text-gray-500 hover:text-white transition">EN</button>
+                    <button onclick="download('overview-cn')"
+                        class="text-xs text-gray-500 hover:text-white transition">CN</button>
+                </div>
+            </div>
+
+            <!-- EN Horizontal -->
+            <div id="overview-en"
+                class="relative w-[1280px] h-[640px] bg-[#050505] overflow-hidden border border-white/5 rounded-xl flex">
+                <div class="absolute inset-0 bg-grid-subtle opacity-30"></div>
+
+                <!-- Left Content -->
+                <div class="w-1/2 p-16 flex flex-col justify-center z-10">
+                    <div
+                        class="inline-flex self-start items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-bold mb-8">
+                        OVERVIEW
+                    </div>
+                    <h2 class="text-6xl font-bold text-white mb-6 leading-tight">
+                        Manage Projects <br> <span style="color: #A78BFA;">Like a Pro.</span>
+                    </h2>
+                    <p class="text-xl text-gray-400 leading-relaxed mb-10">
+                        Organize local repos, launch IDEs instantly, and leverage the built-in AI Gateway.
+                    </p>
+                    <div class="flex gap-4">
+                        <div class="bento-card px-6 py-4 rounded-xl flex items-center gap-3">
+                            <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span class="font-mono text-sm text-gray-300">Local First</span>
+                        </div>
+                        <div class="bento-card px-6 py-4 rounded-xl flex items-center gap-3">
+                            <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                            <span class="font-mono text-sm text-gray-300">Zero Latency</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Visual -->
+                <div class="w-1/2 relative">
+                    <div class="absolute inset-0 bg-gradient-to-l from-purple-900/10 to-transparent"></div>
+                    <div
+                        class="absolute top-1/2 left-0 transform -translate-y-1/2 w-[120%] h-[80%] bento-card rounded-l-3xl border-r-0 p-8 flex flex-col gap-4">
+                        <!-- Mock UI Rows -->
+                        <div class="h-16 w-full bg-white/5 rounded-lg flex items-center px-6 gap-4">
+                            <div class="w-8 h-8 rounded bg-orange-500/20"></div>
+                            <div class="w-32 h-3 rounded bg-white/10"></div>
+                            <div class="ml-auto w-24 h-8 rounded bg-white/5"></div>
+                        </div>
+                        <div class="h-16 w-full bg-white/5 rounded-lg flex items-center px-6 gap-4">
+                            <div class="w-8 h-8 rounded bg-blue-500/20"></div>
+                            <div class="w-40 h-3 rounded bg-white/10"></div>
+                            <div class="ml-auto w-24 h-8 rounded bg-white/5"></div>
+                        </div>
+                        <div class="h-16 w-full bg-white/5 rounded-lg flex items-center px-6 gap-4">
+                            <div class="w-8 h-8 rounded bg-green-500/20"></div>
+                            <div class="w-24 h-3 rounded bg-white/10"></div>
+                            <div class="ml-auto w-24 h-8 rounded bg-white/5"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CN Horizontal -->
+            <div id="overview-cn"
+                class="relative w-[1280px] h-[640px] bg-[#050505] overflow-hidden border border-white/5 rounded-xl flex mt-8">
+                <div class="absolute inset-0 bg-grid-subtle opacity-30"></div>
+
+                <!-- Left Content -->
+                <div class="w-1/2 p-16 flex flex-col justify-center z-10">
+                    <div
+                        class="inline-flex self-start items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-bold mb-8">
+                        概览
+                    </div>
+                    <h2 class="text-6xl font-bold text-white mb-6 leading-tight">
+                        像专家一样 <br> <span style="color: #A78BFA;">管理项目</span>
+                    </h2>
+                    <p class="text-xl text-gray-400 leading-relaxed mb-10">
+                        组织本地仓库，瞬间启动 IDE，并利用内置的 AI 网关。
+                    </p>
+                    <div class="flex gap-4">
+                        <div class="bento-card px-6 py-4 rounded-xl flex items-center gap-3">
+                            <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span class="font-mono text-sm text-gray-300">本地优先</span>
+                        </div>
+                        <div class="bento-card px-6 py-4 rounded-xl flex items-center gap-3">
+                            <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                            <span class="font-mono text-sm text-gray-300">零延迟</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Visual -->
+                <div class="w-1/2 relative">
+                    <div class="absolute inset-0 bg-gradient-to-l from-purple-900/10 to-transparent"></div>
+                    <div
+                        class="absolute top-1/2 left-0 transform -translate-y-1/2 w-[120%] h-[80%] bento-card rounded-l-3xl border-r-0 p-8 flex flex-col gap-4">
+                        <!-- Mock UI Rows -->
+                        <div class="h-16 w-full bg-white/5 rounded-lg flex items-center px-6 gap-4">
+                            <div class="w-8 h-8 rounded bg-orange-500/20"></div>
+                            <div class="w-32 h-3 rounded bg-white/10"></div>
+                            <div class="ml-auto w-24 h-8 rounded bg-white/5"></div>
+                        </div>
+                        <div class="h-16 w-full bg-white/5 rounded-lg flex items-center px-6 gap-4">
+                            <div class="w-8 h-8 rounded bg-blue-500/20"></div>
+                            <div class="w-40 h-3 rounded bg-white/10"></div>
+                            <div class="ml-auto w-24 h-8 rounded bg-white/5"></div>
+                        </div>
+                        <div class="h-16 w-full bg-white/5 rounded-lg flex items-center px-6 gap-4">
+                            <div class="w-8 h-8 rounded bg-green-500/20"></div>
+                            <div class="w-24 h-3 rounded bg-white/10"></div>
+                            <div class="ml-auto w-24 h-8 rounded bg-white/5"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- 4. FEATURE SHOWCASE -->
+        <!-- ========================================== -->
+        <div class="space-y-4">
+            <div class="flex justify-between items-end border-b border-white/5 pb-4">
+                <h3 class="text-xl font-bold text-white">4. Feature Showcase</h3>
+                <div class="flex gap-4">
+                    <button onclick="download('features-en')"
+                        class="text-xs text-gray-500 hover:text-white transition">EN</button>
+                    <button onclick="download('features-cn')"
+                        class="text-xs text-gray-500 hover:text-white transition">CN</button>
+                </div>
+            </div>
+
+            <!-- EN Horizontal -->
+            <div id="features-en"
+                class="relative w-[1280px] h-[640px] bg-[#050505] overflow-hidden border border-white/5 rounded-xl flex flex-col items-center justify-center">
+                <div class="absolute inset-0 bg-grid-subtle opacity-30"></div>
+                <div class="relative z-10 text-center mb-12">
+                    <h2 class="text-5xl font-bold text-white mb-4">Powerful Features</h2>
+                    <p class="text-xl text-gray-400">Designed for the modern workflow</p>
+                </div>
+                <div class="relative z-10 grid grid-cols-3 gap-8 w-full max-w-5xl px-12">
+                    <div class="bento-card p-8 rounded-xl border-t border-green-500/50">
+                        <h3 class="text-2xl font-bold text-white mb-2">AI Gateway</h3>
+                        <p class="text-gray-400 text-sm">Built-in high performance AI gateway to connect your local apps
+                            with LLMs.</p>
+                    </div>
+                    <div class="bento-card p-8 rounded-xl border-t border-blue-500/50">
+                        <h3 class="text-2xl font-bold text-white mb-2">Multi-Project</h3>
+                        <p class="text-gray-400 text-sm">Scan and manage hundreds of local projects with zero latency.
+                        </p>
+                    </div>
+                    <div class="bento-card p-8 rounded-xl border-t border-purple-500/50">
+                        <h3 class="text-2xl font-bold text-white mb-2">Vibe Friendly</h3>
+                        <p class="text-gray-400 text-sm">Optimized for VibeCoding, making development fun again.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CN Horizontal -->
+            <div id="features-cn"
+                class="relative w-[1280px] h-[640px] bg-[#050505] overflow-hidden border border-white/5 rounded-xl flex flex-col items-center justify-center mt-8">
+                <div class="absolute inset-0 bg-grid-subtle opacity-30"></div>
+                <div class="relative z-10 text-center mb-12">
+                    <h2 class="text-5xl font-bold text-white mb-4">强大特性</h2>
+                    <p class="text-xl text-gray-400">专为现代工作流设计</p>
+                </div>
+                <div class="relative z-10 grid grid-cols-3 gap-8 w-full max-w-5xl px-12">
+                    <div class="bento-card p-8 rounded-xl border-t border-green-500/50">
+                        <h3 class="text-2xl font-bold text-white mb-2">AI 网关</h3>
+                        <p class="text-gray-400 text-sm">内置高性能 AI 网关，连接本地应用与大模型。</p>
+                    </div>
+                    <div class="bento-card p-8 rounded-xl border-t border-blue-500/50">
+                        <h3 class="text-2xl font-bold text-white mb-2">多项目管理</h3>
+                        <p class="text-gray-400 text-sm">零延迟扫描和管理数百个本地项目。</p>
+                    </div>
+                    <div class="bento-card p-8 rounded-xl border-t border-purple-500/50">
+                        <h3 class="text-2xl font-bold text-white mb-2">Vibe 友好</h3>
+                        <p class="text-gray-400 text-sm">专为 VibeCoding 优化，让开发重获乐趣。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- VERTICAL VERSIONS (Hidden off-screen usually, but visible here for preview) -->
+        <!-- ========================================== -->
+        <div class="space-y-4">
+            <div class="flex justify-between items-end border-b border-white/5 pb-4">
+                <h3 class="text-xl font-bold text-white">Vertical Versions (Preview)</h3>
+            </div>
+
+            <div class="grid grid-cols-4 gap-4">
+                <!-- Repo Header Vertical EN -->
+                <div id="repo-header-v-en"
+                    class="relative w-[1080px] h-[1920px] bg-[#050505] overflow-hidden border border-white/5 flex flex-col items-center justify-center p-16 scale-[0.2] origin-top-left"
+                    style="margin-bottom: -1500px;">
+                    <div class="absolute inset-0 bg-grid-subtle opacity-50"></div>
+                    <div
+                        class="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-blue-900/10 via-transparent to-purple-900/10">
+                    </div>
+
+                    <h1 class="text-[120px] font-black text-white text-center mb-12 leading-none">Vibe<span
+                            style="color: #8B5CF6;">Hub</span></h1>
+                    <p class="text-4xl text-gray-400 text-center font-light mb-24">Your Local Command
+                        Center.<br>Infinite Possibilities.</p>
+
+                    <div class="space-y-8 w-full">
+                        <div class="bento-card p-8 rounded-3xl flex items-center gap-6">
+                            <div class="w-4 h-4 rounded-full bg-blue-500"></div>
+                            <span class="text-4xl text-white">Local First</span>
+                        </div>
+                        <div class="bento-card p-8 rounded-3xl flex items-center gap-6">
+                            <div class="w-4 h-4 rounded-full bg-purple-500"></div>
+                            <span class="text-4xl text-white">Tag System</span>
+                        </div>
+                        <div class="bento-card p-8 rounded-3xl flex items-center gap-6">
+                            <div class="w-4 h-4 rounded-full bg-green-500"></div>
+                            <span class="text-4xl text-white">Automation</span>
+                        </div>
+                        <div class="bento-card p-8 rounded-3xl flex items-center gap-6">
+                            <div class="w-4 h-4 rounded-full bg-orange-500"></div>
+                            <span class="text-4xl text-white">AI Gateway</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Repo Header Vertical CN -->
+                <div id="repo-header-v-cn"
+                    class="relative w-[1080px] h-[1920px] bg-[#050505] overflow-hidden border border-white/5 flex flex-col items-center justify-center p-16 scale-[0.2] origin-top-left"
+                    style="margin-bottom: -1500px;">
+                    <div class="absolute inset-0 bg-grid-subtle opacity-50"></div>
+                    <div
+                        class="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-blue-900/10 via-transparent to-purple-900/10">
+                    </div>
+
+                    <h1 class="text-[120px] font-black text-white text-center mb-12 leading-none">Vibe<span
+                            style="color: #3B82F6;">Hub</span></h1>
+                    <p class="text-4xl text-gray-400 text-center font-light mb-24">你的本地指挥中心。<br>解锁无限可能。</p>
+
+                    <div class="space-y-8 w-full">
+                        <div class="bento-card p-8 rounded-3xl flex items-center gap-6">
+                            <div class="w-4 h-4 rounded-full bg-blue-500"></div>
+                            <span class="text-4xl text-white">本地优先</span>
+                        </div>
+                        <div class="bento-card p-8 rounded-3xl flex items-center gap-6">
+                            <div class="w-4 h-4 rounded-full bg-purple-500"></div>
+                            <span class="text-4xl text-white">标签系统</span>
+                        </div>
+                        <div class="bento-card p-8 rounded-3xl flex items-center gap-6">
+                            <div class="w-4 h-4 rounded-full bg-green-500"></div>
+                            <span class="text-4xl text-white">自动化</span>
+                        </div>
+                        <div class="bento-card p-8 rounded-3xl flex items-center gap-6">
+                            <div class="w-4 h-4 rounded-full bg-orange-500"></div>
+                            <span class="text-4xl text-white">AI 网关</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        document.fonts.ready.then(function () {
+            console.log('Fonts loaded');
+        });
+
+        function download(id) {
+            const element = document.getElementById(id);
+            const scale = 2; // High res
+
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.innerText = "⏳";
+
+            html2canvas(element, {
+                backgroundColor: null,
+                scale: scale,
+                logging: false,
+                useCORS: true,
+                onclone: (clonedDoc) => {
+                    clonedDoc.fonts.ready.then(() => {
+                        console.log('Cloned fonts ready');
+                    });
+                }
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `VibeHub-${id}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                btn.innerText = originalText;
+            });
+        }
+
+        function downloadAll(lang) {
+            let ids = [];
+            if (lang === 'en') {
+                ids = ['repo-header-en', 'tech-en', 'overview-en', 'features-en', 'repo-header-v-en'];
+            } else if (lang === 'cn') {
+                ids = ['repo-header-cn', 'tech-cn', 'overview-cn', 'features-cn', 'repo-header-v-cn'];
+            }
+
+            let i = 0;
+            function next() {
+                if (i >= ids.length) return;
+                download(ids[i]);
+                i++;
+                setTimeout(next, 1000);
+            }
+            next();
+        }
+    </script>
+</body>
+
+</html>

@@ -103,6 +103,8 @@
     "gateway": {
         "title": "AI 閘道",
         "subtitle": "管理本機 AI 代理和供應商",
+        "noSecretNeeded": "無需 API Secret，直接使用！",
+        "copyUrl": "點擊複製地址",
         "claudeCode": "Claude Code",
         "codex": "CodeX",
         "openaiChat": "OpenAI Chat",

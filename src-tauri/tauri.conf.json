@@ -1,8 +1,8 @@
 {
     "$schema": "https://schema.tauri.app/config/2.0",
-    "productName": "VibeCoding Launcher",
-    "version": "1.2.0",
-    "identifier": "com.vibecoding.launcher",
+    "productName": "VibeHub",
+    "version": "1.2.1",
+    "identifier": "com.vibehub.launcher",
     "build": {
         "beforeDevCommand": "npm run dev",
         "devUrl": "http://localhost:1420",
@@ -13,14 +13,14 @@
         "withGlobalTauri": true,
         "windows": [
             {
-                "title": "VibeCoding Launcher",
+                "title": "VibeHub",
                 "width": 1200,
                 "height": 800,
                 "minWidth": 900,
                 "minHeight": 600,
                 "resizable": true,
                 "fullscreen": false,
-                "decorations": true,
+                "decorations": false,
                 "transparent": false,
                 "center": true
             }

@@ -1,7 +1,8 @@
 {
-    "name": "vibe-coding-launcher",
-    "version": "0.1.0",
+    "name": "vibehub",
+    "version": "1.2.1",
     "description": "A cross-platform launcher for development tools",
+    "license": "Apache-2.0",
     "type": "module",
     "scripts": {
         "dev": "vite",

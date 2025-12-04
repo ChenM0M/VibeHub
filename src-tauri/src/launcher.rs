@@ -53,7 +53,7 @@ impl Launcher {
         let mut cmd = Command::new("cmd");
         cmd.arg("/C");
         cmd.arg("start");
-        cmd.arg(format!("VibeCoding - {}", executable)); // Title (first quoted arg)
+        cmd.arg(format!("VibeHub - {}", executable)); // Title (first quoted arg)
         cmd.arg("/D");
         cmd.arg(project_path); // Working directory
         

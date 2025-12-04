@@ -203,7 +203,7 @@ export function ProviderList({ providers, providerStatuses, providerStats, onUpd
     };
 
     return (
-        <Card className="col-span-3">
+        <Card className="min-h-[400px]">
             <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>{t('gateway.providers')}</CardTitle>
                 <Button size="sm" onClick={onAdd}>
