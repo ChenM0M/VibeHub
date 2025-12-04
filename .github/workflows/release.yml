@@ -4,13 +4,11 @@ on:
     tags:
       - 'v*'
 
-# 为了双重保险，保留这个权限声明
 permissions:
   contents: write
 
 env:
-# 必须显式传递 Token，否则有 permissions 也没用！
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   release:
@@ -59,18 +57,12 @@ jobs:
           releaseDraft: true
           prerelease: false
 
+      # Windows Portable
       - name: Prepare Portable Version (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
-          copy src-tauri\target\release\vibe-coding-launcher.exe VibeCoding-Launcher-Portable.exe
-        shell: cmd
-
-      - name: Upload Portable as Additional Asset (Windows)
-        if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-portable
-          path: VibeCoding-Launcher-Portable.exe
+          Copy-Item "src-tauri\target\release\vibehub.exe" "VibeHub-Portable-Windows.exe"
+        shell: pwsh
 
       - name: Attach Portable to Release (Windows)
         if: matrix.platform == 'windows-latest'
@@ -78,7 +70,42 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         with:
-          files: VibeCoding-Launcher-Portable.exe
+          files: VibeHub-Portable-Windows.exe
           tag_name: ${{ github.ref_name }}
           draft: true
-          fail_on_unmatched_files: true
+
+      # macOS Portable
+      - name: Prepare Portable Version (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          cp src-tauri/target/release/vibehub VibeHub-Portable-macOS
+          chmod +x VibeHub-Portable-macOS
+          zip VibeHub-Portable-macOS.zip VibeHub-Portable-macOS
+
+      - name: Attach Portable to Release (macOS)
+        if: matrix.platform == 'macos-latest'
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
+        with:
+          files: VibeHub-Portable-macOS.zip
+          tag_name: ${{ github.ref_name }}
+          draft: true
+
+      # Linux Portable
+      - name: Prepare Portable Version (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          cp src-tauri/target/release/vibehub VibeHub-Portable-Linux
+          chmod +x VibeHub-Portable-Linux
+          tar -czvf VibeHub-Portable-Linux.tar.gz VibeHub-Portable-Linux
+
+      - name: Attach Portable to Release (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
+        with:
+          files: VibeHub-Portable-Linux.tar.gz
+          tag_name: ${{ github.ref_name }}
+          draft: true
