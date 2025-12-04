@@ -52,7 +52,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'VibeCoding Launcher ${{ github.ref_name }}'
+          releaseName: 'VibeHub ${{ github.ref_name }}'
           releaseBody: |
             ## 🚀 What's New
             Auto-generated release.

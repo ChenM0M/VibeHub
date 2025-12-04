@@ -103,6 +103,8 @@
     "gateway": {
         "title": "AI Gateway",
         "subtitle": "Manage your local AI proxy and providers",
+        "noSecretNeeded": "No API Secret needed!",
+        "copyUrl": "Click to copy URL",
         "claudeCode": "Claude Code",
         "codex": "CodeX",
         "openaiChat": "OpenAI Chat",

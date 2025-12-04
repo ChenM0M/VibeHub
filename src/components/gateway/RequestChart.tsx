@@ -31,7 +31,7 @@ export function RequestChart({ data }: RequestChartProps) {
     }));
 
     return (
-        <Card className="col-span-4">
+        <Card className="min-h-[400px]">
             <CardHeader>
                 <CardTitle>{t('gateway.stats.hourlyActivity')}</CardTitle>
             </CardHeader>
