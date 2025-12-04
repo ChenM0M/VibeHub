@@ -23,6 +23,7 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 dashmap = "5.5"
+sha2 = "0.10"
 
 [features]
 default = ["custom-protocol"]

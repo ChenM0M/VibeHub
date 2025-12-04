@@ -14,15 +14,25 @@
         "search": "搜尋",
         "loading": "載入中...",
         "error": "錯誤",
-        "success": "成功"
+        "success": "成功",
+        "running": "運行中",
+        "stopped": "已停止",
+        "healthy": "健康",
+        "cooldown": "冷卻中",
+        "requests": "請求數",
+        "never": "從未",
+        "secondsAgo": "{{count}}秒前",
+        "minutesAgo": "{{count}}分鐘前",
+        "hoursAgo": "{{count}}小時前",
+        "daysAgo": "{{count}}天前"
     },
     "home": {
         "title": "專案",
         "searchPlaceholder": "搜尋專案...",
         "starredProjects": "收藏專案",
         "allProjects": "所有專案",
-        "totalProjects": "總專案數",
         "noProjects": "暫無專案",
+        "totalProjects": "個專案",
         "scan": "掃描",
         "refresh": "重新整理"
     },
@@ -33,7 +43,16 @@
         "star": "收藏",
         "unstar": "取消收藏",
         "edit": "編輯專案",
-        "tags": "標籤"
+        "tags": "標籤",
+        "description": "描述",
+        "icon": "圖示",
+        "presetIcon": "預設圖示",
+        "customUrl": "自訂 URL",
+        "searchIcons": "搜尋圖示...",
+        "techStack": "技術棧",
+        "searchTech": "搜尋技術棧...",
+        "addCustomTech": "新增自訂技術棧...",
+        "themeColor": "主題色"
     },
     "settings": {
         "title": "設定",
@@ -42,7 +61,7 @@
             "title": "工作區目錄",
             "subtitle": "新增包含專案的資料夾。我們會自動掃描這些目錄。",
             "add": "新增工作區",
-            "noWorkspaces": "暫無工作區，請新增一個目錄開始使用。"
+            "noWorkspaces": "暫無工作區，請新增一個目錄以開始使用。"
         },
         "tags": {
             "title": "標籤管理",
@@ -74,11 +93,63 @@
             "custom": "自訂"
         },
         "config": {
-            "title": "配置",
-            "executable": "執行檔",
+            "title": "設定",
+            "executable": "可執行檔",
             "arguments": "參數",
             "envVars": "環境變數",
             "addEnv": "新增變數"
+        }
+    },
+    "gateway": {
+        "title": "AI 閘道",
+        "subtitle": "管理本機 AI 代理和供應商",
+        "claudeCode": "Claude Code",
+        "codex": "CodeX",
+        "openaiChat": "OpenAI Chat",
+        "totalRequests": "總請求數",
+        "allGateways": "所有閘道累計",
+        "tokenUsage": "Token 用量",
+        "input": "輸入",
+        "output": "輸出",
+        "cacheHits": "快取命中",
+        "cacheMisses": "未命中",
+        "estimatedCost": "預估費用",
+        "basedOnTokens": "基於 Token 用量",
+        "recentRequests": "最近請求",
+        "realtimeLog": "AI 互動即時日誌",
+        "noRequests": "暫無請求記錄",
+        "time": "時間",
+        "type": "類型",
+        "client": "用戶端",
+        "path": "路徑",
+        "provider": "供應商",
+        "status": "狀態",
+        "latency": "延遲",
+        "tokens": "Tokens",
+        "cost": "費用",
+        "providers": "供應商列表",
+        "addProvider": "新增供應商",
+        "successRate": "成功率",
+        "consecutiveFailures": "連續失敗",
+        "lastFailure": "最後失敗",
+        "form": {
+            "addTitle": "新增供應商",
+            "editTitle": "編輯供應商",
+            "name": "名稱",
+            "namePlaceholder": "例如: Claude Official",
+            "baseUrl": "基礎 URL",
+            "baseUrlPlaceholder": "https://api.anthropic.com",
+            "apiKey": "API 金鑰",
+            "apiKeyPlaceholder": "sk-...",
+            "supportedApiTypes": "支援的 API 類型",
+            "weight": "權重",
+            "inputPrice": "輸入價格 ($/1K)",
+            "outputPrice": "輸出價格 ($/1K)",
+            "cancel": "取消",
+            "save": "儲存"
+        },
+        "stats": {
+            "hourlyActivity": "時段活動"
         }
     }
 }

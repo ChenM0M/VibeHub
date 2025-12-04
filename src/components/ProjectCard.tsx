@@ -32,6 +32,7 @@ import { zhCN, enUS, zhTW } from 'date-fns/locale';
 import { ProjectEditDialog } from './ProjectEditDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslation } from 'react-i18next';
+import { getTechStackById } from '@/lib/techStackData';
 
 interface ProjectCardProps {
     project: Project;
@@ -105,8 +106,6 @@ export function ProjectCard({ project, onLaunch }: ProjectCardProps) {
 
     const hasLaunchableTags = project.tags.some(tagId => {
         const tag = config?.tags.find(t => t.id === tagId);
-        // Check if tag has config AND (executable OR args OR env)
-        // Even if only env is set, it might be launchable if we default to a shell
         return tag?.config && (tag.config.executable || tag.config.args || tag.config.env);
     });
 
@@ -117,13 +116,18 @@ export function ProjectCard({ project, onLaunch }: ProjectCardProps) {
                 await launchTool(project.id);
             } catch (error) {
                 console.error('Launch failed:', error);
-                // Fallback to dialog if launch fails
                 onLaunch(project);
             }
         } else {
             onLaunch(project);
         }
     };
+
+    // Get tech stack items to display (max 4, show +N for overflow)
+    const techStackItems = project.tech_stack || [];
+    const maxTechDisplay = 4;
+    const displayedTech = techStackItems.slice(0, maxTechDisplay);
+    const remainingTech = techStackItems.length - maxTechDisplay;
 
     return (
         <ContextMenu>
@@ -143,19 +147,54 @@ export function ProjectCard({ project, onLaunch }: ProjectCardProps) {
                     >
                         {project.cover_image && <div className="absolute inset-0 bg-black/20 backdrop-blur-[1px]" />}
 
-                        <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
-                            <div className="p-2 bg-background/60 backdrop-blur-sm rounded-lg shadow-sm">
+                        <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
+                            <div className="p-1.5 bg-background/60 backdrop-blur-sm rounded-lg shadow-sm">
                                 {project.icon ? (
-                                    <img src={project.icon} alt={project.name} className="w-8 h-8 object-contain" />
+                                    <img src={project.icon} alt={project.name} className="w-7 h-7 object-contain" />
                                 ) : (
-                                    <div className="w-8 h-8 flex items-center justify-center">
+                                    <div className="w-7 h-7 flex items-center justify-center">
                                         {typeInfo.icon}
                                     </div>
                                 )}
                             </div>
-                            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-background/40 backdrop-blur-sm border border-black/5 dark:border-white/10">
-                                {typeInfo.label}
-                            </span>
+                            {/* Tech Stack Badges */}
+                            <div className="flex items-center gap-1">
+                                {displayedTech.map(techId => {
+                                    const tech = getTechStackById(techId);
+                                    return tech ? (
+                                        <TooltipProvider key={techId}>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <div className="p-1 bg-background/60 backdrop-blur-sm rounded shadow-sm">
+                                                        <img src={tech.icon} alt={tech.name} className="w-4 h-4" />
+                                                    </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="bottom" className="text-xs">
+                                                    {tech.name}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                    ) : (
+                                        <span key={techId} className="px-1.5 py-0.5 bg-background/60 backdrop-blur-sm rounded text-[10px] font-medium">
+                                            {techId}
+                                        </span>
+                                    );
+                                })}
+                                {remainingTech > 0 && (
+                                    <TooltipProvider>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <span className="px-1.5 py-0.5 bg-background/60 backdrop-blur-sm rounded text-[10px] font-medium">
+                                                    +{remainingTech}
+                                                </span>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="bottom" className="text-xs max-w-[200px]">
+                                                {techStackItems.slice(maxTechDisplay).map(id => getTechStackById(id)?.name || id).join(', ')}
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                )}
+                            </div>
                         </div>
 
                         <div className="absolute top-3 right-3 z-10">

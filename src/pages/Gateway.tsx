@@ -1,23 +1,27 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Activity, Server, Coins, Database, Zap } from 'lucide-react';
+import { Server, Coins, Database, Zap, Bot, MessageSquare, Code2 } from 'lucide-react';
 import { GatewayConfig, Provider, GatewayStats } from '@/types/gateway';
 import { ProviderForm } from '@/components/gateway/ProviderForm';
 import { StatsCard } from '@/components/gateway/StatsCard';
 import { RequestChart } from '@/components/gateway/RequestChart';
 import { ProviderList } from '@/components/gateway/ProviderList';
 import { formatDistanceToNow } from 'date-fns';
+import { Badge } from '@/components/ui/badge';
 
 interface ProviderStatusEvent {
     provider_id: string;
     status: string;
+    api_type: string;
 }
 
 export function Gateway() {
+    const { t } = useTranslation();
     const [config, setConfig] = useState<GatewayConfig | null>(null);
     const [stats, setStats] = useState<GatewayStats | null>(null);
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -47,14 +51,12 @@ export function Gateway() {
         const interval = setInterval(loadStats, 5000);
         loadStats();
 
-        // Listen for provider status events
         const unlistenPromise = listen<ProviderStatusEvent>('gateway://provider-status', (event) => {
             setProviderStatuses(prev => ({
                 ...prev,
                 [event.payload.provider_id]: event.payload.status
             }));
 
-            // Clear status after 3 seconds if success or error
             if (event.payload.status !== 'pending') {
                 setTimeout(() => {
                     setProviderStatuses(prev => {
@@ -63,7 +65,6 @@ export function Gateway() {
                         return next;
                     });
                 }, 3000);
-                // Also reload stats immediately on completion
                 loadStats();
             }
         });
@@ -83,9 +84,10 @@ export function Gateway() {
         }
     };
 
-    const handleToggleGateway = (enabled: boolean) => {
+    const handleToggleGateway = (type: 'anthropic' | 'responses' | 'chat', enabled: boolean) => {
         if (!config) return;
-        handleSaveConfig({ ...config, enabled });
+        const key = `${type}_enabled` as keyof GatewayConfig;
+        handleSaveConfig({ ...config, [key]: enabled });
     };
 
     const handleProvidersReorder = (providers: Provider[]) => {
@@ -114,52 +116,131 @@ export function Gateway() {
         await handleSaveConfig({ ...config, providers: newProviders });
     };
 
-    if (!config) return <div className="p-8">Loading...</div>;
+    if (!config) return <div className="p-8">{t('common.loading')}</div>;
+
+    const cacheHitRate = stats && (stats.cache_hits + stats.cache_misses) > 0
+        ? ((stats.cache_hits / (stats.cache_hits + stats.cache_misses)) * 100).toFixed(1)
+        : '0';
 
     return (
         <div className="space-y-6 p-8 max-w-[1600px] mx-auto">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">AI 网关</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">{t('gateway.title')}</h1>
                     <p className="text-muted-foreground mt-2">
-                        Manage your local AI proxy and providers
+                        {t('gateway.subtitle')}
                     </p>
-                </div>
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">Global Switch</span>
-                        <Switch checked={config.enabled} onCheckedChange={handleToggleGateway} />
-                    </div>
-                    <div className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${config.enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
-                        <Activity className="h-4 w-4" />
-                        {config.enabled ? 'Running on :12345' : 'Stopped'}
-                    </div>
                 </div>
             </div>
 
+            {/* Gateway Status Cards */}
+            <div className="grid gap-4 md:grid-cols-3">
+                {/* Anthropic Gateway */}
+                <Card className={config.anthropic_enabled ? 'border-blue-500/30 bg-blue-500/5' : ''}>
+                    <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Bot className="h-5 w-5 text-blue-500" />
+                                <CardTitle className="text-base">{t('gateway.claudeCode')}</CardTitle>
+                            </div>
+                            <Switch
+                                checked={config.anthropic_enabled}
+                                onCheckedChange={(v) => handleToggleGateway('anthropic', v)}
+                            />
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-between">
+                            <code className="text-sm text-muted-foreground">:{config.anthropic_port}</code>
+                            <Badge variant={config.anthropic_enabled ? "default" : "secondary"}>
+                                {config.anthropic_enabled ? t('common.running') : t('common.stopped')}
+                            </Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-2">
+                            {t('common.requests')}: {stats?.anthropic_requests || 0}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* OpenAI Responses Gateway */}
+                <Card className={config.responses_enabled ? 'border-green-500/30 bg-green-500/5' : ''}>
+                    <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Code2 className="h-5 w-5 text-green-500" />
+                                <CardTitle className="text-base">{t('gateway.codex')}</CardTitle>
+                            </div>
+                            <Switch
+                                checked={config.responses_enabled}
+                                onCheckedChange={(v) => handleToggleGateway('responses', v)}
+                            />
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-between">
+                            <code className="text-sm text-muted-foreground">:{config.responses_port}</code>
+                            <Badge variant={config.responses_enabled ? "default" : "secondary"}>
+                                {config.responses_enabled ? t('common.running') : t('common.stopped')}
+                            </Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-2">
+                            {t('common.requests')}: {stats?.responses_requests || 0}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* OpenAI Chat Gateway */}
+                <Card className={config.chat_enabled ? 'border-yellow-500/30 bg-yellow-500/5' : ''}>
+                    <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <MessageSquare className="h-5 w-5 text-yellow-500" />
+                                <CardTitle className="text-base">{t('gateway.openaiChat')}</CardTitle>
+                            </div>
+                            <Switch
+                                checked={config.chat_enabled}
+                                onCheckedChange={(v) => handleToggleGateway('chat', v)}
+                            />
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-between">
+                            <code className="text-sm text-muted-foreground">:{config.chat_port}</code>
+                            <Badge variant={config.chat_enabled ? "default" : "secondary"}>
+                                {config.chat_enabled ? t('common.running') : t('common.stopped')}
+                            </Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-2">
+                            {t('common.requests')}: {stats?.chat_requests || 0}
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* Stats Cards */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <StatsCard
-                    title="Total Requests"
+                    title={t('gateway.totalRequests')}
                     value={stats?.total_requests.toLocaleString() || '0'}
-                    description="Lifetime requests"
+                    description={t('gateway.allGateways')}
                     icon={Server}
                 />
                 <StatsCard
-                    title="Token Usage"
+                    title={t('gateway.tokenUsage')}
                     value={((stats?.total_input_tokens || 0) + (stats?.total_output_tokens || 0)).toLocaleString()}
-                    description={`In: ${(stats?.total_input_tokens || 0).toLocaleString()} / Out: ${(stats?.total_output_tokens || 0).toLocaleString()}`}
+                    description={`${t('gateway.input')}: ${(stats?.total_input_tokens || 0).toLocaleString()} / ${t('gateway.output')}: ${(stats?.total_output_tokens || 0).toLocaleString()}`}
                     icon={Zap}
                 />
                 <StatsCard
-                    title="Cache Hits"
-                    value={stats?.cache_hits.toLocaleString() || '0'}
-                    description="Requests served from cache"
+                    title={t('gateway.cacheHits')}
+                    value={`${stats?.cache_hits.toLocaleString() || '0'} (${cacheHitRate}%)`}
+                    description={`${t('gateway.cacheMisses')}: ${stats?.cache_misses || 0}`}
                     icon={Database}
                 />
                 <StatsCard
-                    title="Estimated Cost"
+                    title={t('gateway.estimatedCost')}
                     value={`$${(stats?.total_cost || 0).toFixed(4)}`}
-                    description="Based on token usage"
+                    description={t('gateway.basedOnTokens')}
                     icon={Coins}
                 />
             </div>
@@ -169,6 +250,7 @@ export function Gateway() {
                 <ProviderList
                     providers={config.providers}
                     providerStatuses={providerStatuses}
+                    providerStats={stats?.provider_stats || {}}
                     onUpdate={handleProvidersReorder}
                     onEdit={(p) => {
                         setEditingProvider(p);
@@ -184,26 +266,32 @@ export function Gateway() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Recent Requests</CardTitle>
-                    <CardDescription>Real-time log of AI interactions</CardDescription>
+                    <CardTitle>{t('gateway.recentRequests')}</CardTitle>
+                    <CardDescription>{t('gateway.realtimeLog')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border">
-                        <div className="grid grid-cols-8 gap-4 p-4 font-medium text-sm bg-muted/50 border-b">
-                            <div>Time</div>
-                            <div>Client</div>
-                            <div>Path</div>
-                            <div>Provider</div>
-                            <div>Status</div>
-                            <div>Duration</div>
-                            <div>Tokens</div>
-                            <div>Cost</div>
+                        <div className="grid grid-cols-9 gap-4 p-4 font-medium text-sm bg-muted/50 border-b">
+                            <div>{t('gateway.time')}</div>
+                            <div>{t('gateway.type')}</div>
+                            <div>{t('gateway.client')}</div>
+                            <div>{t('gateway.path')}</div>
+                            <div>{t('gateway.provider')}</div>
+                            <div>{t('gateway.status')}</div>
+                            <div>{t('gateway.latency')}</div>
+                            <div>{t('gateway.tokens')}</div>
+                            <div>{t('gateway.cost')}</div>
                         </div>
                         <div className="max-h-[300px] overflow-y-auto">
                             {stats?.recent_requests.map((log) => (
-                                <div key={log.id} className="grid grid-cols-8 gap-4 p-4 text-sm border-b last:border-0 hover:bg-muted/30 transition-colors">
+                                <div key={log.id} className="grid grid-cols-9 gap-4 p-4 text-sm border-b last:border-0 hover:bg-muted/30 transition-colors">
                                     <div className="text-muted-foreground">
                                         {formatDistanceToNow(new Date(log.timestamp * 1000), { addSuffix: true })}
+                                    </div>
+                                    <div>
+                                        <Badge variant="outline" className="text-[10px]">
+                                            {log.api_type || 'unknown'}
+                                        </Badge>
                                     </div>
                                     <div className="truncate font-mono text-xs" title={log.client_agent}>{log.client_agent}</div>
                                     <div className="truncate font-mono text-xs" title={log.path}>{log.path}</div>
@@ -211,6 +299,7 @@ export function Gateway() {
                                     <div>
                                         <span className={`px-2 py-0.5 rounded text-xs ${log.status >= 200 && log.status < 300 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
                                             {log.status}
+                                            {log.cached && ' 📦'}
                                         </span>
                                     </div>
                                     <div>{log.duration_ms}ms</div>
@@ -220,7 +309,7 @@ export function Gateway() {
                             ))}
                             {(!stats?.recent_requests || stats.recent_requests.length === 0) && (
                                 <div className="p-8 text-center text-muted-foreground">
-                                    No requests recorded yet.
+                                    {t('gateway.noRequests')}
                                 </div>
                             )}
                         </div>
@@ -231,7 +320,7 @@ export function Gateway() {
             <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>{editingProvider ? 'Edit Provider' : 'Add Provider'}</DialogTitle>
+                        <DialogTitle>{editingProvider ? t('gateway.form.editTitle') : t('gateway.form.addTitle')}</DialogTitle>
                     </DialogHeader>
                     <ProviderForm
                         initialData={editingProvider || undefined}

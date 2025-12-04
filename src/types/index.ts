@@ -47,6 +47,7 @@ export interface Project {
     icon?: string;
     cover_image?: string;
     theme_color?: string;
+    tech_stack: string[];
     metadata: ProjectMetadata;
 }
 

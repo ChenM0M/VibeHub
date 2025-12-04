@@ -1,6 +1,7 @@
 pub mod config;
 pub mod proxy;
 pub mod stats;
+pub mod cache;
 
 use tauri::{AppHandle, Manager, Runtime, State};
 use std::sync::Arc;
@@ -59,6 +60,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        proxy::start_server(12345, config_state, stats_manager, app_handle).await;
+        // 启动三个独立的网关服务器
+        proxy::start_servers(config_state, stats_manager, app_handle).await;
     });
 }

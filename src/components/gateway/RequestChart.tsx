@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
     Area,
     AreaChart,
@@ -21,6 +22,8 @@ interface RequestChartProps {
 }
 
 export function RequestChart({ data }: RequestChartProps) {
+    const { t } = useTranslation();
+
     // Format data for chart
     const chartData = data.map(d => ({
         ...d,
@@ -30,7 +33,7 @@ export function RequestChart({ data }: RequestChartProps) {
     return (
         <Card className="col-span-4">
             <CardHeader>
-                <CardTitle>Traffic Overview</CardTitle>
+                <CardTitle>{t('gateway.stats.hourlyActivity')}</CardTitle>
             </CardHeader>
             <CardContent className="pl-2">
                 <div className="h-[300px] w-full">
@@ -71,7 +74,7 @@ export function RequestChart({ data }: RequestChartProps) {
                                 stroke="#8884d8"
                                 fillOpacity={1}
                                 fill="url(#colorRequests)"
-                                name="Requests"
+                                name={t('common.requests')}
                             />
                             <Area
                                 type="monotone"
@@ -79,7 +82,7 @@ export function RequestChart({ data }: RequestChartProps) {
                                 stroke="#82ca9d"
                                 fillOpacity={1}
                                 fill="url(#colorTokens)"
-                                name="Input Tokens"
+                                name={t('gateway.input') + ' Tokens'}
                             />
                         </AreaChart>
                     </ResponsiveContainer>

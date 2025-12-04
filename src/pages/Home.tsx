@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { LaunchDialog } from '@/components/LaunchDialog';
 import { Project } from '@/types';
-import { FolderSearch, RefreshCw, FolderOpen } from 'lucide-react';
+import { FolderSearch, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,7 +37,7 @@ export function Home({ searchQuery }: HomeProps) {
     const { config, reorderProjects, refreshConfig, selectedWorkspaceId } = useAppStore();
     const [launchProject, setLaunchProject] = useState<Project | null>(null);
     const [isScanning, setIsScanning] = useState(false);
-    const [isDragging, setIsDragging] = useState(false);
+
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -75,17 +75,14 @@ export function Home({ searchQuery }: HomeProps) {
 
     const onDragOver = (e: React.DragEvent) => {
         e.preventDefault();
-        setIsDragging(true);
     };
 
     const onDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
-        setIsDragging(false);
     };
 
     const onDrop = async (e: React.DragEvent) => {
         e.preventDefault();
-        setIsDragging(false);
         // Drag and drop file logic can be added here
     };
 

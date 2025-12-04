@@ -85,6 +85,7 @@ impl Scanner {
             icon: None,
             cover_image: None,
             theme_color: None,
+            tech_stack: Vec::new(),
             metadata,
         })
     }

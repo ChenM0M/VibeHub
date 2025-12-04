@@ -36,6 +36,8 @@ pub struct Project {
     pub icon: Option<String>,
     pub cover_image: Option<String>,
     pub theme_color: Option<String>,
+    #[serde(default)]
+    pub tech_stack: Vec<String>,
     pub metadata: ProjectMetadata,
 }
 
