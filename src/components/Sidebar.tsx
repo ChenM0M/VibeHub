@@ -7,7 +7,8 @@ import {
     LayoutGrid,
     ChevronRight,
     ChevronDown,
-    Activity
+    Activity,
+    RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -15,19 +16,30 @@ import { useTranslation } from 'react-i18next';
 import { TagEditDialog } from './TagEditDialog';
 import { Tag } from '@/types';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
+import { useEffect } from 'react';
+
+type PageType = 'home' | 'settings' | 'gateway' | 'about';
 
 interface SidebarProps {
     className?: string;
-    onNavigate: (page: 'home' | 'settings' | 'gateway') => void;
-    currentPage: 'home' | 'settings' | 'gateway';
+    onNavigate: (page: PageType) => void;
+    currentPage: PageType;
+    onCheckUpdate?: () => void;
+    isCheckingUpdate?: boolean;
 }
 
-export function Sidebar({ className, onNavigate, currentPage }: SidebarProps) {
+export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isCheckingUpdate }: SidebarProps) {
     const { t } = useTranslation();
     const { config, refreshConfig, selectedWorkspaceId, setSelectedWorkspaceId } = useAppStore();
     const [expandedWorkspaces, setExpandedWorkspaces] = useState<boolean>(true);
     const [expandedTags, setExpandedTags] = useState<boolean>(true);
     const [editingTag, setEditingTag] = useState<Tag | null>(null);
+    const [appVersion, setAppVersion] = useState<string>('');
+
+    useEffect(() => {
+        getVersion().then(setAppVersion).catch(() => setAppVersion('1.3.0'));
+    }, []);
 
     const workspaces = config?.workspaces || [];
     const tags = config?.tags || [];
@@ -44,7 +56,14 @@ export function Sidebar({ className, onNavigate, currentPage }: SidebarProps) {
     return (
         <div className={cn("w-64 glass border-r border-border/50 h-full flex flex-col", className)}>
             <div className="p-4">
-                <div className="flex items-center gap-2 font-semibold text-lg mb-6">
+                <div
+                    className="flex items-center gap-2 font-semibold text-lg mb-6 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => {
+                        setSelectedWorkspaceId(null);
+                        onNavigate('home');
+                    }}
+                    title="返回主页"
+                >
                     <img src="/app-icon.png" alt="VibeHub" className="w-8 h-8 rounded-lg" />
                     <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">VibeHub</span>
                 </div>
@@ -172,8 +191,22 @@ export function Sidebar({ className, onNavigate, currentPage }: SidebarProps) {
             </div>
 
             <div className="p-4 border-t border-border/50 backdrop-blur-sm">
-                <div className="text-xs text-muted-foreground text-center">
-                    v1.2.1 Portable
+                <div className="flex items-center justify-between">
+                    <button
+                        className="text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer flex items-center gap-1.5 py-1 px-2 rounded hover:bg-accent/50"
+                        onClick={() => onNavigate('about')}
+                        title={t('about.title', '关于')}
+                    >
+                        <span>v{appVersion || '1.3.0'} Portable</span>
+                    </button>
+                    <button
+                        className="text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer p-1.5 rounded hover:bg-accent/50"
+                        onClick={onCheckUpdate}
+                        disabled={isCheckingUpdate}
+                        title={t('update.checkUpdate', '检查更新')}
+                    >
+                        <RefreshCw className={cn("h-3.5 w-3.5", isCheckingUpdate && "animate-spin")} />
+                    </button>
                 </div>
             </div>
 
@@ -186,3 +219,4 @@ export function Sidebar({ className, onNavigate, currentPage }: SidebarProps) {
         </div>
     );
 }
+

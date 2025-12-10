@@ -3,6 +3,7 @@ use crate::{
     models::*,
     scanner::Scanner,
     storage::Storage,
+    updater,
 };
 use chrono::Utc;
 use tauri::State;
@@ -532,3 +533,7 @@ pub async fn refresh_all_workspaces(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn check_for_updates() -> Result<updater::UpdateCheckResult, String> {
+    updater::check_for_updates().await
+}

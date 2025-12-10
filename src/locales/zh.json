@@ -153,5 +153,27 @@
         "stats": {
             "hourlyActivity": "时段活动"
         }
+    },
+    "update": {
+        "newVersion": "发现新版本",
+        "later": "稍后提醒",
+        "download": "前往下载",
+        "noUpdate": "已是最新版本",
+        "checkUpdate": "检查更新",
+        "checking": "检查中..."
+    },
+    "about": {
+        "title": "关于",
+        "subtitle": "应用信息和相关链接",
+        "description": "VibeHub 是一个跨平台的开发项目启动器，帮助你快速管理和启动开发项目。",
+        "tauriVersion": "Tauri 版本",
+        "license": "开源协议",
+        "links": "相关链接",
+        "repository": "仓库",
+        "releases": "版本发布",
+        "feedback": "问题反馈",
+        "credits": "致谢",
+        "creditsText": "感谢所有开源项目和贡献者，特别是 Tauri、React 和 shadcn/ui 团队。",
+        "madeWith": "Made with ❤️ by the VibeHub team"
     }
 }

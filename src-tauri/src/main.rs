@@ -7,6 +7,7 @@ mod models;
 mod scanner;
 mod storage;
 mod gateway;
+mod updater;
 
 use commands::AppState;
 use storage::Storage;
@@ -47,6 +48,7 @@ fn main() {
             commands::initialize_default_configs,
             commands::set_theme,
             commands::refresh_all_workspaces,
+            commands::check_for_updates,
             gateway::get_gateway_config,
             gateway::save_gateway_config,
             gateway::get_gateway_stats,

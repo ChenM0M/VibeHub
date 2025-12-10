@@ -15,9 +15,9 @@ o ...
  
 warning: unused import: `tauri::Man
 ager`
-  --> src\main.rs:14:5
+  --> src\main.rs:15:5
    |
-14 | use tauri::Manager;
+15 | use tauri::Manager;
    |     ^^^^^^^^^^^^^^
    |
    = note: `#[warn(unused_imports)]
@@ -62,5 +62,5 @@ size, usize) {
 warning: `vibehub` (bin "vibehub") 
 generated 3 warnings
     Finished `dev` profile [unoptim
-ized + debuginfo] target(s) in 3.67
+ized + debuginfo] target(s) in 3.84
 s
