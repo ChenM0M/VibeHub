@@ -1,0 +1,66 @@
+﻿cargo :     Checking vibehub v1.2.1
+ (D:\LocalRepo\VBdingHome\src-tauri
+)
+所在位置 行:1 字符: 1
++ cargo check 2>&1 | Out-File -Enco
+ding UTF8 .\cargo_output.txt; Get-C
+o ...
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotS 
+   pecified: (    Checking vi...H  
+  ome\src-tauri):String) [], Rem   
+ oteException
+    + FullyQualifiedErrorId : Nati 
+   veCommandError
+ 
+warning: unused import: `tauri::Man
+ager`
+  --> src\main.rs:14:5
+   |
+14 | use tauri::Manager;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]
+` (part of `#[warn(unused)]`) on by
+ default
+
+warning: method `success_rate` is n
+ever used
+   --> src\gateway\stats.rs:128:12
+    |
+ 68 | impl ProviderStats {
+    | ------------------ method in 
+this implementation
+...
+128 |     pub fn success_rate(&self
+) -> f64 {
+    |            ^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (p
+art of `#[warn(unused)]`) on by def
+ault
+
+warning: methods `evict_expired`, `
+clear`, and `stats` are never used
+   --> src\gateway\cache.rs:96:12
+    |
+ 31 | impl CacheManager {
+    | ----------------- methods in 
+this implementation
+...
+ 96 |     pub fn evict_expired(&sel
+f) {
+    |            ^^^^^^^^^^^^^
+...
+107 |     pub fn clear(&self) {
+    |            ^^^^^
+...
+114 |     pub fn stats(&self) -> (u
+size, usize) {
+    |            ^^^^^
+
+warning: `vibehub` (bin "vibehub") 
+generated 3 warnings
+    Finished `dev` profile [unoptim
+ized + debuginfo] target(s) in 3.67
+s

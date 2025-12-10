@@ -46,6 +46,7 @@ fn main() {
             commands::toggle_project_star,
             commands::initialize_default_configs,
             commands::set_theme,
+            commands::refresh_all_workspaces,
             gateway::get_gateway_config,
             gateway::save_gateway_config,
             gateway::get_gateway_stats,

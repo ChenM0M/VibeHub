@@ -34,7 +34,7 @@ interface HomeProps {
 
 export function Home({ searchQuery }: HomeProps) {
     const { t } = useTranslation();
-    const { config, reorderProjects, refreshConfig, selectedWorkspaceId } = useAppStore();
+    const { config, reorderProjects, refreshAllWorkspaces, selectedWorkspaceId } = useAppStore();
     const [launchProject, setLaunchProject] = useState<Project | null>(null);
     const [isScanning, setIsScanning] = useState(false);
 
@@ -67,7 +67,7 @@ export function Home({ searchQuery }: HomeProps) {
     const handleRefresh = async () => {
         setIsScanning(true);
         try {
-            await refreshConfig();
+            await refreshAllWorkspaces();
         } finally {
             setIsScanning(false);
         }

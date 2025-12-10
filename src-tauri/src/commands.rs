@@ -159,6 +159,17 @@ pub async fn remove_workspace(
 ) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut config = storage.load_config().map_err(|e| e.to_string())?;
+    
+    // Find the workspace to be removed and clean up related projects
+    if let Some(workspace) = config.workspaces.iter().find(|w| w.id == workspace_id) {
+        let ws_path = workspace.path.replace("\\", "/").to_lowercase();
+        // Remove all projects that belong to this workspace
+        config.projects.retain(|p| {
+            let proj_path = p.path.replace("\\", "/").to_lowercase();
+            !proj_path.starts_with(&ws_path)
+        });
+    }
+    
     config.workspaces.retain(|w| w.id != workspace_id);
     storage.save_config(&config).map_err(|e| e.to_string())
 }
@@ -417,3 +428,107 @@ pub async fn set_theme(
     config.theme = theme;
     storage.save_config(&config).map_err(|e| e.to_string())
 }
+
+/// Refresh all workspaces by rescanning them and cleaning up stale/orphaned projects
+#[tauri::command]
+pub async fn refresh_all_workspaces(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut config = storage.load_config().map_err(|e| e.to_string())?;
+    
+    // Helper to normalize path for comparison
+    let normalize_path = |p: &str| -> String {
+        let cleaned = if p.starts_with(r"\\?\") {
+            &p[4..]
+        } else {
+            p
+        };
+        cleaned.replace("\\", "/").to_lowercase()
+    };
+    
+    // Collect all workspace paths (normalized)
+    let workspace_paths: Vec<String> = config.workspaces.iter()
+        .map(|w| normalize_path(&w.path))
+        .collect();
+    
+    // Step 1: Remove orphaned projects (not belonging to any current workspace)
+    config.projects.retain(|p| {
+        let proj_path = normalize_path(&p.path);
+        // Keep project only if it's a child of some workspace
+        workspace_paths.iter().any(|ws_path| proj_path.starts_with(ws_path))
+    });
+    
+    // Save after orphan cleanup
+    storage.save_config(&config).map_err(|e| e.to_string())?;
+    
+    // Step 2: Rescan each workspace and update projects
+    let workspace_paths_original: Vec<String> = config.workspaces.iter()
+        .map(|w| w.path.clone())
+        .collect();
+    
+    drop(storage);
+    
+    for ws_path in workspace_paths_original {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        let scanned_projects = match Scanner::scan_directory(&ws_path, 1) {
+            Ok(projects) => projects,
+            Err(_) => continue, // Skip if workspace path doesn't exist
+        };
+        
+        let mut config = storage.load_config().map_err(|e| e.to_string())?;
+        let ws_path_normalized = normalize_path(&ws_path);
+        
+        // Helper to normalize without borrow issues
+        let normalize = |p: &str| -> String {
+            let cleaned = if p.starts_with(r"\\?\") { &p[4..] } else { p };
+            cleaned.replace("\\", "/").to_lowercase()
+        };
+        
+        // Build map of scanned projects
+        let mut scanned_map: std::collections::HashMap<String, Project> = std::collections::HashMap::new();
+        for p in scanned_projects {
+            scanned_map.insert(normalize(&p.path), p);
+        }
+        
+        let mut final_projects = Vec::new();
+        let mut processed_paths = std::collections::HashSet::new();
+        
+        for existing in &config.projects {
+            let existing_normalized = normalize(&existing.path);
+            let is_in_this_workspace = existing_normalized.starts_with(&ws_path_normalized);
+            
+            if is_in_this_workspace {
+                // Project belongs to this workspace, check if still exists
+                if let Some(scanned) = scanned_map.get(&existing_normalized) {
+                    let mut updated = existing.clone();
+                    updated.path = scanned.path.clone();
+                    updated.project_type = scanned.project_type.clone();
+                    updated.metadata = scanned.metadata.clone();
+                    if scanned.description.is_some() {
+                        updated.description = scanned.description.clone();
+                    }
+                    final_projects.push(updated);
+                    processed_paths.insert(existing_normalized);
+                }
+                // Else: project no longer exists in scan, drop it
+            } else {
+                // Project belongs to another workspace, keep as-is
+                final_projects.push(existing.clone());
+            }
+        }
+        
+        // Add new projects from scan
+        for (path, project) in &scanned_map {
+            if !processed_paths.contains(path) {
+                final_projects.push(project.clone());
+            }
+        }
+        
+        config.projects = final_projects;
+        storage.save_config(&config).map_err(|e| e.to_string())?;
+    }
+    
+    Ok(())
+}
+

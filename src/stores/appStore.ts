@@ -10,6 +10,7 @@ interface AppState {
 
     initializeApp: () => Promise<void>;
     refreshConfig: () => Promise<void>;
+    refreshAllWorkspaces: () => Promise<void>;
     setSelectedWorkspaceId: (id: string | null) => void;
 
     addWorkspace: (name: string, path: string, autoScan: boolean) => Promise<void>;
@@ -66,6 +67,16 @@ export const useAppStore = create<AppState>((set, get) => ({
             set({ config });
         } catch (error) {
             console.error('Failed to refresh config:', error);
+        }
+    },
+
+    refreshAllWorkspaces: async () => {
+        try {
+            await tauriApi.refreshAllWorkspaces();
+            const config = await tauriApi.loadConfig();
+            set({ config });
+        } catch (error) {
+            console.error('Failed to refresh workspaces:', error);
         }
     },
 

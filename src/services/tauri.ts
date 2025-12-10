@@ -72,5 +72,9 @@ export const tauriApi = {
 
     setTheme: async (theme: string): Promise<void> => {
         return await invoke('set_theme', { theme });
+    },
+
+    refreshAllWorkspaces: async (): Promise<void> => {
+        return await invoke('refresh_all_workspaces');
     }
 };
