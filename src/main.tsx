@@ -4,14 +4,20 @@ import { Layout } from '@/components/Layout';
 import { Home } from '@/pages/Home';
 import { Settings } from '@/pages/Settings';
 import { Gateway } from '@/pages/Gateway';
+import { About } from '@/pages/About';
+import { UpdateChecker } from '@/components/UpdateChecker';
 import { useAppStore } from '@/stores/appStore';
 import '@/styles/globals.css';
 import './i18n';
 
+type PageType = 'home' | 'settings' | 'gateway' | 'about';
+
 function App() {
     const { initializeApp, config } = useAppStore();
-    const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'gateway'>('home');
+    const [currentPage, setCurrentPage] = useState<PageType>('home');
     const [searchQuery, setSearchQuery] = useState('');
+    const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
+    const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
 
     useEffect(() => {
         initializeApp();
@@ -26,16 +32,35 @@ function App() {
         }
     }, [config?.theme]);
 
+    const handleCheckUpdate = () => {
+        setIsCheckingUpdate(true);
+        setTriggerUpdateCheck(true);
+    };
+
+    const handleUpdateCheckComplete = () => {
+        setTriggerUpdateCheck(false);
+        setIsCheckingUpdate(false);
+    };
+
     return (
-        <Layout
-            onSearch={setSearchQuery}
-            currentPage={currentPage}
-            onNavigate={setCurrentPage}
-        >
-            {currentPage === 'home' && <Home searchQuery={searchQuery} />}
-            {currentPage === 'settings' && <Settings />}
-            {currentPage === 'gateway' && <Gateway />}
-        </Layout>
+        <>
+            <UpdateChecker
+                showManualCheckResult={triggerUpdateCheck}
+                onManualCheckComplete={handleUpdateCheckComplete}
+            />
+            <Layout
+                onSearch={setSearchQuery}
+                currentPage={currentPage}
+                onNavigate={setCurrentPage}
+                onCheckUpdate={handleCheckUpdate}
+                isCheckingUpdate={isCheckingUpdate}
+            >
+                {currentPage === 'home' && <Home searchQuery={searchQuery} />}
+                {currentPage === 'settings' && <Settings />}
+                {currentPage === 'gateway' && <Gateway />}
+                {currentPage === 'about' && <About />}
+            </Layout>
+        </>
     );
 }
 
@@ -44,3 +69,5 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
         <App />
     </React.StrictMode>
 );
+
+

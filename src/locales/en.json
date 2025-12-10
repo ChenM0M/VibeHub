@@ -153,5 +153,27 @@
         "stats": {
             "hourlyActivity": "Hourly Activity"
         }
+    },
+    "update": {
+        "newVersion": "New Version Available",
+        "later": "Remind Later",
+        "download": "Download",
+        "noUpdate": "You're up to date",
+        "checkUpdate": "Check for Updates",
+        "checking": "Checking..."
+    },
+    "about": {
+        "title": "About",
+        "subtitle": "App info and links",
+        "description": "VibeHub is a cross-platform development project launcher that helps you quickly manage and launch your projects.",
+        "tauriVersion": "Tauri Version",
+        "license": "License",
+        "links": "Links",
+        "repository": "Repository",
+        "releases": "Releases",
+        "feedback": "Feedback",
+        "credits": "Credits",
+        "creditsText": "Thanks to all open source projects and contributors, especially the Tauri, React, and shadcn/ui teams.",
+        "madeWith": "Made with ❤️ by the VibeHub team"
     }
 }

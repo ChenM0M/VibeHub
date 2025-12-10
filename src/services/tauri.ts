@@ -76,5 +76,16 @@ export const tauriApi = {
 
     refreshAllWorkspaces: async (): Promise<void> => {
         return await invoke('refresh_all_workspaces');
+    },
+
+    checkForUpdates: async (): Promise<{
+        has_update: boolean;
+        current_version: string;
+        latest_version: string;
+        release_notes: string | null;
+        release_url: string | null;
+        download_url: string | null;
+    }> => {
+        return await invoke('check_for_updates');
     }
 };
