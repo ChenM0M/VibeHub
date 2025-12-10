@@ -21,7 +21,7 @@ Your Local Command Center. Infinite Possibilities. Manage projects with flexible
 
 ## 📦 Download
 
-Go to the [Releases]() page to download the latest version (v1.2.0):
+Go to the [Releases]() page to download the latest version :
 
 - **Windows**: `VibeHub-Windows-Portable.zip` (Recommended) or `.msi` installer
 - **macOS**: `.dmg` or `.app.tar.gz`

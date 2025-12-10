@@ -21,7 +21,7 @@
 
 ## 📦 下載
 
-前往 [Releases]() 頁面下載最新版本 (v1.2.0)：
+前往 [Releases]() 頁面下載最新版本 ：
 
 - **Windows**: `VibeHub-Windows-Portable.zip` (推薦) 或 `.msi` 安裝包
 - **macOS**: `.dmg` 或 `.app.tar.gz`

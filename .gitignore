@@ -33,3 +33,6 @@ npm-debug.log*
 # Data (for development)
 data/
 *.db
+
+# Local scripts
+release.ps1
