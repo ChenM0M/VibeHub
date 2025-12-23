@@ -38,6 +38,7 @@
     },
     "project": {
         "launch": "啟動",
+        "customLaunch": "自訂啟動",
         "openInExplorer": "在檔案總管中開啟",
         "openInTerminal": "在終端機中開啟",
         "star": "收藏",

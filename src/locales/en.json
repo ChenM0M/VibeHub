@@ -38,6 +38,7 @@
     },
     "project": {
         "launch": "Launch",
+        "customLaunch": "Custom Launch",
         "openInExplorer": "Open in Explorer",
         "openInTerminal": "Open in Terminal",
         "star": "Star",

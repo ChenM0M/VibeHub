@@ -6,9 +6,10 @@ import { Project } from '@/types';
 interface SortableProjectCardProps {
     project: Project;
     onLaunch: (project: Project) => void;
+    onCustomLaunch: (project: Project) => void;
 }
 
-export function SortableProjectCard({ project, onLaunch }: SortableProjectCardProps) {
+export function SortableProjectCard({ project, onLaunch, onCustomLaunch }: SortableProjectCardProps) {
     const {
         attributes,
         listeners,
@@ -27,7 +28,7 @@ export function SortableProjectCard({ project, onLaunch }: SortableProjectCardPr
 
     return (
         <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="h-full">
-            <ProjectCard project={project} onLaunch={onLaunch} />
+            <ProjectCard project={project} onLaunch={onLaunch} onCustomLaunch={onCustomLaunch} />
         </div>
     );
 }

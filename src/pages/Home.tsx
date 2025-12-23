@@ -36,6 +36,7 @@ export function Home({ searchQuery }: HomeProps) {
     const { t } = useTranslation();
     const { config, reorderProjects, refreshAllWorkspaces, selectedWorkspaceId } = useAppStore();
     const [launchProject, setLaunchProject] = useState<Project | null>(null);
+    const [isCustomLaunchMode, setIsCustomLaunchMode] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
 
 
@@ -187,7 +188,14 @@ export function Home({ searchQuery }: HomeProps) {
                                             <SortableProjectCard
                                                 key={project.id}
                                                 project={{ ...project, path: getDisplayPath(project.path) }}
-                                                onLaunch={() => setLaunchProject(project)}
+                                                onLaunch={() => {
+                                                    setIsCustomLaunchMode(false);
+                                                    setLaunchProject(project);
+                                                }}
+                                                onCustomLaunch={() => {
+                                                    setIsCustomLaunchMode(true);
+                                                    setLaunchProject(project);
+                                                }}
                                             />
                                         ))}
                                     </div>
@@ -211,7 +219,14 @@ export function Home({ searchQuery }: HomeProps) {
                                             <SortableProjectCard
                                                 key={project.id}
                                                 project={{ ...project, path: getDisplayPath(project.path) }}
-                                                onLaunch={() => setLaunchProject(project)}
+                                                onLaunch={() => {
+                                                    setIsCustomLaunchMode(false);
+                                                    setLaunchProject(project);
+                                                }}
+                                                onCustomLaunch={() => {
+                                                    setIsCustomLaunchMode(true);
+                                                    setLaunchProject(project);
+                                                }}
                                             />
                                         ))}
                                     </div>
@@ -244,8 +259,12 @@ export function Home({ searchQuery }: HomeProps) {
 
             <LaunchDialog
                 isOpen={!!launchProject}
-                onClose={() => setLaunchProject(null)}
+                onClose={() => {
+                    setLaunchProject(null);
+                    setIsCustomLaunchMode(false);
+                }}
                 project={launchProject}
+                isCustomLaunch={isCustomLaunchMode}
             />
         </ContextMenu>
     );

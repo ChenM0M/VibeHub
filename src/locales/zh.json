@@ -38,6 +38,7 @@
     },
     "project": {
         "launch": "启动",
+        "customLaunch": "自定义启动",
         "openInExplorer": "在资源管理器中打开",
         "openInTerminal": "在终端中打开",
         "star": "收藏",

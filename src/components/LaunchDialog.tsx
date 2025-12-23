@@ -20,9 +20,10 @@ interface LaunchDialogProps {
     isOpen: boolean;
     onClose: () => void;
     project: Project | null;
+    isCustomLaunch?: boolean;
 }
 
-export function LaunchDialog({ isOpen, onClose, project }: LaunchDialogProps) {
+export function LaunchDialog({ isOpen, onClose, project, isCustomLaunch = false }: LaunchDialogProps) {
     const { t } = useTranslation();
     const { launchCustom, config } = useAppStore();
     const [customConfig, setCustomConfig] = useState<TagConfig>({
@@ -37,16 +38,18 @@ export function LaunchDialog({ isOpen, onClose, project }: LaunchDialogProps) {
 
     useEffect(() => {
         if (project) {
-            // Get tags associated with the project
-            const projectTags = config?.tags.filter(t => project.tags.includes(t.id)) || [];
-            setAvailableTags(projectTags);
-            setSelectedTagIds(projectTags.map(t => t.id));
+            // 自定义启动模式或无标签项目都显示所有全局标签，普通模式只显示项目关联的标签
+            const shouldShowAllTags = isCustomLaunch || project.tags.length === 0;
+            const tagsToShow = shouldShowAllTags
+                ? (config?.tags || [])
+                : (config?.tags.filter(t => project.tags.includes(t.id)) || []);
+            setAvailableTags(tagsToShow);
 
-            if (project.tags.length === 0) {
-                // If no tags, show custom form by default, but also allow picking from all tags?
-                // User said "let user choose launch tag content".
-                // Let's show all tags as options if none are assigned?
-                // Or maybe just show the custom form and a "Select from Library" button.
+            // 自定义启动模式或无标签项目默认不选中任何标签，普通模式选中所有项目标签
+            setSelectedTagIds(shouldShowAllTags ? [] : tagsToShow.map(t => t.id));
+
+            // 只有当全局标签列表也为空时，才自动显示自定义配置表单
+            if (tagsToShow.length === 0) {
                 setShowCustomForm(true);
 
                 // Pre-fill based on project type
@@ -64,7 +67,8 @@ export function LaunchDialog({ isOpen, onClose, project }: LaunchDialogProps) {
                 setShowCustomForm(false);
             }
         }
-    }, [project, config]);
+    }, [project, config, isCustomLaunch]);
+
 
     const handleLaunch = async () => {
         if (!project) return;
@@ -117,7 +121,7 @@ export function LaunchDialog({ isOpen, onClose, project }: LaunchDialogProps) {
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
-                    <DialogTitle>{t('project.launch')}</DialogTitle>
+                    <DialogTitle>{isCustomLaunch ? t('project.customLaunch') : t('project.launch')}</DialogTitle>
                     <DialogDescription>
                         {t('common.confirm')} <span className="font-medium text-foreground">{project.name}</span>?
                     </DialogDescription>
@@ -144,6 +148,12 @@ export function LaunchDialog({ isOpen, onClose, project }: LaunchDialogProps) {
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {!showCustomForm && availableTags.length === 0 && isCustomLaunch && (
+                        <div className="text-center py-4 text-muted-foreground">
+                            <p className="text-sm">{t('settings.tags.noTags', '暂无可用标签，请使用自定义配置')}</p>
                         </div>
                     )}
 

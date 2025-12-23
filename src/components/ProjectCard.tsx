@@ -37,9 +37,10 @@ import { getTechStackById } from '@/lib/techStackData';
 interface ProjectCardProps {
     project: Project;
     onLaunch: (project: Project) => void;
+    onCustomLaunch: (project: Project) => void;
 }
 
-export function ProjectCard({ project, onLaunch }: ProjectCardProps) {
+export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardProps) {
     const { t, i18n } = useTranslation();
     const { toggleProjectStar, openInExplorer, openTerminal, config, deleteProject, launchTool } = useAppStore();
     const [isEditing, setIsEditing] = useState(false);
@@ -279,6 +280,10 @@ export function ProjectCard({ project, onLaunch }: ProjectCardProps) {
                 <ContextMenuItem onClick={() => onLaunch(project)}>
                     <Play className="mr-2 h-4 w-4" />
                     {t('project.launch')}
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => onCustomLaunch(project)}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    {t('project.customLaunch')}
                 </ContextMenuItem>
                 <ContextMenuItem onClick={() => openInExplorer(project.path)}>
                     <Folder className="mr-2 h-4 w-4" />
