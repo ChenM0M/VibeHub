@@ -35,6 +35,10 @@ pub struct Provider {
     pub input_price_per_1k: f64,
     #[serde(default)]
     pub output_price_per_1k: f64,
+    
+    // Claude Code 代理模式：将 Anthropic 请求转换为 OpenAI 格式
+    #[serde(default)]
+    pub claude_code_proxy: bool,
 }
 
 fn default_api_types() -> Vec<ApiType> {

@@ -2,6 +2,7 @@ pub mod config;
 pub mod proxy;
 pub mod stats;
 pub mod cache;
+pub mod converter;
 
 use tauri::{AppHandle, Manager, Runtime, State};
 use std::sync::Arc;

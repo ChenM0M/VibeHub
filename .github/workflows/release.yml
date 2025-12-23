@@ -52,8 +52,25 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'VibeHub ${{ github.ref_name }}'
           releaseBody: |
-            ## 🚀 What's New
-            Auto-generated release.
+            ## 🚀 更新内容 / What's New
+            
+            请在此处填写本次更新的内容（基于 commit 描述）
+            
+            ---
+            
+            ## 📦 下载说明 / Download Guide
+            
+            | 文件名 | 系统 | 类型 | 说明 |
+            |--------|------|------|------|
+            | `VibeHub_x.x.x_x64-setup.exe` | Windows | 安装包 | 推荐，自动安装到系统 |
+            | `VibeHub_x.x.x_x64_en-US.msi` | Windows | MSI 安装包 | 企业部署推荐 |
+            | `VibeHub-Portable-Windows.exe` | Windows | 便携版 | 无需安装，直接运行 |
+            | `VibeHub_x.x.x_aarch64.dmg` | macOS (Apple Silicon) | 安装包 | M1/M2/M3 芯片 |
+            | `VibeHub_x.x.x_x64.dmg` | macOS (Intel) | 安装包 | Intel 芯片 |
+            | `VibeHub-Portable-macOS.zip` | macOS | 便携版 | 解压后直接运行 |
+            | `VibeHub_x.x.x_amd64.deb` | Linux (Debian/Ubuntu) | DEB 包 | `sudo dpkg -i xxx.deb` |
+            | `VibeHub_x.x.x_amd64.AppImage` | Linux | AppImage | 免安装，`chmod +x` 后运行 |
+            | `VibeHub-Portable-Linux.tar.gz` | Linux | 便携版 | 解压后直接运行 |
           releaseDraft: true
           prerelease: false
 

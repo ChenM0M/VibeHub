@@ -11,6 +11,7 @@ export interface Provider {
     weight: number;
     input_price_per_1k: number;
     output_price_per_1k: number;
+    claude_code_proxy: boolean;  // 是否作为 Claude Code 代理（将 Anthropic 请求转换为 OpenAI 格式）
 }
 
 export interface GatewayConfig {
@@ -54,6 +55,7 @@ export interface RequestLog {
     client_agent: string;
     api_type: string;
     cached: boolean;
+    error_message?: string;  // 完整错误信息
 }
 
 export interface ProviderStats {

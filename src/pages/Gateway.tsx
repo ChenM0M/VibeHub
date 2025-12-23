@@ -359,7 +359,7 @@ export function Gateway() {
             </Card>
 
             <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-                <DialogContent>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>{editingProvider ? t('gateway.form.editTitle') : t('gateway.form.addTitle')}</DialogTitle>
                     </DialogHeader>

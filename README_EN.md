@@ -6,7 +6,6 @@ Your Local Command Center. Infinite Possibilities. Manage projects with flexible
 
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
-![Version](https://img.shields.io/badge/version-v1.2.0-green)
 
 ## ✨ Features
 

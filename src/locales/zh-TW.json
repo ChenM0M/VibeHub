@@ -148,6 +148,12 @@
             "weight": "權重",
             "inputPrice": "輸入價格 ($/1K)",
             "outputPrice": "輸出價格 ($/1K)",
+            "claudeCodeProxy": "Claude Code 代理伺服器",
+            "claudeCodeProxyDesc": "啟用後，將 Claude Code 的 Anthropic 請求轉換為 OpenAI 格式傳送給此供應商",
+            "modelMapping": "模型映射",
+            "modelMappingDesc": "將請求的模型名映射到目標模型（如 claude-3-haiku → claude-3-5-sonnet）",
+            "sourceModel": "源模型",
+            "targetModel": "目標模型",
             "cancel": "取消",
             "save": "儲存"
         },

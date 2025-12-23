@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Plus, X } from 'lucide-react';
 
 interface ProviderFormProps {
     initialData?: Partial<Provider>;
@@ -30,11 +31,21 @@ export function ProviderForm({ initialData, onSubmit, onCancel }: ProviderFormPr
         weight: 100,
         input_price_per_1k: 0.003,
         output_price_per_1k: 0.015,
+        claude_code_proxy: false,
         ...initialData
     });
 
+    // 模型映射编辑状态
+    const [newMappingSource, setNewMappingSource] = useState('');
+    const [newMappingTarget, setNewMappingTarget] = useState('');
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        // 如果启用了 claude_code_proxy，确保 Anthropic 在 api_types 中
+        let apiTypes = formData.api_types || ['OpenAIChat'];
+        if (formData.claude_code_proxy && !apiTypes.includes('Anthropic')) {
+            apiTypes = ['Anthropic', ...apiTypes];
+        }
         onSubmit({
             id: initialData?.id || crypto.randomUUID(),
             name: formData.name || 'New Provider',
@@ -42,10 +53,11 @@ export function ProviderForm({ initialData, onSubmit, onCancel }: ProviderFormPr
             api_key: formData.api_key || '',
             model_mapping: formData.model_mapping || {},
             enabled: formData.enabled ?? true,
-            api_types: formData.api_types || ['OpenAIChat'],
+            api_types: apiTypes,
             weight: formData.weight || 100,
             input_price_per_1k: formData.input_price_per_1k || 0,
             output_price_per_1k: formData.output_price_per_1k || 0,
+            claude_code_proxy: formData.claude_code_proxy || false,
         });
     };
 
@@ -56,6 +68,26 @@ export function ProviderForm({ initialData, onSubmit, onCancel }: ProviderFormPr
         } else {
             setFormData({ ...formData, api_types: currentTypes.filter(t => t !== apiType) });
         }
+    };
+
+    const handleAddMapping = () => {
+        if (newMappingSource.trim() && newMappingTarget.trim()) {
+            setFormData({
+                ...formData,
+                model_mapping: {
+                    ...formData.model_mapping,
+                    [newMappingSource.trim()]: newMappingTarget.trim()
+                }
+            });
+            setNewMappingSource('');
+            setNewMappingTarget('');
+        }
+    };
+
+    const handleRemoveMapping = (source: string) => {
+        const newMapping = { ...formData.model_mapping };
+        delete newMapping[source];
+        setFormData({ ...formData, model_mapping: newMapping });
     };
 
     return (
@@ -109,7 +141,105 @@ export function ProviderForm({ initialData, onSubmit, onCancel }: ProviderFormPr
                 </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
+                <div className="flex items-center space-x-2">
+                    <Checkbox
+                        id="claude_code_proxy"
+                        checked={formData.claude_code_proxy}
+                        onCheckedChange={(checked) => setFormData({ ...formData, claude_code_proxy: !!checked })}
+                    />
+                    <Label htmlFor="claude_code_proxy" className="font-medium">
+                        {t('gateway.form.claudeCodeProxy')}
+                    </Label>
+                </div>
+                <p className="text-xs text-muted-foreground ml-6">
+                    {t('gateway.form.claudeCodeProxyDesc')}
+                </p>
+            </div>
+
+            {/* 模型映射区块 */}
+            <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
+                <Label className="font-medium">{t('gateway.form.modelMapping', '模型映射')}</Label>
+                <p className="text-xs text-muted-foreground">
+                    {t('gateway.form.modelMappingDesc', '将请求的模型名映射到目标模型（如 claude-3-haiku → claude-3-5-sonnet）')}
+                </p>
+
+                {/* 现有映射列表 */}
+                {Object.entries(formData.model_mapping || {}).length > 0 && (
+                    <div className="space-y-1 mt-2">
+                        {Object.entries(formData.model_mapping || {}).map(([source, target]) => (
+                            <div key={source} className="flex items-center gap-2 text-sm bg-background/50 rounded px-2 py-1">
+                                <Input
+                                    value={source}
+                                    onChange={e => {
+                                        const newSource = e.target.value.trim();
+                                        if (newSource && newSource !== source) {
+                                            const newMapping = { ...formData.model_mapping };
+                                            delete newMapping[source];
+                                            newMapping[newSource] = target;
+                                            setFormData({ ...formData, model_mapping: newMapping });
+                                        }
+                                    }}
+                                    className="h-7 text-xs font-mono flex-1"
+                                />
+                                <span className="text-muted-foreground shrink-0">→</span>
+                                <Input
+                                    value={target}
+                                    onChange={e => {
+                                        const newTarget = e.target.value;
+                                        setFormData({
+                                            ...formData,
+                                            model_mapping: {
+                                                ...formData.model_mapping,
+                                                [source]: newTarget
+                                            }
+                                        });
+                                    }}
+                                    className="h-7 text-xs font-mono flex-1"
+                                />
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-destructive/70 hover:text-destructive shrink-0"
+                                    onClick={() => handleRemoveMapping(source)}
+                                >
+                                    <X className="h-3 w-3" />
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* 添加新映射 */}
+                <div className="flex items-center gap-2 mt-2">
+                    <Input
+                        placeholder={t('gateway.form.sourceModel', '源模型')}
+                        value={newMappingSource}
+                        onChange={e => setNewMappingSource(e.target.value)}
+                        className="h-8 text-xs"
+                    />
+                    <span className="text-muted-foreground">→</span>
+                    <Input
+                        placeholder={t('gateway.form.targetModel', '目标模型')}
+                        value={newMappingTarget}
+                        onChange={e => setNewMappingTarget(e.target.value)}
+                        className="h-8 text-xs"
+                    />
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={handleAddMapping}
+                        disabled={!newMappingSource.trim() || !newMappingTarget.trim()}
+                    >
+                        <Plus className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                     <Label htmlFor="weight">{t('gateway.form.weight')}</Label>
                     <Input
@@ -155,3 +285,4 @@ export function ProviderForm({ initialData, onSubmit, onCancel }: ProviderFormPr
         </form>
     );
 }
+

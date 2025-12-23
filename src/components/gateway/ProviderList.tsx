@@ -117,7 +117,7 @@ function SortableProviderItem({ provider, status, stats, onToggle, onEdit, onDel
 
             {/* Stats Row */}
             {stats && stats.total_requests > 0 && (
-                <div className="grid grid-cols-4 gap-4 pt-3 border-t border-border/30">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 pt-3 border-t border-border/30">
                     {/* Requests & Success Rate */}
                     <div className="flex items-center gap-2">
                         <Activity className="h-4 w-4 text-muted-foreground" />

@@ -6,7 +6,6 @@
 
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
-![Version](https://img.shields.io/badge/version-v1.2.0-green)
 
 ## ✨ 特性
 
@@ -132,3 +131,4 @@ Apache License 2.0 - 详见 [LICENSE](LICENSE)
 - [Tauri](https://tauri.app/) - 跨平台应用框架
 - [React](https://react.dev/) - UI 框架
 - [TailwindCSS](https://tailwindcss.com/) - CSS 框架
+- [b4u2cc](https://github.com/CassiopeiaCode/b4u2cc) - Claude Code 代理协议转换参考

@@ -23,6 +23,8 @@ pub struct RequestLog {
     pub api_type: String, // "anthropic", "responses", "chat"
     #[serde(default)]
     pub cached: bool,
+    #[serde(default)]
+    pub error_message: Option<String>,  // 完整错误信息
 }
 
 fn default_path() -> String { "/".to_string() }
@@ -221,7 +223,7 @@ impl StatsManager {
             log.output_tokens,
             log.cost,
             log.timestamp,
-            if is_success { None } else { Some(format!("HTTP {}", log.status)) }
+            if is_success { None } else { log.error_message.clone().or_else(|| Some(format!("HTTP {}", log.status))) }
         );
         
         // 更新 recent_requests
@@ -278,5 +280,14 @@ impl StatsManager {
     pub fn record_cache_miss(&self) {
         let mut stats = self.stats.lock().unwrap();
         stats.cache_misses += 1;
+    }
+    
+    /// 重置供应商健康状态（当冷却解除时调用）
+    pub fn reset_provider_health(&self, provider_name: &str) {
+        let mut stats = self.stats.lock().unwrap();
+        if let Some(provider_stats) = stats.provider_stats.get_mut(provider_name) {
+            provider_stats.is_healthy = true;
+            provider_stats.consecutive_failures = 0;
+        }
     }
 }

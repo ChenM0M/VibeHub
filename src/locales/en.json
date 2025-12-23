@@ -148,6 +148,12 @@
             "weight": "Weight",
             "inputPrice": "Input Price ($/1K)",
             "outputPrice": "Output Price ($/1K)",
+            "claudeCodeProxy": "Claude Code Proxy Server",
+            "claudeCodeProxyDesc": "When enabled, converts Claude Code Anthropic requests to OpenAI format for this provider",
+            "modelMapping": "Model Mapping",
+            "modelMappingDesc": "Map requested model to target model (e.g. claude-3-haiku → claude-3-5-sonnet)",
+            "sourceModel": "Source Model",
+            "targetModel": "Target Model",
             "cancel": "Cancel",
             "save": "Save"
         },
