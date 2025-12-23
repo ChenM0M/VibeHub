@@ -9,7 +9,7 @@
 
 ## ✨ 特性
 
-- 🤖 **AI 网关集成**: 内置高性能 AI 网关，无缝连接未来开发体验
+- 🤖 **AI 网关集成**: 内置高性能 AI 网关，支持多供应商负载均衡、模型映射、Claude Code 代理转换
 - 🚀 **快速启动**: 一键启动 VSCode、CLI 工具等，VibeCoding 友好
 - 📁 **本地多项目管理**: 自动扫描和管理本地项目，支持多种语言和框架
 - 🏷️ **标签系统**: 灵活的项目分类和过滤
@@ -20,10 +20,10 @@
 
 ## 📦 下载
 
-前往 [Releases]() 页面下载最新版本 ：
+前往 [Releases](https://github.com/ChenM0M/VibeHub/releases) 页面下载最新版本：
 
-- **Windows**: `VibeHub-Windows-Portable.zip` (推荐) 或 `.msi` 安装包
-- **macOS**: `.dmg` 或 `.app.tar.gz`
+- **Windows**: `.exe` 安装包 (推荐) 或 `Portable` 便携版
+- **macOS**: `.dmg` 安装包 (Intel/Apple Silicon)
 - **Linux**: `.deb` 或 `.AppImage`
 
 ## 🚀 快速开始
