@@ -24,7 +24,7 @@ export function Layout({ children, onSearch, currentPage, onNavigate, onCheckUpd
             />
             <div className="flex-1 flex flex-col min-w-0">
                 <Header onSearch={onSearch} />
-                <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
+                <main className="flex-1 overflow-y-auto p-6 scroll-smooth scrollbar-auto-hide">
                     {children}
                 </main>
             </div>

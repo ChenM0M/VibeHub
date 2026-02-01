@@ -138,7 +138,7 @@ export function Home({ searchQuery }: HomeProps) {
 
     return (
         <ContextMenu>
-            <ContextMenuTrigger className="flex-1 overflow-y-auto p-8 block h-full relative">
+            <ContextMenuTrigger className="flex-1 overflow-y-auto p-8 block h-full relative scrollbar-auto-hide">
                 <div
                     className="max-w-7xl mx-auto space-y-8 min-h-[calc(100vh-4rem)]"
                     onDragOver={onDragOver}

@@ -12,7 +12,6 @@ mod updater;
 use commands::AppState;
 use storage::Storage;
 use std::sync::Mutex;
-use tauri::Manager;
 
 fn main() {
     let storage = Storage::new().expect("Failed to initialize storage");

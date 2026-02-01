@@ -71,6 +71,11 @@ function SortableProviderItem({ provider, status, stats, onToggle, onEdit, onDel
 
     const successRate = stats ? (stats.total_requests > 0 ? (stats.successful_requests / stats.total_requests * 100).toFixed(1) : '100') : '--';
     const isHealthy = stats?.is_healthy ?? true;
+    const nowSec = Date.now() / 1000;
+    const cooldownRemaining = stats?.cooldown_until && stats.cooldown_until > nowSec
+        ? Math.ceil(stats.cooldown_until - nowSec)
+        : 0;
+    const cooldownReason = stats?.cooldown_reason || null;
 
     return (
         <div ref={setNodeRef} style={style} className={`p-4 rounded-lg border transition-all ${status === 'pending' ? 'bg-primary/5 border-primary/30 shadow-sm' :
@@ -157,21 +162,24 @@ function SortableProviderItem({ provider, status, stats, onToggle, onEdit, onDel
                         <div>
                             <div className="text-sm font-medium">${stats.total_cost.toFixed(2)}</div>
                             <div className="text-[10px] text-muted-foreground">
-                                {isHealthy ? (
-                                    <span className="text-green-500">● {t('common.healthy')}</span>
-                                ) : (
-                                    <span className="text-destructive">● {t('common.cooldown')}</span>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+                                 {isHealthy ? (
+                                     <span className="text-green-500">● {t('common.healthy')}</span>
+                                 ) : (
+                                     <span className="text-destructive">● {t('common.cooldown')}{cooldownRemaining > 0 ? ` (${cooldownRemaining}s)` : ''}</span>
+                                 )}
+                             </div>
+                         </div>
+                     </div>
+                 </div>
+             )}
 
             {/* Health Status for unhealthy providers */}
             {stats && !isHealthy && (
                 <div className="mt-2 px-2 py-1 rounded bg-destructive/10 text-destructive text-xs">
-                    {t('gateway.consecutiveFailures')} {stats.consecutive_failures} · {t('gateway.lastFailure')}: {timeAgo(stats.last_failure_at)} · {stats.last_error_message || t('common.error')}
+                    {t('gateway.consecutiveFailures')} {stats.consecutive_failures}
+                    {' · '}{t('gateway.lastFailure')}: {timeAgo(stats.last_failure_at)}
+                    {' · '}{stats.last_error_message || t('common.error')}
+                    {cooldownReason ? ` · ${cooldownReason}` : ''}
                 </div>
             )}
         </div>
