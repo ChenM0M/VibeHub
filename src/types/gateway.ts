@@ -88,6 +88,9 @@ export interface ProviderStats {
     last_error_message: string | null;
     consecutive_failures: number;
     is_healthy: boolean;
+
+    cooldown_until?: number | null;
+    cooldown_reason?: string | null;
 }
 
 export interface HourlyStat {

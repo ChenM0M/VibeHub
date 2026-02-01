@@ -174,6 +174,32 @@ html {
   @apply bg-muted-foreground/40;
 }
 
+/* Auto-hide scrollbar (only when opted-in via class) */
+.scrollbar-auto-hide {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scrollbar-auto-hide::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.scrollbar-auto-hide:hover,
+.scrollbar-auto-hide:focus-within,
+.scrollbar-auto-hide:active {
+  scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+}
+
+.scrollbar-auto-hide:hover::-webkit-scrollbar-thumb,
+.scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb,
+.scrollbar-auto-hide:active::-webkit-scrollbar-thumb {
+  @apply bg-muted-foreground/20;
+}
+
+.scrollbar-auto-hide:hover::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/40;
+}
+
 /* Shine effect */
 .shine {
   position: relative;

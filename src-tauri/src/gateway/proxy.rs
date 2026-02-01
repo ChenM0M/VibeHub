@@ -6,24 +6,32 @@ use axum::{
     Router,
     http::{StatusCode, HeaderValue},
 };
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
 use tokio::sync::RwLock;
 use crate::gateway::config::{GatewayConfig, ApiType};
 use crate::gateway::stats::{StatsManager, RequestLog};
 use crate::gateway::cache::CacheManager;
 use crate::gateway::converter;
+use crate::gateway::resilience::{Circuit, FailureKind};
 use tower_http::cors::CorsLayer;
 use reqwest::Client;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Runtime};
 use dashmap::DashMap;
+use tokio::sync::{Semaphore, OwnedSemaphorePermit};
+use tokio::time::timeout;
 
 pub struct ProxyState<R: Runtime> {
     pub config: Arc<RwLock<GatewayConfig>>,
     pub stats: Arc<StatsManager>,
     pub cache: Arc<CacheManager>,
     pub app: AppHandle<R>,
-    pub health_status: Arc<DashMap<String, u64>>,
+    pub circuits: Arc<DashMap<String, Circuit>>,
+    pub inflight_limits: Arc<DashMap<String, Arc<Semaphore>>>,
+    pub http_client: Client,
     pub api_type: ApiType,
 }
 
@@ -34,7 +42,9 @@ impl<R: Runtime> Clone for ProxyState<R> {
             stats: self.stats.clone(),
             cache: self.cache.clone(),
             app: self.app.clone(),
-            health_status: self.health_status.clone(),
+            circuits: self.circuits.clone(),
+            inflight_limits: self.inflight_limits.clone(),
+            http_client: self.http_client.clone(),
             api_type: self.api_type.clone(),
         }
     }
@@ -59,7 +69,15 @@ pub async fn start_servers<R: Runtime>(
         cfg.cache_max_entries,
         cfg.cache_ttl_seconds,
     ));
-    let health_status = Arc::new(DashMap::new());
+    let circuits = Arc::new(DashMap::new());
+    let inflight_limits: Arc<DashMap<String, Arc<Semaphore>>> = Arc::new(DashMap::new());
+
+    let http_client = Client::builder()
+        .connect_timeout(Duration::from_secs(3))
+        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_max_idle_per_host(16)
+        .build()
+        .unwrap_or_else(|_| Client::new());
     
     let anthropic_port = cfg.anthropic_port;
     let responses_port = cfg.responses_port;
@@ -78,7 +96,9 @@ pub async fn start_servers<R: Runtime>(
             stats: stats.clone(),
             cache: cache.clone(),
             app: app.clone(),
-            health_status: health_status.clone(),
+            circuits: circuits.clone(),
+            inflight_limits: inflight_limits.clone(),
+            http_client: http_client.clone(),
             api_type: ApiType::Anthropic,
         };
         
@@ -94,7 +114,9 @@ pub async fn start_servers<R: Runtime>(
             stats: stats.clone(),
             cache: cache.clone(),
             app: app.clone(),
-            health_status: health_status.clone(),
+            circuits: circuits.clone(),
+            inflight_limits: inflight_limits.clone(),
+            http_client: http_client.clone(),
             api_type: ApiType::OpenAIResponses,
         };
         
@@ -110,7 +132,9 @@ pub async fn start_servers<R: Runtime>(
             stats: stats.clone(),
             cache: cache.clone(),
             app: app.clone(),
-            health_status: health_status.clone(),
+            circuits: circuits.clone(),
+            inflight_limits: inflight_limits.clone(),
+            http_client: http_client.clone(),
             api_type: ApiType::OpenAIChat,
         };
         
@@ -145,16 +169,39 @@ async fn handle_request<R: Runtime>(
     State(state): State<ProxyState<R>>,
     req: Request<Body>,
 ) -> Response {
-    let start_time = SystemTime::now();
-    let config = state.config.read().await;
-    
-    // 检查对应的网关是否启用
-    let gateway_enabled = match state.api_type {
-        ApiType::Anthropic => config.anthropic_enabled,
-        ApiType::OpenAIResponses => config.responses_enabled,
-        ApiType::OpenAIChat => config.chat_enabled,
+    const DEFAULT_MAX_ATTEMPTS: usize = 4;
+    const MAX_INFLIGHT_PER_PROVIDER: usize = 4;
+    const UPSTREAM_HEADERS_TIMEOUT: Duration = Duration::from_secs(15);
+    const UPSTREAM_BODY_TIMEOUT: Duration = Duration::from_secs(30);
+
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let overall_start = SystemTime::now();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+
+    // Read config quickly (do NOT hold across awaits).
+    let (gateway_enabled, cache_enabled, fallback_enabled, base_cooldown_seconds, providers) = {
+        let config = state.config.read().await;
+        let gateway_enabled = match state.api_type {
+            ApiType::Anthropic => config.anthropic_enabled,
+            ApiType::OpenAIResponses => config.responses_enabled,
+            ApiType::OpenAIChat => config.chat_enabled,
+        };
+
+        let providers = config
+            .get_providers_for_api_type(&state.api_type)
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        (
+            gateway_enabled,
+            config.cache_enabled,
+            config.fallback_enabled,
+            config.circuit_breaker_cooldown_seconds.max(1),
+            providers,
+        )
     };
-    
+
     if !gateway_enabled {
         return (StatusCode::SERVICE_UNAVAILABLE, "Gateway is disabled").into_response();
     }
@@ -163,22 +210,23 @@ async fn handle_request<R: Runtime>(
     let query = req.uri().query().map(|q| format!("?{}", q)).unwrap_or_default();
     let method = req.method().clone();
     let headers = req.headers().clone();
-    let user_agent = headers.get("user-agent")
+    let user_agent = headers
+        .get("user-agent")
         .and_then(|h| h.to_str().ok())
         .unwrap_or("unknown")
         .to_string();
-    
+
     let body_bytes = match axum::body::to_bytes(req.into_body(), usize::MAX).await {
         Ok(b) => b,
         Err(_) => return (StatusCode::BAD_REQUEST, "Failed to read body").into_response(),
     };
 
-    // 检查缓存
-    if config.cache_enabled {
+    // Cache check
+    if cache_enabled {
         let cache_key = CacheManager::generate_key(&path, &body_bytes);
         if let Some(cached) = state.cache.get(&cache_key) {
             state.stats.record_cache_hit();
-            
+
             let mut builder = Response::builder().status(cached.status);
             if let Some(headers_mut) = builder.headers_mut() {
                 for (k, v) in &cached.headers {
@@ -192,100 +240,136 @@ async fn handle_request<R: Runtime>(
         state.stats.record_cache_miss();
     }
 
-    // 计算 input tokens
     let input_tokens = calculate_input_tokens(&body_bytes);
+    let api_type_str = api_type_to_string(&state.api_type);
 
-    let client = Client::new();
-    
-    // 获取支持当前 API 类型的供应商
-    let providers = config.get_providers_for_api_type(&state.api_type);
-    
     if providers.is_empty() {
         return (StatusCode::SERVICE_UNAVAILABLE, "No active providers for this API type").into_response();
     }
 
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    let cooldown = config.circuit_breaker_cooldown_seconds;
-    let api_type_str = api_type_to_string(&state.api_type);
+    let max_attempts = if fallback_enabled {
+        providers.len().min(DEFAULT_MAX_ATTEMPTS).max(1)
+    } else {
+        1
+    };
 
-    // 检查是否所有供应商都在冷却中，如果是则自动解除所有冷却
-    let all_in_cooldown = providers.iter().all(|p| {
-        if let Some(last_failure) = state.health_status.get(&p.id) {
-            now - *last_failure < cooldown
-        } else {
-            false
+    // Deterministic tiebreak for this request.
+    let mut candidates = providers;
+    candidates.sort_by(|a, b| {
+        let ca = state.circuits.get(&a.id).map(|c| c.clone()).unwrap_or_default();
+        let cb = state.circuits.get(&b.id).map(|c| c.clone()).unwrap_or_default();
+        let sa = ca.score(a.weight, now);
+        let sb = cb.score(b.weight, now);
+
+        let a_can = ca.can_attempt(now);
+        let b_can = cb.can_attempt(now);
+
+        // Prefer providers we can attempt now.
+        match b_can.cmp(&a_can) {
+            std::cmp::Ordering::Equal => {
+                // Prefer sooner recovery for those in cooldown.
+                let a_until = ca.open_until;
+                let b_until = cb.open_until;
+                match a_until.cmp(&b_until) {
+                    std::cmp::Ordering::Equal => {
+                        // Higher score first.
+                        match sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal) {
+                            std::cmp::Ordering::Equal => {
+                                let ta = hash_u64(&(request_id.as_str(), a.id.as_str()));
+                                let tb = hash_u64(&(request_id.as_str(), b.id.as_str()));
+                                ta.cmp(&tb)
+                            }
+                            other => other,
+                        }
+                    }
+                    other => other,
+                }
+            }
+            other => other,
         }
     });
-    
-    if all_in_cooldown && !providers.is_empty() {
-        println!("⚡ All providers in cooldown, resetting all cooldowns...");
-        for p in &providers {
-            state.health_status.remove(&p.id);
-            // 同时重置统计中的健康状态
-            state.stats.reset_provider_health(&p.name);
-        }
-    }
 
-    for provider in providers {
-        // Circuit Breaker Check
-        if let Some(last_failure) = state.health_status.get(&provider.id) {
-            if now - *last_failure < cooldown {
-                // 静默跳过，不输出日志避免刷屏
-                continue;
-            }
+    let mut tried: HashSet<String> = HashSet::new();
+    let mut attempted_any = false;
+
+    for provider in candidates.into_iter().take(max_attempts) {
+        if tried.contains(&provider.id) {
+            continue;
+        }
+        tried.insert(provider.id.clone());
+
+        let force = !attempted_any;
+        if !reserve_provider_attempt(&state.circuits, &provider.id, now, force) {
+            continue;
         }
 
-        // Emit Pending Event
-        let _ = state.app.emit("gateway://provider-status", ProviderStatusEvent {
-            provider_id: provider.id.clone(),
-            status: "pending".to_string(),
-            api_type: api_type_str.clone(),
-        });
+        let Some(_permit) = try_acquire_provider_permit(&state.inflight_limits, &provider.id, MAX_INFLIGHT_PER_PROVIDER) else {
+            // Busy provider; release probe flag by marking as failure with a tiny cooldown.
+            mark_busy_failure(&state.circuits, &provider.id, now);
+            continue;
+        };
 
-        // 检查是否需要协议转换 (Claude Code 代理模式)
-        // 只对 /v1/messages 路径应用转换，其他路径直接透传
+        attempted_any = true;
+        let attempt_start = SystemTime::now();
+
+        let _ = state.app.emit(
+            "gateway://provider-status",
+            ProviderStatusEvent {
+                provider_id: provider.id.clone(),
+                status: "pending".to_string(),
+                api_type: api_type_str.clone(),
+            },
+        );
+
+        // Claude Code proxy mode only for Anthropic /v1/messages.
         let is_messages_path = path.starts_with("/v1/messages");
         let use_proxy_conversion = provider.claude_code_proxy && state.api_type == ApiType::Anthropic && is_messages_path;
-        
-        // 转换请求体和 URL (如果需要)
+        let requested_model = extract_model(&body_bytes).unwrap_or_else(|| "unknown".to_string());
+
         let (request_body, target_path) = if use_proxy_conversion {
-            println!("🔄 [{}] Using Claude Code proxy mode for provider: {}", api_type_str, provider.name);
             match converter::anthropic_to_openai(&body_bytes, &provider.model_mapping) {
                 Ok(converted) => (converted, "/v1/chat/completions".to_string()),
                 Err(e) => {
-                    println!("❌ Failed to convert request: {}", e);
-                    continue;
+                    // Bad client request; retrying other providers won't help.
+                    let _ = state.app.emit(
+                        "gateway://provider-status",
+                        ProviderStatusEvent {
+                            provider_id: provider.id.clone(),
+                            status: "error".to_string(),
+                            api_type: api_type_str.clone(),
+                        },
+                    );
+                    mark_busy_failure(&state.circuits, &provider.id, now);
+                    return (StatusCode::BAD_REQUEST, format!("Failed to convert request: {}", e)).into_response();
                 }
             }
         } else {
             (body_bytes.to_vec(), path.clone())
         };
 
-        // Construct target URL
         let base = provider.base_url.trim_end_matches('/');
         let url = format!("{}{}{}", base, target_path, query);
-        
-        println!("🔄 [{}] Forwarding to: {}", api_type_str, url);
 
-        let mut new_req = client.request(method.clone(), &url);
-        
-        // Forward headers (排除某些头)
+        let mut new_req = state.http_client.request(method.clone(), &url);
+
+        // Forward headers (exclude hop-by-hop and auth headers; gateway provides its own auth).
         for (key, value) in &headers {
             let key_str = key.as_str();
-            // 代理模式下不转发 Anthropic 特有的头
-            if key_str == "host" || key_str == "authorization" || key_str == "content-length" {
-                continue;
-            }
-            if use_proxy_conversion && (key_str == "x-api-key" || key_str == "anthropic-version" || key_str == "anthropic-beta") {
+            if key_str == "host"
+                || key_str == "content-length"
+                || key_str == "authorization"
+                || key_str == "x-api-key"
+                || key_str == "anthropic-version"
+                || key_str == "anthropic-beta"
+            {
                 continue;
             }
             new_req = new_req.header(key, value);
         }
-        
-        // Add Provider Auth
+
+        // Provider auth
         if !provider.api_key.is_empty() {
             if use_proxy_conversion {
-                // 代理模式：使用 OpenAI 格式的认证
                 let auth_val = format!("Bearer {}", provider.api_key);
                 if let Ok(val) = HeaderValue::from_str(&auth_val) {
                     new_req = new_req.header("Authorization", val);
@@ -307,258 +391,41 @@ async fn handle_request<R: Runtime>(
                 }
             }
         }
-        
-        // 设置正确的 Content-Type
+
         new_req = new_req.header("Content-Type", "application/json");
-        new_req = new_req.body(request_body.clone());
+        new_req = new_req.body(request_body);
 
-        match new_req.send().await {
-            Ok(resp) => {
-                let status = resp.status();
-                
-                let should_fallback = status.is_server_error() || 
-                                      status == StatusCode::UNAUTHORIZED || 
-                                      status == StatusCode::PAYMENT_REQUIRED || 
-                                      status == StatusCode::FORBIDDEN || 
-                                      status == StatusCode::GONE ||
-                                      status == StatusCode::TOO_MANY_REQUESTS;
+        let resp = match timeout(UPSTREAM_HEADERS_TIMEOUT, new_req.send()).await {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                let duration = duration_ms(attempt_start);
+                let (until, failure_kind) = open_circuit(
+                    &state.circuits,
+                    &provider.id,
+                    now,
+                    base_cooldown_seconds,
+                    FailureKind::Connect,
+                    None,
+                    &(now, &provider.id, &request_id),
+                );
 
-                if should_fallback && config.fallback_enabled {
-                    // 尝试读取错误响应体以获取更多信息
-                    let error_body = match resp.text().await {
-                        Ok(text) => {
-                            if text.len() > 500 {
-                                format!("{}...(truncated)", &text[..500])
-                            } else {
-                                text
-                            }
-                        }
-                        Err(_) => "(unable to read error body)".to_string()
-                    };
-                    
-                    println!("⚠️ Provider {} failed:", provider.name);
-                    println!("   URL: {}", url);
-                    println!("   Status: {}", status);
-                    println!("   Response: {}", error_body);
-                    println!("   Trying next provider...");
-                    
-                    let _ = state.app.emit("gateway://provider-status", ProviderStatusEvent {
+                let _ = state.app.emit(
+                    "gateway://provider-status",
+                    ProviderStatusEvent {
                         provider_id: provider.id.clone(),
                         status: "error".to_string(),
                         api_type: api_type_str.clone(),
-                    });
+                    },
+                );
 
-                    state.health_status.insert(provider.id.clone(), now);
-
-                    let duration = SystemTime::now().duration_since(start_time).unwrap_or_default().as_millis() as u64;
-                    let log = RequestLog {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        timestamp: now,
-                        provider: provider.name.clone(),
-                        model: "unknown".to_string(),
-                        status: status.as_u16(),
-                        duration_ms: duration,
-                        input_tokens,
-                        output_tokens: 0,
-                        cost: 0.0,
-                        path: path.clone(),
-                        client_agent: user_agent.clone(),
-                        api_type: api_type_str.clone(),
-                        cached: false,
-                        error_message: Some(format!("HTTP {} - {}", status, error_body)),
-                    };
-                    state.stats.record_request(log);
-
-                    continue;
-                }
-                
-                let _ = state.app.emit("gateway://provider-status", ProviderStatusEvent {
-                    provider_id: provider.id.clone(),
-                    status: "success".to_string(),
-                    api_type: api_type_str.clone(),
-                });
-
-                state.health_status.remove(&provider.id);
-
-                let duration = SystemTime::now().duration_since(start_time).unwrap_or_default().as_millis() as u64;
-                let output_tokens = 0; // TODO: parse from response
-                let cost = calculate_cost(input_tokens, output_tokens, provider.input_price_per_1k, provider.output_price_per_1k);
-
-                let log = RequestLog {
+                state.stats.record_request(RequestLog {
                     id: uuid::Uuid::new_v4().to_string(),
                     timestamp: now,
                     provider: provider.name.clone(),
-                    model: "unknown".to_string(),
-                    status: status.as_u16(),
-                    duration_ms: duration,
-                    input_tokens,
-                    output_tokens,
-                    cost,
-                    path: path.clone(),
-                    client_agent: user_agent.clone(),
-                    api_type: api_type_str.clone(),
-                    cached: false,
-                    error_message: None,
-                };
-                
-                state.stats.record_request(log);
-
-                // 收集响应头用于缓存
-                let response_headers: Vec<(String, String)> = resp.headers()
-                    .iter()
-                    .filter_map(|(k, v)| {
-                        v.to_str().ok().map(|v| (k.to_string(), v.to_string()))
-                    })
-                    .collect();
-
-                let mut builder = Response::builder().status(status);
-                
-                if let Some(headers_mut) = builder.headers_mut() {
-                    for (k, v) in resp.headers() {
-                        headers_mut.insert(k, v.clone());
-                    }
-                }
-                
-                // 对于非流式响应，尝试缓存
-                let content_type = resp.headers()
-                    .get("content-type")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("");
-                
-                if config.cache_enabled && !content_type.contains("stream") && status.is_success() {
-                    // 缓冲响应体用于缓存
-                    match resp.bytes().await {
-                        Ok(bytes) => {
-                            let cache_key = CacheManager::generate_key(&path, &body_bytes);
-                            state.cache.set(cache_key, bytes.to_vec(), status.as_u16(), response_headers);
-                            return builder.body(Body::from(bytes)).unwrap_or_default();
-                        }
-                        Err(_) => {
-                            // 缓存失败，直接返回空响应
-                            return builder.body(Body::empty()).unwrap_or_default();
-                        }
-                    }
-                } else {
-                    // 流式响应处理
-                    if use_proxy_conversion {
-                        // Claude Code 代理模式：需要将 OpenAI SSE 转换为 Anthropic SSE
-                        let message_id = format!("msg_{}", uuid::Uuid::new_v4().to_string().replace("-", "")[..24].to_string());
-                        let model_name = "claude-3-5-sonnet-20241022".to_string();
-                        
-                        let stream = resp.bytes_stream();
-                        let converted_stream = async_stream::stream! {
-                            let mut buffer = String::new();
-                            let mut is_first = true;
-                            let mut stream_ended = false;
-                            
-                            tokio::pin!(stream);
-                            
-                            // 处理上游流
-                            while let Some(chunk_result) = futures::StreamExt::next(&mut stream).await {
-                                match chunk_result {
-                                    Ok(chunk) => {
-                                        buffer.push_str(&String::from_utf8_lossy(&chunk));
-                                        
-                                        // 按行处理 SSE (OpenAI 用 \n\n 分隔事件)
-                                        while let Some(pos) = buffer.find('\n') {
-                                            let line = buffer[..pos].to_string();
-                                            buffer = buffer[pos + 1..].to_string();
-                                            
-                                            let line = line.trim();
-                                            if line.is_empty() {
-                                                continue;
-                                            }
-                                            
-                                            // 转换 OpenAI SSE 到 Anthropic SSE
-                                            let converted_events = converter::openai_sse_to_anthropic(line, &message_id, &model_name, is_first);
-                                            
-                                            // 只有在有实际事件输出时才标记为非首次
-                                            if !converted_events.is_empty() && is_first {
-                                                is_first = false;
-                                            }
-                                            
-                                            for event in &converted_events {
-                                                yield Ok::<_, std::io::Error>(bytes::Bytes::from(format!("{}\n\n", event)));
-                                                
-                                                // 检查是否是结束事件
-                                                if event.contains("message_stop") {
-                                                    stream_ended = true;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Stream error: {}", e);
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            // 处理 buffer 中剩余的数据
-                            if !buffer.trim().is_empty() {
-                                let converted_events = converter::openai_sse_to_anthropic(buffer.trim(), &message_id, &model_name, is_first);
-                                for event in &converted_events {
-                                    yield Ok::<_, std::io::Error>(bytes::Bytes::from(format!("{}\n\n", event)));
-                                    if event.contains("message_stop") {
-                                        stream_ended = true;
-                                    }
-                                }
-                            }
-                            
-                            // 如果流结束但没有收到正常的结束事件，发送结束序列
-                            if !stream_ended {
-                                yield Ok::<_, std::io::Error>(bytes::Bytes::from(format!(
-                                    "event: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":0}}\n\n"
-                                )));
-                                yield Ok::<_, std::io::Error>(bytes::Bytes::from(format!(
-                                    "event: message_delta\ndata: {{\"type\":\"message_delta\",\"delta\":{{\"stop_reason\":\"end_turn\",\"stop_sequence\":null}},\"usage\":{{\"output_tokens\":0}}}}\n\n"
-                                )));
-                                yield Ok::<_, std::io::Error>(bytes::Bytes::from(format!(
-                                    "event: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n"
-                                )));
-                            }
-                        };
-                        
-                        // 设置 Anthropic SSE content-type
-                        if let Some(headers_mut) = builder.headers_mut() {
-                            headers_mut.insert(
-                                axum::http::header::CONTENT_TYPE,
-                                HeaderValue::from_static("text/event-stream; charset=utf-8")
-                            );
-                        }
-                        
-                        let body = Body::from_stream(converted_stream);
-                        return builder.body(body).unwrap_or_default();
-                    } else {
-                        // 非代理模式：直接透传
-                        let body = Body::from_stream(resp.bytes_stream());
-                        return builder.body(body).unwrap_or_default();
-                    }
-                }
-            }
-            Err(e) => {
-                println!("❌ Provider {} connection failed:", provider.name);
-                println!("   URL: {}", url);
-                println!("   Error: {}", e);
-                println!("   Trying next provider...");
-                
-                let _ = state.app.emit("gateway://provider-status", ProviderStatusEvent {
-                    provider_id: provider.id.clone(),
-                    status: "error".to_string(),
-                    api_type: api_type_str.clone(),
-                });
-
-                state.health_status.insert(provider.id.clone(), now);
-
-                let duration = SystemTime::now().duration_since(start_time).unwrap_or_default().as_millis() as u64;
-                let log = RequestLog {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    timestamp: now,
-                    provider: provider.name.clone(),
-                    model: "unknown".to_string(),
+                    model: requested_model.clone(),
                     status: 502,
                     duration_ms: duration,
-                    input_tokens: 0,
+                    input_tokens,
                     output_tokens: 0,
                     cost: 0.0,
                     path: path.clone(),
@@ -566,18 +433,450 @@ async fn handle_request<R: Runtime>(
                     api_type: api_type_str.clone(),
                     cached: false,
                     error_message: Some(format!("Connection failed: {}", e)),
-                };
-                state.stats.record_request(log);
+                });
+                state.stats.set_provider_cooldown(&provider.name, until, failure_kind);
 
-                if !config.fallback_enabled {
+                if !fallback_enabled {
                     return (StatusCode::BAD_GATEWAY, format!("Provider {} failed: {}", provider.name, e)).into_response();
                 }
+                continue;
+            }
+            Err(_) => {
+                let duration = duration_ms(attempt_start);
+                let (until, failure_kind) = open_circuit(
+                    &state.circuits,
+                    &provider.id,
+                    now,
+                    base_cooldown_seconds,
+                    FailureKind::Timeout,
+                    None,
+                    &(now, &provider.id, &request_id),
+                );
+
+                let _ = state.app.emit(
+                    "gateway://provider-status",
+                    ProviderStatusEvent {
+                        provider_id: provider.id.clone(),
+                        status: "error".to_string(),
+                        api_type: api_type_str.clone(),
+                    },
+                );
+
+                state.stats.record_request(RequestLog {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: now,
+                    provider: provider.name.clone(),
+                    model: requested_model.clone(),
+                    status: 504,
+                    duration_ms: duration,
+                    input_tokens,
+                    output_tokens: 0,
+                    cost: 0.0,
+                    path: path.clone(),
+                    client_agent: user_agent.clone(),
+                    api_type: api_type_str.clone(),
+                    cached: false,
+                    error_message: Some("Upstream timeout".to_string()),
+                });
+                state.stats.set_provider_cooldown(&provider.name, until, failure_kind);
+
+                if !fallback_enabled {
+                    return (StatusCode::GATEWAY_TIMEOUT, "Upstream timeout").into_response();
+                }
+                continue;
+            }
+        };
+
+        let status = resp.status();
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let is_stream = content_type.contains("text/event-stream") || content_type.contains("stream");
+
+        // Classify failures.
+        let should_fallback = status.is_server_error()
+            || status == StatusCode::REQUEST_TIMEOUT
+            || status == StatusCode::UNAUTHORIZED
+            || status == StatusCode::PAYMENT_REQUIRED
+            || status == StatusCode::FORBIDDEN
+            || status == StatusCode::GONE
+            || status == StatusCode::NOT_FOUND
+            || status == StatusCode::TOO_MANY_REQUESTS;
+
+        if !status.is_success() {
+            let resp_headers = resp.headers().clone();
+            let retry_after = parse_retry_after_seconds_from_headers(&resp_headers);
+
+            let body = match timeout(UPSTREAM_BODY_TIMEOUT, resp.bytes()).await {
+                Ok(Ok(bytes)) => bytes,
+                _ => bytes::Bytes::new(),
+            };
+            let failure_kind = failure_kind_from_status(status);
+            let (until, failure_kind) = open_circuit(
+                &state.circuits,
+                &provider.id,
+                now,
+                base_cooldown_seconds,
+                failure_kind,
+                retry_after,
+                &(now, &provider.id, &request_id, status.as_u16()),
+            );
+
+            let error_body = truncate_utf8(body.as_ref(), 500);
+            let duration = duration_ms(attempt_start);
+
+            let _ = state.app.emit(
+                "gateway://provider-status",
+                ProviderStatusEvent {
+                    provider_id: provider.id.clone(),
+                    status: "error".to_string(),
+                    api_type: api_type_str.clone(),
+                },
+            );
+
+            state.stats.record_request(RequestLog {
+                id: uuid::Uuid::new_v4().to_string(),
+                timestamp: now,
+                provider: provider.name.clone(),
+                model: requested_model.clone(),
+                status: status.as_u16(),
+                duration_ms: duration,
+                input_tokens,
+                output_tokens: 0,
+                cost: 0.0,
+                path: path.clone(),
+                client_agent: user_agent.clone(),
+                api_type: api_type_str.clone(),
+                cached: false,
+                error_message: Some(format!("HTTP {} - {}", status, error_body)),
+            });
+            state.stats.set_provider_cooldown(&provider.name, until, failure_kind);
+
+            if fallback_enabled && should_fallback {
+                continue;
+            }
+
+            let mut builder = Response::builder().status(status);
+            if let Some(headers_mut) = builder.headers_mut() {
+                for (k, v) in resp_headers.iter() {
+                    if k == axum::http::header::CONTENT_LENGTH {
+                        continue;
+                    }
+                    headers_mut.insert(k, v.clone());
+                }
+            }
+            return builder.body(Body::from(body)).unwrap_or_default();
+        }
+
+        // Success path.
+        let duration = duration_ms(attempt_start);
+        mark_success(&state.circuits, &provider.id, now, duration);
+        state.stats.clear_provider_cooldown(&provider.name);
+
+        let _ = state.app.emit(
+            "gateway://provider-status",
+            ProviderStatusEvent {
+                provider_id: provider.id.clone(),
+                status: "success".to_string(),
+                api_type: api_type_str.clone(),
+            },
+        );
+
+        let output_tokens = 0;
+        let cost = calculate_cost(input_tokens, output_tokens, provider.input_price_per_1k, provider.output_price_per_1k);
+        state.stats.record_request(RequestLog {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: now,
+            provider: provider.name.clone(),
+            model: requested_model.clone(),
+            status: status.as_u16(),
+            duration_ms: duration,
+            input_tokens,
+            output_tokens,
+            cost,
+            path: path.clone(),
+            client_agent: user_agent.clone(),
+            api_type: api_type_str.clone(),
+            cached: false,
+            error_message: None,
+        });
+
+        // Collect response headers for cache (exclude content-length as body may change).
+        let response_headers: Vec<(String, String)> = resp
+            .headers()
+            .iter()
+            .filter(|(k, _)| *k != &axum::http::header::CONTENT_LENGTH)
+            .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
+            .collect();
+
+        let mut builder = Response::builder().status(status);
+        if let Some(headers_mut) = builder.headers_mut() {
+            for (k, v) in resp.headers() {
+                if k == axum::http::header::CONTENT_LENGTH {
+                    continue;
+                }
+                headers_mut.insert(k, v.clone());
             }
         }
+
+        if !is_stream {
+            let bytes = match timeout(UPSTREAM_BODY_TIMEOUT, resp.bytes()).await {
+                Ok(Ok(bytes)) => bytes,
+                _ => bytes::Bytes::new(),
+            };
+
+            let final_bytes = if use_proxy_conversion {
+                match converter::openai_response_to_anthropic(&bytes, &requested_model) {
+                    Ok(converted) => bytes::Bytes::from(converted),
+                    Err(e) => {
+                        let (until, failure_kind) = open_circuit(
+                            &state.circuits,
+                            &provider.id,
+                            now,
+                            base_cooldown_seconds,
+                            FailureKind::Other,
+                            None,
+                            &(now, &provider.id, &request_id, "convert"),
+                        );
+                        state.stats.set_provider_cooldown(&provider.name, until, failure_kind);
+                        if fallback_enabled {
+                            continue;
+                        }
+                        return (StatusCode::BAD_GATEWAY, format!("Failed to convert upstream response: {}", e)).into_response();
+                    }
+                }
+            } else {
+                bytes
+            };
+
+            if cache_enabled {
+                let cache_key = CacheManager::generate_key(&path, &body_bytes);
+                state
+                    .cache
+                    .set(cache_key, final_bytes.to_vec(), status.as_u16(), response_headers);
+            }
+
+            // Ensure JSON content-type for converted responses.
+            if use_proxy_conversion {
+                if let Some(headers_mut) = builder.headers_mut() {
+                    headers_mut.insert(
+                        axum::http::header::CONTENT_TYPE,
+                        HeaderValue::from_static("application/json"),
+                    );
+                }
+            }
+
+            return builder.body(Body::from(final_bytes)).unwrap_or_default();
+        }
+
+        // Stream response.
+        if use_proxy_conversion {
+            let message_id = format!(
+                "msg_{}",
+                uuid::Uuid::new_v4().to_string().replace("-", "")[..24].to_string()
+            );
+
+            let stream = resp.bytes_stream();
+            let model_name = requested_model.clone();
+            let converted_stream = async_stream::stream! {
+                let mut buffer = String::new();
+                let mut is_first = true;
+                let mut stream_ended = false;
+
+                tokio::pin!(stream);
+
+                while let Some(chunk_result) = futures::StreamExt::next(&mut stream).await {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+                            while let Some(pos) = buffer.find('\n') {
+                                let line = buffer[..pos].to_string();
+                                buffer = buffer[pos + 1..].to_string();
+
+                                let line = line.trim();
+                                if line.is_empty() {
+                                    continue;
+                                }
+
+                                let converted_events = converter::openai_sse_to_anthropic(line, &message_id, &model_name, is_first);
+                                if !converted_events.is_empty() && is_first {
+                                    is_first = false;
+                                }
+
+                                for event in &converted_events {
+                                    yield Ok::<_, std::io::Error>(bytes::Bytes::from(format!("{}\n\n", event)));
+                                    if event.contains("message_stop") {
+                                        stream_ended = true;
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Stream error: {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                if !buffer.trim().is_empty() {
+                    let converted_events = converter::openai_sse_to_anthropic(buffer.trim(), &message_id, &model_name, is_first);
+                    for event in &converted_events {
+                        yield Ok::<_, std::io::Error>(bytes::Bytes::from(format!("{}\n\n", event)));
+                        if event.contains("message_stop") {
+                            stream_ended = true;
+                        }
+                    }
+                }
+
+                if !stream_ended {
+                    yield Ok::<_, std::io::Error>(bytes::Bytes::from(
+                        "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+                    ));
+                    yield Ok::<_, std::io::Error>(bytes::Bytes::from(
+                        "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":0}}\n\n",
+                    ));
+                    yield Ok::<_, std::io::Error>(bytes::Bytes::from(
+                        "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+                    ));
+                }
+            };
+
+            if let Some(headers_mut) = builder.headers_mut() {
+                headers_mut.insert(
+                    axum::http::header::CONTENT_TYPE,
+                    HeaderValue::from_static("text/event-stream; charset=utf-8"),
+                );
+            }
+
+            let body = Body::from_stream(converted_stream);
+            return builder.body(body).unwrap_or_default();
+        }
+
+        let body = Body::from_stream(resp.bytes_stream());
+        return builder.body(body).unwrap_or_default();
     }
 
-    println!("❌ All providers failed for {}", path);
+    let overall_duration = duration_ms(overall_start);
+    eprintln!(
+        "❌ [Gateway:{}] All providers failed for {} (request_id={}, duration={}ms)",
+        api_type_str,
+        path,
+        request_id,
+        overall_duration
+    );
     (StatusCode::BAD_GATEWAY, "All providers failed").into_response()
+}
+
+fn duration_ms(start: SystemTime) -> u64 {
+    SystemTime::now()
+        .duration_since(start)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn hash_u64<T: Hash>(value: &T) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn extract_model(body: &[u8]) -> Option<String> {
+    let v = serde_json::from_slice::<serde_json::Value>(body).ok()?;
+    v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string())
+}
+
+fn truncate_utf8(bytes: &[u8], max_chars: usize) -> String {
+    let s = String::from_utf8_lossy(bytes);
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let truncated: String = s.chars().take(max_chars).collect();
+    format!("{}...(truncated)", truncated)
+}
+
+fn failure_kind_from_status(status: StatusCode) -> FailureKind {
+    match status {
+        StatusCode::TOO_MANY_REQUESTS => FailureKind::RateLimit,
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::PAYMENT_REQUIRED => FailureKind::Auth,
+        StatusCode::NOT_FOUND => FailureKind::NotFound,
+        s if s.is_server_error() => FailureKind::Upstream5xx,
+        _ => FailureKind::Other,
+    }
+}
+
+fn parse_retry_after_seconds_from_headers(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    let v = headers.get("retry-after")?.to_str().ok()?.trim();
+    v.parse::<u64>().ok()
+}
+
+fn reserve_provider_attempt(
+    circuits: &DashMap<String, Circuit>,
+    provider_id: &str,
+    now: u64,
+    force: bool,
+) -> bool {
+    let mut entry = circuits.entry(provider_id.to_string()).or_default();
+    if entry.can_attempt(now) {
+        entry.mark_probe_started(now);
+        return true;
+    }
+
+    if force {
+        // Escape hatch: allow one forced attempt when everything is blocked.
+        entry.open_until = now;
+        entry.probe_in_flight = true;
+        return true;
+    }
+    false
+}
+
+fn mark_busy_failure(circuits: &DashMap<String, Circuit>, provider_id: &str, now: u64) {
+    if let Some(mut entry) = circuits.get_mut(provider_id) {
+        // Release probe lock so another request can try.
+        if entry.is_half_open(now) {
+            entry.probe_in_flight = false;
+        }
+    }
+}
+
+fn try_acquire_provider_permit(
+    inflight: &DashMap<String, Arc<Semaphore>>,
+    provider_id: &str,
+    max_inflight: usize,
+) -> Option<OwnedSemaphorePermit> {
+    let sem = inflight
+        .entry(provider_id.to_string())
+        .or_insert_with(|| Arc::new(Semaphore::new(max_inflight)))
+        .clone();
+    sem.try_acquire_owned().ok()
+}
+
+fn open_circuit(
+    circuits: &DashMap<String, Circuit>,
+    provider_id: &str,
+    now: u64,
+    base_cooldown_seconds: u64,
+    kind: FailureKind,
+    retry_after_seconds: Option<u64>,
+    jitter_seed: &impl Hash,
+) -> (u64, FailureKind) {
+    let mut entry = circuits.entry(provider_id.to_string()).or_default();
+    let until = entry.on_failure(
+        now,
+        base_cooldown_seconds,
+        kind,
+        retry_after_seconds,
+        jitter_seed,
+    );
+    (until, kind)
+}
+
+fn mark_success(circuits: &DashMap<String, Circuit>, provider_id: &str, _now: u64, latency_ms: u64) {
+    let mut entry = circuits.entry(provider_id.to_string()).or_default();
+    entry.on_success(latency_ms);
 }
 
 fn calculate_input_tokens(body: &[u8]) -> u32 {

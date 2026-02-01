@@ -101,9 +101,14 @@ pub fn anthropic_to_openai(body: &[u8], model_mapping: &HashMap<String, String>)
         .ok_or("Missing 'model' field in request")?;
     
     // 应用模型映射：如果在映射表中找到，则使用映射后的模型名
-    let model = model_mapping.get(original_model)
-        .map(|s| s.as_str())
-        .unwrap_or(original_model);
+    let mapped_model = model_mapping.get(original_model).map(|s| s.as_str());
+    let model = mapped_model.unwrap_or(original_model);
+
+    if let Some(mapped) = mapped_model {
+        println!("🔀 [Gateway] Model mapped: '{}' -> '{}'", original_model, mapped);
+    } else {
+        println!("⚠️ [Gateway] Model NOT mapped: '{}' (using original). If this causes 404, check your mapping source.", original_model);
+    }
     
     let max_tokens = anthropic_req.get("max_tokens")
         .and_then(|m| m.as_u64())
