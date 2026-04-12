@@ -53,7 +53,8 @@
         "techStack": "技術棧",
         "searchTech": "搜尋技術棧...",
         "addCustomTech": "新增自訂技術棧...",
-        "themeColor": "主題色"
+        "themeColor": "主題色",
+        "copyPath": "複製目錄路徑"
     },
     "settings": {
         "title": "設定",

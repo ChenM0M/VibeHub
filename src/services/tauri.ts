@@ -46,8 +46,8 @@ export const tauriApi = {
         return await invoke('launch_tool', { projectId });
     },
 
-    launchCustom: async (projectId: string, config: any): Promise<void> => {
-        return await invoke('launch_custom', { projectId, config });
+    launchCustom: async (projectId: string, config: any, category?: string): Promise<void> => {
+        return await invoke('launch_custom', { projectId, config, category: category || null });
     },
 
     openInExplorer: async (path: string): Promise<void> => {

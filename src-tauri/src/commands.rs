@@ -351,6 +351,7 @@ pub async fn launch_tool(
 pub async fn launch_custom(
     project_id: String,
     config: TagConfig,
+    category: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     println!("Frontend requested launch_custom for project_id: {}, config: {:?}", project_id, config);
@@ -359,10 +360,17 @@ pub async fn launch_custom(
     
     let project = app_config.projects.iter().find(|p| p.id == project_id)
         .ok_or("Project not found")?;
+    
+    let tag_category = match category.as_deref() {
+        Some("workspace") => TagCategory::Workspace,
+        Some("ide") => TagCategory::Ide,
+        Some("cli") => TagCategory::Cli,
+        Some("environment") => TagCategory::Environment,
+        Some("startup") => TagCategory::Startup,
+        _ => TagCategory::Custom,
+    };
         
-    // For custom launch, we assume it's a CLI tool or script that might benefit from a window
-    // or we can treat it as Custom category
-    Launcher::launch(project, &[(config, TagCategory::Custom)]).map_err(|e| e.to_string())
+    Launcher::launch(project, &[(config, tag_category)]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

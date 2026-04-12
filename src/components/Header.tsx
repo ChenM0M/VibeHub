@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import { Search, Moon, Sun, Bell, Minus, Square, X } from 'lucide-react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -11,6 +12,17 @@ interface HeaderProps {
 export function Header({ onSearch }: HeaderProps) {
     const { config, setTheme } = useAppStore();
     const isDark = config?.theme === 'dark';
+    const [searchValue, setSearchValue] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
+    const lastMouseTargetRef = useRef<EventTarget | null>(null);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            lastMouseTargetRef.current = e.target;
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     const toggleTheme = () => {
         setTheme(isDark ? 'light' : 'dark');
@@ -67,11 +79,30 @@ export function Header({ onSearch }: HeaderProps) {
             <div className="flex-1 max-w-xl relative ml-4">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
+                    ref={inputRef}
+                    value={searchValue}
                     placeholder="搜索项目..."
-                    className="pl-10 h-9 bg-secondary/30 backdrop-blur-sm border-border/50 focus-visible:bg-background/80 focus-visible:border-primary/50 transition-all rounded-lg shadow-sm"
-                    onChange={(e) => onSearch(e.target.value)}
+                    className="pl-10 pr-8 h-9 bg-secondary/30 backdrop-blur-sm border-border/50 focus-visible:bg-background/80 focus-visible:border-primary/50 transition-all rounded-lg shadow-sm"
+                    onChange={(e) => { setSearchValue(e.target.value); onSearch(e.target.value); }}
+                    onBlur={() => {
+                        const target = lastMouseTargetRef.current as HTMLElement | null;
+                        if (target?.closest('[data-project-card], button, input, a, [role="menuitem"]')) {
+                            return;
+                        }
+                        setSearchValue('');
+                        onSearch('');
+                    }}
                     onMouseDown={(e) => e.stopPropagation()}
                 />
+                {searchValue && (
+                    <button
+                        className="absolute right-2 top-2.5 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => { setSearchValue(''); onSearch(''); inputRef.current?.focus(); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                )}
             </div>
 
             <div className="ml-auto flex items-center gap-1 pr-1">
