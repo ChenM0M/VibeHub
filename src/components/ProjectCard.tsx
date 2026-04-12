@@ -16,7 +16,8 @@ import {
     FileCode,
     Hash,
     Edit,
-    Trash2
+    Trash2,
+    Copy
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -134,6 +135,7 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
         <ContextMenu>
             <ContextMenuTrigger>
                 <div
+                    data-project-card
                     className={`group relative flex flex-col justify-between min-h-[180px] h-full bg-card hover:bg-accent/5 border rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 overflow-hidden`}
                     style={customStyle}
                 >
@@ -285,13 +287,26 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
                     <Settings className="mr-2 h-4 w-4" />
                     {t('project.customLaunch')}
                 </ContextMenuItem>
-                <ContextMenuItem onClick={() => openInExplorer(project.path)}>
+                <ContextMenuItem onClick={() => {
+                    const originalPath = config?.projects.find(p => p.id === project.id)?.path || project.path;
+                    openInExplorer(originalPath);
+                }}>
                     <Folder className="mr-2 h-4 w-4" />
                     {t('project.openInExplorer')}
                 </ContextMenuItem>
-                <ContextMenuItem onClick={() => openTerminal(project.path)}>
+                <ContextMenuItem onClick={() => {
+                    const originalPath = config?.projects.find(p => p.id === project.id)?.path || project.path;
+                    openTerminal(originalPath);
+                }}>
                     <Terminal className="mr-2 h-4 w-4" />
                     {t('project.openInTerminal')}
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => {
+                    const originalPath = config?.projects.find(p => p.id === project.id)?.path || project.path;
+                    navigator.clipboard.writeText(originalPath);
+                }}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    {t('project.copyPath')}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
                 <ContextMenuItem onClick={() => toggleProjectStar(project.id)}>

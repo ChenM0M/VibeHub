@@ -28,7 +28,7 @@ interface AppState {
     deleteTag: (id: string) => Promise<void>;
 
     launchTool: (projectId: string) => Promise<void>;
-    launchCustom: (projectId: string, config: any) => Promise<void>;
+    launchCustom: (projectId: string, config: any, category?: string) => Promise<void>;
     openInExplorer: (path: string) => Promise<void>;
     openTerminal: (path: string) => Promise<void>;
     setTheme: (theme: Theme) => Promise<void>;
@@ -124,21 +124,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     },
 
     reorderProjects: async (projects) => {
-        // Optimistic update
         const currentConfig = get().config;
         if (currentConfig) {
-            set({ config: { ...currentConfig, projects } });
+            const newConfig = { ...currentConfig, projects };
+            set({ config: newConfig });
+            try {
+                await tauriApi.saveConfig(newConfig);
+            } catch (error) {
+                console.error('Failed to persist project order:', error);
+            }
         }
-        // Ideally we should persist this order to backend if backend supports it.
-        // For now, we just update local state. If backend doesn't support order, it will reset on refresh.
-        // Assuming backend preserves order or we don't persist it yet.
-        // If we want to persist, we need a backend command for it.
-        // For now, let's assume we just update the local state for the session or until refresh.
-        // If we want to persist, we'd iterate and update each project or have a bulk update.
-        // Let's just update the config in backend if possible, but we don't have a 'saveConfig' method exposed directly that takes the whole config.
-        // We'll stick to local state update for now, acknowledging it might be lost on restart if not persisted.
-        // Wait, `updateProject` persists. But reordering 100 projects is 100 calls.
-        // Let's leave it as optimistic local update for now.
     },
 
     addTag: async (tag) => {
@@ -166,9 +161,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
     },
 
-    launchCustom: async (projectId, config) => {
+    launchCustom: async (projectId, config, category) => {
         try {
-            await tauriApi.launchCustom(projectId, config);
+            await tauriApi.launchCustom(projectId, config, category);
             await get().recordProjectOpen(projectId);
         } catch (error) {
             set({ error: (error as Error).message });

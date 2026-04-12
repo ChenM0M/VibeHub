@@ -53,7 +53,8 @@
         "techStack": "Tech Stack",
         "searchTech": "Search tech stack...",
         "addCustomTech": "Add custom tech...",
-        "themeColor": "Theme Color"
+        "themeColor": "Theme Color",
+        "copyPath": "Copy Path"
     },
     "settings": {
         "title": "Settings",

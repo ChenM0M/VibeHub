@@ -99,7 +99,7 @@ export function LaunchDialog({ isOpen, onClose, project, isCustomLaunch = false 
             if (selectedTags) {
                 for (const tag of selectedTags) {
                     if (tag.config) {
-                        await launchCustom(project.id, tag.config);
+                        await launchCustom(project.id, tag.config, tag.category);
                     }
                 }
             }
