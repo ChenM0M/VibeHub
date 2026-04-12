@@ -1,133 +1,93 @@
 # VibeHub
 
 [English](README_EN.md) | [简体中文](README.md) | [繁體中文](README_TC.md)
+
 ![alt text](image-1.png)
-Your Local Command Center. Infinite Possibilities. Manage projects with flexible tags. One-click to launch IDEs, scripts, or AI gateways. Built for VibeCoding.
+
+> Manage your local dev projects in one place. Tag them, launch your favorite IDE or CLI with one click.
+> Comes with a built-in AI gateway for proxying and load-balancing AI requests.
 
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
-## ✨ Features
+## What it does
 
-- 🤖 **AI Gateway Integration**: Built-in high-performance AI gateway, seamlessly connecting future development experiences
-- 🚀 **Quick Launch**: One-click launch for VSCode, CLI tools, etc., VibeCoding friendly
-- 📁 **Local Multi-Project Management**: Automatically scan and manage local projects, supporting multiple languages and frameworks
-- 🏷️ **Tag System**: Flexible project categorization and filtering
-- 💾 **Portable Mode**: Green and portable, configuration follows you
-- 🎨 **Modern UI**: Notion-style minimalist design, supporting dark mode
-- 🔄 **Git Integration**: Display branch and change status
-- ⚡ **Performance Optimization**: Based on Rust and Tauri, fast and lightweight
+- **Project management** — Point it at your workspace directories, it auto-detects Node.js / Rust / Python / Java / Go / .NET projects
+- **Tags + Launch** — Tag projects with tools (IDE, CLI, env, etc.) and launch them with a click
+- **AI Gateway** — Built-in proxy with multi-provider load balancing, model mapping, and Claude Code protocol conversion
+- **Drag & drop sorting** — Reorder project cards by dragging, order is persisted
+- **Portable** — No install required, config lives in a `data` folder next to the binary
+- **Git info** — Shows current branch and change status on each card
+- **Dark mode** — System-follow or manual toggle
 
-## 📦 Download
+## Download
 
-Go to the [Releases]() page to download the latest version :
+[→ Releases page](https://github.com/ChenM0M/VibeHub/releases)
 
-- **Windows**: `VibeHub-Windows-Portable.zip` (Recommended) or `.msi` installer
-- **macOS**: `.dmg` or `.app.tar.gz`
-- **Linux**: `.deb` or `.AppImage`
+| Platform | Format |
+|----------|--------|
+| Windows | `.exe` installer / `Portable.zip` |
+| macOS | `.dmg` (Intel & Apple Silicon) |
+| Linux | `.deb` / `.AppImage` |
 
-## 🚀 Quick Start
+The portable version is extract-and-run. Config is saved under `data/` — delete the folder for a clean uninstall.
 
-### Portable Version (Windows)
+## Build from source
 
-1. Download `VibeHub-Windows-Portable.zip`
-2. Unzip to any directory
-3. Run `vibehub.exe`
-4. All configurations are automatically saved in the `data` folder
-
-### Installed Version
-
-1. Download the installer for your platform
-2. Follow the prompts to install
-3. Launch the application
-
-## 🛠️ Development
-
-### Prerequisites
-
-- Node.js 18+
-- Rust 1.70+
-- Platform-specific dependencies:
-  - Windows: Visual Studio Build Tools
-  - macOS: Xcode Command Line Tools
-  - Linux: `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev`
-
-### Run Locally
+Requires Node.js 18+ and Rust 1.70+.
 
 ```bash
-# Clone repository
-git clone https://github.com/VibeCoding/VibeHub.git
+git clone https://github.com/ChenM0M/VibeHub.git
 cd VibeHub
-
-# Install dependencies
 npm install
-
-# Run in development mode
 npm run tauri dev
+```
 
-# Build
+Production build:
+
+```bash
 npm run tauri build
 ```
 
-### Project Structure
+Platform deps:
+- Windows → Visual Studio Build Tools
+- macOS → Xcode Command Line Tools
+- Linux → `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev`
+
+## Project structure
 
 ```
 VibeHub/
-├── src/                    # Frontend code (React + TypeScript)
-├── src-tauri/              # Backend code (Rust)
-│   ├── src/
-│   │   ├── main.rs        # Main entry
-│   │   ├── commands.rs    # Tauri commands
-│   │   ├── scanner.rs     # Project scanner
-│   │   ├── launcher.rs    # Launcher
-│   │   ├── storage.rs     # Data storage
-│   │   └── models.rs      # Data models
-│   └── Cargo.toml
+├── src/                 # React + TypeScript frontend
+├── src-tauri/           # Rust backend
+│   └── src/
+│       ├── main.rs      # Entry point
+│       ├── commands.rs  # Tauri commands
+│       ├── scanner.rs   # Project scanner
+│       ├── launcher.rs  # Launcher
+│       ├── storage.rs   # Config I/O
+│       └── models.rs    # Data models
 └── package.json
 ```
 
-## 📝 Function Description
+## How tags and launching work
 
-### Workspace Management
+The core concept is **tags**. Each tag can carry a launch config (executable + args + env vars) and a category (IDE, CLI, environment, etc.).
 
-- Add workspace directory
-- Automatically scan and identify project types
-- Supported project types: Node.js, Rust, Python, Java, Go, .NET, etc.
+When you associate tags with a project and hit launch, VibeHub runs them according to category — IDE tags pass the project path as an argument, CLI tags open a new window in the project directory.
 
-### Project Configuration
+You can also skip tags entirely and use "Custom Launch" to run any command you want.
 
-- Name and description
-- Custom tags
-- Favorite/Star
-- Custom icon
+## Contributing
 
-### Launch Configuration
+PRs and issues are welcome.
 
-Support configuration for various tools:
-- IDE (VSCode, IntelliJ IDEA, etc.)
-- CLI Tools (Claude Code, Gemini CLI, AntiGravity, etc.)
-- Terminal
-- Custom programs
+## License
 
-### Tag System
+[Apache License 2.0](LICENSE)
 
-Built-in tag categories:
-- Workspace grouping
-- IDE tools
-- CLI tools
-- Environment configuration
-- Custom tags
+## Credits
 
-## 🤝 Contribution
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## 📄 License
-
-Apache License 2.0 - See [LICENSE](LICENSE) for details
-
-## 🙏 Acknowledgements
-
-- [Tauri](https://tauri.app/) - Cross-platform application framework
-- [React](https://react.dev/) - UI framework
-- [TailwindCSS](https://tailwindcss.com/) - CSS framework
+- [Tauri](https://tauri.app/) — Cross-platform desktop app framework
+- [React](https://react.dev/) + [TailwindCSS](https://tailwindcss.com/) — Frontend
+- [b4u2cc](https://github.com/CassiopeiaCode/b4u2cc) — Claude Code protocol conversion reference
