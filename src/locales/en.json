@@ -54,7 +54,8 @@
         "searchTech": "Search tech stack...",
         "addCustomTech": "Add custom tech...",
         "themeColor": "Theme Color",
-        "copyPath": "Copy Path"
+        "copyPath": "Copy Path",
+        "customConfig": "Custom Config…"
     },
     "settings": {
         "title": "Settings",

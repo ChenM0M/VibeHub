@@ -54,7 +54,8 @@
         "searchTech": "搜尋技術棧...",
         "addCustomTech": "新增自訂技術棧...",
         "themeColor": "主題色",
-        "copyPath": "複製目錄路徑"
+        "copyPath": "複製目錄路徑",
+        "customConfig": "自訂配置…"
     },
     "settings": {
         "title": "設定",
