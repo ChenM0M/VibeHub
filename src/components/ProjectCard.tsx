@@ -25,6 +25,9 @@ import {
     ContextMenuContent,
     ContextMenuItem,
     ContextMenuSeparator,
+    ContextMenuSub,
+    ContextMenuSubContent,
+    ContextMenuSubTrigger,
     ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { useAppStore } from '@/stores/appStore';
@@ -43,7 +46,7 @@ interface ProjectCardProps {
 
 export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardProps) {
     const { t, i18n } = useTranslation();
-    const { toggleProjectStar, openInExplorer, openTerminal, config, deleteProject, launchTool } = useAppStore();
+    const { toggleProjectStar, openInExplorer, openTerminal, config, deleteProject, launchTool, launchCustom } = useAppStore();
     const [isEditing, setIsEditing] = useState(false);
 
     const formatDate = (dateString: string) => {
@@ -96,6 +99,21 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
     };
 
     const typeInfo = getProjectTypeInfo(project.project_type);
+
+    // Tags that have a launchable config (executable is set)
+    const launchableTags = (config?.tags || []).filter(
+        tag => tag.config?.executable
+    );
+
+    const handleQuickLaunchTag = async (tag: typeof launchableTags[number]) => {
+        if (tag.config) {
+            try {
+                await launchCustom(project.id, tag.config, tag.category);
+            } catch (error) {
+                console.error('Quick launch failed:', error);
+            }
+        }
+    };
 
     // Override with custom theme color if present
     const customStyle = project.theme_color ? {
@@ -283,10 +301,38 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
                     <Play className="mr-2 h-4 w-4" />
                     {t('project.launch')}
                 </ContextMenuItem>
-                <ContextMenuItem onClick={() => onCustomLaunch(project)}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    {t('project.customLaunch')}
-                </ContextMenuItem>
+                {launchableTags.length > 0 ? (
+                    <ContextMenuSub>
+                        <ContextMenuSubTrigger>
+                            <Settings className="mr-2 h-4 w-4" />
+                            {t('project.customLaunch')}
+                        </ContextMenuSubTrigger>
+                        <ContextMenuSubContent className="w-48 max-h-64 overflow-y-auto">
+                            {launchableTags.map(tag => (
+                                <ContextMenuItem
+                                    key={tag.id}
+                                    onClick={() => handleQuickLaunchTag(tag)}
+                                >
+                                    <span
+                                        className="mr-2 h-3 w-3 rounded-full inline-block flex-shrink-0"
+                                        style={{ backgroundColor: tag.color }}
+                                    />
+                                    {tag.name}
+                                </ContextMenuItem>
+                            ))}
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onClick={() => onCustomLaunch(project)}>
+                                <Settings className="mr-2 h-4 w-4" />
+                                {t('project.customConfig')}
+                            </ContextMenuItem>
+                        </ContextMenuSubContent>
+                    </ContextMenuSub>
+                ) : (
+                    <ContextMenuItem onClick={() => onCustomLaunch(project)}>
+                        <Settings className="mr-2 h-4 w-4" />
+                        {t('project.customLaunch')}
+                    </ContextMenuItem>
+                )}
                 <ContextMenuItem onClick={() => {
                     const originalPath = config?.projects.find(p => p.id === project.id)?.path || project.path;
                     openInExplorer(originalPath);

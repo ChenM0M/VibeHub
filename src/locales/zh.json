@@ -54,7 +54,8 @@
         "searchTech": "搜索技术栈...",
         "addCustomTech": "添加自定义技术栈...",
         "themeColor": "主题色",
-        "copyPath": "复制目录路径"
+        "copyPath": "复制目录路径",
+        "customConfig": "自定义配置…"
     },
     "settings": {
         "title": "设置",
