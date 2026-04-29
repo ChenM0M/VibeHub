@@ -106,5 +106,18 @@ export const tauriApi = {
         phase: string
     ): Promise<ContextPackBuildResult> => {
         return await invoke('vibehub_build_context_pack', { projectPath, taskId, runId, phase });
+    },
+
+    vibehubBuildHandoff: async (projectPath: string): Promise<{
+        handoff_path: string;
+        source_output_path: string | null;
+        complete: boolean;
+        missing_required_sections: string[];
+        files_changed_evidence: string;
+        task_id: string;
+        run_id: string;
+        session_id: string | null;
+    }> => {
+        return await invoke('vibehub_build_handoff', { projectPath });
     }
 };
