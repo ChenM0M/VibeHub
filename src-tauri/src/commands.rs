@@ -9,6 +9,7 @@ use crate::{
     vibehub::handoff::{self, HandoffBuildResult},
     vibehub::init::{self, VibehubInitResult},
     vibehub::review::{self, ReviewEvidenceGenerateResult},
+    vibehub::status::{self, VibehubCockpitStatus},
 };
 use chrono::Utc;
 use std::process::Command;
@@ -584,4 +585,11 @@ pub async fn vibehub_generate_review_evidence(
     project_path: String,
 ) -> Result<ReviewEvidenceGenerateResult, String> {
     review::generate_review_evidence(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_read_cockpit_status(
+    project_path: String,
+) -> Result<VibehubCockpitStatus, String> {
+    status::read_cockpit_status(project_path).map_err(|e| e.to_string())
 }
