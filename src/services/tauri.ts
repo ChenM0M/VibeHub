@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { AppConfig, ContextPackBuildResult, Project, Workspace, Tag } from '../types';
+import { AppConfig, ContextPackBuildResult, Project, VibehubCockpitStatus, Workspace, Tag } from '../types';
 
 export const tauriApi = {
     loadConfig: async (): Promise<AppConfig> => {
@@ -99,6 +99,20 @@ export const tauriApi = {
         return await invoke('vibehub_init', { projectPath });
     },
 
+    vibehubGenerateAgentView: async (projectPath: string): Promise<{
+        current_path: string;
+        current_context_path: string;
+        handoff_path: string;
+        handoff_created: boolean;
+        handoff_complete: boolean;
+        missing_handoff_sections: string[];
+        task_id: string;
+        run_id: string;
+        phase: string;
+    }> => {
+        return await invoke('vibehub_generate_agent_view', { projectPath });
+    },
+
     vibehubBuildContextPack: async (
         projectPath: string,
         taskId: string,
@@ -132,5 +146,9 @@ export const tauriApi = {
         source_output_path: string | null;
     }> => {
         return await invoke('vibehub_generate_review_evidence', { projectPath });
+    },
+
+    vibehubReadCockpitStatus: async (projectPath: string): Promise<VibehubCockpitStatus> => {
+        return await invoke('vibehub_read_cockpit_status', { projectPath });
     }
 };
