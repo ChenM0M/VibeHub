@@ -8,6 +8,7 @@ mod scanner;
 mod storage;
 mod gateway;
 mod updater;
+mod vibehub;
 
 use commands::AppState;
 use storage::Storage;
@@ -48,6 +49,7 @@ fn main() {
             commands::set_theme,
             commands::refresh_all_workspaces,
             commands::check_for_updates,
+            commands::vibehub_init,
             gateway::get_gateway_config,
             gateway::save_gateway_config,
             gateway::get_gateway_stats,
