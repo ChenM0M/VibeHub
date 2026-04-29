@@ -4,6 +4,7 @@ use crate::{
     scanner::Scanner,
     storage::Storage,
     updater,
+    vibehub::agent_view::{self, AgentViewGenerateResult},
     vibehub::context::{self, ContextPackBuildResult},
     vibehub::init::{self, VibehubInitResult},
 };
@@ -562,4 +563,11 @@ pub async fn vibehub_build_context_pack(
     phase: String,
 ) -> Result<ContextPackBuildResult, String> {
     context::build_context_pack(project_path, task_id, run_id, phase).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_generate_agent_view(
+    project_path: String,
+) -> Result<AgentViewGenerateResult, String> {
+    agent_view::generate_agent_view(project_path).map_err(|e| e.to_string())
 }
