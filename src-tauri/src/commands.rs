@@ -6,6 +6,7 @@ use crate::{
     updater,
     vibehub::agent_view::{self, AgentViewGenerateResult},
     vibehub::context::{self, ContextPackBuildResult},
+    vibehub::handoff::{self, HandoffBuildResult},
     vibehub::init::{self, VibehubInitResult},
 };
 use chrono::Utc;
@@ -570,4 +571,9 @@ pub async fn vibehub_generate_agent_view(
     project_path: String,
 ) -> Result<AgentViewGenerateResult, String> {
     agent_view::generate_agent_view(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_build_handoff(project_path: String) -> Result<HandoffBuildResult, String> {
+    handoff::build_handoff(project_path).map_err(|e| e.to_string())
 }
