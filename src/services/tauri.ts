@@ -87,5 +87,15 @@ export const tauriApi = {
         download_url: string | null;
     }> => {
         return await invoke('check_for_updates');
+    },
+
+    vibehubInit: async (projectPath: string): Promise<{
+        project_root: string;
+        vibehub_root: string;
+        created_files: string[];
+        skipped_existing_files: string[];
+        errors: string[];
+    }> => {
+        return await invoke('vibehub_init', { projectPath });
     }
 };
