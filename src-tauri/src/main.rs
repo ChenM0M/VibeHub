@@ -54,6 +54,7 @@ fn main() {
             commands::vibehub_generate_agent_view,
             commands::vibehub_build_handoff,
             commands::vibehub_generate_review_evidence,
+            commands::vibehub_read_cockpit_status,
             gateway::get_gateway_config,
             gateway::save_gateway_config,
             gateway::get_gateway_stats,

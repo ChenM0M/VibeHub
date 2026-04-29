@@ -86,3 +86,29 @@ export interface ContextPackBuildResult {
     excluded_count: number;
     estimated_tokens: number;
 }
+
+export interface VibehubFileStatus {
+    configured: boolean;
+    exists: boolean;
+    stale?: boolean | null;
+    path?: string | null;
+    status: string;
+}
+
+export interface VibehubCockpitStatus {
+    project_root: string;
+    initialized: boolean;
+    current_task_id?: string | null;
+    current_task_title?: string | null;
+    current_run_id?: string | null;
+    current_mode?: string | null;
+    current_phase?: string | null;
+    phase_status?: string | null;
+    git_available: boolean;
+    git_dirty?: boolean | null;
+    git_changed_files_count?: number | null;
+    context_pack_status: VibehubFileStatus;
+    handoff_status: VibehubFileStatus;
+    observability_level?: string | null;
+    warnings: string[];
+}
