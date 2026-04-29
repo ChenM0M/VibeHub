@@ -1,28 +1,28 @@
+use crate::gateway::cache::CacheManager;
+use crate::gateway::config::{ApiType, GatewayConfig};
+use crate::gateway::converter;
+use crate::gateway::resilience::{Circuit, FailureKind};
+use crate::gateway::stats::{RequestLog, StatsManager};
 use axum::{
     body::Body,
-    extract::{State, Request},
+    extract::{Request, State},
+    http::{HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::any,
     Router,
-    http::{StatusCode, HeaderValue},
 };
+use dashmap::DashMap;
+use reqwest::Client;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
-use tokio::sync::RwLock;
-use crate::gateway::config::{GatewayConfig, ApiType};
-use crate::gateway::stats::{StatsManager, RequestLog};
-use crate::gateway::cache::CacheManager;
-use crate::gateway::converter;
-use crate::gateway::resilience::{Circuit, FailureKind};
-use tower_http::cors::CorsLayer;
-use reqwest::Client;
 use tauri::{AppHandle, Emitter, Runtime};
-use dashmap::DashMap;
-use tokio::sync::{Semaphore, OwnedSemaphorePermit};
+use tokio::sync::RwLock;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
+use tower_http::cors::CorsLayer;
 
 pub struct ProxyState<R: Runtime> {
     pub config: Arc<RwLock<GatewayConfig>>,
@@ -64,7 +64,7 @@ pub async fn start_servers<R: Runtime>(
     app: AppHandle<R>,
 ) {
     let cfg = config.read().await;
-    
+
     let cache = Arc::new(CacheManager::new(
         cfg.cache_max_entries,
         cfg.cache_ttl_seconds,
@@ -78,17 +78,17 @@ pub async fn start_servers<R: Runtime>(
         .pool_max_idle_per_host(16)
         .build()
         .unwrap_or_else(|_| Client::new());
-    
+
     let anthropic_port = cfg.anthropic_port;
     let responses_port = cfg.responses_port;
     let chat_port = cfg.chat_port;
-    
+
     let anthropic_enabled = cfg.anthropic_enabled;
     let responses_enabled = cfg.responses_enabled;
     let chat_enabled = cfg.chat_enabled;
-    
+
     drop(cfg);
-    
+
     // 启动 Anthropic 网关 (Claude Code)
     if anthropic_enabled {
         let state = ProxyState {
@@ -101,12 +101,12 @@ pub async fn start_servers<R: Runtime>(
             http_client: http_client.clone(),
             api_type: ApiType::Anthropic,
         };
-        
+
         tokio::spawn(async move {
             start_single_server(anthropic_port, state, "Anthropic").await;
         });
     }
-    
+
     // 启动 OpenAI Responses 网关 (CodeX)
     if responses_enabled {
         let state = ProxyState {
@@ -119,12 +119,12 @@ pub async fn start_servers<R: Runtime>(
             http_client: http_client.clone(),
             api_type: ApiType::OpenAIResponses,
         };
-        
+
         tokio::spawn(async move {
             start_single_server(responses_port, state, "OpenAI Responses").await;
         });
     }
-    
+
     // 启动 OpenAI Chat 网关 (Cline/Continue)
     if chat_enabled {
         let state = ProxyState {
@@ -137,7 +137,7 @@ pub async fn start_servers<R: Runtime>(
             http_client: http_client.clone(),
             api_type: ApiType::OpenAIChat,
         };
-        
+
         tokio::spawn(async move {
             start_single_server(chat_port, state, "OpenAI Chat").await;
         });
@@ -152,7 +152,7 @@ async fn start_single_server<R: Runtime>(port: u16, state: ProxyState<R>, name: 
 
     let addr = format!("0.0.0.0:{}", port);
     println!("🚀 {} Gateway listening on {}", name, addr);
-    
+
     match tokio::net::TcpListener::bind(&addr).await {
         Ok(listener) => {
             if let Err(e) = axum::serve(listener, app_router).await {
@@ -176,7 +176,10 @@ async fn handle_request<R: Runtime>(
 
     let request_id = uuid::Uuid::new_v4().to_string();
     let overall_start = SystemTime::now();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
 
     // Read config quickly (do NOT hold across awaits).
     let (gateway_enabled, cache_enabled, fallback_enabled, base_cooldown_seconds, providers) = {
@@ -207,7 +210,11 @@ async fn handle_request<R: Runtime>(
     }
 
     let path = req.uri().path().to_string();
-    let query = req.uri().query().map(|q| format!("?{}", q)).unwrap_or_default();
+    let query = req
+        .uri()
+        .query()
+        .map(|q| format!("?{}", q))
+        .unwrap_or_default();
     let method = req.method().clone();
     let headers = req.headers().clone();
     let user_agent = headers
@@ -230,12 +237,17 @@ async fn handle_request<R: Runtime>(
             let mut builder = Response::builder().status(cached.status);
             if let Some(headers_mut) = builder.headers_mut() {
                 for (k, v) in &cached.headers {
-                    if let (Ok(name), Ok(val)) = (k.parse::<axum::http::HeaderName>(), HeaderValue::from_str(v)) {
+                    if let (Ok(name), Ok(val)) = (
+                        k.parse::<axum::http::HeaderName>(),
+                        HeaderValue::from_str(v),
+                    ) {
                         headers_mut.insert(name, val);
                     }
                 }
             }
-            return builder.body(Body::from(cached.response_body)).unwrap_or_default();
+            return builder
+                .body(Body::from(cached.response_body))
+                .unwrap_or_default();
         }
         state.stats.record_cache_miss();
     }
@@ -244,7 +256,11 @@ async fn handle_request<R: Runtime>(
     let api_type_str = api_type_to_string(&state.api_type);
 
     if providers.is_empty() {
-        return (StatusCode::SERVICE_UNAVAILABLE, "No active providers for this API type").into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "No active providers for this API type",
+        )
+            .into_response();
     }
 
     let max_attempts = if fallback_enabled {
@@ -256,8 +272,16 @@ async fn handle_request<R: Runtime>(
     // Deterministic tiebreak for this request.
     let mut candidates = providers;
     candidates.sort_by(|a, b| {
-        let ca = state.circuits.get(&a.id).map(|c| c.clone()).unwrap_or_default();
-        let cb = state.circuits.get(&b.id).map(|c| c.clone()).unwrap_or_default();
+        let ca = state
+            .circuits
+            .get(&a.id)
+            .map(|c| c.clone())
+            .unwrap_or_default();
+        let cb = state
+            .circuits
+            .get(&b.id)
+            .map(|c| c.clone())
+            .unwrap_or_default();
         let sa = ca.score(a.weight, now);
         let sb = cb.score(b.weight, now);
 
@@ -303,7 +327,11 @@ async fn handle_request<R: Runtime>(
             continue;
         }
 
-        let Some(_permit) = try_acquire_provider_permit(&state.inflight_limits, &provider.id, MAX_INFLIGHT_PER_PROVIDER) else {
+        let Some(_permit) = try_acquire_provider_permit(
+            &state.inflight_limits,
+            &provider.id,
+            MAX_INFLIGHT_PER_PROVIDER,
+        ) else {
             // Busy provider; release probe flag by marking as failure with a tiny cooldown.
             mark_busy_failure(&state.circuits, &provider.id, now);
             continue;
@@ -323,7 +351,8 @@ async fn handle_request<R: Runtime>(
 
         // Claude Code proxy mode only for Anthropic /v1/messages.
         let is_messages_path = path.starts_with("/v1/messages");
-        let use_proxy_conversion = provider.claude_code_proxy && state.api_type == ApiType::Anthropic && is_messages_path;
+        let use_proxy_conversion =
+            provider.claude_code_proxy && state.api_type == ApiType::Anthropic && is_messages_path;
         let requested_model = extract_model(&body_bytes).unwrap_or_else(|| "unknown".to_string());
 
         let (request_body, target_path) = if use_proxy_conversion {
@@ -340,7 +369,11 @@ async fn handle_request<R: Runtime>(
                         },
                     );
                     mark_busy_failure(&state.circuits, &provider.id, now);
-                    return (StatusCode::BAD_REQUEST, format!("Failed to convert request: {}", e)).into_response();
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        format!("Failed to convert request: {}", e),
+                    )
+                        .into_response();
                 }
             }
         } else {
@@ -434,10 +467,16 @@ async fn handle_request<R: Runtime>(
                     cached: false,
                     error_message: Some(format!("Connection failed: {}", e)),
                 });
-                state.stats.set_provider_cooldown(&provider.name, until, failure_kind);
+                state
+                    .stats
+                    .set_provider_cooldown(&provider.name, until, failure_kind);
 
                 if !fallback_enabled {
-                    return (StatusCode::BAD_GATEWAY, format!("Provider {} failed: {}", provider.name, e)).into_response();
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        format!("Provider {} failed: {}", provider.name, e),
+                    )
+                        .into_response();
                 }
                 continue;
             }
@@ -478,7 +517,9 @@ async fn handle_request<R: Runtime>(
                     cached: false,
                     error_message: Some("Upstream timeout".to_string()),
                 });
-                state.stats.set_provider_cooldown(&provider.name, until, failure_kind);
+                state
+                    .stats
+                    .set_provider_cooldown(&provider.name, until, failure_kind);
 
                 if !fallback_enabled {
                     return (StatusCode::GATEWAY_TIMEOUT, "Upstream timeout").into_response();
@@ -493,7 +534,8 @@ async fn handle_request<R: Runtime>(
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-        let is_stream = content_type.contains("text/event-stream") || content_type.contains("stream");
+        let is_stream =
+            content_type.contains("text/event-stream") || content_type.contains("stream");
 
         // Classify failures.
         let should_fallback = status.is_server_error()
@@ -552,7 +594,9 @@ async fn handle_request<R: Runtime>(
                 cached: false,
                 error_message: Some(format!("HTTP {} - {}", status, error_body)),
             });
-            state.stats.set_provider_cooldown(&provider.name, until, failure_kind);
+            state
+                .stats
+                .set_provider_cooldown(&provider.name, until, failure_kind);
 
             if fallback_enabled && should_fallback {
                 continue;
@@ -585,7 +629,12 @@ async fn handle_request<R: Runtime>(
         );
 
         let output_tokens = 0;
-        let cost = calculate_cost(input_tokens, output_tokens, provider.input_price_per_1k, provider.output_price_per_1k);
+        let cost = calculate_cost(
+            input_tokens,
+            output_tokens,
+            provider.input_price_per_1k,
+            provider.output_price_per_1k,
+        );
         state.stats.record_request(RequestLog {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: now,
@@ -640,11 +689,17 @@ async fn handle_request<R: Runtime>(
                             None,
                             &(now, &provider.id, &request_id, "convert"),
                         );
-                        state.stats.set_provider_cooldown(&provider.name, until, failure_kind);
+                        state
+                            .stats
+                            .set_provider_cooldown(&provider.name, until, failure_kind);
                         if fallback_enabled {
                             continue;
                         }
-                        return (StatusCode::BAD_GATEWAY, format!("Failed to convert upstream response: {}", e)).into_response();
+                        return (
+                            StatusCode::BAD_GATEWAY,
+                            format!("Failed to convert upstream response: {}", e),
+                        )
+                            .into_response();
                     }
                 }
             } else {
@@ -653,9 +708,12 @@ async fn handle_request<R: Runtime>(
 
             if cache_enabled {
                 let cache_key = CacheManager::generate_key(&path, &body_bytes);
-                state
-                    .cache
-                    .set(cache_key, final_bytes.to_vec(), status.as_u16(), response_headers);
+                state.cache.set(
+                    cache_key,
+                    final_bytes.to_vec(),
+                    status.as_u16(),
+                    response_headers,
+                );
             }
 
             // Ensure JSON content-type for converted responses.
@@ -762,10 +820,7 @@ async fn handle_request<R: Runtime>(
     let overall_duration = duration_ms(overall_start);
     eprintln!(
         "❌ [Gateway:{}] All providers failed for {} (request_id={}, duration={}ms)",
-        api_type_str,
-        path,
-        request_id,
-        overall_duration
+        api_type_str, path, request_id, overall_duration
     );
     (StatusCode::BAD_GATEWAY, "All providers failed").into_response()
 }
@@ -785,7 +840,9 @@ fn hash_u64<T: Hash>(value: &T) -> u64 {
 
 fn extract_model(body: &[u8]) -> Option<String> {
     let v = serde_json::from_slice::<serde_json::Value>(body).ok()?;
-    v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string())
+    v.get("model")
+        .and_then(|m| m.as_str())
+        .map(|s| s.to_string())
 }
 
 fn truncate_utf8(bytes: &[u8], max_chars: usize) -> String {
@@ -800,7 +857,9 @@ fn truncate_utf8(bytes: &[u8], max_chars: usize) -> String {
 fn failure_kind_from_status(status: StatusCode) -> FailureKind {
     match status {
         StatusCode::TOO_MANY_REQUESTS => FailureKind::RateLimit,
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::PAYMENT_REQUIRED => FailureKind::Auth,
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::PAYMENT_REQUIRED => {
+            FailureKind::Auth
+        }
         StatusCode::NOT_FOUND => FailureKind::NotFound,
         s if s.is_server_error() => FailureKind::Upstream5xx,
         _ => FailureKind::Other,
@@ -874,7 +933,12 @@ fn open_circuit(
     (until, kind)
 }
 
-fn mark_success(circuits: &DashMap<String, Circuit>, provider_id: &str, _now: u64, latency_ms: u64) {
+fn mark_success(
+    circuits: &DashMap<String, Circuit>,
+    provider_id: &str,
+    _now: u64,
+    latency_ms: u64,
+) {
     let mut entry = circuits.entry(provider_id.to_string()).or_default();
     entry.on_success(latency_ms);
 }
@@ -902,7 +966,12 @@ fn calculate_input_tokens(body: &[u8]) -> u32 {
     (body.len() as f64 / 4.0) as u32
 }
 
-fn calculate_cost(input_tokens: u32, output_tokens: u32, input_price: f64, output_price: f64) -> f64 {
+fn calculate_cost(
+    input_tokens: u32,
+    output_tokens: u32,
+    input_price: f64,
+    output_price: f64,
+) -> f64 {
     (input_tokens as f64 / 1000.0 * input_price) + (output_tokens as f64 / 1000.0 * output_price)
 }
 

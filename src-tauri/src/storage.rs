@@ -13,13 +13,13 @@ impl Storage {
         let exe_dir = exe_path
             .parent()
             .context("Failed to get executable directory")?;
-        
+
         // Portable mode: store data next to executable
         let data_dir = exe_dir.join("data");
         fs::create_dir_all(&data_dir)?;
-        
+
         let config_path = data_dir.join("config.json");
-        
+
         Ok(Self { config_path })
     }
 
@@ -31,22 +31,20 @@ impl Storage {
             return Ok(config);
         }
 
-        let content = fs::read_to_string(&self.config_path)
-            .context("Failed to read config file")?;
-        
-        let config: AppConfig = serde_json::from_str(&content)
-            .context("Failed to parse config file")?;
-        
+        let content =
+            fs::read_to_string(&self.config_path).context("Failed to read config file")?;
+
+        let config: AppConfig =
+            serde_json::from_str(&content).context("Failed to parse config file")?;
+
         Ok(config)
     }
 
     pub fn save_config(&self, config: &AppConfig) -> Result<()> {
-        let content = serde_json::to_string_pretty(config)
-            .context("Failed to serialize config")?;
-        
-        fs::write(&self.config_path, content)
-            .context("Failed to write config file")?;
-        
+        let content = serde_json::to_string_pretty(config).context("Failed to serialize config")?;
+
+        fs::write(&self.config_path, content).context("Failed to write config file")?;
+
         Ok(())
     }
 }

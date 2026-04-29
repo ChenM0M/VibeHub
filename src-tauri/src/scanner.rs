@@ -3,32 +3,32 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
-
 pub struct Scanner;
 
 impl Scanner {
     pub fn scan_directory(path: &str, _max_depth: usize) -> Result<Vec<Project>> {
         let mut projects = Vec::new();
         let abs_path = fs::canonicalize(path)?;
-        
+
         // User requested to just take all directories under the scanned directory
         // So we iterate immediate children only
         for entry in fs::read_dir(abs_path)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_dir() {
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
-                
+
                 // Filter out hidden directories and common build artifacts
-                if name.starts_with('.') || 
-                   name == "node_modules" || 
-                   name == "target" || 
-                   name == "dist" || 
-                   name == "build" ||
-                   name == "venv" ||
-                   name == "bin" ||
-                   name == "obj" {
+                if name.starts_with('.')
+                    || name == "node_modules"
+                    || name == "target"
+                    || name == "dist"
+                    || name == "build"
+                    || name == "venv"
+                    || name == "bin"
+                    || name == "obj"
+                {
                     continue;
                 }
 
@@ -37,7 +37,7 @@ impl Scanner {
                 }
             }
         }
-        
+
         Ok(projects)
     }
 
@@ -57,12 +57,9 @@ impl Scanner {
     fn detect_project(path: &Path) -> Option<Project> {
         // We now accept any directory as a project, defaulting to "Other" if no specific type detected
         let project_type = Self::detect_project_type(path).unwrap_or(ProjectType::Other);
-        
-        let name = path
-            .file_name()?
-            .to_string_lossy()
-            .to_string();
-        
+
+        let name = path.file_name()?.to_string_lossy().to_string();
+
         // Clean path: remove Windows long path prefix \\?\ if present
         let path_str = path.to_string_lossy().to_string();
         let clean_path = if path_str.starts_with(r"\\?\") {
@@ -70,9 +67,9 @@ impl Scanner {
         } else {
             path_str
         };
-        
+
         let metadata = Self::extract_metadata(path, &project_type);
-        
+
         Some(Project {
             id: uuid::Uuid::new_v4().to_string(),
             name,
@@ -95,50 +92,56 @@ impl Scanner {
         if path.join("package.json").exists() {
             return Some(ProjectType::Node);
         }
-        
+
         // Rust
         if path.join("Cargo.toml").exists() {
             return Some(ProjectType::Rust);
         }
-        
+
         // Python
-        if path.join("requirements.txt").exists() 
+        if path.join("requirements.txt").exists()
             || path.join("pyproject.toml").exists()
-            || path.join("setup.py").exists() {
+            || path.join("setup.py").exists()
+        {
             return Some(ProjectType::Python);
         }
-        
+
         // Java
-        if path.join("pom.xml").exists() 
+        if path.join("pom.xml").exists()
             || path.join("build.gradle").exists()
-            || path.join("build.gradle.kts").exists() {
+            || path.join("build.gradle.kts").exists()
+        {
             return Some(ProjectType::Java);
         }
-        
+
         // Go
         if path.join("go.mod").exists() {
             return Some(ProjectType::Go);
         }
-        
+
         // .NET
         if path.read_dir().ok()?.any(|e| {
             e.ok()
-                .and_then(|e| e.path().extension().map(|ext| ext == "csproj" || ext == "fsproj" || ext == "vbproj"))
+                .and_then(|e| {
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "csproj" || ext == "fsproj" || ext == "vbproj")
+                })
                 .unwrap_or(false)
         }) {
             return Some(ProjectType::Dotnet);
         }
-        
+
         // Ruby
         if path.join("Gemfile").exists() {
             return Some(ProjectType::Ruby);
         }
-        
+
         // PHP
         if path.join("composer.json").exists() {
             return Some(ProjectType::Php);
         }
-        
+
         // Default to Other if it's a directory but matches none of the above
         // The caller (detect_project) handles the fallback, but here we return None to indicate "unknown specific type"
         // Wait, detect_project calls this. If I return None, detect_project uses unwrap_or(Other).
@@ -152,7 +155,8 @@ impl Scanner {
                 let package_json = path.join("package.json");
                 if let Ok(content) = fs::read_to_string(package_json) {
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                        return json.get("description")
+                        return json
+                            .get("description")
                             .and_then(|v| v.as_str())
                             .map(String::from);
                     }
@@ -174,7 +178,7 @@ impl Scanner {
             ProjectType::Python => {
                 let _setup_py = path.join("setup.py");
                 let pyproject = path.join("pyproject.toml");
-                
+
                 // Try pyproject.toml first
                 if let Ok(content) = fs::read_to_string(pyproject) {
                     for line in content.lines() {
@@ -185,7 +189,7 @@ impl Scanner {
                         }
                     }
                 }
-                
+
                 // Try README
                 if let Some(readme_desc) = Self::extract_from_readme(path) {
                     return Some(readme_desc);
@@ -193,27 +197,25 @@ impl Scanner {
             }
             _ => {}
         }
-        
+
         None
     }
 
     fn extract_from_readme(path: &Path) -> Option<String> {
         let readme_files = ["README.md", "readme.md", "README", "README.txt"];
-        
+
         for readme_name in &readme_files {
             let readme_path = path.join(readme_name);
             if let Ok(content) = fs::read_to_string(readme_path) {
                 // Get first non-empty line after title
-                let lines: Vec<&str> = content.lines()
-                    .filter(|l| !l.is_empty())
-                    .collect();
-                
+                let lines: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
+
                 if lines.len() > 1 {
                     return Some(lines[1].trim().to_string());
                 }
             }
         }
-        
+
         None
     }
 
@@ -249,9 +251,9 @@ impl Scanner {
         match project_type {
             ProjectType::Node => path.join("node_modules").exists(),
             ProjectType::Python => {
-                path.join("venv").exists() 
-                || path.join(".venv").exists()
-                || path.join("env").exists()
+                path.join("venv").exists()
+                    || path.join(".venv").exists()
+                    || path.join("env").exists()
             }
             ProjectType::Rust => path.join("target").exists(),
             _ => false,
