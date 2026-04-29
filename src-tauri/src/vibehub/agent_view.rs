@@ -1,4 +1,4 @@
-use crate::vibehub::current;
+use crate::vibehub::{current, handoff};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
@@ -11,6 +11,8 @@ pub struct AgentViewGenerateResult {
     pub current_context_path: String,
     pub handoff_path: String,
     pub handoff_created: bool,
+    pub handoff_complete: bool,
+    pub missing_handoff_sections: Vec<String>,
     pub task_id: String,
     pub run_id: String,
     pub phase: String,
@@ -129,13 +131,8 @@ pub fn generate_agent_view(project_root: impl AsRef<Path>) -> Result<AgentViewGe
     fs::write(&current_context_path, build_current_context_md(&input))
         .with_context(|| format!("Failed to write {}", current_context_path.display()))?;
 
-    let handoff_created = if handoff_path.exists() {
-        false
-    } else {
-        fs::write(&handoff_path, build_placeholder_handoff_md(&input))
-            .with_context(|| format!("Failed to write {}", handoff_path.display()))?;
-        true
-    };
+    let handoff_existed = handoff_path.exists();
+    let handoff_result = handoff::build_handoff(&project_root)?;
 
     Ok(AgentViewGenerateResult {
         current_path: normalize_path(&relative_to_project(&project_root, &current_path)?),
@@ -144,7 +141,9 @@ pub fn generate_agent_view(project_root: impl AsRef<Path>) -> Result<AgentViewGe
             &current_context_path,
         )?),
         handoff_path: normalize_path(&relative_to_project(&project_root, &handoff_path)?),
-        handoff_created,
+        handoff_created: !handoff_existed,
+        handoff_complete: handoff_result.complete,
+        missing_handoff_sections: handoff_result.missing_required_sections,
         task_id: input.task_id,
         run_id: input.run_id,
         phase: input.phase,
@@ -311,35 +310,6 @@ fn build_current_context_md(input: &AgentViewInput) -> String {
         None => output.push_str("- Context manifest is not available.\n"),
     }
     output
-}
-
-fn build_placeholder_handoff_md(input: &AgentViewInput) -> String {
-    format!(
-        r#"# VibeHub Handoff
-
-## Completed
-No previous handoff exists for task {task_id} run {run_id}.
-
-## Not Yet Done
-- Continue the current phase: {phase}.
-- Report changed files, commands run, tests run or reason not run, unresolved risks, and handoff notes.
-
-## Key Decisions
-None recorded yet.
-
-## Context Still Needed
-Read .vibehub/agent-view/current-context.md and the current context pack before implementing.
-
-## Warnings
-P0/P1 observability is best-effort and does not include runtime observation.
-
-## Next Session Should
-Start from .vibehub/agent-view/current.md.
-"#,
-        task_id = input.task_id,
-        run_id = input.run_id,
-        phase = input.phase
-    )
 }
 
 fn read_manifest_if_available(project_root: &Path, path: &str) -> Result<Option<ContextManifest>> {
@@ -548,13 +518,15 @@ quality:
         assert!(current_context.contains("- Missing tests/main.rs (optional): no test file found"));
         assert!(current_context
             .contains("- Excluded .env.local (deny_secret_path): secret-like path denied"));
-        assert!(handoff.contains("No previous handoff exists for task T-001 run R-001."));
+        assert!(handoff.contains("# Handoff from Session unknown"));
+        assert!(handoff.contains("Handoff complete: no"));
+        assert!(handoff.contains("## Missing Required Sections"));
 
         fs::remove_dir_all(project).expect("cleanup");
     }
 
     #[test]
-    fn does_not_overwrite_existing_handoff() {
+    fn refreshes_existing_handoff() {
         let project = temp_project();
         write_state(&project);
         write_manifest(&project);
@@ -571,7 +543,8 @@ quality:
             .expect("read handoff");
 
         assert!(!result.handoff_created);
-        assert_eq!(handoff, "existing handoff\n");
+        assert_ne!(handoff, "existing handoff\n");
+        assert!(handoff.contains("Task: T-001"));
 
         fs::remove_dir_all(project).expect("cleanup");
     }
