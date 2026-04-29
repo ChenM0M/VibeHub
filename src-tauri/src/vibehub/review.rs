@@ -1,0 +1,737 @@
+use crate::vibehub::current;
+use anyhow::{anyhow, Context, Result};
+use chrono::{SecondsFormat, Utc};
+use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ReviewEvidenceGenerateResult {
+    pub task_id: String,
+    pub run_id: String,
+    pub review_path: String,
+    pub changed_files_path: String,
+    pub diff_path: String,
+    pub changed_files_count: usize,
+    pub baseline_ref: Option<String>,
+    pub source_output_path: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ReviewInput {
+    task_id: String,
+    run_id: String,
+    run_path: String,
+    baseline_ref: Option<String>,
+    head_ref: Option<String>,
+    generated_at: String,
+    changed_files: Vec<String>,
+    diff_stat: Vec<String>,
+    source_output_path: Option<String>,
+    sections: BTreeMap<String, String>,
+    git_available: bool,
+}
+
+pub fn generate_review_evidence(
+    project_root: impl AsRef<Path>,
+) -> Result<ReviewEvidenceGenerateResult> {
+    let project_root = canonical_project_root(project_root.as_ref())?;
+    let task_pointer = current::resolve_current_task(&project_root)?;
+    let run_pointer = current::resolve_current_run(&project_root, &task_pointer.task_id)?;
+    let run_dir = project_root.join(&run_pointer.path);
+    if !run_dir.is_dir() {
+        return Err(anyhow!(
+            "Run directory does not exist: {}",
+            run_dir.display()
+        ));
+    }
+
+    let output = find_latest_session_output(&project_root, &run_pointer.path)?;
+    let sections = match &output {
+        Some((_, path)) => parse_output_sections(path)?,
+        None => BTreeMap::new(),
+    };
+    let source_output_path = output
+        .as_ref()
+        .map(|(_, path)| relative_to_project(&project_root, path).map(|path| normalize_path(&path)))
+        .transpose()?;
+
+    let git_available = is_git_repo(&project_root);
+    let baseline_ref = if git_available {
+        discover_baseline_ref(&project_root, &run_dir)
+    } else {
+        None
+    };
+    let head_ref = if git_available {
+        git_stdout(&project_root, &["rev-parse", "--short", "HEAD"])
+    } else {
+        None
+    };
+    let changed_files = if git_available {
+        git_changed_files(&project_root, baseline_ref.as_deref())?
+    } else {
+        Vec::new()
+    };
+    let diff_patch = if git_available {
+        build_diff_patch(&project_root, baseline_ref.as_deref())?
+    } else {
+        "Git repository not available; diff.patch could not be generated.\n".to_string()
+    };
+    let diff_stat = if git_available {
+        git_diff_stat(&project_root, baseline_ref.as_deref()).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let evidence_dir = run_dir.join("evidence");
+    let phases_dir = run_dir.join("phases");
+    fs::create_dir_all(&evidence_dir)
+        .with_context(|| format!("Failed to create {}", evidence_dir.display()))?;
+    fs::create_dir_all(&phases_dir)
+        .with_context(|| format!("Failed to create {}", phases_dir.display()))?;
+
+    let changed_files_path = evidence_dir.join("changed-files.txt");
+    let diff_path = evidence_dir.join("diff.patch");
+    let review_path = phases_dir.join("review.md");
+
+    fs::write(&changed_files_path, render_changed_files(&changed_files))
+        .with_context(|| format!("Failed to write {}", changed_files_path.display()))?;
+    fs::write(&diff_path, diff_patch)
+        .with_context(|| format!("Failed to write {}", diff_path.display()))?;
+
+    let input = ReviewInput {
+        task_id: task_pointer.task_id,
+        run_id: run_pointer.run_id,
+        run_path: run_pointer.path,
+        baseline_ref,
+        head_ref,
+        generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        changed_files,
+        diff_stat,
+        source_output_path,
+        sections,
+        git_available,
+    };
+    fs::write(&review_path, render_review(&input))
+        .with_context(|| format!("Failed to write {}", review_path.display()))?;
+
+    Ok(ReviewEvidenceGenerateResult {
+        task_id: input.task_id,
+        run_id: input.run_id,
+        review_path: normalize_path(&relative_to_project(&project_root, &review_path)?),
+        changed_files_path: normalize_path(&relative_to_project(
+            &project_root,
+            &changed_files_path,
+        )?),
+        diff_path: normalize_path(&relative_to_project(&project_root, &diff_path)?),
+        changed_files_count: input.changed_files.len(),
+        baseline_ref: input.baseline_ref,
+        source_output_path: input.source_output_path,
+    })
+}
+
+fn render_review(input: &ReviewInput) -> String {
+    let mut output = String::new();
+    output.push_str("# Review Report\n\n");
+    output.push_str(&format!("Task: {}  \n", input.task_id));
+    output.push_str(&format!("Run: {}  \n", input.run_id));
+    output.push_str(&format!("Run path: {}  \n", input.run_path));
+    output.push_str("Generated by: VibeHub  \n");
+    output.push_str(&format!("Generated at: {}  \n", input.generated_at));
+    output.push_str(&format!(
+        "Source: {}  \n\n",
+        input
+            .source_output_path
+            .as_deref()
+            .unwrap_or("missing session output.md")
+    ));
+
+    output.push_str("## Verdict\n\n");
+    output.push_str("needs_action\n\n");
+    output.push_str("Verdict is a placeholder for human or later review. VibeHub does not auto-pass tasks in P0.\n\n");
+
+    output.push_str("## Diff Summary\n\n");
+    if input.diff_stat.is_empty() {
+        output.push_str("- No Git diff summary available or no changed files observed.\n");
+    } else {
+        for line in &input.diff_stat {
+            output.push_str(&format!("- {}\n", line));
+        }
+    }
+    output.push_str("\nEvidence grade: git_observed\n\n");
+
+    output.push_str("## Changed Files\n\n");
+    if input.changed_files.is_empty() {
+        output.push_str("- No changed files observed by Git.\n");
+    } else {
+        for file in &input.changed_files {
+            output.push_str(&format!("- {}\n", file));
+        }
+    }
+    output.push_str("\nEvidence grade: hard_observed\n\n");
+
+    output.push_str("## Tests Run Or Reason Not Run\n\n");
+    push_reported_section(
+        &mut output,
+        input,
+        &["tests run", "test results", "tests run or reason not run"],
+        "- Not reported by latest session output.\n",
+    );
+    output.push_str("\nEvidence grade: agent_reported\n\n");
+
+    output.push_str("## Unresolved Risks\n\n");
+    push_reported_section(
+        &mut output,
+        input,
+        &["unresolved risks", "warnings", "risks"],
+        "- Not reported by latest session output.\n",
+    );
+    output.push_str("\nEvidence grade: agent_reported\n\n");
+
+    output.push_str("## Rationale\n\n");
+    push_reported_section(
+        &mut output,
+        input,
+        &[
+            "rationale",
+            "key decisions made",
+            "key decisions",
+            "completed",
+        ],
+        "- Not reported by latest session output.\n",
+    );
+    output.push_str("\nEvidence grade: agent_reported\n\n");
+
+    output.push_str("## Observation Limitations\n\n");
+    output.push_str("- P0/P1 observability is best-effort.\n");
+    output.push_str("- Runtime adapter observation is not available.\n");
+    output.push_str("- Tests and rationale are taken from agent/session reporting when present.\n");
+    output.push_str("- Task mapping is inferred from current YAML pointers and run location.\n");
+    if !input.git_available {
+        output
+            .push_str("- Git was not available, so changed files and diff summary are limited.\n");
+    }
+    output.push('\n');
+
+    output.push_str("## Evidence Grades\n\n");
+    output.push_str("- changed files: hard_observed\n");
+    output.push_str("- diff summary: git_observed\n");
+    output.push_str("- tests run: agent_reported\n");
+    output.push_str("- rationale: agent_reported\n");
+    output.push_str("- task mapping: inferred\n\n");
+
+    output.push_str("## Git Scope\n\n");
+    output.push_str(&format!(
+        "- baseline or checkpoint: {}\n",
+        input.baseline_ref.as_deref().unwrap_or("HEAD fallback")
+    ));
+    output.push_str(&format!(
+        "- current HEAD: {}\n",
+        input.head_ref.as_deref().unwrap_or("unavailable")
+    ));
+    output.push_str("- generated artifacts:\n");
+    output.push_str("  - evidence/changed-files.txt\n");
+    output.push_str("  - evidence/diff.patch\n");
+    output.push_str("  - phases/review.md\n");
+
+    output
+}
+
+fn push_reported_section(output: &mut String, input: &ReviewInput, keys: &[&str], fallback: &str) {
+    for key in keys {
+        if let Some(value) = input.sections.get(*key).map(|value| value.trim()) {
+            if !value.is_empty() {
+                output.push_str(value);
+                output.push('\n');
+                return;
+            }
+        }
+    }
+    output.push_str(fallback);
+}
+
+fn render_changed_files(files: &[String]) -> String {
+    if files.is_empty() {
+        "No changed files observed by Git.\n".to_string()
+    } else {
+        let mut output = files.join("\n");
+        output.push('\n');
+        output
+    }
+}
+
+fn discover_baseline_ref(project_root: &Path, run_dir: &Path) -> Option<String> {
+    for (path, keys) in [
+        (
+            project_root.join(".vibehub/state.yaml"),
+            &[
+                &["git", "last_checkpoint_commit"][..],
+                &["git", "baseline_commit"][..],
+            ][..],
+        ),
+        (
+            run_dir.join("run.yaml"),
+            &[
+                &["git", "last_checkpoint_commit"][..],
+                &["git", "baseline_commit"][..],
+                &["last_checkpoint_commit"][..],
+                &["baseline_commit"][..],
+            ][..],
+        ),
+    ] {
+        if let Some(value) = read_first_yaml_string(&path, keys) {
+            if git_ref_exists(project_root, &value) {
+                return Some(value);
+            }
+        }
+    }
+    git_stdout(project_root, &["rev-parse", "--verify", "HEAD"]).filter(|value| {
+        let trimmed = value.trim();
+        !trimmed.is_empty() && git_ref_exists(project_root, trimmed)
+    })
+}
+
+fn read_first_yaml_string(path: &Path, keys: &[&[&str]]) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    let value: serde_yaml::Value = serde_yaml::from_str(&content).ok()?;
+    for key_path in keys {
+        let mut current = &value;
+        let mut found = true;
+        for key in *key_path {
+            match current.get(*key) {
+                Some(next) => current = next,
+                None => {
+                    found = false;
+                    break;
+                }
+            }
+        }
+        if !found {
+            continue;
+        }
+        if let Some(value) = current.as_str() {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn git_changed_files(project_root: &Path, baseline_ref: Option<&str>) -> Result<Vec<String>> {
+    let mut files = BTreeSet::new();
+    if let Some(base) = baseline_ref {
+        for file in git_lines(project_root, &["diff", "--name-only", base, "HEAD", "--"])? {
+            files.insert(file);
+        }
+    }
+    for args in [
+        &["diff", "--name-only", "--cached", "--"][..],
+        &["diff", "--name-only", "--"][..],
+        &["ls-files", "--others", "--exclude-standard"][..],
+    ] {
+        for file in git_lines(project_root, args)? {
+            files.insert(file);
+        }
+    }
+    Ok(files.into_iter().collect())
+}
+
+fn build_diff_patch(project_root: &Path, baseline_ref: Option<&str>) -> Result<String> {
+    let mut output = String::new();
+    if let Some(base) = baseline_ref {
+        output.push_str(&run_git_patch(project_root, &["diff", base, "HEAD", "--"])?);
+    }
+    output.push_str(&run_git_patch(project_root, &["diff", "--cached", "--"])?);
+    output.push_str(&run_git_patch(project_root, &["diff", "--"])?);
+
+    let untracked = git_lines(
+        project_root,
+        &["ls-files", "--others", "--exclude-standard"],
+    )?;
+    for file in untracked {
+        if is_binary_like_path(&file) {
+            output.push_str(&format!(
+                "\n# Untracked binary-like file omitted from patch: {file}\n"
+            ));
+            continue;
+        }
+        output.push_str(&run_git_patch(
+            project_root,
+            &["diff", "--no-index", "--", "NUL", &file],
+        )?);
+    }
+    if output.trim().is_empty() {
+        output.push_str("No Git diff observed.\n");
+    }
+    Ok(output)
+}
+
+fn git_diff_stat(project_root: &Path, baseline_ref: Option<&str>) -> Result<Vec<String>> {
+    let mut lines = Vec::new();
+    if let Some(base) = baseline_ref {
+        lines.extend(git_lines(
+            project_root,
+            &["diff", "--stat", base, "HEAD", "--"],
+        )?);
+    }
+    lines.extend(git_lines(
+        project_root,
+        &["diff", "--stat", "--cached", "--"],
+    )?);
+    lines.extend(git_lines(project_root, &["diff", "--stat", "--"])?);
+    Ok(lines)
+}
+
+fn is_git_repo(project_root: &Path) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(project_root)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn git_ref_exists(project_root: &Path, value: &str) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(project_root)
+        .args(["rev-parse", "--verify", "--quiet", value])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn git_stdout(project_root: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(project_root)
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn git_lines(project_root: &Path, args: &[&str]) -> Result<Vec<String>> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(project_root)
+        .args(args)
+        .output()
+        .with_context(|| format!("Failed to run git {}", args.join(" ")))?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "Git command failed: git {}\n{}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| line.replace('\\', "/"))
+        .collect())
+}
+
+fn run_git_patch(project_root: &Path, args: &[&str]) -> Result<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(project_root)
+        .args(args)
+        .output()
+        .with_context(|| format!("Failed to run git {}", args.join(" ")))?;
+    if !output.status.success() && !args.contains(&"--no-index") {
+        return Err(anyhow!(
+            "Git command failed: git {}\n{}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn is_binary_like_path(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    [
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".icns", ".pdf", ".zip", ".exe", ".dll",
+    ]
+    .iter()
+    .any(|extension| lower.ends_with(extension))
+}
+
+fn parse_output_sections(path: &Path) -> Result<BTreeMap<String, String>> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+    let mut sections = BTreeMap::new();
+    let mut current_key: Option<String> = None;
+    let mut current_lines = Vec::new();
+
+    for line in content.lines() {
+        if let Some(title) = markdown_heading_title(line) {
+            if let Some(key) = current_key.take() {
+                sections.insert(key, current_lines.join("\n").trim().to_string());
+                current_lines.clear();
+            }
+            current_key = Some(normalize_heading(title));
+        } else if current_key.is_some() {
+            current_lines.push(line.to_string());
+        }
+    }
+
+    if let Some(key) = current_key {
+        sections.insert(key, current_lines.join("\n").trim().to_string());
+    }
+
+    Ok(sections)
+}
+
+fn markdown_heading_title(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    let hashes = trimmed.chars().take_while(|ch| *ch == '#').count();
+    if !(2..=6).contains(&hashes) {
+        return None;
+    }
+    let rest = &trimmed[hashes..];
+    if !rest.starts_with(' ') {
+        return None;
+    }
+    Some(rest.trim())
+}
+
+fn normalize_heading(value: &str) -> String {
+    let mut normalized = String::new();
+    let mut previous_space = false;
+    for ch in value.to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch);
+            previous_space = false;
+        } else if !previous_space {
+            normalized.push(' ');
+            previous_space = true;
+        }
+    }
+    normalized.trim().to_string()
+}
+
+fn find_latest_session_output(
+    project_root: &Path,
+    run_path: &str,
+) -> Result<Option<(String, PathBuf)>> {
+    let sessions_dir = project_root.join(run_path).join("sessions");
+    if !sessions_dir.is_dir() {
+        return Ok(None);
+    }
+
+    let mut candidates = Vec::new();
+    for entry in fs::read_dir(&sessions_dir)
+        .with_context(|| format!("Failed to read {}", sessions_dir.display()))?
+    {
+        let entry = entry.with_context(|| format!("Failed to read {}", sessions_dir.display()))?;
+        if !entry
+            .file_type()
+            .with_context(|| format!("Failed to inspect {}", entry.path().display()))?
+            .is_dir()
+        {
+            continue;
+        }
+        let session_id = entry.file_name().to_string_lossy().to_string();
+        let output_path = entry.path().join("output.md");
+        if output_path.is_file() {
+            candidates.push((session_id, output_path));
+        }
+    }
+    candidates.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(candidates.pop())
+}
+
+fn canonical_project_root(project_root: &Path) -> Result<PathBuf> {
+    let project_root = fs::canonicalize(project_root)
+        .with_context(|| format!("Project path does not exist: {}", project_root.display()))?;
+    if !project_root.is_dir() {
+        return Err(anyhow!(
+            "Project path is not a directory: {}",
+            project_root.display()
+        ));
+    }
+    if !project_root.join(".vibehub").is_dir() {
+        return Err(anyhow!(
+            "VibeHub directory does not exist: {}",
+            project_root.join(".vibehub").display()
+        ));
+    }
+    Ok(project_root)
+}
+
+fn relative_to_project(project_root: &Path, target: &Path) -> Result<PathBuf> {
+    target
+        .strip_prefix(project_root)
+        .map(PathBuf::from)
+        .with_context(|| format!("Path escapes project root: {}", target.display()))
+}
+
+fn normalize_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vibehub::current::{write_current_run_pointer, write_current_task_pointer};
+    use uuid::Uuid;
+
+    fn temp_project() -> PathBuf {
+        let path = std::env::temp_dir().join(format!("vibehub-review-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(path.join(".vibehub/tasks/T-001/runs/R-001/sessions/S-001"))
+            .expect("create session");
+        fs::write(
+            path.join(".vibehub/state.yaml"),
+            "current:\n  phase: review\ngit:\n  baseline_commit: null\n",
+        )
+        .expect("write state");
+        write_current_task_pointer(&path, "T-001").expect("task pointer");
+        write_current_run_pointer(&path, "T-001", "R-001").expect("run pointer");
+        path
+    }
+
+    fn init_git(project: &Path) {
+        Command::new("git")
+            .arg("-C")
+            .arg(project)
+            .arg("init")
+            .output()
+            .expect("git init");
+        Command::new("git")
+            .arg("-C")
+            .arg(project)
+            .args(["config", "user.email", "test@example.com"])
+            .output()
+            .expect("git config email");
+        Command::new("git")
+            .arg("-C")
+            .arg(project)
+            .args(["config", "user.name", "Test User"])
+            .output()
+            .expect("git config name");
+    }
+
+    fn commit_all(project: &Path, message: &str) -> String {
+        Command::new("git")
+            .arg("-C")
+            .arg(project)
+            .args(["add", "."])
+            .output()
+            .expect("git add");
+        Command::new("git")
+            .arg("-C")
+            .arg(project)
+            .args(["commit", "-m", message])
+            .output()
+            .expect("git commit");
+        git_stdout(project, &["rev-parse", "HEAD"]).expect("head")
+    }
+
+    fn write_output(project: &Path) {
+        fs::write(
+            project.join(".vibehub/tasks/T-001/runs/R-001/sessions/S-001/output.md"),
+            r#"# Session Output
+
+## Tests Run
+- cargo test vibehub::review
+
+## Unresolved Risks
+- Review is not a full AI review.
+
+## Rationale
+- Minimal P0 evidence only.
+"#,
+        )
+        .expect("write output");
+    }
+
+    #[test]
+    fn generates_review_evidence_for_dirty_changes() {
+        let project = temp_project();
+        init_git(&project);
+        write_output(&project);
+        fs::write(project.join("src.rs"), "initial\n").expect("write src");
+        commit_all(&project, "initial");
+        fs::write(project.join("src.rs"), "changed\n").expect("change src");
+        fs::write(project.join("new.txt"), "untracked\n").expect("write untracked");
+
+        let result = generate_review_evidence(&project).expect("generate review");
+        let changed =
+            fs::read_to_string(project.join(&result.changed_files_path)).expect("read changed");
+        let patch = fs::read_to_string(project.join(&result.diff_path)).expect("read patch");
+        let review = fs::read_to_string(project.join(&result.review_path)).expect("read review");
+
+        assert_eq!(result.changed_files_count, 2);
+        assert!(changed.contains("src.rs"));
+        assert!(changed.contains("new.txt"));
+        assert!(patch.contains("-initial"));
+        assert!(patch.contains("+changed"));
+        assert!(patch.contains("+untracked"));
+        assert!(review.contains("## Verdict"));
+        assert!(review.contains("needs_action"));
+        assert!(review.contains("tests run: agent_reported"));
+        assert!(review.contains("cargo test vibehub::review"));
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn uses_baseline_for_committed_changes() {
+        let project = temp_project();
+        init_git(&project);
+        fs::write(project.join("src.rs"), "initial\n").expect("write src");
+        let baseline = commit_all(&project, "initial");
+        fs::write(
+            project.join(".vibehub/state.yaml"),
+            format!("current:\n  phase: review\ngit:\n  baseline_commit: {baseline}\n"),
+        )
+        .expect("write state baseline");
+        fs::write(project.join("src.rs"), "committed\n").expect("change src");
+        commit_all(&project, "change");
+
+        let result = generate_review_evidence(&project).expect("generate review");
+        let changed =
+            fs::read_to_string(project.join(&result.changed_files_path)).expect("read changed");
+        let patch = fs::read_to_string(project.join(&result.diff_path)).expect("read patch");
+
+        assert_eq!(result.baseline_ref.as_deref(), Some(baseline.as_str()));
+        assert!(changed.contains("src.rs"));
+        assert!(patch.contains("+committed"));
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn generates_placeholders_without_git_repo() {
+        let project = temp_project();
+
+        let result = generate_review_evidence(&project).expect("generate review");
+        let changed =
+            fs::read_to_string(project.join(&result.changed_files_path)).expect("read changed");
+        let patch = fs::read_to_string(project.join(&result.diff_path)).expect("read patch");
+        let review = fs::read_to_string(project.join(&result.review_path)).expect("read review");
+
+        assert_eq!(result.changed_files_count, 0);
+        assert!(changed.contains("No changed files observed"));
+        assert!(patch.contains("Git repository not available"));
+        assert!(review.contains("Git was not available"));
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+}
