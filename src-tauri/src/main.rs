@@ -50,6 +50,7 @@ fn main() {
             commands::refresh_all_workspaces,
             commands::check_for_updates,
             commands::vibehub_init,
+            commands::vibehub_build_context_pack,
             gateway::get_gateway_config,
             gateway::save_gateway_config,
             gateway::get_gateway_stats,
