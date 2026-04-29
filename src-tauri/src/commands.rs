@@ -4,6 +4,7 @@ use crate::{
     scanner::Scanner,
     storage::Storage,
     updater,
+    vibehub::context::{self, ContextPackBuildResult},
     vibehub::init::{self, VibehubInitResult},
 };
 use chrono::Utc;
@@ -551,4 +552,14 @@ pub async fn check_for_updates() -> Result<updater::UpdateCheckResult, String> {
 #[tauri::command]
 pub async fn vibehub_init(project_path: String) -> Result<VibehubInitResult, String> {
     init::init_project(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_build_context_pack(
+    project_path: String,
+    task_id: String,
+    run_id: String,
+    phase: String,
+) -> Result<ContextPackBuildResult, String> {
+    context::build_context_pack(project_path, task_id, run_id, phase).map_err(|e| e.to_string())
 }
