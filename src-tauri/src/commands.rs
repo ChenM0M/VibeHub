@@ -4,6 +4,7 @@ use crate::{
     scanner::Scanner,
     storage::Storage,
     updater,
+    vibehub::init::{self, VibehubInitResult},
 };
 use chrono::Utc;
 use tauri::State;
@@ -544,4 +545,9 @@ pub async fn refresh_all_workspaces(
 #[tauri::command]
 pub async fn check_for_updates() -> Result<updater::UpdateCheckResult, String> {
     updater::check_for_updates().await
+}
+
+#[tauri::command]
+pub async fn vibehub_init(project_path: String) -> Result<VibehubInitResult, String> {
+    init::init_project(project_path).map_err(|e| e.to_string())
 }
