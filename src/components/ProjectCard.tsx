@@ -17,7 +17,8 @@ import {
     Hash,
     Edit,
     Trash2,
-    Copy
+    Copy,
+    LayoutDashboard
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,6 +35,7 @@ import { useAppStore } from '@/stores/appStore';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN, enUS, zhTW } from 'date-fns/locale';
 import { ProjectEditDialog } from './ProjectEditDialog';
+import { VibehubCockpitDialog } from './VibehubCockpitDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslation } from 'react-i18next';
 import { getTechStackById } from '@/lib/techStackData';
@@ -48,6 +50,7 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
     const { t, i18n } = useTranslation();
     const { toggleProjectStar, openInExplorer, openTerminal, config, deleteProject, launchTool, launchCustom } = useAppStore();
     const [isEditing, setIsEditing] = useState(false);
+    const [isCockpitOpen, setIsCockpitOpen] = useState(false);
 
     const formatDate = (dateString: string) => {
         try {
@@ -99,6 +102,7 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
     };
 
     const typeInfo = getProjectTypeInfo(project.project_type);
+    const originalProject = config?.projects.find(p => p.id === project.id) || project;
 
     // Tags that have a launchable config (executable is set)
     const launchableTags = (config?.tags || []).filter(
@@ -294,6 +298,11 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
                         onClose={() => setIsEditing(false)}
                         project={project}
                     />
+                    <VibehubCockpitDialog
+                        isOpen={isCockpitOpen}
+                        onClose={() => setIsCockpitOpen(false)}
+                        project={originalProject}
+                    />
                 </div>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-48">
@@ -333,6 +342,11 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
                         {t('project.customLaunch')}
                     </ContextMenuItem>
                 )}
+                <ContextMenuItem onClick={() => setIsCockpitOpen(true)}>
+                    <LayoutDashboard className="mr-2 h-4 w-4" />
+                    VibeHub Cockpit
+                </ContextMenuItem>
+                <ContextMenuSeparator />
                 <ContextMenuItem onClick={() => {
                     const originalPath = config?.projects.find(p => p.id === project.id)?.path || project.path;
                     openInExplorer(originalPath);
