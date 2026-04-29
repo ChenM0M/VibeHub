@@ -8,6 +8,7 @@ use crate::{
     vibehub::context::{self, ContextPackBuildResult},
     vibehub::handoff::{self, HandoffBuildResult},
     vibehub::init::{self, VibehubInitResult},
+    vibehub::review::{self, ReviewEvidenceGenerateResult},
 };
 use chrono::Utc;
 use std::process::Command;
@@ -576,4 +577,11 @@ pub async fn vibehub_generate_agent_view(
 #[tauri::command]
 pub async fn vibehub_build_handoff(project_path: String) -> Result<HandoffBuildResult, String> {
     handoff::build_handoff(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_generate_review_evidence(
+    project_path: String,
+) -> Result<ReviewEvidenceGenerateResult, String> {
+    review::generate_review_evidence(project_path).map_err(|e| e.to_string())
 }
