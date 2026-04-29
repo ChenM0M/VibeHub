@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { AlertCircle, FileText, GitBranch, Play, RefreshCw, RotateCcw, SearchCheck } from 'lucide-react';
+import { AlertCircle, FileText, GitBranch, PackagePlus, Play, RefreshCw, SearchCheck, Wrench } from 'lucide-react';
 import { Project, VibehubCockpitStatus, VibehubFileStatus } from '@/types';
 import { tauriApi } from '@/services/tauri';
 import { Button } from '@/components/ui/button';
@@ -24,19 +24,23 @@ type ActionState = {
     error: boolean;
 };
 
+type CockpitAction = 'init' | 'start-task' | 'build-context' | 'agent-view' | 'review' | 'handoff';
+
 export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpitDialogProps) {
     const [status, setStatus] = useState<VibehubCockpitStatus | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [actionState, setActionState] = useState<ActionState | null>(null);
-    const [runningAction, setRunningAction] = useState<string | null>(null);
+    const [runningAction, setRunningAction] = useState<CockpitAction | null>(null);
 
-    const loadStatus = async () => {
+    const loadStatus = async (clearActionState = true) => {
         if (!project) return;
         setIsLoading(true);
         try {
             const nextStatus = await tauriApi.vibehubReadCockpitStatus(project.path);
             setStatus(nextStatus);
-            setActionState(null);
+            if (clearActionState) {
+                setActionState(null);
+            }
         } catch (error) {
             setActionState({ message: String(error), error: true });
         } finally {
@@ -54,21 +58,68 @@ export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpi
         }
     }, [isOpen, project?.path]);
 
-    const runAction = async (action: 'continue' | 'review' | 'recover') => {
+    const hasActiveContextTarget = Boolean(
+        status?.initialized && status.current_task_id && status.current_run_id && status.current_phase
+    );
+    const actionDisabled = isLoading || !!runningAction || !project;
+
+    const runAction = async (action: CockpitAction) => {
         if (!project) return;
         setRunningAction(action);
         try {
-            if (action === 'continue') {
+            if (action === 'init') {
+                const result = await tauriApi.vibehubInit(project.path);
+                const createdCount = result.created_files.length;
+                const keptCount = result.skipped_existing_files.length;
+                const errorSuffix = result.errors.length ? ` ${result.errors.length} issue(s) reported.` : '';
+                setActionState({
+                    message: `Initialized .vibehub at ${result.vibehub_root}. Created ${createdCount} file(s), kept ${keptCount} existing file(s).${errorSuffix}`,
+                    error: result.errors.length > 0,
+                });
+            } else if (action === 'start-task') {
+                const result = await tauriApi.vibehubStartTask(project.path);
+                setActionState({
+                    message: `Started task ${result.task_id} with run ${result.run_id} in ${result.phase} phase.`,
+                    error: false,
+                });
+            } else if (action === 'build-context') {
+                if (!status?.current_task_id || !status.current_run_id || !status.current_phase) {
+                    setActionState({
+                        message: 'Cannot build context because no active task, run, and phase are available.',
+                        error: true,
+                    });
+                    return;
+                }
+                const result = await tauriApi.vibehubBuildContextPack(
+                    project.path,
+                    status.current_task_id,
+                    status.current_run_id,
+                    status.current_phase
+                );
+                setActionState({
+                    message: `Context pack built: ${result.pack_path}. Included ${result.included_count}, missing ${result.missing_count}, excluded ${result.excluded_count}.`,
+                    error: result.missing_count > 0,
+                });
+            } else if (action === 'agent-view') {
                 const result = await tauriApi.vibehubGenerateAgentView(project.path);
                 setActionState({ message: `Agent view updated: ${result.current_path}`, error: false });
             } else if (action === 'review') {
                 const result = await tauriApi.vibehubGenerateReviewEvidence(project.path);
-                setActionState({ message: `Review evidence written: ${result.review_path}`, error: false });
+                setActionState({
+                    message: `Review evidence written: ${result.review_path}. ${result.changed_files_count} changed file(s) captured.`,
+                    error: false,
+                });
             } else {
                 const result = await tauriApi.vibehubBuildHandoff(project.path);
-                setActionState({ message: `Handoff ${result.complete ? 'available' : 'incomplete'}: ${result.handoff_path}`, error: false });
+                const missingSuffix = result.missing_required_sections.length
+                    ? ` Missing section(s): ${result.missing_required_sections.join(', ')}.`
+                    : '';
+                setActionState({
+                    message: `Handoff ${result.complete ? 'built' : 'built but incomplete'}: ${result.handoff_path}.${missingSuffix}`,
+                    error: !result.complete,
+                });
             }
-            await loadStatus();
+            await loadStatus(false);
         } catch (error) {
             setActionState({ message: String(error), error: true });
         } finally {
@@ -96,7 +147,7 @@ export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpi
                             <div className="text-sm text-muted-foreground">Current task</div>
                             <div className="truncate font-medium">{isLoading ? 'Loading...' : taskLabel}</div>
                         </div>
-                        <Button variant="outline" size="sm" onClick={loadStatus} disabled={isLoading || !project}>
+                        <Button variant="outline" size="sm" onClick={() => loadStatus()} disabled={isLoading || !project}>
                             <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                             Refresh
                         </Button>
@@ -143,27 +194,55 @@ export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpi
                     {actionState && <Notice error={actionState.error} message={actionState.message} />}
                 </div>
 
-                <DialogFooter className="gap-2 sm:space-x-0">
-                    <Button
-                        variant="outline"
-                        onClick={() => runAction('recover')}
-                        disabled={!status?.initialized || !!runningAction}
-                    >
-                        <RotateCcw className="mr-2 h-4 w-4" />
-                        Recover
-                    </Button>
-                    <Button
-                        variant="outline"
-                        onClick={() => runAction('review')}
-                        disabled={!status?.initialized || !!runningAction}
-                    >
-                        <SearchCheck className="mr-2 h-4 w-4" />
-                        Review
-                    </Button>
-                    <Button onClick={() => runAction('continue')} disabled={!status?.initialized || !!runningAction}>
-                        <Play className="mr-2 h-4 w-4" />
-                        Continue
-                    </Button>
+                <DialogFooter className="flex-wrap gap-2 sm:space-x-0">
+                    {status && !status.initialized && (
+                        <Button onClick={() => runAction('init')} disabled={actionDisabled}>
+                            <Wrench className="mr-2 h-4 w-4" />
+                            Initialize
+                        </Button>
+                    )}
+                    {status?.initialized && (
+                        <Button
+                            variant="outline"
+                            onClick={() => runAction('start-task')}
+                            disabled={actionDisabled}
+                        >
+                            <Play className="mr-2 h-4 w-4" />
+                            Start Task
+                        </Button>
+                    )}
+                    {hasActiveContextTarget && (
+                        <>
+                            <Button
+                                variant="outline"
+                                onClick={() => runAction('build-context')}
+                                disabled={actionDisabled}
+                            >
+                                <PackagePlus className="mr-2 h-4 w-4" />
+                                Build Context
+                            </Button>
+                            <Button onClick={() => runAction('agent-view')} disabled={actionDisabled}>
+                                <Play className="mr-2 h-4 w-4" />
+                                Agent View
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => runAction('review')}
+                                disabled={actionDisabled}
+                            >
+                                <SearchCheck className="mr-2 h-4 w-4" />
+                                Review Evidence
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => runAction('handoff')}
+                                disabled={actionDisabled}
+                            >
+                                <FileText className="mr-2 h-4 w-4" />
+                                Build Handoff
+                            </Button>
+                        </>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>
