@@ -50,6 +50,7 @@ fn main() {
             commands::refresh_all_workspaces,
             commands::check_for_updates,
             commands::vibehub_init,
+            commands::vibehub_start_task,
             commands::vibehub_build_context_pack,
             commands::vibehub_generate_agent_view,
             commands::vibehub_build_handoff,
