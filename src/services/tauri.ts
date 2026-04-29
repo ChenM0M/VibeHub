@@ -119,5 +119,18 @@ export const tauriApi = {
         session_id: string | null;
     }> => {
         return await invoke('vibehub_build_handoff', { projectPath });
+    },
+
+    vibehubGenerateReviewEvidence: async (projectPath: string): Promise<{
+        task_id: string;
+        run_id: string;
+        review_path: string;
+        changed_files_path: string;
+        diff_path: string;
+        changed_files_count: number;
+        baseline_ref: string | null;
+        source_output_path: string | null;
+    }> => {
+        return await invoke('vibehub_generate_review_evidence', { projectPath });
     }
 };

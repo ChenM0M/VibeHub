@@ -53,6 +53,7 @@ fn main() {
             commands::vibehub_build_context_pack,
             commands::vibehub_generate_agent_view,
             commands::vibehub_build_handoff,
+            commands::vibehub_generate_review_evidence,
             gateway::get_gateway_config,
             gateway::save_gateway_config,
             gateway::get_gateway_stats,
