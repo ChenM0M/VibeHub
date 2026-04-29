@@ -87,6 +87,19 @@ export interface ContextPackBuildResult {
     estimated_tokens: number;
 }
 
+export interface VibehubStartTaskResult {
+    task_id: string;
+    run_id: string;
+    mode: string;
+    phase: string;
+    phase_status: string;
+    task_path: string;
+    run_path: string;
+    task_pointer_path: string;
+    run_pointer_path: string;
+    context_spec_path: string;
+}
+
 export interface VibehubFileStatus {
     configured: boolean;
     exists: boolean;

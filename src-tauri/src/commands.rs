@@ -9,6 +9,7 @@ use crate::{
     vibehub::handoff::{self, HandoffBuildResult},
     vibehub::init::{self, VibehubInitResult},
     vibehub::review::{self, ReviewEvidenceGenerateResult},
+    vibehub::start_task::{self, VibehubStartTaskResult},
     vibehub::status::{self, VibehubCockpitStatus},
 };
 use chrono::Utc;
@@ -556,6 +557,16 @@ pub async fn check_for_updates() -> Result<updater::UpdateCheckResult, String> {
 #[tauri::command]
 pub async fn vibehub_init(project_path: String) -> Result<VibehubInitResult, String> {
     init::init_project(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_start_task(
+    project_path: String,
+    title: Option<String>,
+    mode: Option<String>,
+    phase: Option<String>,
+) -> Result<VibehubStartTaskResult, String> {
+    start_task::start_task(project_path, title, mode, phase).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
