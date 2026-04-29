@@ -2,17 +2,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod gateway;
 mod launcher;
 mod models;
 mod scanner;
 mod storage;
-mod gateway;
 mod updater;
 mod vibehub;
 
 use commands::AppState;
-use storage::Storage;
 use std::sync::Mutex;
+use storage::Storage;
 
 fn main() {
     let storage = Storage::new().expect("Failed to initialize storage");
