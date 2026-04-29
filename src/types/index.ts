@@ -74,3 +74,15 @@ export interface AppConfig {
     theme: Theme;
     recent_projects: string[];
 }
+
+export interface ContextPackBuildResult {
+    task_id: string;
+    run_id: string;
+    phase: string;
+    pack_path: string;
+    manifest_path: string;
+    included_count: number;
+    missing_count: number;
+    excluded_count: number;
+    estimated_tokens: number;
+}
