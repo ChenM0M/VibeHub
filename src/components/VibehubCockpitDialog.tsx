@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { AlertCircle, Bot, FileText, GitBranch, PackagePlus, Play, RefreshCw, SearchCheck, Wrench } from 'lucide-react';
+import { AlertCircle, Bot, FileText, GitBranch, Lightbulb, PackagePlus, Play, RefreshCw, SearchCheck, Wrench } from 'lucide-react';
 import { Project, VibehubCockpitStatus, VibehubFileStatus } from '@/types';
 import { tauriApi } from '@/services/tauri';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,7 @@ type ActionState = {
     error: boolean;
 };
 
-type CockpitAction = 'init' | 'start-task' | 'build-context' | 'continue' | 'agent-sync' | 'review' | 'handoff' | 'journal';
+type CockpitAction = 'init' | 'start-task' | 'build-context' | 'continue' | 'agent-sync' | 'review' | 'handoff' | 'journal' | 'knowledge';
 
 export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpitDialogProps) {
     return (
@@ -57,6 +57,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
     const [runningAction, setRunningAction] = useState<CockpitAction | null>(null);
     const [journalTitle, setJournalTitle] = useState('');
     const [journalBody, setJournalBody] = useState('');
+    const [knowledgeNote, setKnowledgeNote] = useState('');
 
     const loadStatus = async (clearActionState = true) => {
         if (!project) return;
@@ -88,6 +89,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
         status?.initialized && status.current_task_id && status.current_run_id && status.current_phase
     );
     const actionDisabled = isLoading || !!runningAction || !project;
+    const hasKnowledgeNote = knowledgeNote.trim().length > 0;
 
     const runAction = async (action: CockpitAction) => {
         if (!project) return;
@@ -153,7 +155,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                     message: `Handoff ${result.complete ? 'built' : 'built but incomplete'}: ${result.handoff_path}.${missingSuffix}`,
                     error: !result.complete,
                 });
-            } else {
+            } else if (action === 'journal') {
                 const result = await tauriApi.vibehubAppendJournalEntry(
                     project.path,
                     journalTitle,
@@ -163,6 +165,13 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                 setJournalBody('');
                 setActionState({
                     message: `Journal note appended: ${result.journal_path}`,
+                    error: false,
+                });
+            } else {
+                const result = await tauriApi.vibehubAppendKnowledgeNote(project.path, knowledgeNote);
+                setKnowledgeNote('');
+                setActionState({
+                    message: `Knowledge note appended: ${result.knowledge_path}`,
                     error: false,
                 });
             }
@@ -370,6 +379,30 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                     >
                         <FileText className="mr-2 h-4 w-4" />
                         Add Journal Note
+                    </Button>
+                </div>
+            </div>
+
+            <div className="space-y-3 border-t pt-4">
+                <div className="space-y-1.5">
+                    <Label htmlFor="vibehub-knowledge-note">Knowledge note</Label>
+                    <textarea
+                        id="vibehub-knowledge-note"
+                        value={knowledgeNote}
+                        onChange={(event) => setKnowledgeNote(event.target.value)}
+                        placeholder="Reusable decision, convention, or lesson"
+                        disabled={actionDisabled || !status?.initialized}
+                        className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => runAction('knowledge')}
+                        disabled={actionDisabled || !status?.initialized || !hasKnowledgeNote}
+                    >
+                        <Lightbulb className="mr-2 h-4 w-4" />
+                        Add Knowledge Note
                     </Button>
                 </div>
             </div>
