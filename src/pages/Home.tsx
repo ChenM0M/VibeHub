@@ -27,6 +27,7 @@ import {
     rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableProjectCard } from '@/components/SortableProjectCard';
+import { VibehubProjectCenter } from '@/components/VibehubProjectCenter';
 
 interface HomeProps {
     searchQuery: string;
@@ -38,6 +39,7 @@ export function Home({ searchQuery }: HomeProps) {
     const [launchProject, setLaunchProject] = useState<Project | null>(null);
     const [isCustomLaunchMode, setIsCustomLaunchMode] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
+    const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
 
     const sensors = useSensors(
@@ -119,6 +121,9 @@ export function Home({ searchQuery }: HomeProps) {
 
     const starredProjects = filteredProjects.filter(p => p.starred);
     const otherProjects = filteredProjects.filter(p => !p.starred);
+    const selectedProject = selectedProjectId
+        ? config.projects.find((project) => project.id === selectedProjectId) || null
+        : null;
 
     // Helper to get display path
     const getDisplayPath = (projectPath: string) => {
@@ -135,6 +140,15 @@ export function Home({ searchQuery }: HomeProps) {
         }
         return projectPath;
     };
+
+    if (selectedProject) {
+        return (
+            <VibehubProjectCenter
+                project={selectedProject}
+                onBack={() => setSelectedProjectId(null)}
+            />
+        );
+    }
 
     return (
         <ContextMenu>
@@ -196,6 +210,7 @@ export function Home({ searchQuery }: HomeProps) {
                                                     setIsCustomLaunchMode(true);
                                                     setLaunchProject(project);
                                                 }}
+                                                onSelect={() => setSelectedProjectId(project.id)}
                                             />
                                         ))}
                                     </div>
@@ -227,6 +242,7 @@ export function Home({ searchQuery }: HomeProps) {
                                                     setIsCustomLaunchMode(true);
                                                     setLaunchProject(project);
                                                 }}
+                                                onSelect={() => setSelectedProjectId(project.id)}
                                             />
                                         ))}
                                     </div>
