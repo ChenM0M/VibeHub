@@ -4,6 +4,8 @@ import { Project, VibehubCockpitStatus, VibehubFileStatus } from '@/types';
 import { tauriApi } from '@/services/tauri';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     Dialog,
     DialogContent,
@@ -23,7 +25,7 @@ type ActionState = {
     error: boolean;
 };
 
-type CockpitAction = 'init' | 'start-task' | 'build-context' | 'continue' | 'agent-sync' | 'review' | 'handoff';
+type CockpitAction = 'init' | 'start-task' | 'build-context' | 'continue' | 'agent-sync' | 'review' | 'handoff' | 'journal';
 
 export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpitDialogProps) {
     return (
@@ -53,6 +55,8 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
     const [isLoading, setIsLoading] = useState(false);
     const [actionState, setActionState] = useState<ActionState | null>(null);
     const [runningAction, setRunningAction] = useState<CockpitAction | null>(null);
+    const [journalTitle, setJournalTitle] = useState('');
+    const [journalBody, setJournalBody] = useState('');
 
     const loadStatus = async (clearActionState = true) => {
         if (!project) return;
@@ -140,7 +144,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                     message: `Review evidence written: ${result.review_path}. ${result.changed_files_count} changed file(s) captured.`,
                     error: false,
                 });
-            } else {
+            } else if (action === 'handoff') {
                 const result = await tauriApi.vibehubBuildHandoff(project.path);
                 const missingSuffix = result.missing_required_sections.length
                     ? ` Missing section(s): ${result.missing_required_sections.join(', ')}.`
@@ -148,6 +152,18 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                 setActionState({
                     message: `Handoff ${result.complete ? 'built' : 'built but incomplete'}: ${result.handoff_path}.${missingSuffix}`,
                     error: !result.complete,
+                });
+            } else {
+                const result = await tauriApi.vibehubAppendJournalEntry(
+                    project.path,
+                    journalTitle,
+                    journalBody
+                );
+                setJournalTitle('');
+                setJournalBody('');
+                setActionState({
+                    message: `Journal note appended: ${result.journal_path}`,
+                    error: false,
                 });
             }
             await loadStatus(false);
@@ -164,7 +180,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
     const unavailableReason = !status
         ? 'Loading VibeHub status.'
         : !status.initialized
-            ? 'Initialize this project before running task and artifact actions.'
+            ? 'Initialize this project before running task, artifact, or manual journal actions.'
             : !hasActiveContextTarget
                 ? 'Start a task before building context, continue context, review evidence, or handoff/recover report.'
                 : null;
@@ -320,6 +336,42 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                 {unavailableReason && (
                     <div className="text-xs text-muted-foreground">{unavailableReason}</div>
                 )}
+            </div>
+
+            <div className="space-y-3 border-t pt-4">
+                <div className="grid gap-3 md:grid-cols-[0.7fr_1.3fr]">
+                    <div className="space-y-1.5">
+                        <Label htmlFor="vibehub-journal-title">Journal title</Label>
+                        <Input
+                            id="vibehub-journal-title"
+                            value={journalTitle}
+                            onChange={(event) => setJournalTitle(event.target.value)}
+                            placeholder="Session note"
+                            disabled={actionDisabled || !status?.initialized}
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="vibehub-journal-body">Journal body</Label>
+                        <textarea
+                            id="vibehub-journal-body"
+                            value={journalBody}
+                            onChange={(event) => setJournalBody(event.target.value)}
+                            placeholder="Short decision, result, or follow-up"
+                            disabled={actionDisabled || !status?.initialized}
+                            className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                    </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => runAction('journal')}
+                        disabled={actionDisabled || !status?.initialized}
+                    >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Add Journal Note
+                    </Button>
+                </div>
             </div>
         </div>
     );
