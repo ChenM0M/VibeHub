@@ -44,9 +44,10 @@ interface ProjectCardProps {
     project: Project;
     onLaunch: (project: Project) => void;
     onCustomLaunch: (project: Project) => void;
+    onSelect?: (project: Project) => void;
 }
 
-export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardProps) {
+export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: ProjectCardProps) {
     const { t, i18n } = useTranslation();
     const { toggleProjectStar, openInExplorer, openTerminal, config, deleteProject, launchTool, launchCustom } = useAppStore();
     const [isEditing, setIsEditing] = useState(false);
@@ -160,6 +161,7 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
                     data-project-card
                     className={`group relative flex flex-col justify-between min-h-[180px] h-full bg-card hover:bg-accent/5 border rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 overflow-hidden`}
                     style={customStyle}
+                    onClick={() => onSelect?.(originalProject)}
                 >
                     {/* Header / Banner Area */}
                     <div
