@@ -150,7 +150,10 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: Pro
 
     const handleCardClick = (event: React.MouseEvent<HTMLElement>) => {
         const target = event.target as HTMLElement;
-        if (target.closest('button, a, [role="button"], [data-no-card-select]')) {
+        // Note: do NOT match `[role="button"]` here — `@dnd-kit/sortable` adds
+        // role="button" to the SortableProjectCard wrapper, which would otherwise
+        // swallow every click on the card body and break navigation to the cockpit.
+        if (target.closest('button, a, [data-no-card-select]')) {
             return;
         }
         onSelect?.(originalProject);

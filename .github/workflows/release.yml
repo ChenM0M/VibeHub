@@ -72,7 +72,7 @@ jobs:
             | `VibeHub_x.x.x_amd64.AppImage` | Linux | AppImage | 免安装，`chmod +x` 后运行 |
             | `VibeHub-Portable-Linux.tar.gz` | Linux | 便携版 | 解压后直接运行 |
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
       # Windows Portable
       - name: Prepare Portable Version (Windows)
