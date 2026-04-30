@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { AgentAdapterSyncResult, AppConfig, ContextPackBuildResult, Project, VibehubCockpitStatus, VibehubJournalAppendResult, VibehubStartTaskResult, Workspace, Tag } from '../types';
+import { AgentAdapterSyncResult, AppConfig, ContextPackBuildResult, Project, VibehubCockpitStatus, VibehubJournalAppendResult, VibehubKnowledgeAppendResult, VibehubStartTaskResult, Workspace, Tag } from '../types';
 
 export const tauriApi = {
     loadConfig: async (): Promise<AppConfig> => {
@@ -174,5 +174,12 @@ export const tauriApi = {
         body?: string
     ): Promise<VibehubJournalAppendResult> => {
         return await invoke('vibehub_append_journal_entry', { projectPath, title, body });
+    },
+
+    vibehubAppendKnowledgeNote: async (
+        projectPath: string,
+        note?: string
+    ): Promise<VibehubKnowledgeAppendResult> => {
+        return await invoke('vibehub_append_knowledge_note', { projectPath, note });
     }
 };
