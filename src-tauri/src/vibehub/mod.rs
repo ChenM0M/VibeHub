@@ -4,6 +4,7 @@ pub mod context;
 pub mod current;
 pub mod handoff;
 pub mod init;
+pub mod journal;
 pub mod review;
 pub mod start_task;
 pub mod status;

@@ -9,6 +9,7 @@ use crate::{
     vibehub::context::{self, ContextPackBuildResult},
     vibehub::handoff::{self, HandoffBuildResult},
     vibehub::init::{self, VibehubInitResult},
+    vibehub::journal::{self, JournalAppendResult},
     vibehub::review::{self, ReviewEvidenceGenerateResult},
     vibehub::start_task::{self, VibehubStartTaskResult},
     vibehub::status::{self, VibehubCockpitStatus},
@@ -613,4 +614,13 @@ pub async fn vibehub_read_cockpit_status(
     project_path: String,
 ) -> Result<VibehubCockpitStatus, String> {
     status::read_cockpit_status(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_append_journal_entry(
+    project_path: String,
+    title: Option<String>,
+    body: Option<String>,
+) -> Result<JournalAppendResult, String> {
+    journal::append_journal_entry(project_path, title, body).map_err(|e| e.to_string())
 }
