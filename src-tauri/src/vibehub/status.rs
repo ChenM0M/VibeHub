@@ -1,8 +1,8 @@
+use crate::process_util::silent_command;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct VibehubCockpitStatus {
@@ -252,7 +252,7 @@ fn project_relative_path(project_root: &Path, raw_path: &str) -> Option<PathBuf>
 }
 
 fn is_git_repo(project_root: &Path) -> bool {
-    Command::new("git")
+    silent_command("git")
         .arg("-C")
         .arg(project_root)
         .args(["rev-parse", "--is-inside-work-tree"])
@@ -266,7 +266,7 @@ fn git_dirty(project_root: &Path) -> Option<bool> {
 }
 
 fn git_changed_files_count(project_root: &Path) -> Option<usize> {
-    let output = Command::new("git")
+    let output = silent_command("git")
         .arg("-C")
         .arg(project_root)
         .args(["status", "--porcelain"])

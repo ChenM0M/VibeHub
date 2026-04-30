@@ -21,6 +21,10 @@
         "cooldown": "Cooldown",
         "requests": "Requests",
         "never": "Never",
+        "yes": "yes",
+        "no": "no",
+        "unknown": "unknown",
+        "none": "none",
         "secondsAgo": "{{count}}s ago",
         "minutesAgo": "{{count}}m ago",
         "hoursAgo": "{{count}}h ago",
@@ -55,7 +59,115 @@
         "addCustomTech": "Add custom tech...",
         "themeColor": "Theme Color",
         "copyPath": "Copy Path",
-        "customConfig": "Custom Config…"
+        "customConfig": "Custom Config"
+    },
+    "vibehub": {
+        "center": {
+            "title": "VibeHub v2 Center"
+        },
+        "cockpit": {
+            "title": "VibeHub v2 Cockpit"
+        },
+        "overview": {
+            "project": "Project overview",
+            "flow": "4+1 flow"
+        },
+        "flow": {
+            "plan": "Plan",
+            "context": "Context",
+            "run": "Run",
+            "review": "Review",
+            "handoff": "Handoff"
+        },
+        "status": {
+            "currentTaskRun": "Current task/run",
+            "run": "Run",
+            "noCurrentTask": "No current task",
+            "mode": "Mode",
+            "phase": "Phase",
+            "phaseStatus": "Phase status",
+            "observability": "Observability",
+            "gitDirty": "Git dirty state",
+            "contextPack": "Context pack",
+            "handoff": "Handoff",
+            "reviewEvidence": "Review evidence",
+            "reviewAvailable": "Available after Review Evidence action",
+            "needsActiveTask": "Needs active task/run",
+            "gitUnavailable": "Git unavailable",
+            "dirtyCount": "dirty ({{count}})",
+            "clean": "clean"
+        },
+        "notices": {
+            "observabilityLimited": "Observability is limited to cockpit status and generated artifacts; runtime observation is out of scope.",
+            "notInitialized": ".vibehub is not initialized for this project.",
+            "initializeCreates": "Initialize will create `.vibehub` and selected Codex / Claude Code / OpenCode instruction files."
+        },
+        "unavailable": {
+            "loading": "Loading VibeHub status.",
+            "notInitialized": "Initialize this project before running task, artifact, or manual journal actions.",
+            "noActiveTask": "Start a task before building context, continue context, review evidence, or handoff/recover report."
+        },
+        "ai": {
+            "title": "AI Instructions",
+            "subtitle": "Select agent CLI support, inspect generated files, and edit VibeHub command text.",
+            "commandCount": "{{count}} commands",
+            "command": "Command",
+            "commandBodyOverride": "Command body override",
+            "tools": {
+                "codex": "AGENTS.md + .agents/skills repo skills",
+                "claude_code": "CLAUDE.md + .claude commands + constraints",
+                "opencode": "AGENTS.md + .opencode commands + constraints"
+            }
+        },
+        "drift": {
+            "title": "Workspace Drift",
+            "dirty": "Dirty",
+            "headChanged": "HEAD changed",
+            "contextStale": "Context stale"
+        },
+        "journal": {
+            "title": "Journal title",
+            "titlePlaceholder": "Session note",
+            "body": "Journal body",
+            "bodyPlaceholder": "Short decision, result, or follow-up"
+        },
+        "knowledge": {
+            "note": "Knowledge note",
+            "placeholder": "Reusable decision, convention, or lesson"
+        },
+        "actions": {
+            "initialize": "Initialize",
+            "startTask": "Start Task",
+            "buildContext": "Build Context",
+            "continue": "Continue",
+            "syncWorkspace": "Sync Workspace",
+            "recoverDrift": "Recover Drift",
+            "reviewEvidence": "Review Evidence",
+            "buildHandoff": "Build Handoff/Recover Report",
+            "updateAiInstructions": "Update AI Instructions",
+            "saveCommandOverride": "Save Command Override",
+            "addJournalNote": "Add Journal Note",
+            "addKnowledgeNote": "Add Knowledge Note"
+        },
+        "messages": {
+            "issueCount": "{{count}} issue(s) reported.",
+            "initialized": "Initialized .vibehub at {{root}}. Created {{created}} file(s), kept {{kept}} existing file(s).",
+            "startedTask": "Started task {{task}} with run {{run}} in {{phase}} phase.",
+            "noContextTarget": "Cannot build context because no active task, run, and phase are available.",
+            "contextBuilt": "Context pack built: {{path}}. Included {{included}}, missing {{missing}}, excluded {{excluded}}.",
+            "continueUpdated": "Continue context updated: {{path}}",
+            "conflict": "Conflict",
+            "workspaceDrift": "Workspace drift detected: {{warnings}}",
+            "workspaceClean": "Workspace sync check complete: no drift detected.",
+            "recoverWritten": "Recover report written: {{path}}",
+            "recoverNotNeeded": "Workspace state refreshed; no recover report was needed.",
+            "reviewWritten": "Review evidence written: {{path}}. {{count}} changed file(s) captured.",
+            "missingSections": "Missing section(s): {{sections}}.",
+            "handoffBuilt": "Handoff built: {{path}}.",
+            "handoffIncomplete": "Handoff built but incomplete: {{path}}.",
+            "journalAppended": "Journal note appended: {{path}}",
+            "knowledgeAppended": "Knowledge note appended: {{path}}"
+        }
     },
     "settings": {
         "title": "Settings",
@@ -153,7 +265,7 @@
             "claudeCodeProxy": "Claude Code Proxy Server",
             "claudeCodeProxyDesc": "When enabled, converts Claude Code Anthropic requests to OpenAI format for this provider",
             "modelMapping": "Model Mapping",
-            "modelMappingDesc": "Map requested model to target model (e.g. claude-3-haiku → claude-3-5-sonnet)",
+            "modelMappingDesc": "Map requested model to target model, for example claude-3-haiku to claude-3-5-sonnet",
             "sourceModel": "Source Model",
             "targetModel": "Target Model",
             "cancel": "Cancel",
@@ -183,6 +295,6 @@
         "feedback": "Feedback",
         "credits": "Credits",
         "creditsText": "Thanks to all open source projects and contributors, especially the Tauri, React, and shadcn/ui teams.",
-        "madeWith": "Made with ❤️ by the VibeHub team"
+        "madeWith": "Made with care by the VibeHub team"
     }
 }

@@ -6,7 +6,7 @@
         "launch": "啟動",
         "general": "一般",
         "cancel": "取消",
-        "confirm": "確定",
+        "confirm": "確認",
         "delete": "刪除",
         "edit": "編輯",
         "save": "儲存",
@@ -15,16 +15,20 @@
         "loading": "載入中...",
         "error": "錯誤",
         "success": "成功",
-        "running": "運行中",
+        "running": "執行中",
         "stopped": "已停止",
-        "healthy": "健康",
+        "healthy": "正常",
         "cooldown": "冷卻中",
         "requests": "請求數",
         "never": "從未",
-        "secondsAgo": "{{count}}秒前",
-        "minutesAgo": "{{count}}分鐘前",
-        "hoursAgo": "{{count}}小時前",
-        "daysAgo": "{{count}}天前"
+        "yes": "是",
+        "no": "否",
+        "unknown": "未知",
+        "none": "無",
+        "secondsAgo": "{{count}} 秒前",
+        "minutesAgo": "{{count}} 分鐘前",
+        "hoursAgo": "{{count}} 小時前",
+        "daysAgo": "{{count}} 天前"
     },
     "home": {
         "title": "專案",
@@ -52,10 +56,118 @@
         "searchIcons": "搜尋圖示...",
         "techStack": "技術棧",
         "searchTech": "搜尋技術棧...",
-        "addCustomTech": "新增自訂技術棧...",
+        "addCustomTech": "新增自訂技術...",
         "themeColor": "主題色",
-        "copyPath": "複製目錄路徑",
-        "customConfig": "自訂配置…"
+        "copyPath": "複製路徑",
+        "customConfig": "自訂設定"
+    },
+    "vibehub": {
+        "center": {
+            "title": "VibeHub v2 專案中心"
+        },
+        "cockpit": {
+            "title": "VibeHub v2 控制台"
+        },
+        "overview": {
+            "project": "專案概覽",
+            "flow": "4+1 流程"
+        },
+        "flow": {
+            "plan": "計畫",
+            "context": "上下文",
+            "run": "執行",
+            "review": "審查",
+            "handoff": "交接"
+        },
+        "status": {
+            "currentTaskRun": "目前任務/執行",
+            "run": "執行",
+            "noCurrentTask": "暫無目前任務",
+            "mode": "模式",
+            "phase": "階段",
+            "phaseStatus": "階段狀態",
+            "observability": "可觀測性",
+            "gitDirty": "Git 變更狀態",
+            "contextPack": "上下文包",
+            "handoff": "交接",
+            "reviewEvidence": "審查證據",
+            "reviewAvailable": "執行「審查證據」後可用",
+            "needsActiveTask": "需要目前任務/執行",
+            "gitUnavailable": "Git 不可用",
+            "dirtyCount": "有變更（{{count}}）",
+            "clean": "乾淨"
+        },
+        "notices": {
+            "observabilityLimited": "目前可觀測性僅涵蓋控制台狀態與生成產物；執行時觀測不在範圍內。",
+            "notInitialized": "此專案尚未初始化 .vibehub。",
+            "initializeCreates": "初始化會建立 `.vibehub`，以及所選 Codex / Claude Code / OpenCode 指令檔案。"
+        },
+        "unavailable": {
+            "loading": "正在載入 VibeHub 狀態。",
+            "notInitialized": "請先初始化專案，再執行任務、生成產物或寫入手動日誌。",
+            "noActiveTask": "請先啟動任務，再建構上下文、繼續上下文、生成審查證據或交接/復原報告。"
+        },
+        "ai": {
+            "title": "AI 指令",
+            "subtitle": "選擇要支援的 agent CLI，查看生成檔案，並編輯 VibeHub 命令文字。",
+            "commandCount": "{{count}} 個命令",
+            "command": "命令",
+            "commandBodyOverride": "命令正文覆寫",
+            "tools": {
+                "codex": "AGENTS.md + .agents/skills 倉庫技能",
+                "claude_code": "CLAUDE.md + .claude 命令 + 約束",
+                "opencode": "AGENTS.md + .opencode 命令 + 約束"
+            }
+        },
+        "drift": {
+            "title": "工作區漂移",
+            "dirty": "有未提交變更",
+            "headChanged": "HEAD 已變更",
+            "contextStale": "上下文已過期"
+        },
+        "journal": {
+            "title": "日誌標題",
+            "titlePlaceholder": "會話記錄",
+            "body": "日誌正文",
+            "bodyPlaceholder": "簡短記錄決策、結果或後續事項"
+        },
+        "knowledge": {
+            "note": "知識記錄",
+            "placeholder": "可複用的決策、慣例或經驗"
+        },
+        "actions": {
+            "initialize": "初始化",
+            "startTask": "啟動任務",
+            "buildContext": "建構上下文",
+            "continue": "繼續",
+            "syncWorkspace": "同步工作區",
+            "recoverDrift": "復原漂移",
+            "reviewEvidence": "生成審查證據",
+            "buildHandoff": "建構交接/復原報告",
+            "updateAiInstructions": "更新 AI 指令",
+            "saveCommandOverride": "儲存命令覆寫",
+            "addJournalNote": "新增日誌記錄",
+            "addKnowledgeNote": "新增知識記錄"
+        },
+        "messages": {
+            "issueCount": "回報了 {{count}} 個問題。",
+            "initialized": "已在 {{root}} 初始化 .vibehub。新建 {{created}} 個檔案，保留 {{kept}} 個既有檔案。",
+            "startedTask": "已啟動任務 {{task}}，執行 {{run}}，階段為 {{phase}}。",
+            "noContextTarget": "無法建構上下文，因為沒有可用的目前任務、執行和階段。",
+            "contextBuilt": "上下文包已建構：{{path}}。已包含 {{included}}，缺失 {{missing}}，已排除 {{excluded}}。",
+            "continueUpdated": "繼續上下文已更新：{{path}}",
+            "conflict": "衝突",
+            "workspaceDrift": "偵測到工作區漂移：{{warnings}}",
+            "workspaceClean": "工作區同步檢查完成：未偵測到漂移。",
+            "recoverWritten": "復原報告已寫入：{{path}}",
+            "recoverNotNeeded": "工作區狀態已重新整理；無需復原報告。",
+            "reviewWritten": "審查證據已寫入：{{path}}。已擷取 {{count}} 個變更檔案。",
+            "missingSections": "缺少區段：{{sections}}。",
+            "handoffBuilt": "交接已建構：{{path}}。",
+            "handoffIncomplete": "交接已建構但不完整：{{path}}。",
+            "journalAppended": "日誌記錄已追加：{{path}}",
+            "knowledgeAppended": "知識記錄已追加：{{path}}"
+        }
     },
     "settings": {
         "title": "設定",
@@ -64,26 +176,26 @@
             "title": "工作區目錄",
             "subtitle": "新增包含專案的資料夾。我們會自動掃描這些目錄。",
             "add": "新增工作區",
-            "noWorkspaces": "暫無工作區，請新增一個目錄以開始使用。"
+            "noWorkspaces": "暫無工作區，請新增一個目錄開始使用。"
         },
         "tags": {
             "title": "標籤管理",
-            "subtitle": "建立和管理用於分類專案的標籤。",
-            "add": "新建標籤"
+            "subtitle": "建立和管理用於專案分類的標籤。",
+            "add": "新增標籤"
         },
         "appearance": {
             "title": "外觀",
-            "subtitle": "自訂應用程式的主題。",
+            "subtitle": "自訂應用程式主題。",
             "light": "淺色",
             "dark": "深色",
             "auto": "跟隨系統",
             "language": "語言",
-            "languageSubtitle": "選擇應用程式的顯示語言。"
+            "languageSubtitle": "選擇應用程式顯示語言。"
         }
     },
     "tag": {
         "editTitle": "編輯標籤",
-        "createTitle": "新建標籤",
+        "createTitle": "新增標籤",
         "name": "名稱",
         "color": "顏色",
         "category": "分類",
@@ -105,13 +217,13 @@
     },
     "gateway": {
         "title": "AI 閘道",
-        "subtitle": "管理本機 AI 代理和供應商",
-        "noSecretNeeded": "無需 API Secret，直接使用！",
-        "copyUrl": "點擊複製地址",
+        "subtitle": "管理本機 AI 代理與供應商",
+        "noSecretNeeded": "無需 API Secret，可直接使用",
+        "copyUrl": "點擊複製 URL",
         "claudeCode": "Claude Code",
         "codex": "CodeX",
         "openaiChat": "OpenAI Chat",
-        "totalRequests": "總請求數",
+        "totalRequests": "請求總數",
         "allGateways": "所有閘道累計",
         "tokenUsage": "Token 用量",
         "input": "輸入",
@@ -141,20 +253,20 @@
             "addTitle": "新增供應商",
             "editTitle": "編輯供應商",
             "name": "名稱",
-            "namePlaceholder": "例如: Claude Official",
+            "namePlaceholder": "例如：Claude Official",
             "baseUrl": "基礎 URL",
             "baseUrlPlaceholder": "https://api.anthropic.com",
             "apiKey": "API 金鑰",
             "apiKeyPlaceholder": "sk-...",
             "supportedApiTypes": "支援的 API 類型",
             "weight": "權重",
-            "inputPrice": "輸入價格 ($/1K)",
-            "outputPrice": "輸出價格 ($/1K)",
+            "inputPrice": "輸入價格（$/1K）",
+            "outputPrice": "輸出價格（$/1K）",
             "claudeCodeProxy": "Claude Code 代理伺服器",
             "claudeCodeProxyDesc": "啟用後，將 Claude Code 的 Anthropic 請求轉換為 OpenAI 格式傳送給此供應商",
             "modelMapping": "模型映射",
-            "modelMappingDesc": "將請求的模型名映射到目標模型（如 claude-3-haiku → claude-3-5-sonnet）",
-            "sourceModel": "源模型",
+            "modelMappingDesc": "將請求模型映射到目標模型，例如 claude-3-haiku 到 claude-3-5-sonnet",
+            "sourceModel": "來源模型",
             "targetModel": "目標模型",
             "cancel": "取消",
             "save": "儲存"
@@ -162,5 +274,27 @@
         "stats": {
             "hourlyActivity": "時段活動"
         }
+    },
+    "update": {
+        "newVersion": "發現新版本",
+        "later": "稍後提醒",
+        "download": "下載",
+        "noUpdate": "已是最新版本",
+        "checkUpdate": "檢查更新",
+        "checking": "檢查中..."
+    },
+    "about": {
+        "title": "關於",
+        "subtitle": "應用程式資訊與相關連結",
+        "description": "VibeHub 是一個跨平台開發專案啟動器，協助你快速管理和啟動專案。",
+        "tauriVersion": "Tauri 版本",
+        "license": "開源授權",
+        "links": "相關連結",
+        "repository": "倉庫",
+        "releases": "版本發布",
+        "feedback": "問題回饋",
+        "credits": "致謝",
+        "creditsText": "感謝所有開源專案和貢獻者，尤其是 Tauri、React 和 shadcn/ui 團隊。",
+        "madeWith": "由 VibeHub 團隊用心打造"
     }
 }

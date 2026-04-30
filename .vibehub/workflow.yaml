@@ -1,0 +1,36 @@
+schema_version: 1
+name: vibehub-default-4plus1
+philosophy: observable_yolo
+
+modes:
+  yolo_drive:
+    phases:
+      - align_lite
+      - implement
+      - review_lite
+
+  guided_drive:
+    phases:
+      - align
+      - plan
+      - implement
+      - review
+
+  evidence_drive:
+    phases:
+      - align
+      - research
+      - plan
+      - implement
+      - review
+
+default_mode: guided_drive
+
+phase_order:
+  - align_lite
+  - align
+  - research
+  - plan
+  - implement
+  - review_lite
+  - review
