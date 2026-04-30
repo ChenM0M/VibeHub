@@ -146,3 +146,8 @@ export interface VibehubJournalAppendResult {
     title: string;
     timestamp: string;
 }
+
+export interface VibehubKnowledgeAppendResult {
+    knowledge_path: string;
+    timestamp: string;
+}
