@@ -1,5 +1,0 @@
-{"file":".trellis/spec/frontend/index.md","reason":"Base frontend guidance for validating UI-facing changes in the pre-release."}
-{"file":".trellis/spec/frontend/vibehub-core-contracts.md","reason":"Check cross-layer VibeHub behavior against current contracts."}
-{"file":".trellis/spec/vibehub-v2-self-use.md","reason":"Verify the pre-release still matches the current self-use milestone."}
-{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Cross-layer validation for release-related frontend and Tauri changes."}
-{"file":".trellis/tasks/04-30-release-v2-pre1/prd.md","reason":"Task requirements and acceptance criteria for release verification."}

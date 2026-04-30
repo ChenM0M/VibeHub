@@ -1,0 +1,57 @@
+align_lite:
+  required_outputs:
+    - intent
+  optional_outputs:
+    - acceptance_criteria
+    - affected_area
+    - autonomy_level
+
+align:
+  required_outputs:
+    - intent
+    - acceptance_criteria
+    - autonomy_level
+  optional_outputs:
+    - non_goals
+    - research_decision
+    - risk_level
+
+research:
+  optional: true
+  required_outputs:
+    - source_log
+    - findings
+    - research_pack
+
+plan:
+  required_outputs:
+    - implementation_plan
+    - validation_plan
+    - context_plan
+
+implement:
+  required_outputs:
+    - changed_files
+    - implementation_summary
+    - unresolved_questions
+  optional_outputs:
+    - files_reportedly_read
+    - commands_reportedly_run
+    - handoff_notes
+
+review_lite:
+  required_outputs:
+    - diff_summary
+    - verdict
+  optional_outputs:
+    - test_results_or_reason
+    - changed_files
+    - risk_note
+
+review:
+  required_outputs:
+    - diff_summary
+    - test_results_or_reason
+    - verdict
+    - risks
+    - evidence_grades

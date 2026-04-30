@@ -73,7 +73,10 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
 }
 
 fn version_is_newer(latest: &str, current: &str) -> bool {
-    matches!(compare_versions(latest, current), Some(std::cmp::Ordering::Greater))
+    matches!(
+        compare_versions(latest, current),
+        Some(std::cmp::Ordering::Greater)
+    )
 }
 
 fn compare_versions(left: &str, right: &str) -> Option<std::cmp::Ordering> {

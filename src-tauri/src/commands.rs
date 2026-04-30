@@ -1,14 +1,19 @@
 use crate::{
     launcher::Launcher,
     models::*,
+    process_util::silent_command,
     scanner::Scanner,
     storage::Storage,
     updater,
-    vibehub::agent_adapter::{self, AgentAdapterSyncResult},
+    vibehub::agent_adapter::{
+        self, AgentAdapterConfig, AgentAdapterConfigPatch, AgentAdapterStatus,
+        AgentAdapterSyncResult, AgentTool,
+    },
     vibehub::agent_view::{self, AgentViewGenerateResult},
     vibehub::context::{self, ContextPackBuildResult},
+    vibehub::drift::{self, WorkspaceDriftReport},
     vibehub::handoff::{self, HandoffBuildResult},
-    vibehub::init::{self, VibehubInitResult},
+    vibehub::init::{self, VibehubInitOptions, VibehubInitResult},
     vibehub::journal::{self, JournalAppendResult},
     vibehub::knowledge::{self, KnowledgeAppendResult},
     vibehub::review::{self, ReviewEvidenceGenerateResult},
@@ -16,6 +21,7 @@ use crate::{
     vibehub::status::{self, VibehubCockpitStatus},
 };
 use chrono::Utc;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::process::Command;
 use std::sync::Mutex;
 use tauri::State;
@@ -384,7 +390,7 @@ pub async fn launch_custom(
 pub async fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        Command::new("explorer")
+        silent_command("explorer")
             .arg(&path)
             .spawn()
             .map_err(|e| e.to_string())?;
@@ -410,7 +416,7 @@ pub async fn open_in_explorer(path: String) -> Result<(), String> {
 pub async fn open_terminal(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
+        silent_command("cmd")
             .args(["/C", "start", "cd", "/d", &path])
             .spawn()
             .map_err(|e| e.to_string())?;
@@ -558,8 +564,11 @@ pub async fn check_for_updates() -> Result<updater::UpdateCheckResult, String> {
 }
 
 #[tauri::command]
-pub async fn vibehub_init(project_path: String) -> Result<VibehubInitResult, String> {
-    init::init_project(project_path).map_err(|e| e.to_string())
+pub async fn vibehub_init(
+    project_path: String,
+    options: Option<VibehubInitOptions>,
+) -> Result<VibehubInitResult, String> {
+    init::init_project_with_options(project_path, options).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -596,6 +605,45 @@ pub async fn vibehub_sync_agent_adapter(
 ) -> Result<AgentAdapterSyncResult, String> {
     agent_adapter::sync_agent_adapter(project_path, dry_run.unwrap_or(false))
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_get_agent_adapter_status(
+    project_path: String,
+) -> Result<AgentAdapterStatus, String> {
+    agent_adapter::get_agent_adapter_status(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_update_agent_adapter_config(
+    project_path: String,
+    patch: AgentAdapterConfigPatch,
+) -> Result<AgentAdapterConfig, String> {
+    agent_adapter::update_agent_adapter_config(project_path, patch).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_sync_agent_adapters(
+    project_path: String,
+    tools: Option<Vec<AgentTool>>,
+    dry_run: Option<bool>,
+) -> Result<AgentAdapterSyncResult, String> {
+    agent_adapter::sync_agent_adapters(project_path, tools, dry_run.unwrap_or(false))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_check_workspace_drift(
+    project_path: String,
+) -> Result<WorkspaceDriftReport, String> {
+    drift::check_workspace_drift(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_sync_workspace_state(
+    project_path: String,
+) -> Result<WorkspaceDriftReport, String> {
+    drift::sync_workspace_state(project_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

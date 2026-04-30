@@ -1,9 +1,9 @@
+use crate::process_util::silent_command;
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 const SCHEMA_VERSION: u32 = 1;
 const MAX_FILE_SIZE_BYTES: u64 = 256 * 1024;
@@ -494,7 +494,7 @@ fn build_quality(
 }
 
 fn source_commit(project_root: &Path) -> Option<String> {
-    let output = Command::new("git")
+    let output = silent_command("git")
         .args(["rev-parse", "--short", "HEAD"])
         .current_dir(project_root)
         .output()

@@ -1,0 +1,23 @@
+strong:
+  - external_framework_or_plugin
+  - unfamiliar_sdk_or_api
+  - migration
+  - security_sensitive
+  - performance_sensitive
+  - architecture_refactor
+  - compatibility_work
+  - repeated_failure
+  - user_requests_research
+
+recommended:
+  - ambiguous_requirement
+  - unknown_best_practice
+  - mature_reference_available
+  - model_context_confidence_low
+
+skip_by_default:
+  - typo
+  - simple_copy_change
+  - small_css_change
+  - mechanical_rename
+  - obvious_local_fix

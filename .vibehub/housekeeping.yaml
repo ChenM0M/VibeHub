@@ -1,0 +1,26 @@
+retention:
+  max_active_tasks: 1
+  max_runs_kept_per_task: 5
+  max_sessions_kept_per_run: 10
+  max_context_pack_versions_per_phase: 3
+  max_research_archives_kept: 10
+
+archive:
+  strategy: compress_and_gitignore
+  archive_dir: ".vibehub/archive"
+  compress_after_days: 30
+  archive_completed_runs_after_days: 14
+  archive_old_sessions_after_days: 14
+
+agent_visible_state:
+  include:
+    - ".vibehub/agent-view/"
+    - ".vibehub/state.yaml"
+    - ".vibehub/workflow.yaml"
+    - ".vibehub/rules/hard-rules.md"
+    - ".vibehub/research/current/research-pack.md"
+  exclude:
+    - ".vibehub/archive/"
+    - ".vibehub/tasks/*/runs/*/sessions/*/transcript.md"
+    - ".vibehub/tasks/*/runs/*/events.jsonl"
+    - ".vibehub/adapters/generated/"

@@ -5,6 +5,7 @@ mod commands;
 mod gateway;
 mod launcher;
 mod models;
+mod process_util;
 mod scanner;
 mod storage;
 mod updater;
@@ -54,6 +55,11 @@ fn main() {
             commands::vibehub_build_context_pack,
             commands::vibehub_generate_agent_view,
             commands::vibehub_sync_agent_adapter,
+            commands::vibehub_get_agent_adapter_status,
+            commands::vibehub_update_agent_adapter_config,
+            commands::vibehub_sync_agent_adapters,
+            commands::vibehub_check_workspace_drift,
+            commands::vibehub_sync_workspace_state,
             commands::vibehub_build_handoff,
             commands::vibehub_generate_review_evidence,
             commands::vibehub_read_cockpit_status,
