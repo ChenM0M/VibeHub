@@ -57,6 +57,7 @@ fn main() {
             commands::vibehub_build_handoff,
             commands::vibehub_generate_review_evidence,
             commands::vibehub_read_cockpit_status,
+            commands::vibehub_append_journal_entry,
             gateway::get_gateway_config,
             gateway::save_gateway_config,
             gateway::get_gateway_stats,
