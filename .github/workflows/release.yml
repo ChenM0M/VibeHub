@@ -52,6 +52,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'VibeHub ${{ github.ref_name }}'
+          args: ${{ matrix.platform == 'windows-latest' && contains(github.ref_name, '-') && '--bundles nsis' || '' }}
           releaseBody: |
             ## 🚀 更新内容 / What's New
             
