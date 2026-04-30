@@ -148,6 +148,14 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: Pro
         }
     };
 
+    const handleCardClick = (event: React.MouseEvent<HTMLElement>) => {
+        const target = event.target as HTMLElement;
+        if (target.closest('button, a, [role="button"], [data-no-card-select]')) {
+            return;
+        }
+        onSelect?.(originalProject);
+    };
+
     // Get tech stack items to display (max 4, show +N for overflow)
     const techStackItems = project.tech_stack || [];
     const maxTechDisplay = 4;
@@ -161,7 +169,7 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: Pro
                     data-project-card
                     className={`group relative flex flex-col justify-between min-h-[180px] h-full bg-card hover:bg-accent/5 border rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 overflow-hidden`}
                     style={customStyle}
-                    onClick={() => onSelect?.(originalProject)}
+                    onClick={handleCardClick}
                 >
                     {/* Header / Banner Area */}
                     <div
