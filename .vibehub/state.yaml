@@ -1,0 +1,54 @@
+schema_version: 1
+project:
+  id: VBdingHome
+  name: VBdingHome
+  root: .
+current:
+  mode: guided_drive
+  task_id: T-20260430051107-a2d4c5a4
+  run_id: R-20260430051107-fcc97799
+  session_id: null
+  phase: implement
+  phase_status: active
+pointers:
+  task_pointer: .vibehub/tasks/current
+  run_pointer: .vibehub/tasks/T-20260430051107-a2d4c5a4/runs/current
+flow:
+  align: pending
+  research: pending
+  plan: pending
+  implement: active
+  review: pending
+observability:
+  level: best_effort
+  runtime_adapter: none
+  current_observation_sources:
+  - vibehub_generated
+autonomy:
+  level: high
+research:
+  required: false
+  status: skipped
+  scope: active_task
+  skipped_reason: null
+context:
+  current_pack: .vibehub/tasks/T-20260430051107-a2d4c5a4/runs/R-20260430051107-fcc97799/context-packs/implement.md
+  current_manifest: .vibehub/tasks/T-20260430051107-a2d4c5a4/runs/R-20260430051107-fcc97799/context-packs/implement.manifest.yaml
+  stale: false
+  generated_by: vibehub_backend
+agent_report:
+  status: not_started
+  validation_status: pending
+handoff:
+  current: .vibehub/agent-view/handoff.md
+  status: empty
+git:
+  baseline_commit: null
+  last_seen_head: null
+  dirty: null
+  changed_files_count: 0
+loop_detection:
+  status: normal
+  warnings: []
+last_updated: 2026-04-30T05:11:07Z
+resume_hint: .vibehub/agent-view/current.md

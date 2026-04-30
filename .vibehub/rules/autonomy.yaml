@@ -1,0 +1,21 @@
+default_level: high
+
+agent_may:
+  - inspect_relevant_source_files
+  - propose_plan
+  - implement_within_task_scope
+  - self_review
+  - request_more_context
+  - suggest_state_changes
+
+agent_must_not:
+  - update_canonical_state_directly
+  - mark_state_yaml_completed
+  - claim_runtime_observation_without_adapter
+  - bypass_review_evidence
+
+vibehub_owns:
+  - canonical_state_transitions
+  - validation
+  - context_pack_generation
+  - handoff_generation

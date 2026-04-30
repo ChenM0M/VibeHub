@@ -2,6 +2,7 @@ pub mod agent_adapter;
 pub mod agent_view;
 pub mod context;
 pub mod current;
+pub mod drift;
 pub mod handoff;
 pub mod init;
 pub mod journal;
