@@ -8,7 +8,6 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
@@ -24,9 +23,32 @@ type ActionState = {
     error: boolean;
 };
 
-type CockpitAction = 'init' | 'start-task' | 'build-context' | 'agent-view' | 'review' | 'handoff';
+type CockpitAction = 'init' | 'start-task' | 'build-context' | 'continue' | 'review' | 'handoff';
 
 export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpitDialogProps) {
+    return (
+        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+            <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                    <DialogTitle>VibeHub v2 Cockpit</DialogTitle>
+                    <DialogDescription className="break-all">
+                        {project ? project.path : ''}
+                    </DialogDescription>
+                </DialogHeader>
+
+                <VibehubCockpitContent project={project} enabled={isOpen} />
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+interface VibehubCockpitContentProps {
+    project: Project | null;
+    enabled?: boolean;
+    showOverview?: boolean;
+}
+
+export function VibehubCockpitContent({ project, enabled = true, showOverview = false }: VibehubCockpitContentProps) {
     const [status, setStatus] = useState<VibehubCockpitStatus | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [actionState, setActionState] = useState<ActionState | null>(null);
@@ -49,14 +71,14 @@ export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpi
     };
 
     useEffect(() => {
-        if (isOpen) {
+        if (enabled && project) {
             loadStatus();
         } else {
             setStatus(null);
             setActionState(null);
             setRunningAction(null);
         }
-    }, [isOpen, project?.path]);
+    }, [enabled, project?.path]);
 
     const hasActiveContextTarget = Boolean(
         status?.initialized && status.current_task_id && status.current_run_id && status.current_phase
@@ -100,9 +122,9 @@ export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpi
                     message: `Context pack built: ${result.pack_path}. Included ${result.included_count}, missing ${result.missing_count}, excluded ${result.excluded_count}.`,
                     error: result.missing_count > 0,
                 });
-            } else if (action === 'agent-view') {
+            } else if (action === 'continue') {
                 const result = await tauriApi.vibehubGenerateAgentView(project.path);
-                setActionState({ message: `Agent view updated: ${result.current_path}`, error: false });
+                setActionState({ message: `Continue context updated: ${result.current_path}`, error: false });
             } else if (action === 'review') {
                 const result = await tauriApi.vibehubGenerateReviewEvidence(project.path);
                 setActionState({
@@ -130,122 +152,159 @@ export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpi
     const taskLabel = status?.current_task_id
         ? `${status.current_task_id}${status.current_task_title ? ` - ${status.current_task_title}` : ''}`
         : 'No current task';
+    const unavailableReason = !status
+        ? 'Loading VibeHub status.'
+        : !status.initialized
+            ? 'Initialize this project before running task and artifact actions.'
+            : !hasActiveContextTarget
+                ? 'Start a task before building context, continue context, review evidence, or handoff/recover report.'
+                : null;
 
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                    <DialogTitle>VibeHub v2 Cockpit</DialogTitle>
-                    <DialogDescription className="break-all">
-                        {project ? project.path : ''}
-                    </DialogDescription>
-                </DialogHeader>
-
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between gap-3 border-b pb-3">
-                        <div className="min-w-0">
-                            <div className="text-sm text-muted-foreground">Current task</div>
-                            <div className="truncate font-medium">{isLoading ? 'Loading...' : taskLabel}</div>
+        <div className="space-y-4">
+            {showOverview && project && (
+                <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
+                    <div className="rounded-md border bg-muted/20 p-4">
+                        <div className="text-xs text-muted-foreground">Project overview</div>
+                        <div className="mt-1 text-lg font-semibold">{project.name}</div>
+                        <div className="mt-1 break-all text-xs text-muted-foreground">{project.path}</div>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                            <Badge variant="outline">{project.project_type}</Badge>
+                            {project.metadata.git_branch && (
+                                <Badge variant="secondary">
+                                    <GitBranch className="mr-1 h-3 w-3" />
+                                    {project.metadata.git_branch}
+                                </Badge>
+                            )}
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => loadStatus()} disabled={isLoading || !project}>
-                            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                            Refresh
-                        </Button>
+                    </div>
+                    <div className="rounded-md border bg-muted/20 p-4">
+                        <div className="text-xs text-muted-foreground">4+1 flow</div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                            {['Plan', 'Context', 'Run', 'Review', 'Handoff'].map((item) => (
+                                <div key={item} className="rounded border bg-background px-2 py-1.5 font-medium">
+                                    {item}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 border-b pb-3">
+                <div className="min-w-0">
+                    <div className="text-sm text-muted-foreground">Current task/run</div>
+                    <div className="truncate font-medium">{isLoading ? 'Loading...' : taskLabel}</div>
+                    {status?.current_run_id && (
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">Run: {status.current_run_id}</div>
+                    )}
+                </div>
+                <Button variant="outline" size="sm" onClick={() => loadStatus()} disabled={isLoading || !project}>
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                </Button>
+            </div>
+
+            {status && (
+                <>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                        <Metric label="Mode" value={status.current_mode || 'unknown'} />
+                        <Metric label="Phase" value={status.current_phase || 'none'} />
+                        <Metric label="Phase status" value={status.phase_status || 'unknown'} />
+                        <Metric label="Observability" value={status.observability_level || 'best_effort'} />
                     </div>
 
-                    {status && (
-                        <>
-                            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                                <Metric label="Mode" value={status.current_mode || 'unknown'} />
-                                <Metric label="Phase" value={status.current_phase || 'none'} />
-                                <Metric label="Phase status" value={status.phase_status || 'unknown'} />
-                                <Metric label="Observability" value={status.observability_level || 'best_effort'} />
-                            </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                        <StatusPanel
+                            icon={<GitBranch className="h-4 w-4" />}
+                            label="Git dirty state"
+                            value={gitStatusLabel(status)}
+                            tone={status.git_dirty ? 'warn' : 'ok'}
+                        />
+                        <FileStatusPanel
+                            icon={<FileText className="h-4 w-4" />}
+                            label="Context pack"
+                            fileStatus={status.context_pack_status}
+                        />
+                        <FileStatusPanel
+                            icon={<FileText className="h-4 w-4" />}
+                            label="Handoff"
+                            fileStatus={status.handoff_status}
+                        />
+                    </div>
 
-                            <div className="grid gap-3 md:grid-cols-3">
-                                <StatusPanel
-                                    icon={<GitBranch className="h-4 w-4" />}
-                                    label="Git dirty state"
-                                    value={gitStatusLabel(status)}
-                                    tone={status.git_dirty ? 'warn' : 'ok'}
-                                />
-                                <FileStatusPanel
-                                    icon={<FileText className="h-4 w-4" />}
-                                    label="Context pack"
-                                    fileStatus={status.context_pack_status}
-                                />
-                                <FileStatusPanel
-                                    icon={<FileText className="h-4 w-4" />}
-                                    label="Handoff"
-                                    fileStatus={status.handoff_status}
-                                />
-                            </div>
+                    <StatusPanel
+                        icon={<SearchCheck className="h-4 w-4" />}
+                        label="Review evidence"
+                        value={hasActiveContextTarget ? 'Available after Review Evidence action' : 'Needs active task/run'}
+                        tone={hasActiveContextTarget ? 'neutral' : 'warn'}
+                    />
 
-                            {!status.initialized && (
-                                <Notice error message=".vibehub is not initialized for this project." />
-                            )}
+                    <Notice
+                        error={false}
+                        message="Observability is limited to cockpit status and generated artifacts in this P1 slice; runtime observation is out of scope."
+                    />
 
-                            {status.warnings.map((warning) => (
-                                <Notice key={warning} error message={warning} />
-                            ))}
-                        </>
+                    {!status.initialized && (
+                        <Notice error message=".vibehub is not initialized for this project." />
                     )}
 
-                    {actionState && <Notice error={actionState.error} message={actionState.message} />}
+                    {status.warnings.map((warning) => (
+                        <Notice key={warning} error message={warning} />
+                    ))}
+                </>
+            )}
+
+            {actionState && <Notice error={actionState.error} message={actionState.message} />}
+
+            <div className="space-y-2 border-t pt-4">
+                <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => runAction('init')} disabled={actionDisabled || !!status?.initialized}>
+                        <Wrench className="mr-2 h-4 w-4" />
+                        Initialize
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => runAction('start-task')}
+                        disabled={actionDisabled || !status?.initialized}
+                    >
+                        <Play className="mr-2 h-4 w-4" />
+                        Start Task
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => runAction('build-context')}
+                        disabled={actionDisabled || !hasActiveContextTarget}
+                    >
+                        <PackagePlus className="mr-2 h-4 w-4" />
+                        Build Context
+                    </Button>
+                    <Button onClick={() => runAction('continue')} disabled={actionDisabled || !hasActiveContextTarget}>
+                        <Play className="mr-2 h-4 w-4" />
+                        Continue
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => runAction('review')}
+                        disabled={actionDisabled || !hasActiveContextTarget}
+                    >
+                        <SearchCheck className="mr-2 h-4 w-4" />
+                        Review Evidence
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => runAction('handoff')}
+                        disabled={actionDisabled || !hasActiveContextTarget}
+                    >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Build Handoff/Recover Report
+                    </Button>
                 </div>
-
-                <DialogFooter className="flex-wrap gap-2 sm:space-x-0">
-                    {status && !status.initialized && (
-                        <Button onClick={() => runAction('init')} disabled={actionDisabled}>
-                            <Wrench className="mr-2 h-4 w-4" />
-                            Initialize
-                        </Button>
-                    )}
-                    {status?.initialized && (
-                        <Button
-                            variant="outline"
-                            onClick={() => runAction('start-task')}
-                            disabled={actionDisabled}
-                        >
-                            <Play className="mr-2 h-4 w-4" />
-                            Start Task
-                        </Button>
-                    )}
-                    {hasActiveContextTarget && (
-                        <>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('build-context')}
-                                disabled={actionDisabled}
-                            >
-                                <PackagePlus className="mr-2 h-4 w-4" />
-                                Build Context
-                            </Button>
-                            <Button onClick={() => runAction('agent-view')} disabled={actionDisabled}>
-                                <Play className="mr-2 h-4 w-4" />
-                                Agent View
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('review')}
-                                disabled={actionDisabled}
-                            >
-                                <SearchCheck className="mr-2 h-4 w-4" />
-                                Review Evidence
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('handoff')}
-                                disabled={actionDisabled}
-                            >
-                                <FileText className="mr-2 h-4 w-4" />
-                                Build Handoff
-                            </Button>
-                        </>
-                    )}
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                {unavailableReason && (
+                    <div className="text-xs text-muted-foreground">{unavailableReason}</div>
+                )}
+            </div>
+        </div>
     );
 }
 

@@ -7,9 +7,10 @@ interface SortableProjectCardProps {
     project: Project;
     onLaunch: (project: Project) => void;
     onCustomLaunch: (project: Project) => void;
+    onSelect?: (project: Project) => void;
 }
 
-export function SortableProjectCard({ project, onLaunch, onCustomLaunch }: SortableProjectCardProps) {
+export function SortableProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: SortableProjectCardProps) {
     const {
         attributes,
         listeners,
@@ -28,7 +29,7 @@ export function SortableProjectCard({ project, onLaunch, onCustomLaunch }: Sorta
 
     return (
         <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="h-full">
-            <ProjectCard project={project} onLaunch={onLaunch} onCustomLaunch={onCustomLaunch} />
+            <ProjectCard project={project} onLaunch={onLaunch} onCustomLaunch={onCustomLaunch} onSelect={onSelect} />
         </div>
     );
 }
