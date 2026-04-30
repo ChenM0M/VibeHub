@@ -18,6 +18,12 @@
 *.swo
 *~
 
+# Local agent/runtime state
+.agent/
+.agents/
+.codex/
+.opencode/
+
 # OS
 .DS_Store
 Thumbs.db
