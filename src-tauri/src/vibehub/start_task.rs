@@ -1,4 +1,4 @@
-use crate::vibehub::{agent_view, context, current, handoff, init, review, status};
+use crate::vibehub::{current, init};
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
@@ -355,6 +355,7 @@ fn yaml_string(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vibehub::{agent_view, context, handoff, review, status};
 
     fn temp_project() -> PathBuf {
         let path = std::env::temp_dir().join(format!("vibehub-start-task-test-{}", Uuid::new_v4()));
