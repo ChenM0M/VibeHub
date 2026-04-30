@@ -4,6 +4,7 @@ use crate::{
     scanner::Scanner,
     storage::Storage,
     updater,
+    vibehub::agent_adapter::{self, AgentAdapterSyncResult},
     vibehub::agent_view::{self, AgentViewGenerateResult},
     vibehub::context::{self, ContextPackBuildResult},
     vibehub::handoff::{self, HandoffBuildResult},
@@ -584,6 +585,15 @@ pub async fn vibehub_generate_agent_view(
     project_path: String,
 ) -> Result<AgentViewGenerateResult, String> {
     agent_view::generate_agent_view(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_sync_agent_adapter(
+    project_path: String,
+    dry_run: Option<bool>,
+) -> Result<AgentAdapterSyncResult, String> {
+    agent_adapter::sync_agent_adapter(project_path, dry_run.unwrap_or(false))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

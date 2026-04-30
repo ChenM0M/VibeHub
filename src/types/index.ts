@@ -100,6 +100,21 @@ export interface VibehubStartTaskResult {
     context_spec_path: string;
 }
 
+export interface AgentAdapterConflict {
+    path: string;
+    reason: string;
+}
+
+export interface AgentAdapterSyncResult {
+    project_root: string;
+    created_files: string[];
+    updated_files: string[];
+    skipped_files: string[];
+    conflict_files: AgentAdapterConflict[];
+    dry_run: boolean;
+    summary: string;
+}
+
 export interface VibehubFileStatus {
     configured: boolean;
     exists: boolean;
