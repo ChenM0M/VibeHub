@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { AlertCircle, FileText, GitBranch, PackagePlus, Play, RefreshCw, SearchCheck, Wrench } from 'lucide-react';
+import { AlertCircle, Bot, FileText, GitBranch, PackagePlus, Play, RefreshCw, SearchCheck, Wrench } from 'lucide-react';
 import { Project, VibehubCockpitStatus, VibehubFileStatus } from '@/types';
 import { tauriApi } from '@/services/tauri';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ type ActionState = {
     error: boolean;
 };
 
-type CockpitAction = 'init' | 'start-task' | 'build-context' | 'continue' | 'review' | 'handoff';
+type CockpitAction = 'init' | 'start-task' | 'build-context' | 'continue' | 'agent-sync' | 'review' | 'handoff';
 
 export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpitDialogProps) {
     return (
@@ -125,6 +125,15 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
             } else if (action === 'continue') {
                 const result = await tauriApi.vibehubGenerateAgentView(project.path);
                 setActionState({ message: `Continue context updated: ${result.current_path}`, error: false });
+            } else if (action === 'agent-sync') {
+                const result = await tauriApi.vibehubSyncAgentAdapter(project.path);
+                const conflictSuffix = result.conflict_files.length
+                    ? ` Conflict: ${result.conflict_files.map((file) => `${file.path} (${file.reason})`).join('; ')}`
+                    : '';
+                setActionState({
+                    message: `${result.summary}${conflictSuffix}`,
+                    error: result.conflict_files.length > 0,
+                });
             } else if (action === 'review') {
                 const result = await tauriApi.vibehubGenerateReviewEvidence(project.path);
                 setActionState({
@@ -242,7 +251,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
 
                     <Notice
                         error={false}
-                        message="Observability is limited to cockpit status and generated artifacts in this P1 slice; runtime observation is out of scope."
+                        message="Observability is limited to cockpit status and generated artifacts; runtime observation is out of scope."
                     />
 
                     {!status.initialized && (
@@ -282,6 +291,14 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                     <Button onClick={() => runAction('continue')} disabled={actionDisabled || !hasActiveContextTarget}>
                         <Play className="mr-2 h-4 w-4" />
                         Continue
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => runAction('agent-sync')}
+                        disabled={actionDisabled || !status?.initialized}
+                    >
+                        <Bot className="mr-2 h-4 w-4" />
+                        Update AGENTS.md
                     </Button>
                     <Button
                         variant="outline"

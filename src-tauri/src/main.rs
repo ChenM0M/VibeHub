@@ -53,6 +53,7 @@ fn main() {
             commands::vibehub_start_task,
             commands::vibehub_build_context_pack,
             commands::vibehub_generate_agent_view,
+            commands::vibehub_sync_agent_adapter,
             commands::vibehub_build_handoff,
             commands::vibehub_generate_review_evidence,
             commands::vibehub_read_cockpit_status,
