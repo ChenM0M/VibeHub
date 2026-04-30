@@ -1,0 +1,9 @@
+schema_version: 1
+kind: vibehub_task
+task_id: "T-20260430051107-a2d4c5a4"
+title: "VibeHub task"
+mode: "guided_drive"
+phase: "implement"
+phase_status: "active"
+created_at: "2026-04-30T05:11:07Z"
+created_by: vibehub

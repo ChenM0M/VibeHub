@@ -1,0 +1,18 @@
+evidence_grades:
+  - hard_observed
+  - agent_reported
+  - inferred
+  - user_confirmed
+
+required_sections:
+  - diff_summary
+  - test_results_or_reason
+  - verdict
+  - risks
+  - evidence_grades
+
+review_lite:
+  required_sections:
+    - diff_summary
+    - verdict
+    - test_results_or_reason

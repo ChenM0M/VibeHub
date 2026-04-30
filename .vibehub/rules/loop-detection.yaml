@@ -1,0 +1,17 @@
+status: enabled
+
+signals:
+  repeated_file_edits:
+    threshold: 8
+    evidence_grade: inferred
+  repeated_review_failures:
+    threshold: 2
+    evidence_grade: inferred
+  diff_scope_growth:
+    ratio_threshold: 2.0
+    evidence_grade: inferred
+
+actions:
+  - warn_user
+  - recommend_review
+  - recommend_rebuild_context

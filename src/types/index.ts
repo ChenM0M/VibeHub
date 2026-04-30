@@ -100,9 +100,51 @@ export interface VibehubStartTaskResult {
     context_spec_path: string;
 }
 
+export type AgentTool = 'codex' | 'claude_code' | 'opencode';
+
+export interface AgentCommandSpec {
+    name: string;
+    description_zh: string;
+    description_en: string;
+    argument_hint: string;
+    body: string;
+}
+
 export interface AgentAdapterConflict {
     path: string;
     reason: string;
+}
+
+export interface AgentAdapterFileStatus {
+    tool: string;
+    path: string;
+    exists: boolean;
+    status: string;
+    generated_hash?: string | null;
+    current_hash?: string | null;
+    description: string;
+}
+
+export interface AgentAdapterStatus {
+    project_root: string;
+    config_path: string;
+    enabled_tools: AgentTool[];
+    commands: AgentCommandSpec[];
+    files: AgentAdapterFileStatus[];
+    warnings: string[];
+}
+
+export interface AgentAdapterConfig {
+    schema_version: number;
+    template_version: string;
+    enabled_tools: AgentTool[];
+    command_overrides: Record<string, string>;
+    generated_hashes: Record<string, string>;
+}
+
+export interface AgentAdapterConfigPatch {
+    enabled_tools?: AgentTool[];
+    command_overrides?: Record<string, string>;
 }
 
 export interface AgentAdapterSyncResult {
@@ -113,6 +155,22 @@ export interface AgentAdapterSyncResult {
     conflict_files: AgentAdapterConflict[];
     dry_run: boolean;
     summary: string;
+    files: AgentAdapterFileStatus[];
+}
+
+export interface WorkspaceDriftReport {
+    project_root: string;
+    git_available: boolean;
+    head?: string | null;
+    last_seen_head?: string | null;
+    head_changed: boolean;
+    dirty: boolean;
+    changed_files: string[];
+    context_stale: boolean;
+    adapter_conflicts: string[];
+    warnings: string[];
+    recommended_actions: string[];
+    recover_report_path?: string | null;
 }
 
 export interface VibehubFileStatus {
