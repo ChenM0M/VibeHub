@@ -140,3 +140,9 @@ export interface VibehubCockpitStatus {
     observability_level?: string | null;
     warnings: string[];
 }
+
+export interface VibehubJournalAppendResult {
+    journal_path: string;
+    title: string;
+    timestamp: string;
+}
