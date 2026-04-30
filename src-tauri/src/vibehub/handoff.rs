@@ -1,3 +1,4 @@
+use crate::process_util::silent_command;
 use crate::vibehub::current;
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
@@ -5,7 +6,6 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct HandoffBuildResult {
@@ -297,7 +297,7 @@ fn find_latest_session_output(
 }
 
 fn git_changed_files(project_root: &Path) -> Option<Vec<String>> {
-    let git_repo = Command::new("git")
+    let git_repo = silent_command("git")
         .arg("-C")
         .arg(project_root)
         .arg("rev-parse")
@@ -323,7 +323,7 @@ fn git_changed_files(project_root: &Path) -> Option<Vec<String>> {
 }
 
 fn run_git_lines(project_root: &Path, args: &[&str]) -> Option<Vec<String>> {
-    let output = Command::new("git")
+    let output = silent_command("git")
         .arg("-C")
         .arg(project_root)
         .args(args)
@@ -400,6 +400,7 @@ fn title_case(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::vibehub::current::{write_current_run_pointer, write_current_task_pointer};
+    use std::process::Command;
     use uuid::Uuid;
 
     fn temp_project() -> PathBuf {

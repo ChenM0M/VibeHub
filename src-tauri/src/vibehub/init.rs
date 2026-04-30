@@ -1,5 +1,6 @@
+use crate::vibehub::agent_adapter::{self, AgentTool};
 use anyhow::{anyhow, Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
@@ -12,12 +13,25 @@ pub struct VibehubInitResult {
     pub errors: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct VibehubInitOptions {
+    #[serde(default)]
+    pub agent_tools: Option<Vec<AgentTool>>,
+}
+
 struct InitFile {
     path: &'static str,
     content: String,
 }
 
 pub fn init_project(project_path: impl AsRef<Path>) -> Result<VibehubInitResult> {
+    init_project_with_options(project_path, None)
+}
+
+pub fn init_project_with_options(
+    project_path: impl AsRef<Path>,
+    options: Option<VibehubInitOptions>,
+) -> Result<VibehubInitResult> {
     let project_root = fs::canonicalize(project_path.as_ref()).with_context(|| {
         format!(
             "Project path does not exist: {}",
@@ -72,12 +86,34 @@ pub fn init_project(project_path: impl AsRef<Path>) -> Result<VibehubInitResult>
         created_files.push(relative);
     }
 
+    let config_path = vibehub_root.join("adapters/config.yaml");
+    let config_relative = format_vibehub_path(&project_root, &config_path);
+    let config_existed = config_path.exists();
+    let agent_tools = options
+        .and_then(|options| options.agent_tools)
+        .unwrap_or_else(agent_adapter::default_tools);
+    agent_adapter::ensure_adapter_config(&project_root, agent_tools.clone())?;
+    if config_existed {
+        skipped_existing_files.push(config_relative);
+    } else {
+        created_files.push(config_relative);
+    }
+    let adapter_sync = agent_adapter::sync_agent_adapters(&project_root, Some(agent_tools), false)?;
+    created_files.extend(adapter_sync.created_files);
+    created_files.extend(adapter_sync.updated_files);
+    skipped_existing_files.extend(adapter_sync.skipped_files);
+    let errors = adapter_sync
+        .conflict_files
+        .into_iter()
+        .map(|conflict| format!("{}: {}", conflict.path, conflict.reason))
+        .collect();
+
     Ok(VibehubInitResult {
         project_root: normalize_path(&project_root),
         vibehub_root: normalize_path(&vibehub_root),
         created_files,
         skipped_existing_files,
-        errors: Vec::new(),
+        errors,
     })
 }
 

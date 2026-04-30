@@ -1,5 +1,7 @@
 use crate::models::{Project, TagCategory, TagConfig};
+use crate::process_util::silent_command;
 use anyhow::{anyhow, Result};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::process::Command;
 
 pub struct Launcher;
@@ -55,7 +57,7 @@ impl Launcher {
         // 3. GUI apps launch independently
         // 4. CLI apps get their own window
 
-        let mut cmd = Command::new("cmd");
+        let mut cmd = silent_command("cmd");
         cmd.arg("/C");
         cmd.arg("start");
         cmd.arg(format!("VibeHub - {}", executable)); // Title (first quoted arg)

@@ -1,5 +1,21 @@
 import { invoke } from '@tauri-apps/api/core';
-import { AgentAdapterSyncResult, AppConfig, ContextPackBuildResult, Project, VibehubCockpitStatus, VibehubJournalAppendResult, VibehubKnowledgeAppendResult, VibehubStartTaskResult, Workspace, Tag } from '../types';
+import {
+    AgentAdapterConfig,
+    AgentAdapterConfigPatch,
+    AgentAdapterStatus,
+    AgentAdapterSyncResult,
+    AgentTool,
+    AppConfig,
+    ContextPackBuildResult,
+    Project,
+    Tag,
+    VibehubCockpitStatus,
+    VibehubJournalAppendResult,
+    VibehubKnowledgeAppendResult,
+    VibehubStartTaskResult,
+    Workspace,
+    WorkspaceDriftReport,
+} from '../types';
 
 export const tauriApi = {
     loadConfig: async (): Promise<AppConfig> => {
@@ -89,14 +105,17 @@ export const tauriApi = {
         return await invoke('check_for_updates');
     },
 
-    vibehubInit: async (projectPath: string): Promise<{
+    vibehubInit: async (projectPath: string, agentTools?: AgentTool[]): Promise<{
         project_root: string;
         vibehub_root: string;
         created_files: string[];
         skipped_existing_files: string[];
         errors: string[];
     }> => {
-        return await invoke('vibehub_init', { projectPath });
+        return await invoke('vibehub_init', {
+            projectPath,
+            options: agentTools ? { agent_tools: agentTools } : null,
+        });
     },
 
     vibehubStartTask: async (
@@ -127,6 +146,37 @@ export const tauriApi = {
         dryRun: boolean = false
     ): Promise<AgentAdapterSyncResult> => {
         return await invoke('vibehub_sync_agent_adapter', { projectPath, dryRun });
+    },
+
+    vibehubGetAgentAdapterStatus: async (projectPath: string): Promise<AgentAdapterStatus> => {
+        return await invoke('vibehub_get_agent_adapter_status', { projectPath });
+    },
+
+    vibehubUpdateAgentAdapterConfig: async (
+        projectPath: string,
+        patch: AgentAdapterConfigPatch
+    ): Promise<AgentAdapterConfig> => {
+        return await invoke('vibehub_update_agent_adapter_config', { projectPath, patch });
+    },
+
+    vibehubSyncAgentAdapters: async (
+        projectPath: string,
+        tools?: AgentTool[],
+        dryRun: boolean = false
+    ): Promise<AgentAdapterSyncResult> => {
+        return await invoke('vibehub_sync_agent_adapters', {
+            projectPath,
+            tools: tools || null,
+            dryRun,
+        });
+    },
+
+    vibehubCheckWorkspaceDrift: async (projectPath: string): Promise<WorkspaceDriftReport> => {
+        return await invoke('vibehub_check_workspace_drift', { projectPath });
+    },
+
+    vibehubSyncWorkspaceState: async (projectPath: string): Promise<WorkspaceDriftReport> => {
+        return await invoke('vibehub_sync_workspace_state', { projectPath });
     },
 
     vibehubBuildContextPack: async (
