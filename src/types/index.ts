@@ -15,6 +15,7 @@ export interface TagConfig {
     executable?: string;
     args?: string[];
     env?: Record<string, string>;
+    terminal?: string;
 }
 
 export type ToolType =
@@ -73,6 +74,25 @@ export interface AppConfig {
     projects: Project[];
     theme: Theme;
     recent_projects: string[];
+}
+
+export interface SettingsImportAdjustment {
+    scope: string;
+    item_id?: string | null;
+    item_name?: string | null;
+    field: string;
+    before?: string | null;
+    after?: string | null;
+    reason: string;
+}
+
+export interface SettingsImportResult {
+    source_system: string;
+    target_system: string;
+    tags_added: number;
+    tags_updated: number;
+    gateway_providers: number;
+    adjustments: SettingsImportAdjustment[];
 }
 
 export interface ContextPackBuildResult {

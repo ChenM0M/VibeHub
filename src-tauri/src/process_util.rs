@@ -12,10 +12,10 @@ pub fn silent_command(program: &str) -> Command {
     command
 }
 
-pub fn apply_silent(command: &mut Command) {
+pub fn apply_silent(_command: &mut Command) {
     #[cfg(target_os = "windows")]
     {
-        command.creation_flags(CREATE_NO_WINDOW);
+        _command.creation_flags(CREATE_NO_WINDOW);
     }
 }
 

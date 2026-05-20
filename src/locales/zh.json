@@ -312,6 +312,18 @@
             "auto": "跟随系统",
             "language": "语言",
             "languageSubtitle": "选择应用显示语言。"
+        },
+        "transfer": {
+            "title": "配置导入导出",
+            "subtitle": "导出或导入标签和 AI 网关配置，JSON 文件会记录源系统并在导入时自动做兼容调整。",
+            "export": "导出配置",
+            "import": "导入配置",
+            "note": "导入会合并标签（同 ID 或同名同分类会更新，其他会新增），并替换当前 AI 网关配置。",
+            "exportSuccess": "配置已导出。",
+            "importSuccess": "导入完成：新增 {{added}} 个标签，更新 {{updated}} 个标签，导入 {{providers}} 个网关供应商。",
+            "sourceTarget": "源系统：{{source}} → 当前系统：{{target}}",
+            "adjustments": "兼容性调整",
+            "noAdjustments": "没有需要调整的项目。"
         }
     },
     "tag": {

@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_paths;
 mod commands;
 mod gateway;
 mod launcher;
@@ -14,6 +15,7 @@ mod vibehub;
 use commands::AppState;
 use std::sync::Mutex;
 use storage::Storage;
+use tauri::Manager;
 
 fn main() {
     if run_vibehub_cli_if_requested() {
@@ -26,6 +28,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            configure_platform_window(app);
             gateway::init(app.handle());
             Ok(())
         })
@@ -35,6 +38,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::load_config,
             commands::save_config,
+            commands::export_settings_bundle,
+            commands::import_settings_bundle,
             commands::scan_workspace,
             commands::add_workspace,
             commands::remove_workspace,
@@ -87,6 +92,14 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn configure_platform_window(app: &mut tauri::App) {
+    #[cfg(target_os = "macos")]
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_decorations(true);
+        let _ = window.set_title("VibeHub");
+    }
 }
 
 fn run_vibehub_cli_if_requested() -> bool {
