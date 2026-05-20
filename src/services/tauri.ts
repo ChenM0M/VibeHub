@@ -13,6 +13,7 @@ import {
     ResearchPackArchiveResult,
     ResearchPackBuildResult,
     Project,
+    SettingsImportResult,
     Tag,
     VibehubCockpitOverview,
     VibehubFileReadResult,
@@ -32,6 +33,14 @@ export const tauriApi = {
 
     saveConfig: async (config: AppConfig): Promise<void> => {
         return await invoke('save_config', { config });
+    },
+
+    exportSettingsBundle: async (path: string): Promise<void> => {
+        return await invoke('export_settings_bundle', { path });
+    },
+
+    importSettingsBundle: async (path: string): Promise<SettingsImportResult> => {
+        return await invoke('import_settings_bundle', { path });
     },
 
     scanWorkspace: async (path: string, maxDepth: number = 1): Promise<Project[]> => {

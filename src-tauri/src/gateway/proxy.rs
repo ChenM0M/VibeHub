@@ -150,17 +150,17 @@ async fn start_single_server<R: Runtime>(port: u16, state: ProxyState<R>, name: 
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let addr = format!("0.0.0.0:{}", port);
-    println!("🚀 {} Gateway listening on {}", name, addr);
+    let addr = format!("127.0.0.1:{}", port);
+    println!("{} Gateway listening on {}", name, addr);
 
     match tokio::net::TcpListener::bind(&addr).await {
         Ok(listener) => {
             if let Err(e) = axum::serve(listener, app_router).await {
-                eprintln!("❌ {} Server error: {}", name, e);
+                eprintln!("{} Server error: {}", name, e);
             }
         }
         Err(e) => {
-            eprintln!("❌ Failed to bind {} to {}: {}", name, addr, e);
+            eprintln!("Failed to bind {} to {}: {}", name, addr, e);
         }
     }
 }

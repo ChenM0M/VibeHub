@@ -1,7 +1,12 @@
+#[cfg(target_os = "windows")]
+use crate::process_util::silent_command;
 use crate::{
+    gateway::{
+        config::{ApiType, GatewayConfig},
+        GatewayConfigPath, GatewayState,
+    },
     launcher::Launcher,
     models::*,
-    process_util::silent_command,
     scanner::Scanner,
     storage::Storage,
     updater,
@@ -26,6 +31,8 @@ use crate::{
     vibehub::sync::{self, SyncReport},
 };
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::fs;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::process::Command;
 use std::sync::Mutex;
@@ -33,6 +40,38 @@ use tauri::State;
 
 pub struct AppState {
     pub storage: Mutex<Storage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingsExportFile {
+    pub schema_version: u32,
+    pub kind: String,
+    pub source_system: String,
+    pub exported_at: String,
+    pub app_version: String,
+    pub tags: Vec<Tag>,
+    pub gateway_config: GatewayConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingsImportAdjustment {
+    pub scope: String,
+    pub item_id: Option<String>,
+    pub item_name: Option<String>,
+    pub field: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingsImportResult {
+    pub source_system: String,
+    pub target_system: String,
+    pub tags_added: usize,
+    pub tags_updated: usize,
+    pub gateway_providers: usize,
+    pub adjustments: Vec<SettingsImportAdjustment>,
 }
 
 #[tauri::command]
@@ -45,6 +84,314 @@ pub async fn load_config(state: State<'_, AppState>) -> Result<AppConfig, String
 pub async fn save_config(config: AppConfig, state: State<'_, AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     storage.save_config(&config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn export_settings_bundle(
+    path: String,
+    app_state: State<'_, AppState>,
+    gateway_state: State<'_, GatewayState>,
+) -> Result<(), String> {
+    let tags = {
+        let storage = app_state.storage.lock().map_err(|e| e.to_string())?;
+        storage.load_config().map_err(|e| e.to_string())?.tags
+    };
+
+    let gateway_config = gateway_state.0.read().await.clone();
+    let export = SettingsExportFile {
+        schema_version: 1,
+        kind: "vibehub_settings_export".to_string(),
+        source_system: current_system().to_string(),
+        exported_at: Utc::now().to_rfc3339(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        tags,
+        gateway_config,
+    };
+
+    let content = serde_json::to_string_pretty(&export).map_err(|e| e.to_string())?;
+    fs::write(path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn import_settings_bundle(
+    path: String,
+    app_state: State<'_, AppState>,
+    gateway_state: State<'_, GatewayState>,
+    gateway_path: State<'_, GatewayConfigPath>,
+) -> Result<SettingsImportResult, String> {
+    let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut bundle: SettingsExportFile =
+        serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    if bundle.kind != "vibehub_settings_export" {
+        return Err("Invalid settings export file: unsupported kind".to_string());
+    }
+    if bundle.source_system.trim().is_empty() {
+        return Err("Invalid settings export file: source_system is required".to_string());
+    }
+
+    let target_system = current_system().to_string();
+    let mut adjustments = Vec::new();
+
+    for tag in &mut bundle.tags {
+        adapt_tag_for_system(tag, &target_system, &mut adjustments);
+    }
+
+    normalize_gateway_config(&mut bundle.gateway_config, &mut adjustments);
+
+    let (tags_added, tags_updated) = {
+        let storage = app_state.storage.lock().map_err(|e| e.to_string())?;
+        let mut config = storage.load_config().map_err(|e| e.to_string())?;
+        let counts = merge_tags(&mut config.tags, bundle.tags);
+
+        storage.save_config(&config).map_err(|e| e.to_string())?;
+        counts
+    };
+
+    {
+        let mut current_gateway = gateway_state.0.write().await;
+        *current_gateway = bundle.gateway_config.clone();
+    }
+    bundle
+        .gateway_config
+        .save(&gateway_path.0)
+        .map_err(|e| e.to_string())?;
+
+    Ok(SettingsImportResult {
+        source_system: bundle.source_system,
+        target_system,
+        tags_added,
+        tags_updated,
+        gateway_providers: bundle.gateway_config.providers.len(),
+        adjustments,
+    })
+}
+
+fn current_system() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "windows"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "macos"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "linux"
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        "unknown"
+    }
+}
+
+fn merge_tags(existing: &mut Vec<Tag>, imported: Vec<Tag>) -> (usize, usize) {
+    let mut added = 0;
+    let mut updated = 0;
+
+    for mut tag in imported {
+        if let Some(index) = existing.iter().position(|current| current.id == tag.id) {
+            existing[index] = tag;
+            updated += 1;
+            continue;
+        }
+
+        if let Some(index) = existing
+            .iter()
+            .position(|current| current.name == tag.name && current.category == tag.category)
+        {
+            tag.id = existing[index].id.clone();
+            existing[index] = tag;
+            updated += 1;
+            continue;
+        }
+
+        existing.push(tag);
+        added += 1;
+    }
+
+    (added, updated)
+}
+
+fn adapt_tag_for_system(
+    tag: &mut Tag,
+    target_system: &str,
+    adjustments: &mut Vec<SettingsImportAdjustment>,
+) {
+    let Some(config) = tag.config.as_mut() else {
+        return;
+    };
+
+    if tag.category == TagCategory::Cli {
+        let before = config.terminal.clone();
+        config.terminal = adapt_terminal(before.as_deref(), target_system);
+        if config.terminal != before {
+            adjustments.push(SettingsImportAdjustment {
+                scope: "tag".to_string(),
+                item_id: Some(tag.id.clone()),
+                item_name: Some(tag.name.clone()),
+                field: "terminal".to_string(),
+                before,
+                after: config.terminal.clone(),
+                reason: format!("Adjusted CLI terminal for {target_system}."),
+            });
+        }
+    } else if config.terminal.is_some() {
+        let before = config.terminal.take();
+        adjustments.push(SettingsImportAdjustment {
+            scope: "tag".to_string(),
+            item_id: Some(tag.id.clone()),
+            item_name: Some(tag.name.clone()),
+            field: "terminal".to_string(),
+            before,
+            after: None,
+            reason: "Removed terminal from a non-CLI tag.".to_string(),
+        });
+    }
+
+    if let Some(executable) = config.executable.clone() {
+        if let Some(adapted) = adapt_executable(&executable, target_system) {
+            if adapted != executable {
+                config.executable = Some(adapted.clone());
+                adjustments.push(SettingsImportAdjustment {
+                    scope: "tag".to_string(),
+                    item_id: Some(tag.id.clone()),
+                    item_name: Some(tag.name.clone()),
+                    field: "executable".to_string(),
+                    before: Some(executable),
+                    after: Some(adapted),
+                    reason: format!("Adjusted executable style for {target_system}."),
+                });
+            }
+        }
+    }
+}
+
+fn adapt_terminal(terminal: Option<&str>, target_system: &str) -> Option<String> {
+    let raw = terminal.unwrap_or("").trim();
+    if target_system == "linux" {
+        return None;
+    }
+
+    if target_system == "macos" {
+        return match raw.to_ascii_lowercase().as_str() {
+            "" | "terminal" | "terminal.app" => Some("Terminal".to_string()),
+            "iterm" | "iterm2" | "iterm.app" | "iterm2.app" => Some("iTerm".to_string()),
+            "warp" | "warp.app" => Some("Warp".to_string()),
+            _ => Some("Terminal".to_string()),
+        };
+    }
+
+    if target_system == "windows" {
+        return match raw.to_ascii_lowercase().as_str() {
+            "" | "command prompt" | "commandprompt" | "cmd" | "cmd.exe" => {
+                Some("CommandPrompt".to_string())
+            }
+            "windows terminal" | "windowsterminal" | "wt" | "wt.exe" => {
+                Some("WindowsTerminal".to_string())
+            }
+            "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe" => Some("PowerShell".to_string()),
+            _ => Some("CommandPrompt".to_string()),
+        };
+    }
+
+    None
+}
+
+fn adapt_executable(executable: &str, target_system: &str) -> Option<String> {
+    let trimmed = executable.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if target_system != "macos" && trimmed.to_ascii_lowercase().ends_with(".app") {
+        return Some(strip_extension(last_path_component(trimmed), ".app"));
+    }
+
+    if target_system != "windows" && looks_like_windows_path(trimmed) {
+        let basename = last_path_component(trimmed);
+        for extension in [".exe", ".cmd", ".bat", ".ps1"] {
+            if basename.to_ascii_lowercase().ends_with(extension) {
+                return Some(strip_extension(basename, extension));
+            }
+        }
+        return Some(basename.to_string());
+    }
+
+    if target_system == "windows" && trimmed.starts_with('/') {
+        return Some(last_path_component(trimmed).to_string());
+    }
+
+    Some(trimmed.to_string())
+}
+
+fn looks_like_windows_path(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    (bytes.len() > 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic()) || value.contains('\\')
+}
+
+fn last_path_component(value: &str) -> &str {
+    value
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|part| !part.is_empty())
+        .unwrap_or(value)
+}
+
+fn strip_extension(value: &str, extension: &str) -> String {
+    value[..value.len() - extension.len()].to_string()
+}
+
+fn normalize_gateway_config(
+    config: &mut GatewayConfig,
+    adjustments: &mut Vec<SettingsImportAdjustment>,
+) {
+    if config.port != 0 {
+        let before = config.port.to_string();
+        config.anthropic_port = config.port;
+        config.port = 0;
+        adjustments.push(SettingsImportAdjustment {
+            scope: "gateway".to_string(),
+            item_id: None,
+            item_name: Some("Anthropic Gateway".to_string()),
+            field: "port".to_string(),
+            before: Some(before),
+            after: Some(config.anthropic_port.to_string()),
+            reason: "Migrated legacy gateway port to anthropic_port.".to_string(),
+        });
+    }
+
+    for provider in &mut config.providers {
+        if provider.api_types.is_empty() {
+            provider.api_types = infer_provider_api_types(&provider.name);
+            adjustments.push(SettingsImportAdjustment {
+                scope: "gateway_provider".to_string(),
+                item_id: Some(provider.id.clone()),
+                item_name: Some(provider.name.clone()),
+                field: "api_types".to_string(),
+                before: Some("[]".to_string()),
+                after: Some(format!("{:?}", provider.api_types)),
+                reason: "Filled missing provider API types for the current gateway schema."
+                    .to_string(),
+            });
+        }
+    }
+}
+
+fn infer_provider_api_types(name: &str) -> Vec<ApiType> {
+    let name_lower = name.to_lowercase();
+    if name_lower.contains("claude") || name_lower.contains("anthropic") {
+        vec![ApiType::Anthropic]
+    } else if name_lower.contains("openai") || name_lower.contains("gpt") {
+        vec![ApiType::OpenAIResponses, ApiType::OpenAIChat]
+    } else {
+        vec![
+            ApiType::Anthropic,
+            ApiType::OpenAIResponses,
+            ApiType::OpenAIChat,
+        ]
+    }
 }
 
 #[tauri::command]
@@ -428,10 +775,14 @@ pub async fn open_terminal(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
-            .arg("-a")
-            .arg("Terminal")
-            .arg(&path)
+        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!(
+            "tell application \"Terminal\"\nactivate\ndo script \"cd \" & quoted form of \"{}\"\nend tell",
+            escaped_path
+        );
+        Command::new("osascript")
+            .arg("-e")
+            .arg(script)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -806,4 +1157,83 @@ pub async fn vibehub_set_project_locale(
     crate::vibehub::locale::persist_project_locale(std::path::Path::new(&project_path), &locale)
         .map_err(|e| e.to_string())?;
     Ok(locale)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adapts_macos_terminals_for_windows_imports() {
+        assert_eq!(
+            adapt_terminal(Some("Warp"), "windows"),
+            Some("CommandPrompt".to_string())
+        );
+        assert_eq!(
+            adapt_terminal(Some("iTerm"), "windows"),
+            Some("CommandPrompt".to_string())
+        );
+        assert_eq!(
+            adapt_terminal(Some("WindowsTerminal"), "windows"),
+            Some("WindowsTerminal".to_string())
+        );
+    }
+
+    #[test]
+    fn adapts_windows_terminals_for_macos_imports() {
+        assert_eq!(
+            adapt_terminal(Some("PowerShell"), "macos"),
+            Some("Terminal".to_string())
+        );
+        assert_eq!(
+            adapt_terminal(Some("Warp"), "macos"),
+            Some("Warp".to_string())
+        );
+    }
+
+    #[test]
+    fn adapts_platform_specific_executables() {
+        assert_eq!(
+            adapt_executable("/Applications/Visual Studio Code.app", "windows"),
+            Some("Visual Studio Code".to_string())
+        );
+        assert_eq!(
+            adapt_executable(r"C:\Users\me\AppData\Local\Programs\code.cmd", "macos"),
+            Some("code".to_string())
+        );
+    }
+
+    #[test]
+    fn merge_tags_updates_by_id_or_name_and_adds_new_tags() {
+        let mut existing = vec![Tag {
+            id: "existing-id".to_string(),
+            name: "CLI".to_string(),
+            color: "#000000".to_string(),
+            category: TagCategory::Cli,
+            config: None,
+        }];
+        let imported = vec![
+            Tag {
+                id: "other-id".to_string(),
+                name: "CLI".to_string(),
+                color: "#ffffff".to_string(),
+                category: TagCategory::Cli,
+                config: None,
+            },
+            Tag {
+                id: "new-id".to_string(),
+                name: "New".to_string(),
+                color: "#123456".to_string(),
+                category: TagCategory::Custom,
+                config: None,
+            },
+        ];
+
+        let (added, updated) = merge_tags(&mut existing, imported);
+
+        assert_eq!((added, updated), (1, 1));
+        assert_eq!(existing.len(), 2);
+        assert_eq!(existing[0].id, "existing-id");
+        assert_eq!(existing[0].color, "#ffffff");
+    }
 }
