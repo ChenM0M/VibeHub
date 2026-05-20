@@ -10,19 +10,20 @@ English: Continue the active VibeHub phase.
 
 Invocation input: [instruction]
 
-中文: 继续当前 VibeHub 阶段。
-English: Continue the active VibeHub phase.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Continue the active phase using current.md and the context pack. Keep changes scoped to the active task.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

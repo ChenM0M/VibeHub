@@ -1,9 +1,12 @@
-use crate::vibehub::{current, handoff};
+use crate::vibehub::util::{
+    canonical_initialized_project_root, normalize_path, relative_to_project,
+};
+use crate::vibehub::{current, handoff, research};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct AgentViewGenerateResult {
@@ -75,11 +78,12 @@ struct AgentViewInput {
     manifest_path: Option<String>,
     research_required: String,
     research_status: String,
+    research_pack_exists: bool,
     manifest: Option<ContextManifest>,
 }
 
 pub fn generate_agent_view(project_root: impl AsRef<Path>) -> Result<AgentViewGenerateResult> {
-    let project_root = canonical_project_root(project_root.as_ref())?;
+    let project_root = canonical_initialized_project_root(project_root.as_ref())?;
     let task_pointer = current::resolve_current_task(&project_root)?;
     let run_pointer = current::resolve_current_run(&project_root, &task_pointer.task_id)?;
     let state_path = project_root.join(".vibehub/state.yaml");
@@ -108,6 +112,7 @@ pub fn generate_agent_view(project_root: impl AsRef<Path>) -> Result<AgentViewGe
         research_status: get_str(&state, &["research", "status"])
             .unwrap_or("unknown")
             .to_string(),
+        research_pack_exists: research::check_research_pack_exists(&project_root),
         manifest: None,
     };
 
@@ -174,6 +179,7 @@ fn build_current_md(input: &AgentViewInput) -> String {
     output.push_str("- Runtime observation is not enabled in P0.\n\n");
 
     output.push_str("## What To Read\n\n");
+    output.push_str("- **Next session: read `.vibehub/agent-view/handoff.md` first.** It captures the prior session handoff (completed, remaining, commands run, tests run, context used, and warnings).\n");
     output.push_str("- .vibehub/agent-view/current-context.md\n");
     output.push_str("- .vibehub/agent-view/handoff.md\n");
     output.push_str("- .vibehub/rules/hard-rules.md\n");
@@ -256,6 +262,14 @@ fn build_current_context_md(input: &AgentViewInput) -> String {
     output.push_str("## Research Pack\n\n");
     output.push_str(&format!("- Required: {}\n", input.research_required));
     output.push_str(&format!("- Status: {}\n", input.research_status));
+    output.push_str(&format!(
+        "- Present on disk: {}\n",
+        if input.research_pack_exists {
+            "yes"
+        } else {
+            "no"
+        }
+    ));
     output.push_str("- Current research path: .vibehub/research/current/research-pack.md\n\n");
 
     output.push_str("## Known Missing Context\n\n");
@@ -394,39 +408,11 @@ fn phase_unknown(value: &str) -> bool {
     value.trim().is_empty() || value == "unknown"
 }
 
-fn canonical_project_root(project_root: &Path) -> Result<PathBuf> {
-    let project_root = fs::canonicalize(project_root)
-        .with_context(|| format!("Project path does not exist: {}", project_root.display()))?;
-    if !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project path is not a directory: {}",
-            project_root.display()
-        ));
-    }
-    if !project_root.join(".vibehub").is_dir() {
-        return Err(anyhow!(
-            "VibeHub directory does not exist: {}",
-            project_root.join(".vibehub").display()
-        ));
-    }
-    Ok(project_root)
-}
-
-fn relative_to_project(project_root: &Path, target: &Path) -> Result<PathBuf> {
-    target
-        .strip_prefix(project_root)
-        .map(PathBuf::from)
-        .with_context(|| format!("Path escapes project root: {}", target.display()))
-}
-
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::vibehub::current::{write_current_run_pointer, write_current_task_pointer};
+    use std::path::PathBuf;
     use uuid::Uuid;
 
     fn temp_project() -> PathBuf {

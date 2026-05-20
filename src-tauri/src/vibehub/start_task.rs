@@ -1,4 +1,7 @@
-use crate::vibehub::{current, init};
+use crate::vibehub::util::{
+    canonical_project_root, normalize_path, relative_to_project, yaml_string,
+};
+use crate::vibehub::{agent_view, context, current, events, init, research};
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
@@ -8,7 +11,15 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 const DEFAULT_MODE: &str = "guided_drive";
-const DEFAULT_PHASE: &str = "implement";
+const ALL_PHASES: &[&str] = &[
+    "align_lite",
+    "align",
+    "research",
+    "plan",
+    "implement",
+    "review_lite",
+    "review",
+];
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct VibehubStartTaskResult {
@@ -22,6 +33,10 @@ pub struct VibehubStartTaskResult {
     pub task_pointer_path: String,
     pub run_pointer_path: String,
     pub context_spec_path: String,
+    pub context_pack_path: String,
+    pub context_manifest_path: String,
+    pub context_included_count: usize,
+    pub context_missing_count: usize,
 }
 
 pub fn start_task(
@@ -33,8 +48,15 @@ pub fn start_task(
     let project_root = canonical_project_root(project_root.as_ref())?;
     ensure_initialized(&project_root)?;
 
+    let _ = research::archive_current_research(&project_root);
+
     let mode = validate_id("mode", mode.as_deref().unwrap_or(DEFAULT_MODE))?.to_string();
-    let phase = validate_id("phase", phase.as_deref().unwrap_or(DEFAULT_PHASE))?.to_string();
+    let phase = phase
+        .as_deref()
+        .map(|value| validate_id("phase", value).map(str::to_string))
+        .transpose()?
+        .unwrap_or_else(|| default_phase_for_mode(&mode).to_string());
+    validate_phase_for_mode(&mode, &phase)?;
     let phase_status = "active".to_string();
     let task_id = next_id("T");
     let run_id = next_id("R");
@@ -69,12 +91,7 @@ pub fn start_task(
     )
     .with_context(|| format!("Failed to write {}", run_dir.join("run.yaml").display()))?;
 
-    let context_spec_path = context_dir.join(format!("{phase}.yaml"));
-    fs::write(
-        &context_spec_path,
-        context_spec_yaml(&task_id, &run_id, &phase),
-    )
-    .with_context(|| format!("Failed to write {}", context_spec_path.display()))?;
+    let context_spec_path = ensure_context_spec(&project_root, &task_id, &run_id, &phase)?;
 
     current::write_current_task_pointer(&project_root, &task_id)?;
     current::write_current_run_pointer(&project_root, &task_id, &run_id)?;
@@ -87,6 +104,24 @@ pub fn start_task(
         &phase_status,
         &run_path,
     )?;
+
+    let pack = context::build_context_pack(&project_root, &task_id, &run_id, &phase)
+        .context("Failed to auto-build context pack after starting task")?;
+    let _ = agent_view::generate_agent_view(&project_root);
+    let _ = events::append_run_event(
+        &project_root,
+        &task_id,
+        &run_id,
+        "task_started",
+        "Task and run created.",
+        serde_json::json!({
+            "mode": mode.clone(),
+            "phase": phase.clone(),
+            "phase_status": phase_status.clone(),
+            "context_pack_path": pack.pack_path.clone(),
+            "context_manifest_path": pack.manifest_path.clone(),
+        }),
+    );
 
     Ok(VibehubStartTaskResult {
         task_id,
@@ -102,12 +137,48 @@ pub fn start_task(
             normalize_path(&relative_to_project(&project_root, &task_dir)?)
         ),
         context_spec_path: normalize_path(&relative_to_project(&project_root, &context_spec_path)?),
+        context_pack_path: pack.pack_path,
+        context_manifest_path: pack.manifest_path,
+        context_included_count: pack.included_count,
+        context_missing_count: pack.missing_count,
     })
 }
 
 fn ensure_initialized(project_root: &Path) -> Result<()> {
     init::init_project(project_root)?;
     Ok(())
+}
+
+pub fn default_phase_for_mode(mode: &str) -> &'static str {
+    match mode {
+        "yolo_drive" => "align_lite",
+        "guided_drive" | "evidence_drive" => "align",
+        _ => "align",
+    }
+}
+
+fn validate_phase_for_mode(mode: &str, phase: &str) -> Result<()> {
+    let allowed = match mode {
+        "yolo_drive" => &["align_lite", "implement", "review_lite"][..],
+        "guided_drive" => &["align", "plan", "implement", "review"][..],
+        "evidence_drive" => &["align", "research", "plan", "implement", "review"][..],
+        _ => {
+            return Err(anyhow!(
+                "Invalid mode '{}': expected yolo_drive, guided_drive, or evidence_drive",
+                mode
+            ));
+        }
+    };
+    if allowed.contains(&phase) {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Phase '{}' is not valid for mode '{}'; expected one of {:?}",
+            phase,
+            mode,
+            allowed
+        ))
+    }
 }
 
 fn update_state(
@@ -145,6 +216,9 @@ fn update_state(
         &["pointers", "run_pointer"],
         &format!(".vibehub/tasks/{task_id}/runs/current"),
     );
+    for flow_phase in ALL_PHASES {
+        set_string(&mut state, &["flow", flow_phase], "pending");
+    }
     set_string(&mut state, &["flow", phase], phase_status);
     set_string(
         &mut state,
@@ -158,8 +232,13 @@ fn update_state(
     );
     set_bool(&mut state, &["context", "stale"], false);
     set_string(&mut state, &["context", "generated_by"], "vibehub_backend");
-    set_bool(&mut state, &["research", "required"], false);
-    set_string(&mut state, &["research", "status"], "skipped");
+    let (research_required, research_status) = if mode == "evidence_drive" {
+        (true, "required")
+    } else {
+        (false, "skipped")
+    };
+    set_bool(&mut state, &["research", "required"], research_required);
+    set_string(&mut state, &["research", "status"], research_status);
     set_string(
         &mut state,
         &["handoff", "current"],
@@ -274,6 +353,34 @@ baseline_commit: null
     )
 }
 
+pub fn ensure_context_spec(
+    project_root: impl AsRef<Path>,
+    task_id: &str,
+    run_id: &str,
+    phase: &str,
+) -> Result<PathBuf> {
+    let project_root = canonical_project_root(project_root.as_ref())?;
+    let task_id = validate_id("task_id", task_id)?;
+    let run_id = validate_id("run_id", run_id)?;
+    let phase = validate_id("phase", phase)?;
+    let context_dir = project_root
+        .join(".vibehub")
+        .join("tasks")
+        .join(task_id)
+        .join("context");
+    fs::create_dir_all(&context_dir)
+        .with_context(|| format!("Failed to create {}", context_dir.display()))?;
+    let context_spec_path = context_dir.join(format!("{phase}.yaml"));
+    if !context_spec_path.is_file() {
+        fs::write(
+            &context_spec_path,
+            context_spec_yaml(task_id, run_id, phase),
+        )
+        .with_context(|| format!("Failed to write {}", context_spec_path.display()))?;
+    }
+    Ok(context_spec_path)
+}
+
 fn context_spec_yaml(task_id: &str, run_id: &str, phase: &str) -> String {
     format!(
         r#"phase: {}
@@ -304,18 +411,6 @@ entries:
     )
 }
 
-fn canonical_project_root(project_root: &Path) -> Result<PathBuf> {
-    let project_root = fs::canonicalize(project_root)
-        .with_context(|| format!("Project path does not exist: {}", project_root.display()))?;
-    if !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project path is not a directory: {}",
-            project_root.display()
-        ));
-    }
-    Ok(project_root)
-}
-
 fn next_id(prefix: &str) -> String {
     let timestamp = Utc::now().format("%Y%m%d%H%M%S");
     let suffix = Uuid::new_v4().simple().to_string();
@@ -335,21 +430,6 @@ fn validate_id<'a>(name: &str, value: &'a str) -> Result<&'a str> {
         ));
     }
     Ok(value)
-}
-
-fn relative_to_project(project_root: &Path, target: &Path) -> Result<PathBuf> {
-    target
-        .strip_prefix(project_root)
-        .map(PathBuf::from)
-        .with_context(|| format!("Path escapes project root: {}", target.display()))
-}
-
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
-fn yaml_string(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]
@@ -379,6 +459,16 @@ mod tests {
         assert!(project.join(&started.task_path).is_dir());
         assert!(project.join(&started.run_path).is_dir());
         assert!(project.join(&started.context_spec_path).is_file());
+        assert!(
+            project.join(&started.context_pack_path).is_file(),
+            "context pack should exist after start_task"
+        );
+        assert!(
+            project.join(&started.context_manifest_path).is_file(),
+            "context manifest should exist after start_task"
+        );
+        assert_eq!(started.context_included_count, 3);
+        assert_eq!(started.context_missing_count, 0);
 
         let status_after_start = status::read_cockpit_status(&project).expect("status");
         assert_eq!(
@@ -393,15 +483,16 @@ mod tests {
             status_after_start.current_mode.as_deref(),
             Some("guided_drive")
         );
-        assert_eq!(
-            status_after_start.current_phase.as_deref(),
-            Some("implement")
-        );
+        assert_eq!(status_after_start.current_phase.as_deref(), Some("align"));
         assert_eq!(status_after_start.phase_status.as_deref(), Some("active"));
 
-        let pack =
-            context::build_context_pack(&project, &started.task_id, &started.run_id, "implement")
-                .expect("build context");
+        let pack = context::build_context_pack(
+            &project,
+            &started.task_id,
+            &started.run_id,
+            &started.phase,
+        )
+        .expect("build context");
         assert_eq!(pack.missing_count, 0);
         assert!(project.join(&pack.pack_path).is_file());
         assert!(project.join(&pack.manifest_path).is_file());
@@ -409,7 +500,7 @@ mod tests {
         let agent_view = agent_view::generate_agent_view(&project).expect("agent view");
         assert_eq!(agent_view.task_id, started.task_id);
         assert_eq!(agent_view.run_id, started.run_id);
-        assert_eq!(agent_view.phase, "implement");
+        assert_eq!(agent_view.phase, "align");
         assert!(project.join(&agent_view.current_path).is_file());
         assert!(project.join(&agent_view.current_context_path).is_file());
 
@@ -443,11 +534,14 @@ mod tests {
 ## Warnings
 - Runtime observation is not enabled in P0.
 
-## Next Session Should
-- Run final verification.
+## Commands Run
+- cargo test vibehub::start_task
 
 ## Tests Run
 - cargo test vibehub::start_task
+
+## Next Session Should
+- Run final verification.
 "#,
         )
         .expect("write output");
@@ -478,12 +572,78 @@ mod tests {
             None,
         )
         .expect("start task");
-        let pack =
-            context::build_context_pack(&project, &started.task_id, &started.run_id, "implement")
-                .expect("build context");
 
         assert!(project.join(".vibehub/rules/hard-rules.md").is_file());
+        assert!(project.join(&started.context_pack_path).is_file());
+        assert!(project.join(&started.context_manifest_path).is_file());
+        assert_eq!(started.context_missing_count, 0);
+
+        let pack = context::build_context_pack(
+            &project,
+            &started.task_id,
+            &started.run_id,
+            &started.phase,
+        )
+        .expect("rebuild context");
         assert_eq!(pack.missing_count, 0);
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn context_pack_files_exist_immediately_after_start_task() {
+        let project = temp_project();
+
+        let started = start_task(
+            &project,
+            Some("Auto-build context pack verification".to_string()),
+            None,
+            Some("implement".to_string()),
+        )
+        .expect("start task");
+
+        assert!(
+            project.join(&started.context_pack_path).is_file(),
+            "Expected context pack at {}",
+            started.context_pack_path
+        );
+        assert!(
+            project.join(&started.context_manifest_path).is_file(),
+            "Expected manifest at {}",
+            started.context_manifest_path
+        );
+        assert_eq!(started.context_included_count, 3);
+        assert_eq!(started.context_missing_count, 0);
+
+        let pack_content =
+            fs::read_to_string(project.join(&started.context_pack_path)).expect("read pack");
+        assert!(pack_content.contains("# Context Pack: Implement"));
+        assert!(pack_content.contains(&format!("Task: {}", started.task_id)));
+        assert!(pack_content.contains(&format!("Run: {}", started.run_id)));
+        assert!(pack_content.contains("## File: .vibehub/rules/hard-rules.md"));
+        assert!(pack_content.contains("## Stop Condition"));
+        assert!(!pack_content.contains("## File: .env"));
+
+        let manifest_content = fs::read_to_string(project.join(&started.context_manifest_path))
+            .expect("read manifest");
+        assert!(manifest_content.contains("evidence_grade: hard_observed"));
+        assert!(manifest_content.contains(&format!("task_id: {}", started.task_id)));
+
+        let state_content =
+            fs::read_to_string(project.join(".vibehub/state.yaml")).expect("read state");
+        assert!(state_content.contains("align_lite: pending"));
+        assert!(state_content.contains("review_lite: pending"));
+        let state_pack_path = state_content
+            .lines()
+            .find(|line| line.trim().starts_with("current_pack:"))
+            .and_then(|line| line.split(':').nth(1))
+            .map(str::trim)
+            .map(|s| s.trim_matches('"'));
+        assert_eq!(
+            state_pack_path,
+            Some(started.context_pack_path.as_str()),
+            "state.yaml current_pack must match actual pack path"
+        );
 
         fs::remove_dir_all(project).expect("cleanup");
     }

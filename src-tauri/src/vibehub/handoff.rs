@@ -1,8 +1,13 @@
 use crate::process_util::silent_command;
-use crate::vibehub::current;
-use anyhow::{anyhow, Context, Result};
+use crate::vibehub::locale::VibehubLocale;
+use crate::vibehub::util::{
+    canonical_initialized_project_root, normalize_path, relative_to_project,
+};
+use crate::vibehub::{current, events};
+use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
+use serde_yaml::{Mapping, Value};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,27 +27,29 @@ pub struct HandoffBuildResult {
 #[derive(Debug, Clone)]
 struct HandoffInput {
     task_id: String,
+    task_path: String,
     run_id: String,
+    run_path: String,
     phase: String,
+    phase_status: String,
     session_id: Option<String>,
     source_output_path: Option<String>,
     sections: BTreeMap<String, String>,
     git_changed_files: Option<Vec<String>>,
+    context_pack_path: Option<String>,
+    context_manifest_available: bool,
 }
 
-const REQUIRED_SECTIONS: &[(&str, &str)] = &[
-    ("Completed", "completed"),
-    ("Not Yet Done", "not yet done"),
-    ("Key Decisions Made", "key decisions made"),
-    ("Files Changed", "files changed"),
-    ("Files Reportedly Read", "files reportedly read"),
-    ("Context Still Needed", "context still needed"),
-    ("Warnings", "warnings"),
-    ("Next Session Should", "next session should"),
-];
-
 pub fn build_handoff(project_root: impl AsRef<Path>) -> Result<HandoffBuildResult> {
-    let project_root = canonical_project_root(project_root.as_ref())?;
+    build_handoff_with_locale(project_root, None)
+}
+
+pub fn build_handoff_with_locale(
+    project_root: impl AsRef<Path>,
+    locale_override: Option<&str>,
+) -> Result<HandoffBuildResult> {
+    let project_root = canonical_initialized_project_root(project_root.as_ref())?;
+    let locale = VibehubLocale::detect_with_override(&project_root, locale_override);
     let task_pointer = current::resolve_current_task(&project_root)?;
     let run_pointer = current::resolve_current_run(&project_root, &task_pointer.task_id)?;
     let output = find_latest_session_output(&project_root, &run_pointer.path)?;
@@ -51,20 +58,41 @@ pub fn build_handoff(project_root: impl AsRef<Path>) -> Result<HandoffBuildResul
         None => BTreeMap::new(),
     };
     let phase = read_current_phase(&project_root).unwrap_or_else(|| "unknown".to_string());
+    let phase_status =
+        read_current_phase_status(&project_root).unwrap_or_else(|| "unknown".to_string());
     let git_changed_files = git_changed_files(&project_root);
     let source_output_path = output
         .as_ref()
         .map(|(_, path)| relative_to_project(&project_root, path).map(|path| normalize_path(&path)))
         .transpose()?;
     let session_id = output.as_ref().map(|(session_id, _)| session_id.clone());
+    let context_pack_path =
+        read_state_field(&project_root, &["context", "current_pack"]).filter(|s| !s.is_empty());
+    let manifest_path = context_pack_path
+        .as_deref()
+        .map(|p| p.trim_end_matches(".md").to_string() + ".manifest.yaml")
+        .or_else(|| {
+            read_state_field(&project_root, &["context", "current_manifest"])
+                .filter(|s| !s.is_empty())
+        });
+    let context_manifest_available = manifest_path
+        .as_deref()
+        .map(|p| project_root.join(p).is_file())
+        .unwrap_or(false);
+
     let input = HandoffInput {
         task_id: task_pointer.task_id,
+        task_path: task_pointer.path,
         run_id: run_pointer.run_id,
+        run_path: run_pointer.path,
         phase,
+        phase_status,
         session_id,
         source_output_path,
         sections,
         git_changed_files,
+        context_pack_path,
+        context_manifest_available,
     };
 
     let missing_required_sections = missing_required_sections(&input);
@@ -75,12 +103,28 @@ pub fn build_handoff(project_root: impl AsRef<Path>) -> Result<HandoffBuildResul
     let handoff_path = agent_view_dir.join("handoff.md");
     fs::write(
         &handoff_path,
-        render_handoff(&input, complete, &missing_required_sections),
+        render_handoff(&input, complete, &missing_required_sections, locale),
     )
     .with_context(|| format!("Failed to write {}", handoff_path.display()))?;
+    let handoff_rel = normalize_path(&relative_to_project(&project_root, &handoff_path)?);
+    update_handoff_state(&project_root, &handoff_rel, complete)?;
+    let _ = events::append_run_event(
+        &project_root,
+        &input.task_id,
+        &input.run_id,
+        "handoff_built",
+        "Handoff generated.",
+        serde_json::json!({
+            "handoff_path": handoff_rel.clone(),
+            "complete": complete,
+            "missing_required_sections": missing_required_sections.clone(),
+            "source_output_path": input.source_output_path.clone(),
+            "session_id": input.session_id.clone(),
+        }),
+    );
 
     Ok(HandoffBuildResult {
-        handoff_path: normalize_path(&relative_to_project(&project_root, &handoff_path)?),
+        handoff_path: handoff_rel,
         source_output_path: input.source_output_path,
         complete,
         missing_required_sections,
@@ -95,100 +139,355 @@ pub fn build_handoff(project_root: impl AsRef<Path>) -> Result<HandoffBuildResul
     })
 }
 
-fn render_handoff(input: &HandoffInput, complete: bool, missing: &[String]) -> String {
-    let mut output = String::new();
-    output.push_str(&format!(
-        "# Handoff from Session {}\n\n",
+fn render_handoff(
+    input: &HandoffInput,
+    complete: bool,
+    missing: &[String],
+    locale: VibehubLocale,
+) -> String {
+    let mut o = String::new();
+
+    // Header
+    o.push_str(&format!(
+        "# {} {}\n\n",
+        handoff_session_title(locale),
         input.session_id.as_deref().unwrap_or("unknown")
     ));
-    output.push_str(&format!("Task: {}  \n", input.task_id));
-    output.push_str(&format!("Run: {}  \n", input.run_id));
-    output.push_str(&format!("Phase: {}  \n", title_case(&input.phase)));
-    output.push_str("Generated by: VibeHub  \n");
-    output.push_str(&format!(
-        "Generated at: {}  \n",
+    o.push_str(&format!("{}: {}\n", label_task(locale), input.task_id));
+    o.push_str(&format!("{}: {}\n", label_run(locale), input.run_id));
+    o.push_str(&format!(
+        "{}: {}\n",
+        label_phase(locale),
+        title_case(&input.phase)
+    ));
+    o.push_str(&format!("{}: VibeHub\n", label_generated_by(locale)));
+    o.push_str(&format!(
+        "{}: {}\n",
+        label_generated_at(locale),
         Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
     ));
-    output.push_str(&format!(
-        "Source: {}  \n",
+    o.push_str(&format!(
+        "{}: {}\n",
+        label_source(locale),
         input
             .source_output_path
             .as_deref()
-            .unwrap_or("missing session output.md")
+            .unwrap_or(label_missing_session_output(locale))
     ));
-    output.push_str(&format!(
-        "Handoff complete: {}  \n",
-        if complete { "yes" } else { "no" }
+    o.push_str(&format!(
+        "{}: {}\n",
+        label_handoff_complete(locale),
+        yes_no(locale, complete)
     ));
-    output.push_str("Evidence grade: mixed\n\n");
+    o.push_str(&format!("{}: mixed\n\n", locale.evidence_grade_label()));
 
+    // Missing sections notice
     if !missing.is_empty() {
-        output.push_str("## Missing Required Sections\n\n");
+        o.push_str(&format!("## {}\n\n", section_missing_required(locale)));
         for section in missing {
-            output.push_str(&format!("- {}\n", section));
+            o.push_str(&format!(
+                "- {}\n",
+                translate_missing_section_name(locale, section)
+            ));
         }
-        output.push('\n');
+        o.push('\n');
     }
 
-    for (title, key) in REQUIRED_SECTIONS {
-        output.push_str(&format!("## {}\n\n", title));
-        if *key == "files changed" {
-            push_files_changed(&mut output, input);
+    // 1. Current Task
+    o.push_str(&format!("## {}\n\n", section_current_task(locale)));
+    o.push_str(&format!("- {}: {}\n", label_task_id(locale), input.task_id));
+    o.push_str(&format!(
+        "- {}: {}\n",
+        label_task_path(locale),
+        input.task_path
+    ));
+    o.push_str(&format!("- {}: {}\n", label_run_id(locale), input.run_id));
+    o.push_str(&format!(
+        "- {}: {}\n\n",
+        label_run_path(locale),
+        input.run_path
+    ));
+    o.push_str(&format!(
+        "{}: hard_observed\n\n",
+        locale.evidence_grade_label()
+    ));
+
+    // 2. Current Phase
+    o.push_str(&format!("## {}\n\n", section_current_phase(locale)));
+    o.push_str(&format!(
+        "- {}: {}\n",
+        label_phase(locale),
+        title_case(&input.phase)
+    ));
+    o.push_str(&format!(
+        "- {}: {}\n\n",
+        label_status(locale),
+        input.phase_status
+    ));
+    o.push_str(&format!(
+        "{}: hard_observed\n\n",
+        locale.evidence_grade_label()
+    ));
+
+    // 3. What Changed
+    o.push_str(&format!("## {}\n\n", section_what_changed(locale)));
+    o.push_str("### Completed\n");
+    push_sub_section(&mut o, input, "completed", "Completed", locale);
+    o.push_str("### Not Yet Done\n");
+    push_sub_section(&mut o, input, "not yet done", "Not Yet Done", locale);
+    o.push_str("### Key Decisions Made\n");
+    push_sub_section(
+        &mut o,
+        input,
+        "key decisions made",
+        "Key Decisions Made",
+        locale,
+    );
+    o.push_str("### Files Changed\n");
+    push_files_changed(&mut o, input, locale);
+    o.push_str(&format!("\n{}: mixed\n\n", locale.evidence_grade_label()));
+
+    // 4. Commands Run
+    o.push_str(&format!("## {}\n\n", section_commands_run(locale)));
+    push_reported_section(&mut o, input, "commands run", "Commands Run", locale);
+    o.push_str(&format!(
+        "\n{}: agent_reported\n\n",
+        locale.evidence_grade_label()
+    ));
+
+    // 5. Tests Run
+    o.push_str(&format!("## {}\n\n", section_tests_run(locale)));
+    push_reported_section(&mut o, input, "tests run", "Tests Run", locale);
+    o.push_str(&format!(
+        "\n{}: agent_reported\n\n",
+        locale.evidence_grade_label()
+    ));
+
+    // 6. Context Used
+    o.push_str(&format!("## {}\n\n", section_context_used(locale)));
+    o.push_str(&format!("### {}\n", sub_files_read(locale)));
+    push_sub_section(
+        &mut o,
+        input,
+        "files reportedly read",
+        "Files Reportedly Read",
+        locale,
+    );
+    o.push_str(&format!("### {}\n", sub_context_pack(locale)));
+    o.push_str(&format!(
+        "- {}: {}\n",
+        label_path(locale),
+        input
+            .context_pack_path
+            .as_deref()
+            .unwrap_or(label_not_available(locale))
+    ));
+    o.push_str(&format!(
+        "- {}: {}\n",
+        label_manifest(locale),
+        if input.context_manifest_available {
+            label_available(locale)
         } else {
-            push_reported_section(&mut output, input, key, title);
-            output.push_str("\nEvidence grade: agent_reported\n");
+            label_not_available(locale)
         }
-        output.push('\n');
-    }
+    ));
+    o.push_str(&format!("\n{}: mixed\n\n", locale.evidence_grade_label()));
 
-    output
+    // 7. Context Still Needed
+    o.push_str(&format!("## {}\n\n", section_context_still_needed(locale)));
+    push_reported_section(
+        &mut o,
+        input,
+        "context still needed",
+        "Context Still Needed",
+        locale,
+    );
+    o.push_str(&format!(
+        "\n{}: agent_reported\n\n",
+        locale.evidence_grade_label()
+    ));
+
+    // 8. Risks / Warnings
+    o.push_str(&format!("## {}\n\n", section_risks_warnings(locale)));
+    push_reported_section(&mut o, input, "warnings", "Risks / Warnings", locale);
+    o.push_str(&format!(
+        "\n{}: agent_reported\n\n",
+        locale.evidence_grade_label()
+    ));
+
+    // 9. Next Session Should
+    o.push_str(&format!("## {}\n\n", section_next_session_should(locale)));
+    push_reported_section(
+        &mut o,
+        input,
+        "next session should",
+        "Next Session Should",
+        locale,
+    );
+    o.push_str(&format!(
+        "\n{}: agent_reported\n\n",
+        locale.evidence_grade_label()
+    ));
+
+    // 10. Handoff Completeness
+    o.push_str(&format!("## {}\n\n", section_handoff_completeness(locale)));
+    o.push_str(&format!(
+        "- {}: {}\n",
+        label_complete(locale),
+        yes_no(locale, complete)
+    ));
+    o.push_str(&format!(
+        "- {}: {}\n",
+        label_sections_from_output(locale),
+        input.sections.len()
+    ));
+    o.push_str(&format!(
+        "- {}: {}\n",
+        label_files_from_git(locale),
+        yes_no(locale, input.git_changed_files.is_some())
+    ));
+    o.push_str(&format!(
+        "- {}: {}\n",
+        label_context_manifest(locale),
+        if input.context_manifest_available {
+            label_available(locale)
+        } else {
+            label_not_available(locale)
+        }
+    ));
+    if missing.is_empty() {
+        o.push_str(&format!(
+            "- {}: {}\n",
+            label_missing_required_sections_label(locale),
+            label_none(locale)
+        ));
+    } else {
+        o.push_str(&format!(
+            "- {}: {}\n",
+            label_missing_required_sections_label(locale),
+            missing
+                .iter()
+                .map(|s| translate_missing_section_name(locale, s))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    o.push_str(&format!("\n{}: computed\n", locale.evidence_grade_label()));
+
+    o
 }
 
-fn push_files_changed(output: &mut String, input: &HandoffInput) {
+fn push_sub_section(
+    output: &mut String,
+    input: &HandoffInput,
+    key: &str,
+    title: &str,
+    locale: VibehubLocale,
+) {
+    match input.sections.get(key).map(|value| value.trim()) {
+        Some(value) if !value.is_empty() => {
+            output.push_str(value);
+            output.push('\n');
+        }
+        _ => {
+            output.push_str(&format!(
+                "- {} {}\n",
+                label_missing_from_output(locale),
+                title
+            ));
+        }
+    }
+}
+
+fn push_files_changed(output: &mut String, input: &HandoffInput, locale: VibehubLocale) {
     match &input.git_changed_files {
         Some(files) if files.is_empty() => {
-            output.push_str("- No changed files observed by Git.\n\n");
-            output.push_str("Evidence grade: hard_observed\n");
+            output.push_str(&format!("- {}\n", label_no_changed_files_observed(locale)));
         }
         Some(files) => {
             for file in files {
                 output.push_str(&format!("- {}\n", file));
             }
-            output.push_str("\nEvidence grade: hard_observed\n");
         }
         None => {
-            push_reported_section(output, input, "files changed", "Files Changed");
-            output.push_str("\nEvidence grade: agent_reported\n");
+            push_reported_section(output, input, "files changed", "Files Changed", locale);
         }
     }
 }
 
-fn push_reported_section(output: &mut String, input: &HandoffInput, key: &str, title: &str) {
+fn push_reported_section(
+    output: &mut String,
+    input: &HandoffInput,
+    key: &str,
+    title: &str,
+    locale: VibehubLocale,
+) {
     match input.sections.get(key).map(|value| value.trim()) {
         Some(value) if !value.is_empty() => output.push_str(value),
-        _ => output.push_str(&format!("- Missing from output.md: {}\n", title)),
+        _ => output.push_str(&format!(
+            "- {} {}\n",
+            label_missing_from_output(locale),
+            title
+        )),
     }
+}
+
+fn section_present(input: &HandoffInput, key: &str) -> bool {
+    input
+        .sections
+        .get(key)
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
 }
 
 fn missing_required_sections(input: &HandoffInput) -> Vec<String> {
-    REQUIRED_SECTIONS
-        .iter()
-        .filter_map(|(title, key)| {
-            if *key == "files changed" && input.git_changed_files.is_some() {
-                return None;
-            }
-            let present = input
-                .sections
-                .get(*key)
-                .map(|value| !value.trim().is_empty())
-                .unwrap_or(false);
-            if present {
-                None
-            } else {
-                Some((*title).to_string())
-            }
-        })
-        .collect()
+    let mut missing = Vec::new();
+
+    // What Changed: composite of completed, not yet done, key decisions made, files changed, or git files
+    let what_changed_ok = section_present(input, "completed")
+        || section_present(input, "not yet done")
+        || section_present(input, "key decisions made")
+        || input
+            .git_changed_files
+            .as_ref()
+            .map(|f| !f.is_empty())
+            .unwrap_or(false)
+        || section_present(input, "files changed");
+    if !what_changed_ok {
+        missing.push("What Changed".to_string());
+    }
+
+    // Commands Run: from output.md
+    if !section_present(input, "commands run") {
+        missing.push("Commands Run".to_string());
+    }
+
+    // Tests Run: from output.md
+    if !section_present(input, "tests run") {
+        missing.push("Tests Run".to_string());
+    }
+
+    // Context Used: needs files reportedly read or manifest
+    if !section_present(input, "files reportedly read") && !input.context_manifest_available {
+        missing.push("Context Used".to_string());
+    }
+
+    // Context Still Needed: from output.md
+    if !section_present(input, "context still needed") {
+        missing.push("Context Still Needed".to_string());
+    }
+
+    // Risks / Warnings: from output.md
+    if !section_present(input, "warnings") {
+        missing.push("Risks / Warnings".to_string());
+    }
+
+    // Next Session Should: from output.md
+    if !section_present(input, "next session should") {
+        missing.push("Next Session Should".to_string());
+    }
+
+    missing
 }
 
 fn parse_output_sections(path: &Path) -> Result<BTreeMap<String, String>> {
@@ -242,8 +541,12 @@ fn canonical_section_key(title: &str) -> Option<String> {
         "key decisions made" | "key decisions" => "key decisions made",
         "files changed" | "changed files" => "files changed",
         "files reportedly read" | "files read" => "files reportedly read",
+        "commands run" => "commands run",
+        "tests run" => "tests run",
         "context still needed" | "missing context" => "context still needed",
-        "warnings" | "unresolved risks" => "warnings",
+        "warnings" | "unresolved risks" | "risks" | "risks warnings" | "risks/warnings" => {
+            "warnings"
+        }
         "next session should" | "handoff notes" => "next session should",
         _ => return None,
     };
@@ -269,12 +572,25 @@ fn find_latest_session_output(
     project_root: &Path,
     run_path: &str,
 ) -> Result<Option<(String, PathBuf)>> {
-    let sessions_dir = project_root.join(run_path).join("sessions");
-    if !sessions_dir.is_dir() {
-        return Ok(None);
+    let run_dir = project_root.join(run_path);
+    let mut candidates: Vec<(String, PathBuf, std::time::SystemTime)> = Vec::new();
+    let run_output_path = run_dir.join("outputs").join("output.md");
+    if run_output_path.is_file() {
+        let modified = run_output_path
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        candidates.push(("run".to_string(), run_output_path, modified));
     }
 
-    let mut candidates = Vec::new();
+    let sessions_dir = run_dir.join("sessions");
+    if !sessions_dir.is_dir() {
+        candidates.sort_by(|a, b| a.2.cmp(&b.2).then_with(|| a.0.cmp(&b.0)));
+        return Ok(candidates
+            .pop()
+            .map(|(session_id, path, _)| (session_id, path)));
+    }
+
     for entry in fs::read_dir(&sessions_dir)
         .with_context(|| format!("Failed to read {}", sessions_dir.display()))?
     {
@@ -289,11 +605,17 @@ fn find_latest_session_output(
         let session_id = entry.file_name().to_string_lossy().to_string();
         let output_path = entry.path().join("output.md");
         if output_path.is_file() {
-            candidates.push((session_id, output_path));
+            let modified = output_path
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            candidates.push((session_id, output_path, modified));
         }
     }
-    candidates.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(candidates.pop())
+    candidates.sort_by(|a, b| a.2.cmp(&b.2).then_with(|| a.0.cmp(&b.0)));
+    Ok(candidates
+        .pop()
+        .map(|(session_id, path, _)| (session_id, path)))
 }
 
 fn git_changed_files(project_root: &Path) -> Option<Vec<String>> {
@@ -342,43 +664,78 @@ fn run_git_lines(project_root: &Path, args: &[&str]) -> Option<Vec<String>> {
     )
 }
 
-fn read_current_phase(project_root: &Path) -> Option<String> {
+fn read_state_field(project_root: &Path, field_path: &[&str]) -> Option<String> {
     let content = fs::read_to_string(project_root.join(".vibehub/state.yaml")).ok()?;
     let value: serde_yaml::Value = serde_yaml::from_str(&content).ok()?;
-    value
-        .get("current")?
-        .get("phase")?
-        .as_str()
-        .map(|value| value.to_string())
+    field_path
+        .iter()
+        .try_fold(&value, |current, key| current.get(*key))
+        .and_then(serde_yaml::Value::as_str)
+        .map(|s| s.to_string().replace('\\', "/"))
 }
 
-fn canonical_project_root(project_root: &Path) -> Result<PathBuf> {
-    let project_root = fs::canonicalize(project_root)
-        .with_context(|| format!("Project path does not exist: {}", project_root.display()))?;
-    if !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project path is not a directory: {}",
-            project_root.display()
-        ));
+fn read_current_phase(project_root: &Path) -> Option<String> {
+    read_state_field(project_root, &["current", "phase"])
+}
+
+fn read_current_phase_status(project_root: &Path) -> Option<String> {
+    read_state_field(project_root, &["current", "phase_status"])
+}
+
+fn update_handoff_state(project_root: &Path, handoff_rel: &str, complete: bool) -> Result<()> {
+    let state_path = project_root.join(".vibehub/state.yaml");
+    if !state_path.is_file() {
+        return Ok(());
     }
-    if !project_root.join(".vibehub").is_dir() {
-        return Err(anyhow!(
-            "VibeHub directory does not exist: {}",
-            project_root.join(".vibehub").display()
-        ));
+
+    let content = fs::read_to_string(&state_path)
+        .with_context(|| format!("Failed to read {}", state_path.display()))?;
+    let mut state = serde_yaml::from_str::<Value>(&content)
+        .with_context(|| format!("Invalid YAML in {}", state_path.display()))?;
+    set_yaml_string(&mut state, &["handoff", "current"], handoff_rel);
+    set_yaml_string(
+        &mut state,
+        &["handoff", "status"],
+        if complete {
+            "available"
+        } else {
+            "needs_action"
+        },
+    );
+    set_yaml_string(
+        &mut state,
+        &["last_updated"],
+        &Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+    );
+    let content = serde_yaml::to_string(&state).context("Failed to serialize state.yaml")?;
+    fs::write(&state_path, content)
+        .with_context(|| format!("Failed to write {}", state_path.display()))
+}
+
+fn set_yaml_string(value: &mut Value, path: &[&str], next: &str) {
+    set_yaml_value(value, path, Value::String(next.to_string()));
+}
+
+fn set_yaml_value(value: &mut Value, path: &[&str], next: Value) {
+    if path.is_empty() {
+        *value = next;
+        return;
     }
-    Ok(project_root)
-}
-
-fn relative_to_project(project_root: &Path, target: &Path) -> Result<PathBuf> {
-    target
-        .strip_prefix(project_root)
-        .map(PathBuf::from)
-        .with_context(|| format!("Path escapes project root: {}", target.display()))
-}
-
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    if !matches!(value, Value::Mapping(_)) {
+        *value = Value::Mapping(Mapping::new());
+    }
+    let mut current = value;
+    for key in &path[..path.len() - 1] {
+        let mapping = current.as_mapping_mut().expect("mapping value");
+        current = mapping
+            .entry(Value::String((*key).to_string()))
+            .or_insert_with(|| Value::Mapping(Mapping::new()));
+        if !matches!(current, Value::Mapping(_)) {
+            *current = Value::Mapping(Mapping::new());
+        }
+    }
+    let mapping = current.as_mapping_mut().expect("mapping value");
+    mapping.insert(Value::String(path[path.len() - 1].to_string()), next);
 }
 
 fn title_case(value: &str) -> String {
@@ -396,6 +753,342 @@ fn title_case(value: &str) -> String {
         .join(" ")
 }
 
+fn handoff_session_title(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Handoff from Session",
+        VibehubLocale::ZhCn => "会话交接",
+        VibehubLocale::ZhTw => "會議交接",
+    }
+}
+
+fn label_task(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Task",
+        VibehubLocale::ZhCn => "任务",
+        VibehubLocale::ZhTw => "任務",
+    }
+}
+
+fn label_run(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Run",
+        VibehubLocale::ZhCn => "运行",
+        VibehubLocale::ZhTw => "執行",
+    }
+}
+
+fn label_phase(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Phase",
+        VibehubLocale::ZhCn => "阶段",
+        VibehubLocale::ZhTw => "階段",
+    }
+}
+
+fn label_generated_by(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Generated by",
+        VibehubLocale::ZhCn => "生成来源",
+        VibehubLocale::ZhTw => "產生來源",
+    }
+}
+
+fn label_generated_at(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Generated at",
+        VibehubLocale::ZhCn => "生成时间",
+        VibehubLocale::ZhTw => "產生時間",
+    }
+}
+
+fn label_source(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Source",
+        VibehubLocale::ZhCn => "来源",
+        VibehubLocale::ZhTw => "來源",
+    }
+}
+
+fn label_handoff_complete(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Handoff complete",
+        VibehubLocale::ZhCn => "交接完成",
+        VibehubLocale::ZhTw => "交接完成",
+    }
+}
+
+fn yes_no(locale: VibehubLocale, value: bool) -> &'static str {
+    match (locale, value) {
+        (VibehubLocale::En, true) => "yes",
+        (VibehubLocale::En, false) => "no",
+        (VibehubLocale::ZhCn, true) => "是",
+        (VibehubLocale::ZhCn, false) => "否",
+        (VibehubLocale::ZhTw, true) => "是",
+        (VibehubLocale::ZhTw, false) => "否",
+    }
+}
+
+fn section_missing_required(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Missing Required Sections",
+        VibehubLocale::ZhCn => "缺失的必要章节",
+        VibehubLocale::ZhTw => "缺失的必要章節",
+    }
+}
+
+fn section_current_task(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Current Task",
+        VibehubLocale::ZhCn => "当前任务",
+        VibehubLocale::ZhTw => "目前任務",
+    }
+}
+
+fn section_current_phase(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Current Phase",
+        VibehubLocale::ZhCn => "当前阶段",
+        VibehubLocale::ZhTw => "目前階段",
+    }
+}
+
+fn section_what_changed(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "What Changed",
+        VibehubLocale::ZhCn => "变更内容",
+        VibehubLocale::ZhTw => "變更內容",
+    }
+}
+
+fn section_commands_run(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Commands Run",
+        VibehubLocale::ZhCn => "执行的命令",
+        VibehubLocale::ZhTw => "執行的命令",
+    }
+}
+
+fn section_tests_run(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Tests Run",
+        VibehubLocale::ZhCn => "运行的测试",
+        VibehubLocale::ZhTw => "執行的測試",
+    }
+}
+
+fn section_context_used(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Context Used",
+        VibehubLocale::ZhCn => "使用的上下文",
+        VibehubLocale::ZhTw => "使用的上下文",
+    }
+}
+
+fn section_context_still_needed(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Context Still Needed",
+        VibehubLocale::ZhCn => "仍需的上下文",
+        VibehubLocale::ZhTw => "仍需的上下文",
+    }
+}
+
+fn section_risks_warnings(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Risks / Warnings",
+        VibehubLocale::ZhCn => "风险 / 警告",
+        VibehubLocale::ZhTw => "風險 / 警告",
+    }
+}
+
+fn section_next_session_should(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Next Session Should",
+        VibehubLocale::ZhCn => "下次会话应",
+        VibehubLocale::ZhTw => "下次會議應",
+    }
+}
+
+fn section_handoff_completeness(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Handoff Completeness",
+        VibehubLocale::ZhCn => "交接完整性",
+        VibehubLocale::ZhTw => "交接完整性",
+    }
+}
+
+fn sub_files_read(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Files Read",
+        VibehubLocale::ZhCn => "读取的文件",
+        VibehubLocale::ZhTw => "讀取的檔案",
+    }
+}
+
+fn sub_context_pack(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Context Pack",
+        VibehubLocale::ZhCn => "上下文包",
+        VibehubLocale::ZhTw => "上下文包",
+    }
+}
+
+fn label_task_id(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Task ID",
+        VibehubLocale::ZhCn => "任务 ID",
+        VibehubLocale::ZhTw => "任務 ID",
+    }
+}
+
+fn label_task_path(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Task path",
+        VibehubLocale::ZhCn => "任务路径",
+        VibehubLocale::ZhTw => "任務路徑",
+    }
+}
+
+fn label_run_id(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Run ID",
+        VibehubLocale::ZhCn => "运行 ID",
+        VibehubLocale::ZhTw => "執行 ID",
+    }
+}
+
+fn label_run_path(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Run path",
+        VibehubLocale::ZhCn => "运行路径",
+        VibehubLocale::ZhTw => "執行路徑",
+    }
+}
+
+fn label_status(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Status",
+        VibehubLocale::ZhCn => "状态",
+        VibehubLocale::ZhTw => "狀態",
+    }
+}
+
+fn label_complete(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Complete",
+        VibehubLocale::ZhCn => "完成",
+        VibehubLocale::ZhTw => "完成",
+    }
+}
+
+fn label_sections_from_output(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Sections from output.md",
+        VibehubLocale::ZhCn => "来自 output.md 的章节",
+        VibehubLocale::ZhTw => "來自 output.md 的章節",
+    }
+}
+
+fn label_files_from_git(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Files from git",
+        VibehubLocale::ZhCn => "来自 git 的文件",
+        VibehubLocale::ZhTw => "來自 git 的檔案",
+    }
+}
+
+fn label_context_manifest(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Context manifest",
+        VibehubLocale::ZhCn => "上下文清单",
+        VibehubLocale::ZhTw => "上下文清單",
+    }
+}
+
+fn label_missing_required_sections_label(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Missing required sections",
+        VibehubLocale::ZhCn => "缺失的必要章节",
+        VibehubLocale::ZhTw => "缺失的必要章節",
+    }
+}
+
+fn label_path(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Path",
+        VibehubLocale::ZhCn => "路径",
+        VibehubLocale::ZhTw => "路徑",
+    }
+}
+
+fn label_manifest(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Manifest",
+        VibehubLocale::ZhCn => "清单",
+        VibehubLocale::ZhTw => "清單",
+    }
+}
+
+fn label_available(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "available",
+        VibehubLocale::ZhCn => "可用",
+        VibehubLocale::ZhTw => "可用",
+    }
+}
+
+fn label_not_available(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "not available",
+        VibehubLocale::ZhCn => "不可用",
+        VibehubLocale::ZhTw => "不可用",
+    }
+}
+
+fn label_missing_session_output(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "missing session output.md",
+        VibehubLocale::ZhCn => "缺少会话 output.md",
+        VibehubLocale::ZhTw => "缺少會議 output.md",
+    }
+}
+
+fn label_no_changed_files_observed(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "No changed files observed by Git.",
+        VibehubLocale::ZhCn => "Git 未观察到变更文件。",
+        VibehubLocale::ZhTw => "Git 未觀察到變更檔案。",
+    }
+}
+
+fn label_missing_from_output(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "Missing from output.md:",
+        VibehubLocale::ZhCn => "output.md 中缺失:",
+        VibehubLocale::ZhTw => "output.md 中缺失:",
+    }
+}
+
+fn label_none(locale: VibehubLocale) -> &'static str {
+    match locale {
+        VibehubLocale::En => "None",
+        VibehubLocale::ZhCn => "无",
+        VibehubLocale::ZhTw => "無",
+    }
+}
+
+fn translate_missing_section_name(locale: VibehubLocale, name: &str) -> String {
+    match name {
+        "What Changed" => section_what_changed(locale).to_string(),
+        "Commands Run" => section_commands_run(locale).to_string(),
+        "Tests Run" => section_tests_run(locale).to_string(),
+        "Context Used" => section_context_used(locale).to_string(),
+        "Context Still Needed" => section_context_still_needed(locale).to_string(),
+        "Risks / Warnings" => section_risks_warnings(locale).to_string(),
+        "Next Session Should" => section_next_session_should(locale).to_string(),
+        _ => name.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,7 +1103,7 @@ mod tests {
         fs::create_dir_all(path.join(".vibehub/agent-view")).expect("create agent view");
         fs::write(
             path.join(".vibehub/state.yaml"),
-            "current:\n  phase: implement\n",
+            "current:\n  phase: implement\n  phase_status: active\n",
         )
         .expect("write state");
         write_current_task_pointer(&path, "T-001").expect("task pointer");
@@ -437,7 +1130,12 @@ mod tests {
 
 ## Files Reportedly Read
 - AGENTS.md
-- dev_docs/dev-roadmap.md
+
+## Commands Run
+- cargo test vibehub
+
+## Tests Run
+- vibehub tests: 56 passed
 
 ## Context Still Needed
 - None.
@@ -453,7 +1151,37 @@ mod tests {
     }
 
     #[test]
-    fn builds_handoff_from_latest_output_and_reports_missing_sections() {
+    fn complete_output_generates_complete_handoff_without_git() {
+        let project = temp_project();
+        write_complete_output(&project);
+
+        let result = build_handoff(&project).expect("build handoff");
+        let handoff =
+            fs::read_to_string(project.join(".vibehub/agent-view/handoff.md")).expect("read");
+
+        assert!(result.complete);
+        assert!(result.missing_required_sections.is_empty());
+        assert!(handoff.contains("Handoff complete: yes"));
+        assert!(handoff.contains("## What Changed"));
+        assert!(handoff.contains("## Commands Run"));
+        assert!(handoff.contains("## Tests Run"));
+        assert!(handoff.contains("## Context Used"));
+        assert!(handoff.contains("## Context Still Needed"));
+        assert!(handoff.contains("## Risks / Warnings"));
+        assert!(handoff.contains("## Next Session Should"));
+        assert!(handoff.contains("## Handoff Completeness"));
+        assert!(handoff.contains("- Complete: yes"));
+        assert!(handoff.contains("Evidence grade: computed"));
+        assert_eq!(
+            read_state_field(&project, &["handoff", "status"]).as_deref(),
+            Some("available")
+        );
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn missing_section_generates_incomplete_handoff() {
         let project = temp_project();
         fs::write(
             project.join(".vibehub/tasks/T-001/runs/R-001/sessions/S-001/output.md"),
@@ -468,15 +1196,32 @@ mod tests {
         assert!(!result.complete);
         assert!(result
             .missing_required_sections
-            .contains(&"Key Decisions Made".to_string()));
+            .contains(&"Commands Run".to_string()));
+        assert!(result
+            .missing_required_sections
+            .contains(&"Tests Run".to_string()));
+        assert!(result
+            .missing_required_sections
+            .contains(&"Context Still Needed".to_string()));
+        assert!(result
+            .missing_required_sections
+            .contains(&"Risks / Warnings".to_string()));
+        assert!(handoff.contains("Handoff complete: no"));
         assert!(handoff.contains("## Missing Required Sections"));
-        assert!(handoff.contains("- Missing from output.md: Key Decisions Made"));
+        assert!(handoff.contains("- Commands Run"));
+        assert!(handoff.contains("- Tests Run"));
+        assert!(handoff.contains("- Missing from output.md: Commands Run"));
+        assert!(handoff.contains("- Missing from output.md: Tests Run"));
+        assert_eq!(
+            read_state_field(&project, &["handoff", "status"]).as_deref(),
+            Some("needs_action")
+        );
 
         fs::remove_dir_all(project).expect("cleanup");
     }
 
     #[test]
-    fn git_status_supplies_hard_observed_changed_files_when_available() {
+    fn git_changed_files_appear_in_what_changed() {
         let project = temp_project();
         write_complete_output(&project);
         Command::new("git")
@@ -486,6 +1231,7 @@ mod tests {
             .output()
             .expect("git init");
         fs::write(project.join("src.rs"), "changed\n").expect("write changed file");
+        fs::write(project.join("lib.rs"), "also changed\n").expect("write another file");
 
         let result = build_handoff(&project).expect("build handoff");
         let handoff =
@@ -493,8 +1239,97 @@ mod tests {
 
         assert!(result.complete);
         assert_eq!(result.files_changed_evidence, "hard_observed");
+        assert!(handoff.contains("## What Changed"));
+        assert!(handoff.contains("### Files Changed"));
         assert!(handoff.contains("- src.rs"));
-        assert!(handoff.contains("Evidence grade: hard_observed"));
+        assert!(handoff.contains("- lib.rs"));
+        assert!(handoff.contains("Evidence grade: mixed"));
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn accepts_run_level_output_without_session_directory() {
+        let project = temp_project();
+        fs::create_dir_all(project.join(".vibehub/tasks/T-001/runs/R-001/outputs"))
+            .expect("create outputs");
+        fs::write(
+            project.join(".vibehub/tasks/T-001/runs/R-001/outputs/output.md"),
+            r#"# Run Output
+
+## Completed
+- Wrote run-level output.
+
+## Not Yet Done
+- None.
+
+## Key Decisions Made
+- Prefer run-level output when no session id is available.
+
+## Files Changed
+- output.md
+
+## Files Reportedly Read
+- .vibehub/agent-view/current.md
+
+## Commands Run
+- cargo test vibehub
+
+## Tests Run
+- all tests passed
+
+## Context Still Needed
+- None.
+
+## Warnings
+- None.
+
+## Next Session Should
+- Continue validation.
+"#,
+        )
+        .expect("write run output");
+
+        let result = build_handoff(&project).expect("build handoff");
+        let handoff =
+            fs::read_to_string(project.join(".vibehub/agent-view/handoff.md")).expect("read");
+
+        assert!(result.complete);
+        assert_eq!(
+            result.source_output_path.as_deref(),
+            Some(".vibehub/tasks/T-001/runs/R-001/outputs/output.md")
+        );
+        assert!(handoff.contains("Source: .vibehub/tasks/T-001/runs/R-001/outputs/output.md"));
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn handoff_uses_simplified_chinese_headings() {
+        let project = temp_project();
+        fs::write(
+            project.join(".vibehub/state.yaml"),
+            "current:\n  phase: implement\n  phase_status: active\npreferences:\n  locale: zh-CN\n",
+        )
+        .expect("write state");
+        write_complete_output(&project);
+
+        let result = build_handoff(&project).expect("build handoff");
+        let handoff =
+            fs::read_to_string(project.join(".vibehub/agent-view/handoff.md")).expect("read");
+
+        assert!(result.complete);
+        assert!(handoff.contains("# 会话交接"));
+        assert!(handoff.contains("## 变更内容"));
+        assert!(handoff.contains("## 执行的命令"));
+        assert!(handoff.contains("## 运行的测试"));
+        assert!(handoff.contains("## 使用的上下文"));
+        assert!(handoff.contains("## 交接完整性"));
+        assert!(handoff.contains("交接完成: 是"));
+        assert!(handoff.contains("### Completed"));
+        assert!(handoff.contains("### Not Yet Done"));
+        assert!(handoff.contains("### Key Decisions Made"));
+        assert!(handoff.contains("### Files Changed"));
 
         fs::remove_dir_all(project).expect("cleanup");
     }

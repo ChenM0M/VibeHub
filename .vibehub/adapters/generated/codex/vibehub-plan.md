@@ -10,19 +10,20 @@ English: Create or repair implementation and validation plans.
 
 Invocation input: [goal]
 
-中文: 创建或修复实现与验证计划。
-English: Create or repair implementation and validation plans.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Create or repair the implementation plan, validation plan, risk list, and context plan.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

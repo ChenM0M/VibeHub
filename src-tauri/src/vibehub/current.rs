@@ -1,3 +1,7 @@
+﻿use crate::vibehub::util::{
+    canonical_initialized_project_root, canonicalize_inside_project, normalize_path,
+    relative_to_project,
+};
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -34,7 +38,7 @@ pub fn write_current_task_pointer(
     project_root: impl AsRef<Path>,
     task_id: impl AsRef<str>,
 ) -> Result<CurrentTaskPointer> {
-    let project_root = canonical_project_root(project_root.as_ref())?;
+    let project_root = canonical_initialized_project_root(project_root.as_ref())?;
     let task_id = validate_id("task_id", task_id.as_ref())?;
     let task_path = project_root.join(".vibehub").join("tasks").join(task_id);
 
@@ -63,7 +67,7 @@ pub fn write_current_run_pointer(
     task_id: impl AsRef<str>,
     run_id: impl AsRef<str>,
 ) -> Result<CurrentRunPointer> {
-    let project_root = canonical_project_root(project_root.as_ref())?;
+    let project_root = canonical_initialized_project_root(project_root.as_ref())?;
     let task_id = validate_id("task_id", task_id.as_ref())?;
     let run_id = validate_id("run_id", run_id.as_ref())?;
     let run_path = project_root
@@ -103,7 +107,7 @@ pub fn write_current_run_pointer(
 }
 
 pub fn resolve_current_task(project_root: impl AsRef<Path>) -> Result<CurrentTaskPointer> {
-    let project_root = canonical_project_root(project_root.as_ref())?;
+    let project_root = canonical_initialized_project_root(project_root.as_ref())?;
     let pointer_path = project_root.join(".vibehub/tasks/current");
     let pointer: CurrentTaskPointer = read_yaml_file(&pointer_path, "current task pointer")
         .with_context(|| {
@@ -138,7 +142,7 @@ pub fn resolve_current_run(
     project_root: impl AsRef<Path>,
     task_id: impl AsRef<str>,
 ) -> Result<CurrentRunPointer> {
-    let project_root = canonical_project_root(project_root.as_ref())?;
+    let project_root = canonical_initialized_project_root(project_root.as_ref())?;
     let expected_task_id = validate_id("task_id", task_id.as_ref())?;
     let pointer_path = project_root
         .join(".vibehub")
@@ -182,28 +186,6 @@ pub fn resolve_current_run(
     }
 
     Ok(pointer)
-}
-
-fn canonical_project_root(project_root: &Path) -> Result<PathBuf> {
-    let project_root = fs::canonicalize(project_root)
-        .with_context(|| format!("Project path does not exist: {}", project_root.display()))?;
-
-    if !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project path is not a directory: {}",
-            project_root.display()
-        ));
-    }
-
-    let vibehub_root = project_root.join(".vibehub");
-    if !vibehub_root.is_dir() {
-        return Err(anyhow!(
-            "VibeHub directory does not exist: {}",
-            vibehub_root.display()
-        ));
-    }
-
-    Ok(project_root)
 }
 
 fn read_yaml_file<T>(path: &Path, label: &str) -> Result<T>
@@ -305,7 +287,7 @@ fn resolve_pointer_target(project_root: &Path, pointer_path: &str, label: &str) 
         ));
     }
 
-    let target = fs::canonicalize(project_root.join(raw)).with_context(|| {
+    let target = canonicalize_inside_project(&project_root.join(raw)).with_context(|| {
         format!(
             "Broken {}: target path does not exist: {}",
             label, pointer_path
@@ -320,17 +302,6 @@ fn resolve_pointer_target(project_root: &Path, pointer_path: &str, label: &str) 
     }
 
     Ok(target)
-}
-
-fn relative_to_project(project_root: &Path, target: &Path) -> Result<PathBuf> {
-    target
-        .strip_prefix(project_root)
-        .map(PathBuf::from)
-        .with_context(|| format!("Pointer target escapes project root: {}", target.display()))
-}
-
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }
 
 #[cfg(test)]

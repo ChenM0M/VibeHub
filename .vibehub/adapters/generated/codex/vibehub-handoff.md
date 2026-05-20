@@ -10,19 +10,20 @@ English: Build session handoff notes.
 
 Invocation input: [note]
 
-中文: 生成 session handoff notes。
-English: Build session handoff notes.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Create handoff notes that let the next session resume without chat history.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

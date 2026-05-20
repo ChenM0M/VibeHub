@@ -10,19 +10,20 @@ English: Summarize current Git diff and task-scope drift.
 
 Invocation input: [focus]
 
-中文: 汇总当前 Git diff 和任务范围漂移。
-English: Summarize current Git diff and task-scope drift.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Summarize changed files and scope drift against the current task and context pack.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

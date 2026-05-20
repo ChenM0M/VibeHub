@@ -1,12 +1,13 @@
-use anyhow::{anyhow, Context, Result};
+use crate::vibehub::util::{canonical_project_root, normalize_path};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const CONFIG_PATH: &str = ".vibehub/adapters/config.yaml";
-const TEMPLATE_VERSION: &str = "2.0.0-pre.2";
+const TEMPLATE_VERSION: &str = "2.0.0-pre.3";
 const MANAGED_START: &str = "<!-- VIBEHUB:AGENT-INTEGRATION:START -->";
 const MANAGED_END: &str = "<!-- VIBEHUB:AGENT-INTEGRATION:END -->";
 
@@ -292,9 +293,7 @@ fn command_specs(config: &AgentAdapterConfig) -> Vec<AgentCommandSpec> {
                 .command_overrides
                 .get(definition.name)
                 .cloned()
-                .unwrap_or_else(|| {
-                    default_command_body(definition.name, definition.zh, definition.en)
-                });
+                .unwrap_or_else(|| default_command_body(definition.name));
             AgentCommandSpec {
                 name: definition.name.to_string(),
                 description_zh: definition.zh.to_string(),
@@ -309,6 +308,23 @@ fn command_specs(config: &AgentAdapterConfig) -> Vec<AgentCommandSpec> {
 fn rendered_targets(config: &AgentAdapterConfig) -> Vec<RenderedTarget> {
     let tools: BTreeSet<AgentTool> = config.enabled_tools.iter().copied().collect();
     let mut targets = Vec::new();
+
+    if !tools.is_empty() {
+        targets.push(RenderedTarget {
+            tool: "shared".to_string(),
+            path: ".vibehub/adapters/protocol.md".to_string(),
+            content: build_adapter_protocol(),
+            description: "Shared VibeHub agent protocol and output contract".to_string(),
+            managed_region: false,
+        });
+        targets.push(RenderedTarget {
+            tool: "shared".to_string(),
+            path: ".vibehub/adapters/hooks/vibehub-stop-check.mjs".to_string(),
+            content: render_stop_check_hook(),
+            description: "VibeHub Stop hook that blocks missing phase output".to_string(),
+            managed_region: false,
+        });
+    }
 
     if tools.contains(&AgentTool::Codex) || tools.contains(&AgentTool::Opencode) {
         targets.push(RenderedTarget {
@@ -388,8 +404,23 @@ fn rendered_targets(config: &AgentAdapterConfig) -> Vec<RenderedTarget> {
             description: "Codex VibeHub command index".to_string(),
             managed_region: false,
         });
+        targets.push(RenderedTarget {
+            tool: AgentTool::Codex.id().to_string(),
+            path: ".codex/vibehub/stop-hook-config.md".to_string(),
+            content: build_codex_hook_config(),
+            description: "Codex Stop hook config snippet for VibeHub output enforcement"
+                .to_string(),
+            managed_region: false,
+        });
     }
     if tools.contains(&AgentTool::ClaudeCode) {
+        targets.push(RenderedTarget {
+            tool: AgentTool::ClaudeCode.id().to_string(),
+            path: ".claude/settings.json".to_string(),
+            content: build_claude_settings(),
+            description: "Claude Code project settings with VibeHub Stop hook".to_string(),
+            managed_region: false,
+        });
         targets.push(RenderedTarget {
             tool: AgentTool::ClaudeCode.id().to_string(),
             path: ".claude/vibehub/constraints.md".to_string(),
@@ -406,6 +437,13 @@ fn rendered_targets(config: &AgentAdapterConfig) -> Vec<RenderedTarget> {
         });
     }
     if tools.contains(&AgentTool::Opencode) {
+        targets.push(RenderedTarget {
+            tool: AgentTool::Opencode.id().to_string(),
+            path: "opencode.json".to_string(),
+            content: build_opencode_config(),
+            description: "OpenCode project config loading the shared VibeHub protocol".to_string(),
+            managed_region: false,
+        });
         targets.push(RenderedTarget {
             tool: AgentTool::Opencode.id().to_string(),
             path: ".opencode/vibehub/constraints.md".to_string(),
@@ -450,10 +488,15 @@ VibeHub owns project state. Agent output is reported state only.
 ## Rules
 
 - Treat `.vibehub/agent-view/current.md` as the dynamic entry point.
+- Also read `.vibehub/adapters/protocol.md` when present; it is the shared output contract.
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.
+- Before ending work on an active VibeHub task, write phase output to the active run output path described in `.vibehub/agent-view/current.md`.
 - Report changed files, files read, commands run, tests run or reason not run, risks, and handoff notes.
 - Use evidence labels: `hard_observed`, `agent_reported`, `inferred`, `user_confirmed`.
 - If workspace state changed outside VibeHub, run the `vibehub-sync` instruction and return a sync report instead of silently advancing state.
+- Treat plain-language requests like "sync", "sycn", "同步", "update VibeHub", "继续", or "refresh status" as `vibehub-sync` unless the user clearly asks for a different command.
+- During sync, autonomously inspect hard evidence first; ask concise follow-up questions only for missing user intent, current progress, ownership of dirty changes, validation status, or future plan.
+- If the user does not provide the requested details, record the open questions as unresolved risks in the VibeHub output instead of dropping them.
 
 ## Command Namespace
 
@@ -461,6 +504,70 @@ Use generated `vibehub-*` commands where supported. They describe VibeHub-specif
 {MANAGED_END}
 "#
     )
+}
+
+fn build_adapter_protocol() -> String {
+    r#"# VibeHub Agent Protocol
+
+This file is generated by VibeHub and shared by Codex, Claude Code, OpenCode, and other coding agents.
+
+## Authority
+
+- VibeHub owns canonical project state.
+- Agent output is reported state only.
+- Do not edit `.vibehub/state.yaml`, `.vibehub/tasks/current`, or `.vibehub/tasks/*/runs/current`.
+- Do not mark canonical task, run, or phase state complete from an agent session.
+
+## Required Startup Read
+
+Read these files before VibeHub-scoped work:
+
+1. `.vibehub/agent-view/current.md`
+2. `.vibehub/agent-view/current-context.md`
+3. `.vibehub/agent-view/handoff.md`
+4. `.vibehub/rules/hard-rules.md`
+
+If `.vibehub/agent-view/current.md` names a context pack, read it when it exists. If it is missing, report that as `hard_observed` missing context instead of pretending context is complete.
+
+## Phase Output Contract
+
+Before ending work on an active VibeHub task, write an agent output file. Preferred path:
+
+`.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
+
+Session-specific output is also accepted when the tool provides a session id:
+
+`.vibehub/tasks/<task_id>/runs/<run_id>/sessions/<session_id>/output.md`
+
+The output file must contain these sections:
+
+- `## Completed`
+- `## Not Yet Done`
+- `## Key Decisions Made`
+- `## Files Changed`
+- `## Files Reportedly Read`
+- `## Commands Run`
+- `## Tests Run`
+- `## Context Still Needed`
+- `## Warnings`
+- `## Next Session Should`
+
+Every section should use evidence labels where useful: `hard_observed`, `agent_reported`, `inferred`, `user_confirmed`.
+
+## Stop Condition
+
+If the output file is missing or any required section is empty, continue working only to produce the missing VibeHub output. If you cannot write it, stop and report the blocker.
+
+If workspace state changed outside the current VibeHub task, run the `vibehub-sync` instruction and return a sync report. If Git HEAD, task pointers, or context become inconsistent, run `vibehub-recover` and return a recover report.
+Plain-language sync requests, including misspellings such as `sycn` and Chinese requests such as `同步当前状态`, should be handled as `vibehub-sync`.
+
+## Tool Notes
+
+- Codex: `AGENTS.md` loads project instructions. VibeHub also generates a Stop hook config snippet under `.codex/vibehub/stop-hook-config.md`.
+- Claude Code: `CLAUDE.md` loads project instructions. VibeHub generates `.claude/settings.json` with a Stop hook.
+- OpenCode: `AGENTS.md`, `opencode.json`, and `.opencode/commands/*.md` load rules and commands. OpenCode has no generated Stop hook here, so VibeHub validates output from files after the run.
+"#
+    .to_string()
 }
 
 fn render_codex_skill(command: &AgentCommandSpec) -> String {
@@ -510,6 +617,7 @@ Read these files before VibeHub-scoped work:
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 {label} may inspect and change project files within the active task scope.
 {label} must not edit `.vibehub/state.yaml`, current task/run pointer files, or mark canonical state complete.
@@ -517,10 +625,63 @@ Read these files before VibeHub-scoped work:
 Use `{command_location}` for VibeHub operations.
 Use `{static_entry}` as the automatic static protocol entry.
 
+Before ending work on an active VibeHub task, write the phase output file required by `.vibehub/adapters/protocol.md`.
+
 If work happened outside VibeHub, use `vibehub-sync` and return a sync report.
 If state or Git HEAD drifted, run `vibehub-recover` and return a recover report.
 "#
     )
+}
+
+fn build_codex_hook_config() -> String {
+    r#"# VibeHub Codex Stop Hook
+
+Codex project instructions load from `AGENTS.md`. For stricter stop-time enforcement, add this hook to your Codex config after confirming hooks are enabled in your environment:
+
+```toml
+[features]
+codex_hooks = true
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = 'node "$(git rev-parse --show-toplevel)/.vibehub/adapters/hooks/vibehub-stop-check.mjs"'
+timeout = 30
+statusMessage = "Checking VibeHub output"
+```
+
+The hook blocks Stop when an active VibeHub task has no complete `output.md`.
+"#
+    .to_string()
+}
+
+fn build_claude_settings() -> String {
+    r#"{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.vibehub/adapters/hooks/vibehub-stop-check.mjs\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+"#
+    .to_string()
+}
+
+fn build_opencode_config() -> String {
+    r#"{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [".vibehub/adapters/protocol.md"]
+}
+"#
+    .to_string()
 }
 
 fn build_command_index(tool: AgentTool, config: &AgentAdapterConfig) -> String {
@@ -571,16 +732,155 @@ description: "{zh} / {en}"
     )
 }
 
+fn render_stop_check_hook() -> String {
+    r#"#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+
+const REQUIRED_SECTIONS = [
+  "Completed",
+  "Not Yet Done",
+  "Key Decisions Made",
+  "Files Changed",
+  "Files Reportedly Read",
+  "Commands Run",
+  "Tests Run",
+  "Context Still Needed",
+  "Warnings",
+  "Next Session Should",
+];
+
+function readStdinJson() {
+  try {
+    const input = fs.readFileSync(0, "utf8").trim();
+    return input ? JSON.parse(input) : {};
+  } catch {
+    return {};
+  }
+}
+
+function findProjectRoot(input) {
+  const starts = [
+    process.env.VIBEHUB_PROJECT_ROOT,
+    process.env.CLAUDE_PROJECT_DIR,
+    input.cwd,
+    process.cwd(),
+  ].filter(Boolean);
+  for (const start of starts) {
+    let current = path.resolve(start);
+    while (true) {
+      if (fs.existsSync(path.join(current, ".vibehub"))) return current;
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+  return null;
+}
+
+function readYamlString(content, key) {
+  const match = content.match(new RegExp(`^\\s*${key}:\\s*['"]?([^'"\\r\\n#]+)`, "m"));
+  return match ? match[1].trim() : null;
+}
+
+function readCurrent(root) {
+  const statePath = path.join(root, ".vibehub", "state.yaml");
+  if (!fs.existsSync(statePath)) return null;
+  const state = fs.readFileSync(statePath, "utf8");
+  let taskId = readYamlString(state, "task_id");
+  let runId = readYamlString(state, "run_id");
+  const phase = readYamlString(state, "phase");
+  const phaseStatus = readYamlString(state, "phase_status") || readYamlString(state, "status");
+
+  if (!taskId) {
+    const currentTask = path.join(root, ".vibehub", "tasks", "current");
+    if (fs.existsSync(currentTask)) taskId = readYamlString(fs.readFileSync(currentTask, "utf8"), "task_id");
+  }
+  if (taskId && !runId) {
+    const currentRun = path.join(root, ".vibehub", "tasks", taskId, "runs", "current");
+    if (fs.existsSync(currentRun)) runId = readYamlString(fs.readFileSync(currentRun, "utf8"), "run_id");
+  }
+  return taskId && runId ? { taskId, runId, phase, phaseStatus } : null;
+}
+
+function outputCandidates(root, current) {
+  const runDir = path.join(root, ".vibehub", "tasks", current.taskId, "runs", current.runId);
+  const candidates = [path.join(runDir, "outputs", "output.md")];
+  const sessionsDir = path.join(runDir, "sessions");
+  if (fs.existsSync(sessionsDir)) {
+    for (const entry of fs.readdirSync(sessionsDir, { withFileTypes: true })) {
+      if (entry.isDirectory()) candidates.push(path.join(sessionsDir, entry.name, "output.md"));
+    }
+  }
+  return candidates;
+}
+
+function missingSections(content) {
+  return REQUIRED_SECTIONS.filter((section) => {
+    const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Match exact English title or bilingual format: "English / Translation"
+    const re = new RegExp(`^##\\s+${escaped}(\\s*/\\s*[^\\s].*?)?\\s*$([\\s\\S]*?)(?=^##\\s+|(?![\\s\\S]))`, "mi");
+    const match = content.match(re);
+    return !match || !match[2].trim();
+  });
+}
+
+function hasGitChanges(root) {
+  try {
+    const output = execFileSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" });
+    return output.trim().length > 0;
+  } catch {
+    return true;
+  }
+}
+
+function block(reason) {
+  if (process.env.CLAUDE_PROJECT_DIR) {
+    console.error(reason);
+    process.exit(2);
+  }
+  process.stdout.write(JSON.stringify({ decision: "block", reason }));
+  process.exit(0);
+}
+
+const input = readStdinJson();
+const root = findProjectRoot(input);
+if (!root) process.exit(0);
+if (process.env.VIBEHUB_ALLOW_NO_OUTPUT === "1") process.exit(0);
+
+const current = readCurrent(root);
+if (!current) process.exit(0);
+
+const candidates = outputCandidates(root, current).filter((candidate) => fs.existsSync(candidate));
+if (candidates.length === 0) {
+  const preferred = path.join(".vibehub", "tasks", current.taskId, "runs", current.runId, "outputs", "output.md");
+  block(`VibeHub active task ${current.taskId}/${current.runId} requires ${preferred} before ending. Write the required phase output sections first.`);
+}
+
+candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+const latest = candidates[0];
+const missing = missingSections(fs.readFileSync(latest, "utf8"));
+if (missing.length > 0) {
+  block(`VibeHub output is incomplete: ${path.relative(root, latest)} is missing non-empty sections: ${missing.join(", ")}.`);
+}
+
+if (!hasGitChanges(root)) process.exit(0);
+process.exit(0);
+"#
+    .to_string()
+}
+
 fn yaml_double_quoted(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn default_command_body(name: &str, zh: &str, en: &str) -> String {
+fn default_command_body(name: &str) -> String {
     let extra = match name {
         "vibehub-help" => "List available VibeHub commands and explain when to use each one.",
         "vibehub-init" => "Check whether `.vibehub/` exists. If it is missing, ask the user to initialize from the VibeHub app; do not create canonical state yourself.",
         "vibehub-status" => "Summarize current task, run, phase, context pack, handoff, Git status, and visible warnings.",
-        "vibehub-sync" => "Inspect Git diff/status and VibeHub pointers. Produce a sync report with observed drift, suspected cause, and recommended VibeHub action.",
+        "vibehub-sync" => "Run a best-effort sync of actual project state into VibeHub. Inspect Git diff/status, VibeHub pointers, current context, latest output, and handoff. If a VibeHub CLI is available, prefer `vibehub sync <project_path>` or `sync <project_path>`; accept `sycn` as a typo alias. Then summarize the generated `.vibehub/agent-view/sync.md` report. Ask the user only for missing intent/progress/future-plan details that cannot be inferred from hard evidence. If the user does not answer, record the questions as unresolved risks and continue from hard_observed evidence.",
         "vibehub-diff" => "Summarize changed files and scope drift against the current task and context pack.",
         "vibehub-start" => "Convert the user's request into a VibeHub task draft with goal, acceptance criteria, mode suggestion, and context candidates.",
         "vibehub-context" => "Inspect current context quality and propose missing files or stale context rebuilds.",
@@ -596,20 +896,32 @@ fn default_command_body(name: &str, zh: &str, en: &str) -> String {
         "vibehub-knowledge" => "Promote repeated lessons into reusable rules, preferences, or knowledge notes.",
         _ => "Follow the VibeHub agent protocol.",
     };
+    let sync_behavior = if name == "vibehub-sync" {
+        r#"
+Sync behavior:
+- Treat "sync", "sycn", "同步", "刷新状态", "update VibeHub", or plain requests to continue from current engineering reality as this command.
+- Autonomously collect hard evidence first: Git status/diff, current task/run/phase, context pack state, latest output, handoff, and visible warnings.
+- Ask concise follow-up questions when needed: current progress, whether dirty files belong to this task, validation/test status, unresolved risks, and next plan.
+- Do not block the sync when the user gives no answer; write the open questions and inferred risk into the output.
+"#
+    } else {
+        ""
+    };
     format!(
-        r#"中文: {zh}
-English: {en}
-
-Read first:
+        r#"Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 {extra}
+{sync_behavior}
 
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run
@@ -893,18 +1205,6 @@ fn write_target(path: &Path, content: &str) -> Result<()> {
     fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))
 }
 
-fn canonical_project_root(project_root: &Path) -> Result<PathBuf> {
-    let project_root = fs::canonicalize(project_root)
-        .with_context(|| format!("Project path does not exist: {}", project_root.display()))?;
-    if !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project path is not a directory: {}",
-            project_root.display()
-        ));
-    }
-    Ok(project_root)
-}
-
 fn normalize_tools(tools: Vec<AgentTool>) -> Vec<AgentTool> {
     tools
         .into_iter()
@@ -918,13 +1218,10 @@ fn hash_content(content: &str) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use uuid::Uuid;
 
     fn temp_project() -> PathBuf {
@@ -949,6 +1246,19 @@ mod tests {
         assert!(result
             .created_files
             .contains(&".opencode/commands/vibehub-sync.md".to_string()));
+        assert!(result
+            .created_files
+            .contains(&".vibehub/adapters/protocol.md".to_string()));
+        assert!(result
+            .created_files
+            .contains(&".vibehub/adapters/hooks/vibehub-stop-check.mjs".to_string()));
+        assert!(result
+            .created_files
+            .contains(&".codex/vibehub/stop-hook-config.md".to_string()));
+        assert!(result
+            .created_files
+            .contains(&".claude/settings.json".to_string()));
+        assert!(result.created_files.contains(&"opencode.json".to_string()));
         assert!(result
             .created_files
             .contains(&".agents/skills/vibehub-sync/SKILL.md".to_string()));
@@ -988,6 +1298,22 @@ mod tests {
                 .expect("read")
                 .contains("VibeHub Constraints for OpenCode")
         );
+        assert!(
+            fs::read_to_string(project.join(".vibehub/adapters/protocol.md"))
+                .expect("read")
+                .contains("Phase Output Contract")
+        );
+        assert!(
+            fs::read_to_string(project.join(".vibehub/adapters/hooks/vibehub-stop-check.mjs"))
+                .expect("read")
+                .contains("VibeHub active task")
+        );
+        assert!(fs::read_to_string(project.join(".claude/settings.json"))
+            .expect("read")
+            .contains("vibehub-stop-check.mjs"));
+        assert!(fs::read_to_string(project.join("opencode.json"))
+            .expect("read")
+            .contains(".vibehub/adapters/protocol.md"));
         assert!(fs::read_to_string(project.join(".claude/commands/vibehub-sync.md"))
             .expect("read")
             .contains("将外部工作区变更与 VibeHub 状态对齐。 / Reconcile external workspace changes with VibeHub state."));
