@@ -10,15 +10,20 @@ use crate::{
         AgentAdapterSyncResult, AgentTool,
     },
     vibehub::agent_view::{self, AgentViewGenerateResult},
+    vibehub::cockpit::{self, VibehubFileReadResult},
     vibehub::context::{self, ContextPackBuildResult},
     vibehub::drift::{self, WorkspaceDriftReport},
     vibehub::handoff::{self, HandoffBuildResult},
     vibehub::init::{self, VibehubInitOptions, VibehubInitResult},
     vibehub::journal::{self, JournalAppendResult},
     vibehub::knowledge::{self, KnowledgeAppendResult},
+    vibehub::overview::{self, CockpitOverview},
+    vibehub::phase::{self, PhaseAdvanceResult, PhaseSetResult, PhaseValidationResult},
+    vibehub::research::{self, ResearchPackArchiveResult, ResearchPackBuildResult},
     vibehub::review::{self, ReviewEvidenceGenerateResult},
     vibehub::start_task::{self, VibehubStartTaskResult},
-    vibehub::status::{self, VibehubCockpitStatus},
+    vibehub::state_migration::{self, StateMigrationReport},
+    vibehub::sync::{self, SyncReport},
 };
 use chrono::Utc;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -598,6 +603,13 @@ pub async fn vibehub_generate_agent_view(
     agent_view::generate_agent_view(project_path).map_err(|e| e.to_string())
 }
 
+// ─── Adapter sync ─────────────────────────────────────────────────────────
+//
+// `vibehub_sync_agent_adapter` (singular) is DEPRECATED: callers should use
+// `vibehub_sync_agent_adapters` (plural) which accepts an explicit tool list.
+// The wrapper is retained for back-compat with frontend code that has not
+// migrated yet.
+
 #[tauri::command]
 pub async fn vibehub_sync_agent_adapter(
     project_path: String,
@@ -632,18 +644,36 @@ pub async fn vibehub_sync_agent_adapters(
         .map_err(|e| e.to_string())
 }
 
+// ─── Workspace drift / sync ───────────────────────────────────────────────
+//
+// `vibehub_check_workspace_drift` is DEPRECATED in favour of
+// `vibehub_sync_workspace_state` (which produces the same drift report and
+// can also write a recovery report). Both retained for now.
+
 #[tauri::command]
 pub async fn vibehub_check_workspace_drift(
     project_path: String,
+    locale: Option<String>,
 ) -> Result<WorkspaceDriftReport, String> {
-    drift::check_workspace_drift(project_path).map_err(|e| e.to_string())
+    drift::check_workspace_drift_with_locale(project_path, locale.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn vibehub_sync_workspace_state(
     project_path: String,
+    locale: Option<String>,
 ) -> Result<WorkspaceDriftReport, String> {
-    drift::sync_workspace_state(project_path).map_err(|e| e.to_string())
+    drift::sync_workspace_state_with_locale(project_path, locale.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_sync_workspace(
+    project_path: String,
+    locale: Option<String>,
+) -> Result<SyncReport, String> {
+    sync::sync_workspace_with_locale(project_path, locale.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -654,15 +684,23 @@ pub async fn vibehub_build_handoff(project_path: String) -> Result<HandoffBuildR
 #[tauri::command]
 pub async fn vibehub_generate_review_evidence(
     project_path: String,
+    locale: Option<String>,
 ) -> Result<ReviewEvidenceGenerateResult, String> {
-    review::generate_review_evidence(project_path).map_err(|e| e.to_string())
+    review::generate_review_evidence_with_locale(project_path, locale.as_deref())
+        .map_err(|e| e.to_string())
 }
 
+// ─── Aggregated overview ──────────────────────────────────────────────────
+//
+// Returns status + context + review + handoff + diff + research in ONE call,
+// with a single `git` invocation. This REPLACES the per-tab read commands
+// (`vibehub_read_cockpit_status`, `vibehub_read_context_view`,
+// `vibehub_read_review_view`, `vibehub_read_handoff_view`,
+// `vibehub_read_diff_view`, `vibehub_read_research_status`).
+
 #[tauri::command]
-pub async fn vibehub_read_cockpit_status(
-    project_path: String,
-) -> Result<VibehubCockpitStatus, String> {
-    status::read_cockpit_status(project_path).map_err(|e| e.to_string())
+pub async fn vibehub_read_overview(project_path: String) -> Result<CockpitOverview, String> {
+    overview::read_overview(project_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -680,4 +718,92 @@ pub async fn vibehub_append_knowledge_note(
     note: Option<String>,
 ) -> Result<KnowledgeAppendResult, String> {
     knowledge::append_knowledge_note(project_path, note).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_validate_phase(project_path: String) -> Result<PhaseValidationResult, String> {
+    phase::validate_phase(project_path).map_err(|e| e.to_string())
+}
+
+// ─── Phase transitions ────────────────────────────────────────────────────
+//
+// `vibehub_set_phase_result` is the explicit setter (mostly used for marking
+// a phase blocked / needs_action). `vibehub_complete_phase` validates the
+// current phase and marks it completed without auto-advancing.
+// `vibehub_advance_phase` validates AND moves to the next phase. The three
+// commands intentionally have distinct semantics; do not collapse them.
+
+#[tauri::command]
+pub async fn vibehub_set_phase_result(
+    project_path: String,
+    target_phase: String,
+    status: String,
+) -> Result<PhaseSetResult, String> {
+    phase::set_phase_result(project_path, &target_phase, &status).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_complete_phase(project_path: String) -> Result<PhaseAdvanceResult, String> {
+    phase::complete_phase(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_advance_phase(project_path: String) -> Result<PhaseAdvanceResult, String> {
+    phase::advance_phase(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_pause_phase(project_path: String) -> Result<PhaseSetResult, String> {
+    phase::pause_current_phase(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_build_research_pack(
+    project_path: String,
+    title: Option<String>,
+) -> Result<ResearchPackBuildResult, String> {
+    research::build_research_pack(project_path, title).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_archive_research(
+    project_path: String,
+) -> Result<Option<ResearchPackArchiveResult>, String> {
+    research::archive_current_research(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_read_vibehub_file(
+    project_path: String,
+    relative_path: String,
+) -> Result<VibehubFileReadResult, String> {
+    cockpit::read_vibehub_file(project_path, relative_path).map_err(|e| e.to_string())
+}
+
+// ─── State schema migration ───────────────────────────────────────────────
+//
+// `vibehub_dry_run_state_migration` reports what fields would be added or
+// rewritten if the user opts in. `vibehub_migrate_state` performs the
+// migration in-place and writes a `.bak.r<N>` snapshot of the original.
+
+#[tauri::command]
+pub async fn vibehub_dry_run_state_migration(
+    project_path: String,
+) -> Result<StateMigrationReport, String> {
+    state_migration::dry_run(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_migrate_state(project_path: String) -> Result<StateMigrationReport, String> {
+    state_migration::migrate(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_set_project_locale(
+    project_path: String,
+    locale: String,
+) -> Result<String, String> {
+    crate::vibehub::locale::persist_project_locale(std::path::Path::new(&project_path), &locale)
+        .map_err(|e| e.to_string())?;
+    Ok(locale)
 }

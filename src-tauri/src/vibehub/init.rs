@@ -1,4 +1,5 @@
 use crate::vibehub::agent_adapter::{self, AgentTool};
+use crate::vibehub::util::{canonical_project_root, normalize_path, yaml_string};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -13,10 +14,15 @@ pub struct VibehubInitResult {
     pub errors: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct VibehubInitOptions {
     #[serde(default)]
     pub agent_tools: Option<Vec<AgentTool>>,
+    /// Per spec §18.5 (manual_by_default): adapter sync should NOT run on every
+    /// init/start_task. Set this to `Some(true)` only when the user explicitly
+    /// opts in (e.g. first-run prompt or "Sync Adapters" button).
+    #[serde(default)]
+    pub sync_adapters: Option<bool>,
 }
 
 struct InitFile {
@@ -32,19 +38,7 @@ pub fn init_project_with_options(
     project_path: impl AsRef<Path>,
     options: Option<VibehubInitOptions>,
 ) -> Result<VibehubInitResult> {
-    let project_root = fs::canonicalize(project_path.as_ref()).with_context(|| {
-        format!(
-            "Project path does not exist: {}",
-            project_path.as_ref().display()
-        )
-    })?;
-
-    if !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project path is not a directory: {}",
-            project_root.display()
-        ));
-    }
+    let project_root = canonical_project_root(project_path.as_ref())?;
 
     let project_name = project_root
         .file_name()
@@ -89,8 +83,10 @@ pub fn init_project_with_options(
     let config_path = vibehub_root.join("adapters/config.yaml");
     let config_relative = format_vibehub_path(&project_root, &config_path);
     let config_existed = config_path.exists();
-    let agent_tools = options
-        .and_then(|options| options.agent_tools)
+    let opts = options.unwrap_or_default();
+    let agent_tools = opts
+        .agent_tools
+        .clone()
         .unwrap_or_else(agent_adapter::default_tools);
     agent_adapter::ensure_adapter_config(&project_root, agent_tools.clone())?;
     if config_existed {
@@ -98,15 +94,25 @@ pub fn init_project_with_options(
     } else {
         created_files.push(config_relative);
     }
-    let adapter_sync = agent_adapter::sync_agent_adapters(&project_root, Some(agent_tools), false)?;
-    created_files.extend(adapter_sync.created_files);
-    created_files.extend(adapter_sync.updated_files);
-    skipped_existing_files.extend(adapter_sync.skipped_files);
-    let errors = adapter_sync
-        .conflict_files
-        .into_iter()
-        .map(|conflict| format!("{}: {}", conflict.path, conflict.reason))
-        .collect();
+
+    // Spec §18.5 manual_by_default: only run the adapter sync when the caller
+    // explicitly asks for it (first-run prompt, AI Instructions panel button,
+    // or `vibehub_sync_agent_adapters` command). Plain init/start_task must
+    // NOT silently rewrite AGENTS.md / CLAUDE.md / opencode.json.
+    let mut errors: Vec<String> = Vec::new();
+    if opts.sync_adapters.unwrap_or(false) {
+        let adapter_sync =
+            agent_adapter::sync_agent_adapters(&project_root, Some(agent_tools), false)?;
+        created_files.extend(adapter_sync.created_files);
+        created_files.extend(adapter_sync.updated_files);
+        skipped_existing_files.extend(adapter_sync.skipped_files);
+        errors.extend(
+            adapter_sync
+                .conflict_files
+                .into_iter()
+                .map(|conflict| format!("{}: {}", conflict.path, conflict.reason)),
+        );
+    }
 
     Ok(VibehubInitResult {
         project_root: normalize_path(&project_root),
@@ -203,20 +209,21 @@ fn init_files(project_name: &str) -> Vec<InitFile> {
 fn project_yaml(project_name: &str) -> String {
     let project_name = yaml_string(project_name);
     format!(
-        r#"schema_version: 1
+        r#"schema_version: {schema}
 kind: vibehub_project
 name: {project_name}
 root: "."
 protocol_version: "2.0-r10"
 initialized_by: vibehub
-"#
+"#,
+        schema = crate::vibehub::state_migration::CURRENT_SCHEMA_VERSION
     )
 }
 
 fn state_yaml(project_name: &str) -> String {
     let project_name = yaml_string(project_name);
     format!(
-        r#"schema_version: 1
+        r#"schema_version: {schema}
 
 project:
   id: {project_name}
@@ -236,10 +243,12 @@ pointers:
   run_pointer: null
 
 flow:
+  align_lite: pending
   align: pending
   research: pending
   plan: pending
   implement: pending
+  review_lite: pending
   review: pending
 
 observability:
@@ -283,7 +292,8 @@ loop_detection:
 
 last_updated: null
 resume_hint: "No active task. Create or select a task before starting a run."
-"#
+"#,
+        schema = crate::vibehub::state_migration::CURRENT_SCHEMA_VERSION
     )
 }
 
@@ -590,14 +600,6 @@ fn format_vibehub_path(project_root: &Path, target: &Path) -> String {
         .strip_prefix(project_root)
         .map(normalize_path)
         .unwrap_or_else(|_| normalize_path(target))
-}
-
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
-fn yaml_string(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]

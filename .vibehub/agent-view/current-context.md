@@ -1,16 +1,25 @@
-# Current Context
+# VibeHub Current Context
 
 ## Context Pack
-Not generated yet.
+
+- Path: .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/align.md
 
 ## Manifest
-Not generated yet.
+
+- Path: .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/align.manifest.yaml
+- Status: available
 
 ## Important Project Files
-No task-specific files selected yet.
+
+- None listed in manifest.
 
 ## Research Pack
-Not required yet.
+
+- Required: true
+- Status: required
+- Present on disk: no
+- Current research path: .vibehub/research/current/research-pack.md
 
 ## Known Missing Context
-No active task has been created yet.
+
+- None recorded in manifest.

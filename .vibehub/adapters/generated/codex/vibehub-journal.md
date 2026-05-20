@@ -10,19 +10,20 @@ English: Draft durable session journal notes.
 
 Invocation input: [note]
 
-中文: 草拟可沉淀的 session journal notes。
-English: Draft durable session journal notes.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Draft durable session notes suitable for VibeHub journal promotion.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

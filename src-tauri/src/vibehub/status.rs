@@ -1,5 +1,6 @@
 use crate::process_util::silent_command;
-use anyhow::{anyhow, Context, Result};
+use crate::vibehub::util::{canonical_project_root, normalize_path};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -18,9 +19,18 @@ pub struct VibehubCockpitStatus {
     pub git_dirty: Option<bool>,
     pub git_changed_files_count: Option<usize>,
     pub context_pack_status: FileStatus,
+    pub agent_output_status: FileStatus,
     pub handoff_status: FileStatus,
+    pub flow: Vec<FlowPhaseStatus>,
     pub observability_level: Option<String>,
+    pub locale: Option<String>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FlowPhaseStatus {
+    pub phase: String,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -43,18 +53,7 @@ struct CurrentRunPointer {
 }
 
 pub fn read_cockpit_status(project_root: impl AsRef<Path>) -> Result<VibehubCockpitStatus> {
-    let project_root = fs::canonicalize(project_root.as_ref()).with_context(|| {
-        format!(
-            "Project path does not exist: {}",
-            project_root.as_ref().display()
-        )
-    })?;
-    if !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project path is not a directory: {}",
-            project_root.display()
-        ));
-    }
+    let project_root = canonical_project_root(project_root.as_ref())?;
 
     let vibehub_root = project_root.join(".vibehub");
     let state_path = vibehub_root.join("state.yaml");
@@ -72,8 +71,11 @@ pub fn read_cockpit_status(project_root: impl AsRef<Path>) -> Result<VibehubCock
             git_dirty: git_dirty(&project_root),
             git_changed_files_count: git_changed_files_count(&project_root),
             context_pack_status: not_configured_status(),
+            agent_output_status: not_configured_status(),
             handoff_status: not_configured_status(),
+            flow: Vec::new(),
             observability_level: Some("best_effort".to_string()),
+            locale: None,
             warnings: vec![".vibehub directory is missing; run VibeHub init first.".to_string()],
         });
     }
@@ -83,12 +85,29 @@ pub fn read_cockpit_status(project_root: impl AsRef<Path>) -> Result<VibehubCock
     if state.is_none() {
         warnings.push("Missing or invalid .vibehub/state.yaml.".to_string());
     }
+    if let Some(loop_status) = yaml_string(&state, &["loop_detection", "status"]) {
+        if loop_status != "normal" {
+            warnings.push(format!("Loop detection status: {loop_status}"));
+        }
+    }
+    warnings.extend(yaml_string_sequence(
+        &state,
+        &["loop_detection", "warnings"],
+    ));
 
     let current_task_id = yaml_string(&state, &["current", "task_id"])
         .or_else(|| read_current_task_pointer(&project_root));
     let current_run_id = yaml_string(&state, &["current", "run_id"])
         .or_else(|| read_current_run_pointer(&project_root, current_task_id.as_deref()));
+    let current_mode = yaml_string(&state, &["current", "mode"]);
     let current_phase = yaml_string(&state, &["current", "phase"]);
+    let phase_status = yaml_string(&state, &["current", "phase_status"]);
+    let flow = read_flow_statuses(
+        &state,
+        current_mode.as_deref(),
+        current_phase.as_deref(),
+        phase_status.as_deref(),
+    );
 
     let context_path = yaml_string(&state, &["context", "current_pack"]).or_else(|| {
         match (
@@ -106,6 +125,11 @@ pub fn read_cockpit_status(project_root: impl AsRef<Path>) -> Result<VibehubCock
     let handoff_path = yaml_string(&state, &["handoff", "current"])
         .or_else(|| Some(".vibehub/agent-view/handoff.md".to_string()));
     let handoff_state = yaml_string(&state, &["handoff", "status"]);
+    let agent_output_path = latest_agent_output_path(
+        &project_root,
+        current_task_id.as_deref(),
+        current_run_id.as_deref(),
+    );
 
     Ok(VibehubCockpitStatus {
         project_root: normalize_path(&project_root),
@@ -115,24 +139,112 @@ pub fn read_cockpit_status(project_root: impl AsRef<Path>) -> Result<VibehubCock
             .and_then(|task_id| read_task_title(&project_root, task_id)),
         current_task_id,
         current_run_id,
-        current_mode: yaml_string(&state, &["current", "mode"]),
+        current_mode,
         current_phase,
-        phase_status: yaml_string(&state, &["current", "phase_status"]),
+        phase_status,
         git_available: is_git_repo(&project_root),
         git_dirty: git_dirty(&project_root),
         git_changed_files_count: git_changed_files_count(&project_root),
         context_pack_status: file_status(&project_root, context_path, context_stale, None),
+        agent_output_status: file_status(
+            &project_root,
+            agent_output_path,
+            None,
+            Some("available".to_string()),
+        ),
         handoff_status: file_status(&project_root, handoff_path, None, handoff_state),
+        flow,
         observability_level: yaml_string(&state, &["observability", "level"])
             .or_else(|| Some("best_effort".to_string())),
+        locale: yaml_string(&state, &["preferences", "locale"])
+            .or_else(|| yaml_string(&state, &["settings", "locale"]))
+            .or_else(|| yaml_string(&state, &["locale"])),
         warnings,
     })
+}
+
+fn read_flow_statuses(
+    state: &Option<serde_yaml::Value>,
+    mode: Option<&str>,
+    current_phase: Option<&str>,
+    phase_status: Option<&str>,
+) -> Vec<FlowPhaseStatus> {
+    let phases = match mode.unwrap_or("guided_drive") {
+        "yolo_drive" => &["align_lite", "implement", "review_lite"][..],
+        "evidence_drive" => &["align", "research", "plan", "implement", "review"][..],
+        _ => &["align", "plan", "implement", "review"][..],
+    };
+
+    phases
+        .iter()
+        .map(|phase| {
+            let status = yaml_string(state, &["flow", phase])
+                .or_else(|| {
+                    if current_phase == Some(*phase) {
+                        phase_status.map(ToString::to_string)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "pending".to_string());
+            FlowPhaseStatus {
+                phase: (*phase).to_string(),
+                status,
+            }
+        })
+        .collect()
 }
 
 fn read_yaml_value(path: &Path) -> Result<serde_yaml::Value> {
     let content =
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
     serde_yaml::from_str(&content).with_context(|| format!("Invalid YAML: {}", path.display()))
+}
+
+fn latest_agent_output_path(
+    project_root: &Path,
+    task_id: Option<&str>,
+    run_id: Option<&str>,
+) -> Option<String> {
+    let task_id = task_id?;
+    let run_id = run_id?;
+    let run_dir = project_root
+        .join(".vibehub")
+        .join("tasks")
+        .join(task_id)
+        .join("runs")
+        .join(run_id);
+    let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+    let run_output = run_dir.join("outputs").join("output.md");
+    if run_output.is_file() {
+        candidates.push((
+            run_output,
+            file_modified(&run_dir.join("outputs").join("output.md")),
+        ));
+    }
+
+    let sessions_dir = run_dir.join("sessions");
+    if let Ok(entries) = fs::read_dir(sessions_dir) {
+        for entry in entries.flatten() {
+            let output = entry.path().join("output.md");
+            if output.is_file() {
+                candidates.push((output.clone(), file_modified(&output)));
+            }
+        }
+    }
+
+    candidates.sort_by(|a, b| a.1.cmp(&b.1));
+    let latest = candidates.pop()?.0;
+    latest
+        .strip_prefix(project_root)
+        .ok()
+        .map(|path| normalize_path(path))
+}
+
+fn file_modified(path: &Path) -> std::time::SystemTime {
+    path.metadata()
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
 }
 
 fn read_current_task_pointer(project_root: &Path) -> Option<String> {
@@ -195,6 +307,27 @@ fn yaml_bool(state: &Option<serde_yaml::Value>, keys: &[&str]) -> Option<bool> {
         current = current.get(*key)?;
     }
     current.as_bool()
+}
+
+fn yaml_string_sequence(state: &Option<serde_yaml::Value>, keys: &[&str]) -> Vec<String> {
+    let Some(mut current) = state.as_ref() else {
+        return Vec::new();
+    };
+    for key in keys {
+        let Some(next) = current.get(*key) else {
+            return Vec::new();
+        };
+        current = next;
+    }
+    current
+        .as_sequence()
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_str().map(ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn file_status(
@@ -283,10 +416,6 @@ fn git_changed_files_count(project_root: &Path) -> Option<usize> {
     )
 }
 
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,6 +438,7 @@ mod tests {
 
         assert!(!status.initialized);
         assert_eq!(status.context_pack_status.status, "not_configured");
+        assert!(status.flow.is_empty());
         assert!(!status.warnings.is_empty());
 
         fs::remove_dir_all(path).expect("cleanup");
@@ -351,6 +481,13 @@ observability:
             "# Handoff\n",
         )
         .expect("write handoff");
+        fs::create_dir_all(project.join(".vibehub/tasks/T-001/runs/R-001/outputs"))
+            .expect("create outputs");
+        fs::write(
+            project.join(".vibehub/tasks/T-001/runs/R-001/outputs/output.md"),
+            "# Output\n",
+        )
+        .expect("write output");
 
         let status = read_cockpit_status(&project).expect("read status");
 
@@ -359,7 +496,29 @@ observability:
         assert_eq!(status.current_task_title.as_deref(), Some("Build cockpit"));
         assert_eq!(status.current_phase.as_deref(), Some("implement"));
         assert!(status.context_pack_status.exists);
+        assert!(status.agent_output_status.exists);
         assert!(status.handoff_status.exists);
+        assert_eq!(
+            status.flow,
+            vec![
+                FlowPhaseStatus {
+                    phase: "align".to_string(),
+                    status: "pending".to_string()
+                },
+                FlowPhaseStatus {
+                    phase: "plan".to_string(),
+                    status: "pending".to_string()
+                },
+                FlowPhaseStatus {
+                    phase: "implement".to_string(),
+                    status: "running".to_string()
+                },
+                FlowPhaseStatus {
+                    phase: "review".to_string(),
+                    status: "pending".to_string()
+                },
+            ]
+        );
 
         fs::remove_dir_all(project).expect("cleanup");
     }

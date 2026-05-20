@@ -98,6 +98,10 @@ export interface VibehubStartTaskResult {
     task_pointer_path: string;
     run_pointer_path: string;
     context_spec_path: string;
+    context_pack_path: string;
+    context_manifest_path: string;
+    context_included_count: number;
+    context_missing_count: number;
 }
 
 export type AgentTool = 'codex' | 'claude_code' | 'opencode';
@@ -181,6 +185,11 @@ export interface VibehubFileStatus {
     status: string;
 }
 
+export interface VibehubFlowPhaseStatus {
+    phase: string;
+    status: string;
+}
+
 export interface VibehubCockpitStatus {
     project_root: string;
     initialized: boolean;
@@ -194,8 +203,11 @@ export interface VibehubCockpitStatus {
     git_dirty?: boolean | null;
     git_changed_files_count?: number | null;
     context_pack_status: VibehubFileStatus;
+    agent_output_status: VibehubFileStatus;
     handoff_status: VibehubFileStatus;
+    flow: VibehubFlowPhaseStatus[];
     observability_level?: string | null;
+    locale?: string | null;
     warnings: string[];
 }
 
@@ -208,4 +220,139 @@ export interface VibehubJournalAppendResult {
 export interface VibehubKnowledgeAppendResult {
     knowledge_path: string;
     timestamp: string;
+}
+
+export interface PhaseValidationResult {
+    phase: string;
+    status: string;
+    required_outputs: string[];
+    found_outputs: string[];
+    missing_outputs: string[];
+    source_output_path?: string | null;
+}
+
+export interface PhaseAdvanceResult {
+    mode: string;
+    previous_phase: string;
+    previous_status: string;
+    current_phase: string;
+    current_status: string;
+    next_phase?: string | null;
+    validation: PhaseValidationResult;
+}
+
+export interface PhaseSetResult {
+    phase: string;
+    status: string;
+    mode: string;
+    current_phase: string;
+    current_phase_status: string;
+}
+
+export interface ResearchPackBuildResult {
+    research_pack_path: string;
+    source_log_path: string;
+    findings_path: string;
+    status: string;
+    files_created: string[];
+    files_skipped: string[];
+}
+
+export interface ResearchPackArchiveResult {
+    archived_to: string;
+    archive_path: string;
+    status: string;
+}
+
+export interface ResearchStatus {
+    required: boolean;
+    status: string;
+    research_pack_exists: boolean;
+}
+
+export interface VibehubFileReadResult {
+    path: string;
+    content: string;
+    exists: boolean;
+    size: number;
+}
+
+export interface VibehubContextViewData {
+    pack_path: string | null;
+    manifest_path: string | null;
+    pack_exists: boolean;
+    manifest_exists: boolean;
+    included_count: number;
+    missing_count: number;
+    excluded_count: number;
+    stale: boolean | null;
+    phase: string | null;
+}
+
+export interface VibehubReviewViewData {
+    review_path: string | null;
+    review_exists: boolean;
+    review_summary: string;
+    evidence_map_summary: string;
+    evidence_grades: string[];
+    diff_patch_path: string | null;
+    diff_patch_exists: boolean;
+    changed_files_path: string | null;
+    changed_files_count: number;
+}
+
+export interface VibehubHandoffViewData {
+    handoff_path: string | null;
+    handoff_exists: boolean;
+    complete: boolean;
+    missing_sections: string[];
+    sections_count: number;
+}
+
+export interface VibehubDiffViewData {
+    dirty: boolean;
+    changed_files: string[];
+    changed_files_count: number;
+    diff_stat: string[];
+}
+
+export interface VibehubSyncReport {
+    project_root: string;
+    status: string;
+    task_id?: string | null;
+    run_id?: string | null;
+    phase?: string | null;
+    report_path?: string | null;
+    agent_view_sync_path: string;
+    agent_view_status: string;
+    context_status: string;
+    adapter_status: string;
+    drift_warnings: string[];
+    changed_files: string[];
+    phase_validation_status?: string | null;
+    missing_phase_outputs: string[];
+    questions_for_user: string[];
+    recommended_actions: string[];
+}
+
+// Aggregated cockpit overview (replaces the 6 per-tab read commands).
+export interface VibehubCockpitOverview {
+    status: VibehubCockpitStatus;
+    context: VibehubContextViewData | null;
+    review: VibehubReviewViewData | null;
+    handoff: VibehubHandoffViewData | null;
+    diff: VibehubDiffViewData;
+    research: ResearchStatus;
+    initialized: boolean;
+}
+
+// Forward migration of `.vibehub/state.yaml` from r9 schema 1 to r10 schema 2.
+export interface VibehubStateMigrationReport {
+    state_path: string;
+    previous_schema_version: number | null;
+    current_schema_version: number;
+    migrated: boolean;
+    backup_path: string | null;
+    added_keys: string[];
+    notes: string[];
 }
