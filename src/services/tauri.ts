@@ -7,12 +7,20 @@ import {
     AgentTool,
     AppConfig,
     ContextPackBuildResult,
+    PhaseAdvanceResult,
+    PhaseSetResult,
+    PhaseValidationResult,
+    ResearchPackArchiveResult,
+    ResearchPackBuildResult,
     Project,
     Tag,
-    VibehubCockpitStatus,
+    VibehubCockpitOverview,
+    VibehubFileReadResult,
     VibehubJournalAppendResult,
     VibehubKnowledgeAppendResult,
     VibehubStartTaskResult,
+    VibehubStateMigrationReport,
+    VibehubSyncReport,
     Workspace,
     WorkspaceDriftReport,
 } from '../types';
@@ -105,16 +113,26 @@ export const tauriApi = {
         return await invoke('check_for_updates');
     },
 
-    vibehubInit: async (projectPath: string, agentTools?: AgentTool[]): Promise<{
+    vibehubInit: async (
+        projectPath: string,
+        agentTools?: AgentTool[],
+        syncAdapters: boolean = false,
+    ): Promise<{
         project_root: string;
         vibehub_root: string;
         created_files: string[];
         skipped_existing_files: string[];
         errors: string[];
     }> => {
+        // Per spec §18.5 manual_by_default: do NOT pass `sync_adapters: true`
+        // unless the user explicitly opts in (first-run prompt or the
+        // "Sync Adapters" button in the AI Instructions panel).
         return await invoke('vibehub_init', {
             projectPath,
-            options: agentTools ? { agent_tools: agentTools } : null,
+            options:
+                agentTools || syncAdapters
+                    ? { agent_tools: agentTools ?? null, sync_adapters: syncAdapters }
+                    : null,
         });
     },
 
@@ -171,12 +189,25 @@ export const tauriApi = {
         });
     },
 
-    vibehubCheckWorkspaceDrift: async (projectPath: string): Promise<WorkspaceDriftReport> => {
-        return await invoke('vibehub_check_workspace_drift', { projectPath });
+    vibehubCheckWorkspaceDrift: async (
+        projectPath: string,
+        locale?: string
+    ): Promise<WorkspaceDriftReport> => {
+        return await invoke('vibehub_check_workspace_drift', { projectPath, locale: locale || null });
     },
 
-    vibehubSyncWorkspaceState: async (projectPath: string): Promise<WorkspaceDriftReport> => {
-        return await invoke('vibehub_sync_workspace_state', { projectPath });
+    vibehubSyncWorkspaceState: async (
+        projectPath: string,
+        locale?: string
+    ): Promise<WorkspaceDriftReport> => {
+        return await invoke('vibehub_sync_workspace_state', { projectPath, locale: locale || null });
+    },
+
+    vibehubSyncWorkspace: async (
+        projectPath: string,
+        locale?: string
+    ): Promise<VibehubSyncReport> => {
+        return await invoke('vibehub_sync_workspace', { projectPath, locale: locale || null });
     },
 
     vibehubBuildContextPack: async (
@@ -214,8 +245,13 @@ export const tauriApi = {
         return await invoke('vibehub_generate_review_evidence', { projectPath });
     },
 
-    vibehubReadCockpitStatus: async (projectPath: string): Promise<VibehubCockpitStatus> => {
-        return await invoke('vibehub_read_cockpit_status', { projectPath });
+    // Aggregated cockpit overview. Replaces the previous per-tab read
+    // methods (`vibehubReadCockpitStatus`, `vibehubReadContextView`,
+    // `vibehubReadReviewView`, `vibehubReadHandoffView`,
+    // `vibehubReadDiffView`, `vibehubReadResearchStatus`). One IPC round-trip,
+    // one cached `git` invocation per call.
+    vibehubReadOverview: async (projectPath: string): Promise<VibehubCockpitOverview> => {
+        return await invoke('vibehub_read_overview', { projectPath });
     },
 
     vibehubAppendJournalEntry: async (
@@ -231,5 +267,64 @@ export const tauriApi = {
         note?: string
     ): Promise<VibehubKnowledgeAppendResult> => {
         return await invoke('vibehub_append_knowledge_note', { projectPath, note });
-    }
+    },
+
+    vibehubValidatePhase: async (projectPath: string): Promise<PhaseValidationResult> => {
+        return await invoke('vibehub_validate_phase', { projectPath });
+    },
+
+    vibehubSetPhaseResult: async (
+        projectPath: string,
+        targetPhase: string,
+        status: string
+    ): Promise<PhaseSetResult> => {
+        return await invoke('vibehub_set_phase_result', { projectPath, targetPhase, status });
+    },
+
+    vibehubCompletePhase: async (projectPath: string): Promise<PhaseAdvanceResult> => {
+        return await invoke('vibehub_complete_phase', { projectPath });
+    },
+
+    vibehubAdvancePhase: async (projectPath: string): Promise<PhaseAdvanceResult> => {
+        return await invoke('vibehub_advance_phase', { projectPath });
+    },
+
+    vibehubPausePhase: async (projectPath: string): Promise<PhaseSetResult> => {
+        return await invoke('vibehub_pause_phase', { projectPath });
+    },
+
+    vibehubBuildResearchPack: async (
+        projectPath: string,
+        title?: string
+    ): Promise<ResearchPackBuildResult> => {
+        return await invoke('vibehub_build_research_pack', { projectPath, title });
+    },
+
+    vibehubArchiveResearch: async (
+        projectPath: string
+    ): Promise<ResearchPackArchiveResult | null> => {
+        return await invoke('vibehub_archive_research', { projectPath });
+    },
+
+    vibehubReadVibehubFile: async (
+        projectPath: string,
+        relativePath: string,
+    ): Promise<VibehubFileReadResult> => {
+        return await invoke('vibehub_read_vibehub_file', { projectPath, relativePath });
+    },
+
+    // Schema-version migration. `dryRun` reports the diff WITHOUT writing.
+    vibehubDryRunStateMigration: async (
+        projectPath: string,
+    ): Promise<VibehubStateMigrationReport> => {
+        return await invoke('vibehub_dry_run_state_migration', { projectPath });
+    },
+
+    vibehubMigrateState: async (projectPath: string): Promise<VibehubStateMigrationReport> => {
+        return await invoke('vibehub_migrate_state', { projectPath });
+    },
+
+    vibehubSetProjectLocale: async (projectPath: string, locale: string): Promise<string> => {
+        return await invoke('vibehub_set_project_locale', { projectPath, locale });
+    },
 };

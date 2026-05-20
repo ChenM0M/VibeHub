@@ -73,11 +73,31 @@
             "flow": "4+1 flow"
         },
         "flow": {
+            "align": "Align",
+            "research": "Research",
             "plan": "Plan",
-            "context": "Context",
-            "run": "Run",
+            "implement": "Implement",
             "review": "Review",
-            "handoff": "Handoff"
+            "skipped": "Skipped in this mode"
+        },
+        "flowPhases": {
+            "align_lite": "Align Lite",
+            "align": "Align",
+            "research": "Research",
+            "plan": "Plan",
+            "implement": "Implement",
+            "review_lite": "Review Lite",
+            "review": "Review"
+        },
+        "modes": {
+            "yolo_drive": "YOLO Drive",
+            "guided_drive": "Guided Drive",
+            "evidence_drive": "Evidence Drive"
+        },
+        "locales": {
+            "en": "English",
+            "zh-CN": "Simplified Chinese",
+            "zh-TW": "Traditional Chinese"
         },
         "status": {
             "currentTaskRun": "Current task/run",
@@ -89,13 +109,15 @@
             "observability": "Observability",
             "gitDirty": "Git dirty state",
             "contextPack": "Context pack",
+            "agentOutput": "Agent output",
             "handoff": "Handoff",
             "reviewEvidence": "Review evidence",
             "reviewAvailable": "Available after Review Evidence action",
             "needsActiveTask": "Needs active task/run",
             "gitUnavailable": "Git unavailable",
             "dirtyCount": "dirty ({{count}})",
-            "clean": "clean"
+            "clean": "clean",
+            "locale": "Locale"
         },
         "notices": {
             "observabilityLimited": "Observability is limited to cockpit status and generated artifacts; runtime observation is out of scope.",
@@ -118,6 +140,20 @@
                 "claude_code": "CLAUDE.md + .claude commands + constraints",
                 "opencode": "AGENTS.md + .opencode commands + constraints"
             }
+        },
+        "next": {
+            "title": "Recommended next step",
+            "loading": "Load VibeHub status to see the next available action.",
+            "initialize": "Connect this project to VibeHub before starting task coordination.",
+            "startTask": "Create a task/run so agents have a concrete state entry to read.",
+            "syncWorkspace": "{{count}} changed file(s) are visible. Check drift before advancing workflow state.",
+            "buildContext": "The current phase needs a context pack before agents continue.",
+            "handoff": "Build a handoff so the next agent turn has a durable recovery point.",
+            "continue": "Refresh the agent view and continue from the current VibeHub state."
+        },
+        "advanced": {
+            "title": "Advanced diagnostics",
+            "subtitle": "Manual artifact and adapter maintenance"
         },
         "drift": {
             "title": "Workspace Drift",
@@ -144,6 +180,10 @@
             "recoverDrift": "Recover Drift",
             "reviewEvidence": "Review Evidence",
             "buildHandoff": "Build Handoff/Recover Report",
+            "validatePhase": "Validate Phase",
+            "completePhase": "Complete Phase",
+            "advancePhase": "Advance Phase",
+            "pausePhase": "Pause Phase",
             "updateAiInstructions": "Update AI Instructions",
             "saveCommandOverride": "Save Command Override",
             "addJournalNote": "Add Journal Note",
@@ -165,8 +205,89 @@
             "missingSections": "Missing section(s): {{sections}}.",
             "handoffBuilt": "Handoff built: {{path}}.",
             "handoffIncomplete": "Handoff built but incomplete: {{path}}.",
+            "phaseValidated": "Phase {{phase}} validated as {{status}}. Missing {{missing}} required output(s).",
+            "phaseCompleted": "Phase {{phase}} set to {{status}}.",
+            "phaseAdvanced": "Phase transition {{from}} -> {{to}} finished with status {{status}}.",
+            "phasePaused": "Phase {{phase}} paused with status {{status}}.",
+            "syncReportWritten": "Sync report updated: {{path}}. Questions needing user input: {{questions}}.",
             "journalAppended": "Journal note appended: {{path}}",
-            "knowledgeAppended": "Knowledge note appended: {{path}}"
+            "knowledgeAppended": "Knowledge note appended: {{path}}",
+            "localeSaved": "Locale saved: {{locale}}"
+        },
+        "sync": {
+            "title": "Sync report",
+            "report": "Report",
+            "questions": "Questions for user",
+            "actions": "Recommended actions"
+        },
+        "phase": {
+            "title": "Phase validation",
+            "phase": "Phase",
+            "validationStatus": "Validation",
+            "requiredOutputs": "Required outputs",
+            "missingOutputs": "Missing outputs",
+            "sourceOutput": "Source output",
+            "notValidated": "Phase has not been validated in this view yet."
+        },
+        "tabs": {
+            "status": "Status",
+            "context": "Context",
+            "review": "Review",
+            "handoff": "Handoff",
+            "research": "Research",
+            "diff": "Diff",
+            "statusDetail": "Task/run state overview",
+            "contextPackDetail": "Context pack status & manifest summary",
+            "reviewDetail": "Review evidence",
+            "handoffDetail": "Handoff completeness",
+            "researchDetail": "Research status",
+            "diffDetail": "Git diff summary",
+            "contextPackPath": "Pack path",
+            "manifestPath": "Manifest path",
+            "phase": "Phase",
+            "packExists": "Pack exists",
+            "manifestExists": "Manifest exists",
+            "stale": "Stale",
+            "included": "Included",
+            "missing": "Missing",
+            "excluded": "Excluded",
+            "contextDataSource": "Data source",
+            "contextPackStatus": "Context pack",
+            "agentOutputStatus": "Agent output",
+            "handoffStatus": "Handoff file",
+            "warnings": "Warnings",
+            "notAvailable": "N/A",
+            "noContent": "(no content)",
+            "reviewExists": "Review exists",
+            "diffPatchExists": "Diff patch exists",
+            "reviewPath": "Review path",
+            "diffPatchPath": "Diff patch path",
+            "changedFilesCount": "Changed files",
+            "changedFilesPath": "Changed files path",
+            "reviewSummary": "Review summary (first 15 lines)",
+            "evidenceMap": "Evidence map",
+            "evidenceGrades": "Evidence grades",
+            "reviewNotGenerated": "Review evidence has not been generated. Use \"Review Evidence\" action to produce review.md.",
+            "reviewDataSource": "Source",
+            "handoffExists": "Handoff exists",
+            "handoffComplete": "Complete",
+            "handoffPath": "Handoff path",
+            "handoffSectionsCount": "Sections",
+            "missingSections": "Missing sections",
+            "handoffIsComplete": "Handoff is complete \u2013 all required sections present.",
+            "handoffNotGenerated": "Handoff has not been built. Use \"Build Handoff\" action to generate handoff.md.",
+            "handoffDataSource": "Source",
+            "researchRequired": "Required",
+            "researchStatus": "Status",
+            "researchPackExists": "Pack exists",
+            "researchPackPath": "Pack path",
+            "researchDataSource": "Source",
+            "researchSuppFiles": "Supplemental files",
+            "dirty": "Dirty",
+            "changedFiles": "Changed files",
+            "diffStat": "Diff stat",
+            "diffClean": "No changed files detected.",
+            "diffDataSource": "Source"
         }
     },
     "settings": {
