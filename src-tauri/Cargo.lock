@@ -4827,6 +4827,7 @@ dependencies = [
  "bytes",
  "chrono",
  "dashmap",
+ "dirs",
  "futures",
  "reqwest",
  "serde",

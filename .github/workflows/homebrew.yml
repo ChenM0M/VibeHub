@@ -1,0 +1,111 @@
+name: Update Homebrew Cask
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published release tag to package, for example v2.0.0'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  update-cask:
+    runs-on: macos-latest
+    env:
+      TAP_REPO: ChenM0M/homebrew-vibehub
+      CASK_TOKEN: vibehub
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+    steps:
+      - name: Validate Homebrew tap token
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "Missing HOMEBREW_TAP_TOKEN. Create ChenM0M/homebrew-vibehub and add a token with write access to that tap."
+            exit 1
+          fi
+
+      - name: Download macOS release assets
+        run: |
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" \
+            --repo ChenM0M/VibeHub \
+            --pattern "*.dmg" \
+            --dir release-assets
+
+          ARM_DMG="$(find release-assets -name '*aarch64*.dmg' -o -name '*arm64*.dmg' | head -n 1)"
+          INTEL_DMG="$(find release-assets -name '*x64*.dmg' -o -name '*x86_64*.dmg' | head -n 1)"
+
+          if [ -z "$ARM_DMG" ] || [ -z "$INTEL_DMG" ]; then
+            echo "Expected both Apple Silicon and Intel DMG assets."
+            find release-assets -type f -maxdepth 1 -print
+            exit 1
+          fi
+
+          echo "VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+          echo "ARM_DMG_FILE=$(basename "$ARM_DMG")" >> "$GITHUB_ENV"
+          echo "INTEL_DMG_FILE=$(basename "$INTEL_DMG")" >> "$GITHUB_ENV"
+          echo "ARM_SHA=$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')" >> "$GITHUB_ENV"
+          echo "INTEL_SHA=$(shasum -a 256 "$INTEL_DMG" | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Checkout Homebrew tap
+        run: |
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" homebrew-tap
+
+      - name: Update cask
+        working-directory: homebrew-tap
+        run: |
+          mkdir -p Casks
+          cat > "Casks/${CASK_TOKEN}.rb" <<EOF
+          cask "${CASK_TOKEN}" do
+            version "${VERSION}"
+
+            on_arm do
+              sha256 "${ARM_SHA}"
+              url "https://github.com/ChenM0M/VibeHub/releases/download/${RELEASE_TAG}/${ARM_DMG_FILE}",
+                  verified: "github.com/ChenM0M/VibeHub/"
+            end
+
+            on_intel do
+              sha256 "${INTEL_SHA}"
+              url "https://github.com/ChenM0M/VibeHub/releases/download/${RELEASE_TAG}/${INTEL_DMG_FILE}",
+                  verified: "github.com/ChenM0M/VibeHub/"
+            end
+
+            name "VibeHub"
+            desc "Cross-platform launcher for development tools with an AI gateway"
+            homepage "https://github.com/ChenM0M/VibeHub"
+
+            app "VibeHub.app"
+
+            zap trash: [
+              "~/Library/Application Support/VibeHub",
+              "~/Library/Preferences/com.vibehub.launcher.plist",
+              "~/Library/Saved Application State/com.vibehub.launcher.savedState",
+            ]
+          end
+          EOF
+
+          ruby -c "Casks/${CASK_TOKEN}.rb"
+
+      - name: Commit and push cask
+        working-directory: homebrew-tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Casks/${CASK_TOKEN}.rb"
+          if git diff --cached --quiet; then
+            echo "Homebrew cask already up to date."
+            exit 0
+          fi
+          git commit -m "Update ${CASK_TOKEN} to ${VERSION}"
+          git push

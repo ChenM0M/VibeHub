@@ -175,8 +175,11 @@ fn select_download_asset(assets: &[ReleaseAsset]) -> Option<String> {
     #[cfg(target_os = "windows")]
     let patterns = ["_x64-setup.exe", "_x64_en-US.msi", "x64-setup.exe", ".exe"];
 
-    #[cfg(target_os = "macos")]
-    let patterns = [".dmg", "_aarch64.dmg", "_x64.dmg"];
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    let patterns = ["_aarch64.dmg", "_arm64.dmg", ".dmg"];
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    let patterns = ["_x64.dmg", "_x86_64.dmg", ".dmg"];
 
     #[cfg(target_os = "linux")]
     let patterns = [".AppImage", ".deb", ".tar.gz"];

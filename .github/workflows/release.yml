@@ -1,130 +1,155 @@
 name: Release
+
 on:
   push:
     tags:
       - 'v*'
       - '*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release, for example v2.0.0'
+        required: true
 
 permissions:
   contents: write
 
-env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest, macos-latest, ubuntu-22.04]
+        include:
+          - platform: macos-latest
+            rust_targets: aarch64-apple-darwin
+            tauri_args: --target aarch64-apple-darwin
+          - platform: macos-latest
+            rust_targets: x86_64-apple-darwin
+            tauri_args: --target x86_64-apple-darwin
+          - platform: windows-latest
+            rust_targets: ''
+            tauri_args: ''
+          - platform: ubuntu-22.04
+            rust_targets: ''
+            tauri_args: ''
     runs-on: ${{ matrix.platform }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
-      - name: Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
-      - name: Install Rust
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust_targets }}
 
-      - name: Install dependencies (ubuntu only)
+      - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build frontend
         run: npm run build
 
-      - name: Build the app
+      - name: Build and upload Tauri bundles
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'VibeHub ${{ github.ref_name }}'
-          args: ${{ matrix.platform == 'windows-latest' && contains(github.ref_name, '-') && '--bundles nsis' || '' }}
-          releaseBody: |
-            ## 🚀 更新内容 / What's New
-            
-            请在此处填写本次更新的内容（基于 commit 描述）
-            
-            ---
-            
-            ## 📦 下载说明 / Download Guide
-            
-            | 文件名 | 系统 | 类型 | 说明 |
-            |--------|------|------|------|
-            | `VibeHub_x.x.x_x64-setup.exe` | Windows | 安装包 | 推荐，自动安装到系统 |
-            | `VibeHub_x.x.x_x64_en-US.msi` | Windows | MSI 安装包 | 企业部署推荐 |
-            | `VibeHub-Portable-Windows.exe` | Windows | 便携版 | 无需安装，直接运行 |
-            | `VibeHub_x.x.x_aarch64.dmg` | macOS (Apple Silicon) | 安装包 | M1/M2/M3 芯片 |
-            | `VibeHub_x.x.x_x64.dmg` | macOS (Intel) | 安装包 | Intel 芯片 |
-            | `VibeHub-Portable-macOS.zip` | macOS | 便携版 | 解压后直接运行 |
-            | `VibeHub_x.x.x_amd64.deb` | Linux (Debian/Ubuntu) | DEB 包 | `sudo dpkg -i xxx.deb` |
-            | `VibeHub_x.x.x_amd64.AppImage` | Linux | AppImage | 免安装，`chmod +x` 后运行 |
-            | `VibeHub-Portable-Linux.tar.gz` | Linux | 便携版 | 解压后直接运行 |
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: VibeHub ${{ inputs.tag || github.ref_name }}
+          args: ${{ matrix.tauri_args }}
           releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(inputs.tag || github.ref_name, '-') }}
+          releaseBody: |
+            ## 发布前检查 / Before Publishing
 
-      # Windows Portable
-      - name: Prepare Portable Version (Windows)
+            - [ ] macOS Apple Silicon DMG 可以打开并完成首次启动
+            - [ ] macOS Intel DMG 可以打开并完成首次启动
+            - [ ] macOS 签名/公证已通过，双击打开不会被 Gatekeeper 拦截
+            - [ ] Windows / Linux 产物已上传
+            - [ ] README 的安装命令和版本说明仍然准确
+            - [ ] 如果要同步 Homebrew，请先发布本草稿 Release
+
+            ## 更新内容 / What's New
+
+            - macOS: 应用数据迁移到系统 Application Support 目录，避免安装版写入 `.app` 包导致启动失败。
+            - macOS: 修复项目工具、CLI、终端打开方式。
+            - Distribution: 发布后会触发 Homebrew cask 更新工作流。
+
+            ## 下载说明 / Download Guide
+
+            | 文件名 | 系统 | 类型 | 说明 |
+            | --- | --- | --- | --- |
+            | `VibeHub_*_aarch64.dmg` | macOS Apple Silicon | DMG | M1/M2/M3/M4 芯片 |
+            | `VibeHub_*_x64.dmg` | macOS Intel | DMG | Intel 芯片 |
+            | `VibeHub_*_x64-setup.exe` | Windows | 安装包 | 推荐，自动安装到系统 |
+            | `VibeHub_*_x64_en-US.msi` | Windows | MSI | 企业部署 |
+            | `VibeHub_*_amd64.deb` | Linux Debian/Ubuntu | DEB | `sudo dpkg -i xxx.deb` |
+            | `VibeHub_*_amd64.AppImage` | Linux | AppImage | `chmod +x` 后运行 |
+
+            ## Homebrew
+
+            发布本草稿后，`Update Homebrew Cask` 工作流会更新 tap。预览版 / prerelease 也会使用同一套 Homebrew cask 指向当前已发布的 GitHub Release。用户可使用：
+
+            ```bash
+            brew install --cask chenm0m/vibehub/vibehub
+            brew upgrade --cask vibehub
+            ```
+
+            如果 Homebrew workflow 没有运行，请检查 `ChenM0M/homebrew-vibehub` 是否存在，以及本仓库是否配置了 `HOMEBREW_TAP_TOKEN`。
+
+      - name: Prepare portable executable (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
           Copy-Item "src-tauri\target\release\vibehub.exe" "VibeHub-Portable-Windows.exe"
         shell: pwsh
 
-      - name: Attach Portable to Release (Windows)
+      - name: Attach portable executable (Windows)
         if: matrix.platform == 'windows-latest'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: VibeHub-Portable-Windows.exe
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
 
-      # macOS Portable
-      - name: Prepare Portable Version (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          cp src-tauri/target/release/vibehub VibeHub-Portable-macOS
-          chmod +x VibeHub-Portable-macOS
-          zip VibeHub-Portable-macOS.zip VibeHub-Portable-macOS
-
-      - name: Attach Portable to Release (macOS)
-        if: matrix.platform == 'macos-latest'
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
-        with:
-          files: VibeHub-Portable-macOS.zip
-          tag_name: ${{ github.ref_name }}
-          draft: true
-
-      # Linux Portable
-      - name: Prepare Portable Version (Linux)
+      - name: Prepare portable executable (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           cp src-tauri/target/release/vibehub VibeHub-Portable-Linux
           chmod +x VibeHub-Portable-Linux
           tar -czvf VibeHub-Portable-Linux.tar.gz VibeHub-Portable-Linux
 
-      - name: Attach Portable to Release (Linux)
+      - name: Attach portable executable (Linux)
         if: matrix.platform == 'ubuntu-22.04'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: VibeHub-Portable-Linux.tar.gz
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
