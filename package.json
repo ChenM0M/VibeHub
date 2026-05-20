@@ -8,7 +8,10 @@
         "dev": "vite",
         "build": "tsc && vite build",
         "preview": "vite preview",
-        "tauri": "tauri"
+        "tauri": "tauri",
+        "startdev": "./start-dev.sh",
+        "startdev:mac": "./start-dev.sh",
+        "check:mac": "./start-dev.sh --check"
     },
     "dependencies": {
         "@dnd-kit/core": "^6.3.1",
