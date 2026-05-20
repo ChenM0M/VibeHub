@@ -1,19 +1,24 @@
 import React, { useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { Button } from '@/components/ui/button';
-import { Trash2, Plus, FolderOpen, Tags, Settings as SettingsIcon, Sun, Moon, Monitor } from 'lucide-react';
-import { open } from '@tauri-apps/plugin-dialog';
-import { Tag } from '@/types';
+import { Trash2, Plus, FolderOpen, Tags, Settings as SettingsIcon, Sun, Moon, Monitor, FileDown, FileUp, CheckCircle2, AlertCircle } from 'lucide-react';
+import { open, save } from '@tauri-apps/plugin-dialog';
+import { SettingsImportResult, Tag } from '@/types';
 import { TagEditDialog } from '@/components/TagEditDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
+import { tauriApi } from '@/services/tauri';
 
 export function Settings() {
     const { t, i18n } = useTranslation();
-    const { config, addWorkspace, removeWorkspace, addTag, updateTag, deleteTag, setTheme } = useAppStore();
+    const { config, refreshConfig, addWorkspace, removeWorkspace, addTag, updateTag, deleteTag, setTheme } = useAppStore();
     const [isScanning, setIsScanning] = useState(false);
     const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
     const [editingTag, setEditingTag] = useState<Tag | undefined>(undefined);
+    const [transferBusy, setTransferBusy] = useState(false);
+    const [transferError, setTransferError] = useState<string | null>(null);
+    const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
+    const [importResult, setImportResult] = useState<SettingsImportResult | null>(null);
 
     const handleAddWorkspace = async () => {
         try {
@@ -30,6 +35,55 @@ export function Settings() {
             console.error(error);
         } finally {
             setIsScanning(false);
+        }
+    };
+
+    const handleExportSettings = async () => {
+        setTransferError(null);
+        setTransferSuccess(null);
+        setImportResult(null);
+        try {
+            const selected = await save({
+                defaultPath: 'vibehub-settings.json',
+                filters: [{ name: 'JSON', extensions: ['json'] }],
+            });
+            if (!selected) return;
+
+            setTransferBusy(true);
+            await tauriApi.exportSettingsBundle(selected);
+            setTransferSuccess(t('settings.transfer.exportSuccess'));
+        } catch (error) {
+            setTransferError((error as Error).message || String(error));
+        } finally {
+            setTransferBusy(false);
+        }
+    };
+
+    const handleImportSettings = async () => {
+        setTransferError(null);
+        setTransferSuccess(null);
+        setImportResult(null);
+        try {
+            const selected = await open({
+                directory: false,
+                multiple: false,
+                filters: [{ name: 'JSON', extensions: ['json'] }],
+            });
+            if (!selected || typeof selected !== 'string') return;
+
+            setTransferBusy(true);
+            const result = await tauriApi.importSettingsBundle(selected);
+            await refreshConfig();
+            setImportResult(result);
+            setTransferSuccess(t('settings.transfer.importSuccess', {
+                added: result.tags_added,
+                updated: result.tags_updated,
+                providers: result.gateway_providers,
+            }));
+        } catch (error) {
+            setTransferError((error as Error).message || String(error));
+        } finally {
+            setTransferBusy(false);
         }
     };
 
@@ -232,6 +286,77 @@ export function Settings() {
                                 繁體中文
                             </Button>
                         </div>
+                    </div>
+
+                    <div className="space-y-4 border-t pt-6">
+                        <div>
+                            <h3 className="text-lg font-medium">{t('settings.transfer.title')}</h3>
+                            <p className="text-sm text-muted-foreground">
+                                {t('settings.transfer.subtitle')}
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <Button variant="outline" onClick={handleExportSettings} disabled={transferBusy}>
+                                <FileDown className="mr-2 h-4 w-4" />
+                                {t('settings.transfer.export')}
+                            </Button>
+                            <Button onClick={handleImportSettings} disabled={transferBusy}>
+                                <FileUp className="mr-2 h-4 w-4" />
+                                {t('settings.transfer.import')}
+                            </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            {t('settings.transfer.note')}
+                        </p>
+
+                        {(transferSuccess || transferError || importResult) && (
+                            <div className="rounded-md border bg-card p-4 text-sm space-y-3">
+                                {transferSuccess && (
+                                    <div className="flex items-start gap-2 text-green-600 dark:text-green-400">
+                                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                                        <span>{transferSuccess}</span>
+                                    </div>
+                                )}
+                                {transferError && (
+                                    <div className="flex items-start gap-2 text-destructive">
+                                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                                        <span>{transferError}</span>
+                                    </div>
+                                )}
+                                {importResult && (
+                                    <div className="space-y-2">
+                                        <div className="text-muted-foreground">
+                                            {t('settings.transfer.sourceTarget', {
+                                                source: importResult.source_system,
+                                                target: importResult.target_system,
+                                            })}
+                                        </div>
+                                        {importResult.adjustments.length > 0 ? (
+                                            <div className="space-y-2">
+                                                <div className="font-medium">{t('settings.transfer.adjustments')}</div>
+                                                <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                                                    {importResult.adjustments.map((adjustment, index) => (
+                                                        <div key={`${adjustment.scope}-${adjustment.item_id || index}-${adjustment.field}`} className="rounded border bg-muted/30 p-2">
+                                                            <div className="font-medium">
+                                                                {adjustment.item_name || adjustment.scope} · {adjustment.field}
+                                                            </div>
+                                                            <div className="text-xs text-muted-foreground">
+                                                                {adjustment.before || t('common.none')} → {adjustment.after || t('common.none')}
+                                                            </div>
+                                                            <div className="text-xs text-muted-foreground">
+                                                                {adjustment.reason}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="text-muted-foreground">{t('settings.transfer.noAdjustments')}</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </TabsContent>
             </Tabs>

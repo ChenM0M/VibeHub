@@ -20,17 +20,44 @@
 - **Git 信息** — 卡片上直接显示当前分支和变更状态
 - **深色模式** — 跟随系统或手动切换
 
-## 下载
+## 安装与下载
+
+### macOS：Homebrew
+
+推荐用 Homebrew 安装 macOS 版本：
+
+```bash
+brew install --cask chenm0m/vibehub/vibehub
+```
+
+更新：
+
+```bash
+brew update
+brew upgrade --cask vibehub
+```
+
+Homebrew tap 仓库名约定为 `ChenM0M/homebrew-vibehub`。每次 GitHub Release 从草稿发布后，CI 会根据 Apple Silicon 和 Intel 两个 DMG 产物自动更新 cask。预览版 / prerelease 也走同一套 cask 更新流程，指向当前发布的预览版 DMG。
+
+### 手动下载
 
 [→ Releases 页面](https://github.com/ChenM0M/VibeHub/releases)
 
 | 平台 | 格式 |
 |------|------|
 | Windows | `.exe` 安装包 / `Portable.zip` 便携版 |
-| macOS | `.dmg` (Intel & Apple Silicon) |
+| macOS | `.dmg` (Apple Silicon & Intel) |
 | Linux | `.deb` / `.AppImage` |
 
-Portable 版解压即用，配置自动存在 `data/` 下，删掉文件夹就是干净卸载。
+Windows / Linux Portable 版解压即用。macOS 安装版的配置和 AI 网关数据会写入系统应用数据目录：
+
+```text
+~/Library/Application Support/VibeHub
+```
+
+如果确实需要便携模式，可以用 `VIBEHUB_PORTABLE=1` 启动，此时配置会写到可执行文件旁边的 `data/`。普通 macOS `.app` / DMG / Homebrew 安装不建议使用便携模式，因为应用包内部通常不可写。
+
+AI 网关默认只监听本机回环地址 `127.0.0.1`，不会暴露到局域网。
 
 ## 从源码运行
 
@@ -43,6 +70,13 @@ npm install
 npm run tauri dev
 ```
 
+macOS 可以直接跑环境检查和开发启动脚本：
+
+```bash
+./start-dev.sh --check
+./start-dev.sh
+```
+
 构建发行版：
 
 ```bash
@@ -53,6 +87,16 @@ npm run tauri build
 - Windows → Visual Studio Build Tools
 - macOS → Xcode Command Line Tools
 - Linux → `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev`
+
+## 发布流程
+
+1. 创建版本标签，例如 `v2.0.0`。
+2. `Release` workflow 会构建 Windows、Linux、macOS Apple Silicon、macOS Intel 产物，并创建草稿 Release。
+3. 按草稿 Release 里的检查清单测试两个 macOS DMG，确认能首次启动、打开项目、启动 CLI/IDE、AI 网关可保存配置。
+4. 发布草稿 Release。
+5. `Update Homebrew Cask` workflow 会下载公开的 DMG、计算 SHA256，并用实际发布资产文件名更新 `ChenM0M/homebrew-vibehub` 里的 `Casks/vibehub.rb`，适配正式版和预览版。
+
+Homebrew 自动更新需要先创建 `ChenM0M/homebrew-vibehub` 仓库，并在本仓库 Secrets 里配置 `HOMEBREW_TAP_TOKEN`。如果要让 macOS 用户双击即正常打开，Release workflow 还需要配置 Apple 签名/公证相关 Secrets：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`。
 
 ## 项目结构
 
@@ -77,6 +121,23 @@ VibeHub 的核心概念是**标签**。每个标签可以绑定一个启动配�
 给项目关联标签后，点击启动会按标签类型执行对应操作 —— IDE 类会把项目路径作为参数传递，CLI 类会在项目目录下打开新窗口。
 
 也可以跳过标签，直接用"自定义启动"填入任意命令。
+
+### CLI 标签示例
+
+CLI 标签可以选择终端应用。不同系统会展示适合当前平台的选项；不认识的终端值会安全回退到系统默认启动方式。
+
+| 想要的效果 | 分类 | Terminal | Executable | Args |
+| --- | --- | --- | --- | --- |
+| 用 Warp 打开项目并运行 OpenCode | CLI | `Warp` | `opencode` | 留空或填写参数 |
+| 用 Warp 打开项目并运行 Claude Code | CLI | `Warp` | `claude` | 留空或填写参数 |
+| 用 Warp 打开项目并运行 AMP | CLI | `Warp` | `amp` | 留空或填写参数 |
+| 用 iTerm 打开项目并运行 OpenCode | CLI | `iTerm` | `opencode` | 留空或填写参数 |
+| 用系统 Terminal 运行 npm dev | CLI | `Terminal` | `npm` | `run dev` |
+| 用 Windows Terminal 运行 OpenCode | CLI | `WindowsTerminal` | `opencode` | 留空或填写参数 |
+| 用 PowerShell 运行 Claude Code | CLI | `PowerShell` | `claude` | 留空或填写参数 |
+| 用 cmd 运行 npm dev | CLI | `CommandPrompt` | `npm` | `run dev` |
+
+如果只需要打开 Warp 到项目目录而不自动运行命令，Warp 官方也支持 `warp://action/new_tab?path=<项目路径>` 这类 URI；VibeHub 的 CLI 标签则更适合“进入项目目录并启动某个 CLI agent”。
 
 ## 贡献
 

@@ -13,6 +13,7 @@ export function Header({ onSearch }: HeaderProps) {
     const { config, setTheme } = useAppStore();
     const isDark = config?.theme === 'dark';
     const [searchValue, setSearchValue] = useState('');
+    const [isMac] = useState(() => /\bMacintosh\b|\bMac OS X\b/.test(navigator.userAgent));
     const inputRef = useRef<HTMLInputElement>(null);
     const lastMouseTargetRef = useRef<EventTarget | null>(null);
 
@@ -59,6 +60,8 @@ export function Header({ onSearch }: HeaderProps) {
     };
 
     const handleDragStart = async (e: React.MouseEvent) => {
+        if (isMac) return;
+
         // Only start drag on left mouse button and not on interactive elements
         if (e.button !== 0) return;
         const target = e.target as HTMLElement;
@@ -124,36 +127,37 @@ export function Header({ onSearch }: HeaderProps) {
                     <Bell className="h-4 w-4" />
                 </Button>
 
-                {/* Window controls */}
-                <div className="flex items-center ml-2 border-l border-border/50 pl-2">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleMinimize}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="h-8 w-8 rounded-md hover:bg-muted transition-colors"
-                    >
-                        <Minus className="h-4 w-4" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleMaximize}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="h-8 w-8 rounded-md hover:bg-muted transition-colors"
-                    >
-                        <Square className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleClose}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="h-8 w-8 rounded-md hover:bg-destructive hover:text-destructive-foreground transition-colors"
-                    >
-                        <X className="h-4 w-4" />
-                    </Button>
-                </div>
+                {!isMac && (
+                    <div className="flex items-center ml-2 border-l border-border/50 pl-2">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={handleMinimize}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="h-8 w-8 rounded-md hover:bg-muted transition-colors"
+                        >
+                            <Minus className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={handleMaximize}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="h-8 w-8 rounded-md hover:bg-muted transition-colors"
+                        >
+                            <Square className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={handleClose}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="h-8 w-8 rounded-md hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                        >
+                            <X className="h-4 w-4" />
+                        </Button>
+                    </div>
+                )}
             </div>
         </header>
     );
