@@ -312,6 +312,18 @@
             "auto": "System",
             "language": "Language",
             "languageSubtitle": "Choose the display language of the application."
+        },
+        "transfer": {
+            "title": "Configuration Import/Export",
+            "subtitle": "Export or import tags and AI gateway settings. JSON files record the source system and are adjusted automatically during import.",
+            "export": "Export Config",
+            "import": "Import Config",
+            "note": "Import merges tags (same ID or same name/category updates; others are added) and replaces the current AI gateway configuration.",
+            "exportSuccess": "Configuration exported.",
+            "importSuccess": "Import complete: added {{added}} tag(s), updated {{updated}} tag(s), imported {{providers}} gateway provider(s).",
+            "sourceTarget": "Source system: {{source}} → current system: {{target}}",
+            "adjustments": "Compatibility adjustments",
+            "noAdjustments": "No adjustments were needed."
         }
     },
     "tag": {

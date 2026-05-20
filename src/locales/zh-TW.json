@@ -312,6 +312,18 @@
             "auto": "跟隨系統",
             "language": "語言",
             "languageSubtitle": "選擇應用程式顯示語言。"
+        },
+        "transfer": {
+            "title": "設定匯入匯出",
+            "subtitle": "匯出或匯入標籤與 AI 閘道設定，JSON 檔案會記錄來源系統並在匯入時自動做相容性調整。",
+            "export": "匯出設定",
+            "import": "匯入設定",
+            "note": "匯入會合併標籤（同 ID 或同名同分類會更新，其他會新增），並取代目前 AI 閘道設定。",
+            "exportSuccess": "設定已匯出。",
+            "importSuccess": "匯入完成：新增 {{added}} 個標籤，更新 {{updated}} 個標籤，匯入 {{providers}} 個閘道供應商。",
+            "sourceTarget": "來源系統：{{source}} → 目前系統：{{target}}",
+            "adjustments": "相容性調整",
+            "noAdjustments": "沒有需要調整的項目。"
         }
     },
     "tag": {

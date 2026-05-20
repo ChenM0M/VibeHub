@@ -7,6 +7,7 @@ pub mod stats;
 
 use self::config::GatewayConfig;
 use self::stats::{GatewayStats, StatsManager};
+use crate::app_paths;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -44,12 +45,10 @@ pub async fn get_gateway_stats(
 }
 
 pub fn init<R: Runtime>(app: &AppHandle<R>) {
-    // Calculate config path (same logic as Storage)
-    let exe_path = std::env::current_exe().expect("Failed to get current exe");
-    let exe_dir = exe_path.parent().expect("Failed to get exe dir");
-    let data_dir = exe_dir.join("data");
-    std::fs::create_dir_all(&data_dir).expect("Failed to create data dir");
-    let config_path = data_dir.join("gateway_config.json");
+    let data_dir = app_paths::app_data_dir().expect("Failed to initialize app data dir");
+    let config_path = app_paths::migrate_legacy_file_if_needed("gateway_config.json", &data_dir)
+        .expect("Failed to initialize gateway config storage");
+    let _ = app_paths::migrate_legacy_file_if_needed("gateway_stats.json", &data_dir);
 
     // Load config
     let config = GatewayConfig::load(&config_path).unwrap_or_default();
