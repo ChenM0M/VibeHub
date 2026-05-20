@@ -10,19 +10,20 @@ English: Build a recovery report after drift, HEAD changes, or interruption.
 
 Invocation input: [symptom]
 
-中文: 在漂移、HEAD 变化或中断后生成恢复报告。
-English: Build a recovery report after drift, HEAD changes, or interruption.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Analyze interrupted or drifted work and produce a recover report with safe next actions.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

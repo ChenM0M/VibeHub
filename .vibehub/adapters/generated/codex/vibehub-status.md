@@ -10,19 +10,20 @@ English: Read current task, phase, context, Git, and handoff status.
 
 Invocation input: 
 
-中文: 读取当前任务、阶段、上下文、Git 和 handoff 状态。
-English: Read current task, phase, context, Git, and handoff status.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Summarize current task, run, phase, context pack, handoff, Git status, and visible warnings.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

@@ -10,19 +10,20 @@ English: Show VibeHub command index.
 
 Invocation input: 
 
-中文: 显示 VibeHub 命令索引。
-English: Show VibeHub command index.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 List available VibeHub commands and explain when to use each one.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

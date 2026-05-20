@@ -6,6 +6,7 @@
 
 # Build outputs
 /src-tauri/target
+/src-tauri/target-*
 *.exe
 *.dmg
 *.deb
@@ -22,6 +23,7 @@
 # Local agent/runtime state
 .agent/
 .agents/
+.claude/
 .codex/
 .opencode/
 
