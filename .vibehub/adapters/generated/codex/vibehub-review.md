@@ -10,19 +10,20 @@ English: Review using diff, context, and research evidence.
 
 Invocation input: [focus]
 
-中文: 基于 diff、context 和 research evidence 进行 review。
-English: Review using diff, context, and research evidence.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Review the current diff against context, plan, research, tests, and VibeHub hard rules.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

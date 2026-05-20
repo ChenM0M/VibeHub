@@ -1,23 +1,25 @@
-schema_version: 1
+schema_version: 2
 project:
   id: VBdingHome
   name: VBdingHome
   root: .
 current:
-  mode: guided_drive
-  task_id: T-20260430051107-a2d4c5a4
-  run_id: R-20260430051107-fcc97799
+  mode: evidence_drive
+  task_id: T-20260513154224-58d8a685
+  run_id: R-20260513154224-488adb79
   session_id: null
-  phase: implement
+  phase: align
   phase_status: active
 pointers:
   task_pointer: .vibehub/tasks/current
-  run_pointer: .vibehub/tasks/T-20260430051107-a2d4c5a4/runs/current
+  run_pointer: .vibehub/tasks/T-20260513154224-58d8a685/runs/current
 flow:
-  align: pending
+  align_lite: pending
+  align: active
   research: pending
   plan: pending
-  implement: active
+  implement: pending
+  review_lite: pending
   review: pending
 observability:
   level: best_effort
@@ -27,28 +29,36 @@ observability:
 autonomy:
   level: high
 research:
-  required: false
-  status: skipped
+  required: true
+  status: required
   scope: active_task
   skipped_reason: null
 context:
-  current_pack: .vibehub/tasks/T-20260430051107-a2d4c5a4/runs/R-20260430051107-fcc97799/context-packs/implement.md
-  current_manifest: .vibehub/tasks/T-20260430051107-a2d4c5a4/runs/R-20260430051107-fcc97799/context-packs/implement.manifest.yaml
+  current_pack: .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/align.md
+  current_manifest: .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/align.manifest.yaml
   stale: false
   generated_by: vibehub_backend
 agent_report:
   status: not_started
   validation_status: pending
+  last_sync_report: .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260520-041935.md
 handoff:
   current: .vibehub/agent-view/handoff.md
-  status: empty
+  status: available
 git:
   baseline_commit: null
-  last_seen_head: null
-  dirty: null
-  changed_files_count: 0
+  last_seen_head: 2b43f6cd9db10291957f17f1b165553738859447
+  dirty: true
+  changed_files_count: 68
 loop_detection:
-  status: normal
-  warnings: []
-last_updated: 2026-04-30T05:11:07Z
+  status: warning
+  warnings:
+  - 'Loop warning: 68 changed file(s) meets or exceeds repeated_file_edits threshold 8.'
+last_updated: 2026-05-20T04:19:35Z
 resume_hint: .vibehub/agent-view/current.md
+sync:
+  last_synced_at: 2026-05-20T04:19:35Z
+  last_report: .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260520-041935.md
+  agent_view_sync: .vibehub/agent-view/sync.md
+  questions:
+  - Git currently reports 68 changed file(s). Do all of these belong to the active VibeHub task? If not, identify which files should be excluded or moved to a separate task.

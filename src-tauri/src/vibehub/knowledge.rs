@@ -1,3 +1,4 @@
+use crate::vibehub::util::{canonical_initialized_project_root, normalize_path};
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
@@ -15,27 +16,8 @@ pub fn append_knowledge_note(
     project_root: impl AsRef<Path>,
     note: Option<String>,
 ) -> Result<KnowledgeAppendResult> {
-    let project_root = fs::canonicalize(project_root.as_ref()).with_context(|| {
-        format!(
-            "Project path does not exist: {}",
-            project_root.as_ref().display()
-        )
-    })?;
-
-    if !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project path is not a directory: {}",
-            project_root.display()
-        ));
-    }
-
+    let project_root = canonical_initialized_project_root(project_root.as_ref())?;
     let vibehub_root = project_root.join(".vibehub");
-    if !vibehub_root.is_dir() {
-        return Err(anyhow!(
-            ".vibehub directory is missing; run VibeHub init first: {}",
-            vibehub_root.display()
-        ));
-    }
 
     let journal_dir = vibehub_root.join("journal");
     fs::create_dir_all(&journal_dir)
@@ -94,10 +76,6 @@ fn format_vibehub_path(project_root: &Path, target: &Path) -> String {
         .unwrap_or_else(|_| normalize_path(target))
 }
 
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,7 +120,7 @@ mod tests {
         fs::create_dir_all(&path).expect("create temp project");
 
         let err = append_knowledge_note(&path, None).expect_err("missing .vibehub should fail");
-        assert!(err.to_string().contains(".vibehub directory is missing"));
+        assert!(err.to_string().contains("VibeHub directory does not exist"));
 
         fs::remove_dir_all(path).expect("cleanup");
     }
