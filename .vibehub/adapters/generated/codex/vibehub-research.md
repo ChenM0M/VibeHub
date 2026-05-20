@@ -10,19 +10,20 @@ English: Run evidence-backed research and produce research notes.
 
 Invocation input: <question>
 
-中文: 执行有证据支撑的研究并产出 research notes。
-English: Run evidence-backed research and produce research notes.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Run evidence-backed research, cite sources when external facts are used, and write research notes for VibeHub review.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

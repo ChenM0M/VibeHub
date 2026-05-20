@@ -73,11 +73,31 @@
             "flow": "4+1 流程"
         },
         "flow": {
+            "align": "对齐",
+            "research": "研究",
             "plan": "计划",
-            "context": "上下文",
-            "run": "执行",
+            "implement": "实现",
             "review": "审查",
-            "handoff": "交接"
+            "skipped": "此模式跳过"
+        },
+        "flowPhases": {
+            "align_lite": "轻量对齐",
+            "align": "对齐",
+            "research": "研究",
+            "plan": "计划",
+            "implement": "实现",
+            "review_lite": "轻量审查",
+            "review": "审查"
+        },
+        "modes": {
+            "yolo_drive": "YOLO Drive",
+            "guided_drive": "Guided Drive",
+            "evidence_drive": "Evidence Drive"
+        },
+        "locales": {
+            "en": "英文",
+            "zh-CN": "简体中文",
+            "zh-TW": "繁体中文"
         },
         "status": {
             "currentTaskRun": "当前任务/运行",
@@ -89,13 +109,15 @@
             "observability": "可观测性",
             "gitDirty": "Git 变更状态",
             "contextPack": "上下文包",
+            "agentOutput": "Agent 输出",
             "handoff": "交接",
             "reviewEvidence": "审查证据",
             "reviewAvailable": "执行“审查证据”后可用",
             "needsActiveTask": "需要当前任务/运行",
             "gitUnavailable": "Git 不可用",
             "dirtyCount": "有变更（{{count}}）",
-            "clean": "干净"
+            "clean": "干净",
+            "locale": "语言"
         },
         "notices": {
             "observabilityLimited": "当前可观测性仅覆盖控制台状态和生成产物；运行时观测不在范围内。",
@@ -118,6 +140,20 @@
                 "claude_code": "CLAUDE.md + .claude 命令 + 约束",
                 "opencode": "AGENTS.md + .opencode 命令 + 约束"
             }
+        },
+        "next": {
+            "title": "建议下一步",
+            "loading": "读取 VibeHub 状态后显示可用的下一步。",
+            "initialize": "先把此项目接入 VibeHub，再开始任务协作。",
+            "startTask": "创建任务和运行，让 agent 有明确的状态入口可读。",
+            "syncWorkspace": "当前可见 {{count}} 个变更文件。推进流程状态前先检查漂移。",
+            "buildContext": "当前阶段缺少上下文包，agent 继续前需要先构建。",
+            "handoff": "构建交接信息，让下一轮 agent 有可恢复的状态记录。",
+            "continue": "刷新 agent 视图，并从当前 VibeHub 状态继续。"
+        },
+        "advanced": {
+            "title": "高级诊断",
+            "subtitle": "手动维护产物和 agent adapter"
         },
         "drift": {
             "title": "工作区漂移",
@@ -144,6 +180,10 @@
             "recoverDrift": "恢复漂移",
             "reviewEvidence": "生成审查证据",
             "buildHandoff": "构建交接/恢复报告",
+            "validatePhase": "验证阶段",
+            "completePhase": "完成阶段",
+            "advancePhase": "推进阶段",
+            "pausePhase": "暂停阶段",
             "updateAiInstructions": "更新 AI 指令",
             "saveCommandOverride": "保存命令覆盖",
             "addJournalNote": "添加日志记录",
@@ -165,8 +205,89 @@
             "missingSections": "缺少部分：{{sections}}。",
             "handoffBuilt": "交接已构建：{{path}}。",
             "handoffIncomplete": "交接已构建但不完整：{{path}}。",
+            "phaseValidated": "阶段 {{phase}} 验证结果为 {{status}}，缺少 {{missing}} 个必需输出。",
+            "phaseCompleted": "阶段 {{phase}} 已设置为 {{status}}。",
+            "phaseAdvanced": "阶段推进 {{from}} -> {{to}} 完成，状态为 {{status}}。",
+            "phasePaused": "阶段 {{phase}} 已暂停，状态为 {{status}}。",
+            "syncReportWritten": "同步报告已更新：{{path}}。需要用户补充的问题：{{questions}} 个。",
             "journalAppended": "日志记录已追加：{{path}}",
-            "knowledgeAppended": "知识记录已追加：{{path}}"
+            "knowledgeAppended": "知识记录已追加：{{path}}",
+            "localeSaved": "语言已保存：{{locale}}"
+        },
+        "sync": {
+            "title": "同步报告",
+            "report": "报告",
+            "questions": "需要用户补充",
+            "actions": "建议动作"
+        },
+        "phase": {
+            "title": "阶段验证",
+            "phase": "阶段",
+            "validationStatus": "验证结果",
+            "requiredOutputs": "必需输出",
+            "missingOutputs": "缺失输出",
+            "sourceOutput": "来源输出",
+            "notValidated": "当前视图尚未验证阶段。"
+        },
+        "tabs": {
+            "status": "状态",
+            "context": "上下文",
+            "review": "审查",
+            "handoff": "交接",
+            "research": "研究",
+            "diff": "变更",
+            "statusDetail": "任务/运行状态概览",
+            "contextPackDetail": "上下文包状态与清单摘要",
+            "reviewDetail": "审查证据",
+            "handoffDetail": "交接完整性",
+            "researchDetail": "研究状态",
+            "diffDetail": "Git 变更摘要",
+            "contextPackPath": "包路径",
+            "manifestPath": "清单路径",
+            "phase": "阶段",
+            "packExists": "包存在",
+            "manifestExists": "清单存在",
+            "stale": "已过期",
+            "included": "已包含",
+            "missing": "缺失",
+            "excluded": "已排除",
+            "contextDataSource": "数据来源",
+            "contextPackStatus": "上下文包",
+            "agentOutputStatus": "Agent 输出",
+            "handoffStatus": "交接文件",
+            "warnings": "警告",
+            "notAvailable": "不可用",
+            "noContent": "（无内容）",
+            "reviewExists": "审查存在",
+            "diffPatchExists": "Diff 补丁存在",
+            "reviewPath": "审查路径",
+            "diffPatchPath": "Diff 补丁路径",
+            "changedFilesCount": "变更文件",
+            "changedFilesPath": "变更文件路径",
+            "reviewSummary": "审查摘要（前 15 行）",
+            "evidenceMap": "证据地图",
+            "evidenceGrades": "证据等级",
+            "reviewNotGenerated": "尚未生成审查证据。使用\"生成审查证据\"操作生成 review.md。",
+            "reviewDataSource": "来源",
+            "handoffExists": "交接存在",
+            "handoffComplete": "完整",
+            "handoffPath": "交接路径",
+            "handoffSectionsCount": "章节数",
+            "missingSections": "缺失章节",
+            "handoffIsComplete": "交接已完成——所有必要章节均已存在。",
+            "handoffNotGenerated": "尚未构建交接。使用\"构建交接/恢复报告\"操作生成 handoff.md。",
+            "handoffDataSource": "来源",
+            "researchRequired": "是否必需",
+            "researchStatus": "状态",
+            "researchPackExists": "包存在",
+            "researchPackPath": "包路径",
+            "researchDataSource": "来源",
+            "researchSuppFiles": "补充文件",
+            "dirty": "有变更",
+            "changedFiles": "变更文件",
+            "diffStat": "Diff 统计",
+            "diffClean": "未检测到变更文件。",
+            "diffDataSource": "来源"
         }
     },
     "settings": {

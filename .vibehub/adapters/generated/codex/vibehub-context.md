@@ -10,19 +10,20 @@ English: Inspect or propose context for the current phase.
 
 Invocation input: [phase]
 
-中文: 检查或建议当前阶段上下文。
-English: Inspect or propose context for the current phase.
-
 Read first:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
+- `.vibehub/adapters/protocol.md`
 
 Task:
 Inspect current context quality and propose missing files or stale context rebuilds.
 
+
 Output requirements:
+- write the active run phase output before ending work:
+  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
 - changed files, if any
 - files read
 - commands run

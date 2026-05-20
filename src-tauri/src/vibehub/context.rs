@@ -1,4 +1,8 @@
 use crate::process_util::silent_command;
+use crate::vibehub::util::{
+    canonical_initialized_project_root, canonicalize_inside_project, normalize_path,
+    relative_to_project,
+};
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -132,7 +136,7 @@ pub fn build_context_pack(
     run_id: impl AsRef<str>,
     phase: impl AsRef<str>,
 ) -> Result<ContextPackBuildResult> {
-    let project_root = canonical_project_root(project_root.as_ref())?;
+    let project_root = canonical_initialized_project_root(project_root.as_ref())?;
     let task_id = validate_id("task_id", task_id.as_ref())?;
     let run_id = validate_id("run_id", run_id.as_ref())?;
     let phase = validate_id("phase", phase.as_ref())?;
@@ -243,7 +247,7 @@ pub fn build_context_pack(
             continue;
         }
 
-        let canonical = fs::canonicalize(&candidate)
+        let canonical = canonicalize_inside_project(&candidate)
             .with_context(|| format!("Failed to canonicalize {}", candidate.display()))?;
         if !canonical.starts_with(&project_root) {
             excluded.push(excluded_entry(
@@ -510,26 +514,6 @@ fn source_commit(project_root: &Path) -> Option<String> {
     }
 }
 
-fn canonical_project_root(project_root: &Path) -> Result<PathBuf> {
-    let project_root = fs::canonicalize(project_root)
-        .with_context(|| format!("Project path does not exist: {}", project_root.display()))?;
-
-    if !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project path is not a directory: {}",
-            project_root.display()
-        ));
-    }
-    if !project_root.join(".vibehub").is_dir() {
-        return Err(anyhow!(
-            "VibeHub directory does not exist: {}",
-            project_root.join(".vibehub").display()
-        ));
-    }
-
-    Ok(project_root)
-}
-
 fn repo_relative_candidate(project_root: &Path, raw_path: &str) -> Result<Option<PathBuf>> {
     let raw = Path::new(raw_path);
     if raw.is_absolute() {
@@ -551,9 +535,47 @@ fn repo_relative_candidate(project_root: &Path, raw_path: &str) -> Result<Option
 
 fn is_secret_like_path(path: &str) -> bool {
     let normalized = path.replace('\\', "/").to_lowercase();
-    normalized.split('/').any(|part| {
-        part.starts_with(".env") || part == ".git" || part == "secrets" || part == "credentials"
-    })
+    normalized
+        .split('/')
+        .any(|part| is_secret_like_segment(part))
+}
+
+fn is_secret_like_segment(part: &str) -> bool {
+    // Directory-style denies (any path component that IS one of these names).
+    if matches!(
+        part,
+        ".git" | "secrets" | "credentials" | ".ssh" | "node_modules"
+    ) {
+        return true;
+    }
+    // Prefix-style denies (e.g. .env, .env.local, .envrc).
+    if part.starts_with(".env") {
+        return true;
+    }
+    // SSH private keys: id_rsa, id_ed25519, id_ecdsa, etc.
+    if part.starts_with("id_rsa")
+        || part.starts_with("id_ed25519")
+        || part.starts_with("id_ecdsa")
+        || part.starts_with("id_dsa")
+    {
+        return true;
+    }
+    // Common private-key / cert / keystore extensions and naming conventions.
+    let suffixes = [
+        ".pem",
+        ".key",
+        ".pfx",
+        ".p12",
+        ".jks",
+        ".keystore",
+        ".asc",
+        ".gpg",
+        "_rsa",
+        "_ed25519",
+        "_ecdsa",
+        "_dsa",
+    ];
+    suffixes.iter().any(|s| part.ends_with(s))
 }
 
 fn excluded_entry(entry: &ContextEntry, reason: String, policy: &str) -> ExcludedManifestEntry {
@@ -578,17 +600,6 @@ fn validate_id<'a>(name: &str, value: &'a str) -> Result<&'a str> {
         ));
     }
     Ok(value)
-}
-
-fn relative_to_project(project_root: &Path, target: &Path) -> Result<PathBuf> {
-    target
-        .strip_prefix(project_root)
-        .map(PathBuf::from)
-        .with_context(|| format!("Path escapes project root: {}", target.display()))
-}
-
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }
 
 fn normalize_entry_path(path: &str) -> String {
