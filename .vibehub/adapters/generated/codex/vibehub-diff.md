@@ -21,6 +21,7 @@ Task:
 Summarize changed files and scope drift against the current task and context pack.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

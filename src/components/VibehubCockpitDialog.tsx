@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { AlertCircle, Bot, Code2, Eye, FileText, GitBranch, Lightbulb, PackagePlus, Pause, Play, RefreshCw, SearchCheck, ShieldCheck, Wrench } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { AlertCircle, Bot, CheckCircle2, Code2, Eye, FileText, GitBranch, Lightbulb, RefreshCw, SearchCheck, ShieldCheck, Wrench, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { AgentAdapterStatus, AgentTool, PhaseValidationResult, Project, ResearchStatus, VibehubCockpitStatus, VibehubContextViewData, VibehubDiffViewData, VibehubFileReadResult, VibehubFileStatus, VibehubHandoffViewData, VibehubReviewViewData, VibehubSyncReport, WorkspaceDriftReport } from '@/types';
+import { AgentAdapterStatus, AgentTool, PhaseValidationResult, Project, ResearchStatus, VibehubCockpitStatus, VibehubContextViewData, VibehubDiffViewData, VibehubFileReadResult, VibehubFlowDetail, VibehubGitBranchesView, VibehubHandoffViewData, VibehubProjectDigest, VibehubReviewViewData, WorkspaceDriftReport } from '@/types';
 import { tauriApi } from '@/services/tauri';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +15,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface VibehubCockpitDialogProps {
     isOpen: boolean;
@@ -28,25 +27,20 @@ type ActionState = {
     error: boolean;
 };
 
-type CockpitAction = 'init' | 'start-task' | 'build-context' | 'continue' | 'agent-sync' | 'workspace-sync' | 'recover-drift' | 'review' | 'handoff' | 'journal' | 'knowledge' | 'validate-phase' | 'complete-phase' | 'advance-phase' | 'pause-phase';
-
-type RecommendedAction = {
-    action: CockpitAction;
+type RecommendedReadOnlyAction = {
+    command: string;
     title: string;
     description: string;
-    disabled?: boolean;
 };
 
-const COCKPIT_TABS = ['status', 'context', 'evidence', 'preview', 'review', 'handoff', 'research', 'diff'] as const;
-type CockpitTab = (typeof COCKPIT_TABS)[number];
 type PreviewCandidate = { path: string; label: string; exists: boolean };
+type DashboardDetail = 'phase' | 'git' | 'context' | 'output' | 'handoff' | 'review' | 'research' | 'evidence' | 'preview' | 'adapters';
 
-const AGENT_TOOL_OPTIONS: Array<{ id: AgentTool; label: string; description: string }> = [
-    { id: 'codex', label: 'Codex', description: 'AGENTS.md + .agents/skills repo skills' },
-    { id: 'claude_code', label: 'Claude Code', description: 'CLAUDE.md + .claude commands + constraints' },
-    { id: 'opencode', label: 'OpenCode', description: 'AGENTS.md + .opencode commands + constraints' },
+const AGENT_TOOL_OPTIONS: Array<{ id: AgentTool; label: string }> = [
+    { id: 'codex', label: 'Codex' },
+    { id: 'claude_code', label: 'Claude Code' },
+    { id: 'opencode', label: 'OpenCode' },
 ];
-const DRIVE_MODE_OPTIONS = ['yolo_drive', 'guided_drive', 'evidence_drive'] as const;
 const LOCALE_OPTIONS = ['en', 'zh-CN', 'zh-TW'] as const;
 const FLOW_STAGES = ['align', 'research', 'plan', 'implement', 'review'] as const;
 type FlowStage = (typeof FLOW_STAGES)[number];
@@ -61,7 +55,7 @@ export function VibehubCockpitDialog({ isOpen, onClose, project }: VibehubCockpi
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-5xl">
                 <DialogHeader>
                     <DialogTitle>{t('vibehub.cockpit.title')}</DialogTitle>
                     <DialogDescription className="break-all">
@@ -86,28 +80,27 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
     const [status, setStatus] = useState<VibehubCockpitStatus | null>(null);
     const [adapterStatus, setAdapterStatus] = useState<AgentAdapterStatus | null>(null);
     const [driftReport, setDriftReport] = useState<WorkspaceDriftReport | null>(null);
-    const [syncReport, setSyncReport] = useState<VibehubSyncReport | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [actionState, setActionState] = useState<ActionState | null>(null);
-    const [runningAction, setRunningAction] = useState<CockpitAction | null>(null);
+    const [isInitializing, setIsInitializing] = useState(false);
+    const [isSyncingAdapters, setIsSyncingAdapters] = useState(false);
+    const [isSavingLocale, setIsSavingLocale] = useState(false);
     const [agentTools, setAgentTools] = useState<AgentTool[]>(['codex', 'claude_code', 'opencode']);
-    const [taskMode, setTaskMode] = useState<(typeof DRIVE_MODE_OPTIONS)[number]>('guided_drive');
-    const [selectedCommandName, setSelectedCommandName] = useState('vibehub-sync');
-    const [commandOverrideBody, setCommandOverrideBody] = useState('');
-    const [journalTitle, setJournalTitle] = useState('');
-    const [journalBody, setJournalBody] = useState('');
-    const [knowledgeNote, setKnowledgeNote] = useState('');
-    const [showAdvancedDiagnostics, setShowAdvancedDiagnostics] = useState(false);
-    const [selectedLocale, setSelectedLocale] = useState<string>('en');
-
-    // Tab state
-    const [activeTab, setActiveTab] = useState<CockpitTab>('status');
+    const [selectedLocale, setSelectedLocale] = useState<string>(() => normalizeLocale(i18n.language));
+    const [firstTaskTitle, setFirstTaskTitle] = useState('');
+    const [firstTaskMode, setFirstTaskMode] = useState<string>('evidence_drive');
+    const [isStartingFirstTask, setIsStartingFirstTask] = useState(false);
+    const [detailPanel, setDetailPanel] = useState<DashboardDetail | null>(null);
     const [contextView, setContextView] = useState<VibehubContextViewData | null>(null);
     const [reviewView, setReviewView] = useState<VibehubReviewViewData | null>(null);
     const [handoffView, setHandoffView] = useState<VibehubHandoffViewData | null>(null);
     const [researchStatus, setResearchStatus] = useState<ResearchStatus | null>(null);
     const [diffView, setDiffView] = useState<VibehubDiffViewData | null>(null);
+    const [projectDigest, setProjectDigest] = useState<VibehubProjectDigest | null>(null);
+    const [gitBranches, setGitBranches] = useState<VibehubGitBranchesView | null>(null);
+    const [flowDetails, setFlowDetails] = useState<VibehubFlowDetail[]>([]);
     const [phaseValidation, setPhaseValidation] = useState<PhaseValidationResult | null>(null);
+    const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
     const [previewPath, setPreviewPath] = useState('');
     const [previewFile, setPreviewFile] = useState<VibehubFileReadResult | null>(null);
     const [previewError, setPreviewError] = useState<string | null>(null);
@@ -115,13 +108,10 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
     const previewCandidates = getPreviewCandidates(status, contextView, reviewView, handoffView);
     const previewCandidateKey = previewCandidates.map((candidate) => candidate.path).join('|');
 
-    const loadStatus = async (clearActionState = true) => {
+    const loadDashboard = useCallback(async (clearActionState = true) => {
         if (!project) return;
         setIsLoading(true);
         try {
-            // ONE round-trip pulls status + context + review + handoff + diff +
-            // research with a single cached `git` invocation. Replaces the old
-            // 6 separate vibehubRead* calls that ran on tab switch.
             const overview = await tauriApi.vibehubReadOverview(project.path);
             setStatus(overview.status);
             setContextView(overview.context);
@@ -129,15 +119,34 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
             setHandoffView(overview.handoff);
             setDiffView(overview.diff);
             setResearchStatus(overview.research);
+            setProjectDigest(overview.project_digest);
+            setGitBranches(overview.git_branches);
+            setFlowDetails(overview.flow_details);
             if (overview.status.locale) {
                 setSelectedLocale(overview.status.locale);
             }
+
             if (overview.initialized) {
-                const nextAdapterStatus = await tauriApi.vibehubGetAgentAdapterStatus(project.path);
-                setAdapterStatus(nextAdapterStatus);
-                setAgentTools(nextAdapterStatus.enabled_tools.length ? nextAdapterStatus.enabled_tools : agentTools);
+                const [driftResult, adapterResult, validationResult] = await Promise.allSettled([
+                    tauriApi.vibehubCheckWorkspaceDrift(project.path, i18n.language),
+                    tauriApi.vibehubGetAgentAdapterStatus(project.path),
+                    overview.status.current_task_id && overview.status.current_run_id && overview.status.current_phase
+                        ? tauriApi.vibehubValidatePhase(project.path)
+                        : Promise.resolve(null),
+                ]);
+
+                setDriftReport(driftResult.status === 'fulfilled' ? driftResult.value : null);
+                if (adapterResult.status === 'fulfilled') {
+                    setAdapterStatus(adapterResult.value);
+                    setAgentTools((current) => adapterResult.value.enabled_tools.length ? adapterResult.value.enabled_tools : current);
+                } else {
+                    setAdapterStatus(null);
+                }
+                setPhaseValidation(validationResult.status === 'fulfilled' ? validationResult.value : null);
             } else {
                 setAdapterStatus(null);
+                setDriftReport(null);
+                setPhaseValidation(null);
             }
             if (clearActionState) {
                 setActionState(null);
@@ -147,41 +156,50 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [i18n.language, project?.path]);
 
     useEffect(() => {
         if (enabled && project) {
-            loadStatus();
+            loadDashboard();
         } else {
             setStatus(null);
             setAdapterStatus(null);
             setDriftReport(null);
-            setSyncReport(null);
             setActionState(null);
-            setRunningAction(null);
+            setIsInitializing(false);
             setContextView(null);
             setReviewView(null);
             setHandoffView(null);
             setDiffView(null);
             setResearchStatus(null);
+            setProjectDigest(null);
+            setGitBranches(null);
+            setFlowDetails([]);
+            setPhaseValidation(null);
+            setSelectedPhase(null);
+            setDetailPanel(null);
             setPreviewPath('');
             setPreviewFile(null);
             setPreviewError(null);
         }
-    }, [enabled, project?.path]);
+    }, [enabled, loadDashboard, project]);
 
-    // Phase validation is on-demand only (it parses session output and is the
-    // one piece of data the overview deliberately does NOT bundle, because it
-    // is only meaningful while the Status tab is open).
     useEffect(() => {
-        if (!project || !status?.initialized) return;
-        if (activeTab === 'status' && status.current_task_id && status.current_run_id && status.current_phase) {
-            tauriApi.vibehubValidatePhase(project.path).then(setPhaseValidation).catch(() => setPhaseValidation(null));
+        if (!enabled || !project) return;
+        const timer = window.setInterval(() => {
+            loadDashboard(false);
+        }, 12000);
+        return () => window.clearInterval(timer);
+    }, [enabled, loadDashboard, project]);
+
+    useEffect(() => {
+        if (detailPanel && project) {
+            loadDashboard(false);
         }
-    }, [activeTab, project?.path, status?.initialized, status?.current_task_id, status?.current_run_id, status?.current_phase]);
+    }, [detailPanel, loadDashboard, project]);
 
     useEffect(() => {
-        if (activeTab !== 'preview') return;
+        if (detailPanel !== 'preview') return;
         if (!previewCandidates.length) {
             setPreviewPath('');
             setPreviewFile(null);
@@ -191,10 +209,10 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
         if (!previewPath || !previewCandidates.some((candidate) => candidate.path === previewPath)) {
             setPreviewPath(previewCandidates[0].path);
         }
-    }, [activeTab, previewCandidateKey, previewPath]);
+    }, [detailPanel, previewCandidateKey, previewCandidates, previewPath]);
 
     useEffect(() => {
-        if (activeTab !== 'preview' || !project || !previewPath) return;
+        if (detailPanel !== 'preview' || !project || !previewPath) return;
         let cancelled = false;
         setIsPreviewLoading(true);
         setPreviewError(null);
@@ -214,23 +232,21 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
         return () => {
             cancelled = true;
         };
-    }, [activeTab, project?.path, previewPath]);
+    }, [detailPanel, project?.path, previewPath]);
 
     const hasActiveContextTarget = Boolean(
         status?.initialized && status.current_task_id && status.current_run_id && status.current_phase
     );
-    const actionDisabled = isLoading || !!runningAction || !project;
-    const hasKnowledgeNote = knowledgeNote.trim().length > 0;
-    const selectedCommand = adapterStatus?.commands.find((command) => command.name === selectedCommandName)
-        || adapterStatus?.commands[0]
-        || null;
-
-    useEffect(() => {
-        if (selectedCommand) {
-            setSelectedCommandName(selectedCommand.name);
-            setCommandOverrideBody(selectedCommand.body);
-        }
-    }, [selectedCommand?.name, selectedCommand?.body]);
+    const dashboardDisabled = !status || !status.initialized;
+    const currentFlow = useMemo(() => getModeFlow(status, status?.current_mode || 'guided_drive'), [status]);
+    const readOnlyActions = useMemo(
+        () => getReadOnlyRecommendedActions(status, driftReport, contextView, handoffView, phaseValidation, t),
+        [contextView, driftReport, handoffView, phaseValidation, status, t]
+    );
+    const fileHealth = useMemo(
+        () => getFileHealthCards(status, contextView, reviewView, handoffView, researchStatus, t),
+        [contextView, handoffView, researchStatus, reviewView, status, t]
+    );
 
     const toggleAgentTool = (tool: AgentTool, checked: boolean) => {
         setAgentTools((current) => {
@@ -239,302 +255,141 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
         });
     };
 
-    const saveCommandOverride = async () => {
-        if (!project || !adapterStatus || !selectedCommand) return;
-        setRunningAction('agent-sync');
-        try {
-            const overrides = Object.fromEntries(
-                adapterStatus.commands.map((command) => [command.name, command.body])
-            );
-            overrides[selectedCommand.name] = commandOverrideBody;
-            await tauriApi.vibehubUpdateAgentAdapterConfig(project.path, {
-                enabled_tools: agentTools,
-                command_overrides: overrides,
-            });
-            const result = await tauriApi.vibehubSyncAgentAdapters(project.path, agentTools);
-            setActionState({ message: result.summary, error: result.conflict_files.length > 0 });
-            await loadStatus(false);
-        } catch (error) {
-            setActionState({ message: String(error), error: true });
-        } finally {
-            setRunningAction(null);
-        }
-    };
-
-    const runAction = async (action: CockpitAction) => {
+    const runStartFirstTask = async () => {
         if (!project) return;
-        setRunningAction(action);
+        const title = firstTaskTitle.trim();
+        if (!title) {
+            setActionState({ message: t('vibehub.dashboard.firstTaskTitleRequired'), error: true });
+            return;
+        }
+        setIsStartingFirstTask(true);
         try {
-            if (action === 'init') {
-                const result = await tauriApi.vibehubInit(project.path, agentTools);
-                const createdCount = result.created_files.length;
-                const keptCount = result.skipped_existing_files.length;
-                const errorSuffix = result.errors.length ? ` ${t('vibehub.messages.issueCount', { count: result.errors.length })}` : '';
-                setActionState({
-                    message: `${t('vibehub.messages.initialized', {
-                        root: result.vibehub_root,
-                        created: createdCount,
-                        kept: keptCount,
-                    })}${errorSuffix}`,
-                    error: result.errors.length > 0,
-                });
-            } else if (action === 'start-task') {
-                const result = await tauriApi.vibehubStartTask(project.path, undefined, taskMode);
-                setActionState({
-                    message: t('vibehub.messages.startedTask', {
-                        task: result.task_id,
-                        run: result.run_id,
-                        phase: result.phase,
-                    }),
-                    error: false,
-                });
-            } else if (action === 'build-context') {
-                if (!status?.current_task_id || !status.current_run_id || !status.current_phase) {
-                    setActionState({
-                        message: t('vibehub.messages.noContextTarget'),
-                        error: true,
-                    });
-                    return;
-                }
-                const result = await tauriApi.vibehubBuildContextPack(
-                    project.path,
-                    status.current_task_id,
-                    status.current_run_id,
-                    status.current_phase
-                );
-                setActionState({
-                    message: t('vibehub.messages.contextBuilt', {
-                        path: result.pack_path,
-                        included: result.included_count,
-                        missing: result.missing_count,
-                        excluded: result.excluded_count,
-                    }),
-                    error: result.missing_count > 0,
-                });
-            } else if (action === 'continue') {
-                const result = await tauriApi.vibehubSyncWorkspace(project.path, i18n.language);
-                setSyncReport(result);
-                setActionState({
-                    message: t('vibehub.messages.syncReportWritten', {
-                        path: result.report_path || result.agent_view_sync_path,
-                        questions: result.questions_for_user.length,
-                    }),
-                    error: result.status !== 'synced',
-                });
-            } else if (action === 'agent-sync') {
-                const result = await tauriApi.vibehubSyncAgentAdapters(project.path, agentTools);
-                const conflictSuffix = result.conflict_files.length
-                    ? ` ${t('vibehub.messages.conflict')}: ${result.conflict_files.map((file) => `${file.path} (${file.reason})`).join('; ')}`
-                    : '';
-                setActionState({
-                    message: `${result.summary}${conflictSuffix}`,
-                    error: result.conflict_files.length > 0,
-                });
-            } else if (action === 'workspace-sync') {
-                const result = await tauriApi.vibehubCheckWorkspaceDrift(project.path, i18n.language);
-                setDriftReport(result);
-                setActionState({
-                    message: result.warnings.length
-                        ? t('vibehub.messages.workspaceDrift', { warnings: result.warnings.join(' ') })
-                        : t('vibehub.messages.workspaceClean'),
-                    error: result.warnings.length > 0,
-                });
-            } else if (action === 'recover-drift') {
-                const result = await tauriApi.vibehubSyncWorkspaceState(project.path, i18n.language);
-                setDriftReport(result);
-                setActionState({
-                    message: result.recover_report_path
-                        ? t('vibehub.messages.recoverWritten', { path: result.recover_report_path })
-                        : t('vibehub.messages.recoverNotNeeded'),
-                    error: result.warnings.length > 0,
-                });
-            } else if (action === 'review') {
-                const result = await tauriApi.vibehubGenerateReviewEvidence(project.path);
-                setActionState({
-                    message: t('vibehub.messages.reviewWritten', {
-                        path: result.review_path,
-                        count: result.changed_files_count,
-                    }),
-                    error: false,
-                });
-            } else if (action === 'handoff') {
-                const result = await tauriApi.vibehubBuildHandoff(project.path);
-                const missingSuffix = result.missing_required_sections.length
-                    ? ` ${t('vibehub.messages.missingSections', { sections: result.missing_required_sections.join(', ') })}`
-                    : '';
-                setActionState({
-                    message: `${result.complete
-                        ? t('vibehub.messages.handoffBuilt', { path: result.handoff_path })
-                        : t('vibehub.messages.handoffIncomplete', { path: result.handoff_path })}${missingSuffix}`,
-                    error: !result.complete,
-                });
-            } else if (action === 'validate-phase') {
-                const result = await tauriApi.vibehubValidatePhase(project.path);
-                setPhaseValidation(result);
-                setActionState({
-                    message: t('vibehub.messages.phaseValidated', {
-                        phase: result.phase,
-                        status: result.status,
-                        missing: result.missing_outputs.length,
-                    }),
-                    error: result.missing_outputs.length > 0,
-                });
-            } else if (action === 'complete-phase') {
-                const result = await tauriApi.vibehubCompletePhase(project.path);
-                setPhaseValidation(result.validation);
-                setActionState({
-                    message: t('vibehub.messages.phaseCompleted', {
-                        phase: result.current_phase,
-                        status: result.current_status,
-                    }),
-                    error: result.current_status === 'needs_action' || result.current_status === 'failed',
-                });
-            } else if (action === 'advance-phase') {
-                const result = await tauriApi.vibehubAdvancePhase(project.path);
-                setPhaseValidation(result.validation);
-                setActionState({
-                    message: t('vibehub.messages.phaseAdvanced', {
-                        from: result.previous_phase,
-                        to: result.current_phase,
-                        status: result.current_status,
-                    }),
-                    error: result.current_status === 'needs_action' || result.current_status === 'failed',
-                });
-            } else if (action === 'pause-phase') {
-                const result = await tauriApi.vibehubPausePhase(project.path);
-                setActionState({
-                    message: t('vibehub.messages.phasePaused', {
-                        phase: result.current_phase,
-                        status: result.current_phase_status,
-                    }),
-                    error: result.current_phase_status !== 'blocked',
-                });
-            } else if (action === 'journal') {
-                const result = await tauriApi.vibehubAppendJournalEntry(
-                    project.path,
-                    journalTitle,
-                    journalBody
-                );
-                setJournalTitle('');
-                setJournalBody('');
-                setActionState({
-                    message: t('vibehub.messages.journalAppended', { path: result.journal_path }),
-                    error: false,
-                });
-            } else {
-                const result = await tauriApi.vibehubAppendKnowledgeNote(project.path, knowledgeNote);
-                setKnowledgeNote('');
-                setActionState({
-                    message: t('vibehub.messages.knowledgeAppended', { path: result.knowledge_path }),
-                    error: false,
-                });
-            }
-            await loadStatus(false);
+            const result = await tauriApi.vibehubStartTask(project.path, title, firstTaskMode);
+            setActionState({
+                message: t('vibehub.dashboard.firstTaskCreated', { task: result.task_id, run: result.run_id }),
+                error: false,
+            });
+            setFirstTaskTitle('');
+            await loadDashboard(false);
         } catch (error) {
             setActionState({ message: String(error), error: true });
         } finally {
-            setRunningAction(null);
+            setIsStartingFirstTask(false);
         }
     };
 
-    const saveLocale = async () => {
-        if (!project || !status?.initialized) return;
-        setRunningAction('workspace-sync');
+    const runInitialize = async () => {
+        if (!project) return;
+        setIsInitializing(true);
         try {
-            await tauriApi.vibehubSetProjectLocale(project.path, selectedLocale);
-            setActionState({ message: t('vibehub.messages.localeSaved', { locale: selectedLocale }), error: false });
-            await loadStatus(false);
+            const result = await tauriApi.vibehubInit(project.path, agentTools, true);
+            if (selectedLocale) {
+                await tauriApi.vibehubSetProjectLocale(project.path, selectedLocale);
+            }
+            const createdCount = result.created_files.length;
+            const keptCount = result.skipped_existing_files.length;
+            const errorSuffix = result.errors.length ? ` ${t('vibehub.messages.issueCount', { count: result.errors.length })}` : '';
+            setActionState({
+                message: `${t('vibehub.messages.initialized', {
+                    root: result.vibehub_root,
+                    created: createdCount,
+                    kept: keptCount,
+                })}${errorSuffix}`,
+                error: result.errors.length > 0,
+            });
+            await loadDashboard(false);
         } catch (error) {
             setActionState({ message: String(error), error: true });
         } finally {
-            setRunningAction(null);
+            setIsInitializing(false);
+        }
+    };
+
+    const runSyncAgentAdapters = async () => {
+        if (!project) return;
+        setIsSyncingAdapters(true);
+        try {
+            const result = await tauriApi.vibehubSyncAgentAdapters(project.path, agentTools, false);
+            setActionState({
+                message: t('vibehub.messages.agentAdaptersSynced', {
+                    created: result.created_files.length,
+                    updated: result.updated_files.length,
+                    skipped: result.skipped_files.length,
+                    conflicts: result.conflict_files.length,
+                }),
+                error: result.conflict_files.length > 0,
+            });
+            await loadDashboard(false);
+        } catch (error) {
+            setActionState({ message: String(error), error: true });
+        } finally {
+            setIsSyncingAdapters(false);
+        }
+    };
+
+    const runSaveLocale = async () => {
+        if (!project || !selectedLocale) return;
+        setIsSavingLocale(true);
+        try {
+            const locale = await tauriApi.vibehubSetProjectLocale(project.path, selectedLocale);
+            setActionState({ message: t('vibehub.messages.localeSaved', { locale }), error: false });
+            await loadDashboard(false);
+        } catch (error) {
+            setActionState({ message: String(error), error: true });
+        } finally {
+            setIsSavingLocale(false);
         }
     };
 
     const taskLabel = status?.current_task_id
         ? `${status.current_task_id}${status.current_task_title ? ` - ${status.current_task_title}` : ''}`
         : t('vibehub.status.noCurrentTask');
-    const unavailableReason = !status
-        ? t('vibehub.unavailable.loading')
-        : !status.initialized
-            ? t('vibehub.unavailable.notInitialized')
-            : !hasActiveContextTarget
-                ? t('vibehub.unavailable.noActiveTask')
-                : null;
-    const recommendedAction = getRecommendedAction(status, hasActiveContextTarget, t);
 
     return (
-        <div className="space-y-4">
-            {showOverview && project && (
-                <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
-                    <div className="rounded-md border bg-muted/20 p-4">
-                        <div className="text-xs text-muted-foreground">{t('vibehub.overview.project')}</div>
-                        <div className="mt-1 text-lg font-semibold">{project.name}</div>
-                        <div className="mt-1 break-all text-xs text-muted-foreground">{project.path}</div>
-                        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                            <Badge variant="outline">{project.project_type}</Badge>
-                            {project.metadata.git_branch && (
-                                <Badge variant="secondary">
-                                    <GitBranch className="mr-1 h-3 w-3" />
-                                    {project.metadata.git_branch}
-                                </Badge>
-                            )}
-                        </div>
-                    </div>
-                    <div className="rounded-md border bg-muted/20 p-4">
-                        <div className="text-xs text-muted-foreground">{t('vibehub.overview.flow')}</div>
-                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                            {getModeFlow(status, taskMode).map((item) => (
-                                <div
-                                    key={item.stage}
-                                    className={`rounded border px-2 py-1.5 font-medium ${flowStatusClass(item.status)}`}
-                                >
-                                    <div>{t(`vibehub.flow.${item.stage}`)}</div>
-                                    <div className="mt-0.5 text-[10px] font-normal text-muted-foreground">
-                                        {item.phase ? `${t(`vibehub.flowPhases.${item.phase}`)} · ${formatPhaseStatus(item.status)}` : t('vibehub.flow.skipped')}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <div className="flex items-center justify-between gap-3 border-b pb-3">
+        <div className="relative space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
                 <div className="min-w-0">
-                    <div className="text-sm text-muted-foreground">{t('vibehub.status.currentTaskRun')}</div>
-                    <div className="truncate font-medium">{isLoading ? t('common.loading') : taskLabel}</div>
-                    {status?.current_run_id && (
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground">{t('vibehub.status.run')}: {status.current_run_id}</div>
+                    <div className="text-sm font-medium">{showOverview ? t('vibehub.dashboard.title') : t('vibehub.cockpit.title')}</div>
+                    <div className="mt-1 truncate text-xl font-semibold tracking-tight">{project?.name || t('common.unknown')}</div>
+                    <div className="mt-1 break-all text-xs text-muted-foreground">{project?.path || ''}</div>
+                    <div className="mt-2 max-w-3xl text-sm text-muted-foreground">
+                        {projectDigest?.summary_line || project?.description || t('vibehub.dashboard.noSummary')}
+                    </div>
+                    {projectDigest?.status_line && (
+                        <div className="mt-1 max-w-3xl text-xs text-muted-foreground">{projectDigest.status_line}</div>
                     )}
                 </div>
-                <Button variant="outline" size="sm" onClick={() => loadStatus()} disabled={isLoading || !project}>
+                <Button size="sm" onClick={() => loadDashboard()} disabled={isLoading || !project} className="shrink-0">
                     <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                    {t('home.refresh')}
+                    {t('vibehub.dashboard.refreshDetect')}
                 </Button>
             </div>
 
-            {status && (
-                <>
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                        <Metric label={t('vibehub.status.mode')} value={status.current_mode || t('common.unknown')} />
-                        <Metric label={t('vibehub.status.phase')} value={status.current_phase || t('common.none')} />
-                        <Metric label={t('vibehub.status.phaseStatus')} value={status.phase_status || t('common.unknown')} />
-                        <Metric label={t('vibehub.status.observability')} value={status.observability_level || 'best_effort'} />
-                    </div>
+            {!status && (
+                <div className="rounded-md border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+                    {isLoading ? t('common.loading') : t('vibehub.unavailable.loading')}
+                </div>
+            )}
 
-                    <div className="grid gap-3 md:grid-cols-2">
-                        <div className="space-y-1.5">
-                            <Label htmlFor="vibehub-locale-select" className="text-xs">
-                                {t('vibehub.status.locale')}
-                            </Label>
-                            <div className="flex gap-2">
+            {status && dashboardDisabled && (
+                <div className="rounded-md border bg-muted/40 p-8 text-center opacity-90">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-background text-muted-foreground">
+                        <Wrench className="h-5 w-5" />
+                    </div>
+                    <div className="mt-4 text-lg font-semibold">{t('vibehub.dashboard.uninitializedTitle')}</div>
+                    <div className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
+                        {t('vibehub.dashboard.uninitializedBody')}
+                    </div>
+                    <div className="mx-auto mt-6 max-w-2xl rounded-md border bg-background p-4 text-left">
+                        <div className="grid gap-4 md:grid-cols-[0.8fr_1.2fr]">
+                            <div className="space-y-2">
+                                <Label htmlFor="vibehub-init-locale">{t('vibehub.status.locale')}</Label>
                                 <select
-                                    id="vibehub-locale-select"
+                                    id="vibehub-init-locale"
                                     value={selectedLocale}
                                     onChange={(event) => setSelectedLocale(event.target.value)}
-                                    disabled={actionDisabled}
-                                    className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
+                                    disabled={isInitializing}
+                                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm"
                                 >
                                     {LOCALE_OPTIONS.map((locale) => (
                                         <option key={locale} value={locale}>
@@ -542,524 +397,763 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                                         </option>
                                     ))}
                                 </select>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={saveLocale}
-                                    disabled={actionDisabled || !status?.initialized || selectedLocale === status?.locale}
-                                >
-                                    {t('common.save')}
-                                </Button>
+                                <div className="text-xs text-muted-foreground">{t('vibehub.dashboard.initLanguageHint')}</div>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="text-sm font-medium">{t('vibehub.dashboard.agentTools')}</div>
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                    {AGENT_TOOL_OPTIONS.map((tool) => (
+                                        <label key={tool.id} className="flex items-start gap-2 rounded-md border bg-muted/20 p-3 text-sm">
+                                            <Checkbox
+                                                checked={agentTools.includes(tool.id)}
+                                                onCheckedChange={(checked) => toggleAgentTool(tool.id, checked === true)}
+                                                disabled={isInitializing}
+                                            />
+                                            <span>
+                                                <span className="block font-medium">{tool.label}</span>
+                                                <span className="block text-xs text-muted-foreground">{t(`vibehub.ai.tools.${tool.id}`)}</span>
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
                         </div>
+                        <div className="mt-4 flex justify-end">
+                            <Button onClick={runInitialize} disabled={isInitializing || !project}>
+                                <Wrench className="mr-2 h-4 w-4" />
+                                {isInitializing ? t('common.loading') : t('vibehub.actions.initialize')}
+                            </Button>
+                        </div>
                     </div>
-
-                    <div className="grid gap-3 md:grid-cols-4">
-                        <StatusPanel
-                            icon={<GitBranch className="h-4 w-4" />}
-                            label={t('vibehub.status.gitDirty')}
-                            value={gitStatusLabel(status, t)}
-                            tone={status.git_dirty ? 'warn' : 'ok'}
-                        />
-                        <FileStatusPanel
-                            icon={<FileText className="h-4 w-4" />}
-                            label={t('vibehub.status.contextPack')}
-                            fileStatus={status.context_pack_status}
-                        />
-                        <FileStatusPanel
-                            icon={<FileText className="h-4 w-4" />}
-                            label={t('vibehub.status.agentOutput')}
-                            fileStatus={status.agent_output_status}
-                        />
-                        <FileStatusPanel
-                            icon={<FileText className="h-4 w-4" />}
-                            label={t('vibehub.status.handoff')}
-                            fileStatus={status.handoff_status}
-                        />
-                    </div>
-
-                    {!status.initialized && (
-                        <Notice error message={t('vibehub.notices.notInitialized')} />
-                    )}
-
-                    {status.warnings.map((warning) => (
-                        <Notice key={warning} error message={warning} />
-                    ))}
-                </>
+                </div>
             )}
 
-            {/* P1 observable tabs */}
             {status?.initialized && (
-                <div className="rounded-md border bg-card">
-                    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as CockpitTab)}>
-                        <div className="border-b px-4 pt-3">
-                            <TabsList className="h-auto flex-wrap justify-start">
-                                <TabsTrigger value="status">{t('vibehub.tabs.status')}</TabsTrigger>
-                                <TabsTrigger value="context">{t('vibehub.tabs.context')}</TabsTrigger>
-                                <TabsTrigger value="evidence">{labelOrFallback(t, 'vibehub.tabs.evidence', 'Evidence')}</TabsTrigger>
-                                <TabsTrigger value="preview">{labelOrFallback(t, 'vibehub.tabs.preview', 'Preview')}</TabsTrigger>
-                                <TabsTrigger value="review">{t('vibehub.tabs.review')}</TabsTrigger>
-                                <TabsTrigger value="handoff">{t('vibehub.tabs.handoff')}</TabsTrigger>
-                                <TabsTrigger value="research">{t('vibehub.tabs.research')}</TabsTrigger>
-                                <TabsTrigger value="diff">{t('vibehub.tabs.diff')}</TabsTrigger>
-                            </TabsList>
-                        </div>
-
-                        <TabsContent value="status" className="space-y-4 px-4 pb-4">
-                            <StatusTabContent
-                                status={status}
-                                phaseValidation={phaseValidation}
-                                recommendedAction={recommendedAction}
-                                unavailableReason={unavailableReason}
-                                actionDisabled={actionDisabled}
-                                hasActiveContextTarget={hasActiveContextTarget}
-                                runAction={runAction}
-                                t={t}
-                            />
-                        </TabsContent>
-
-                        <TabsContent value="context" className="space-y-4 px-4 pb-4">
-                            <ContextTabContent contextView={contextView} t={t} />
-                        </TabsContent>
-
-                        <TabsContent value="evidence" className="space-y-4 px-4 pb-4">
-                            <EvidenceTabContent
-                                status={status}
-                                contextView={contextView}
-                                reviewView={reviewView}
-                                handoffView={handoffView}
-                                researchStatus={researchStatus}
-                                diffView={diffView}
-                                t={t}
-                            />
-                        </TabsContent>
-
-                        <TabsContent value="preview" className="space-y-4 px-4 pb-4">
-                            <PreviewTabContent
-                                candidates={previewCandidates}
-                                selectedPath={previewPath}
-                                onSelectedPathChange={setPreviewPath}
-                                file={previewFile}
-                                loading={isPreviewLoading}
-                                error={previewError}
-                                t={t}
-                            />
-                        </TabsContent>
-
-                        <TabsContent value="review" className="space-y-4 px-4 pb-4">
-                            <ReviewTabContent reviewView={reviewView} t={t} />
-                        </TabsContent>
-
-                        <TabsContent value="handoff" className="space-y-4 px-4 pb-4">
-                            <HandoffTabContent handoffView={handoffView} t={t} />
-                        </TabsContent>
-
-                        <TabsContent value="research" className="space-y-4 px-4 pb-4">
-                            <ResearchTabContent researchStatus={researchStatus} t={t} />
-                        </TabsContent>
-
-                        <TabsContent value="diff" className="space-y-4 px-4 pb-4">
-                            <DiffTabContent diffView={diffView} t={t} />
-                        </TabsContent>
-                    </Tabs>
-                </div>
-            )}
-
-            <Notice
-                error={false}
-                message={t('vibehub.notices.observabilityLimited')}
-            />
-
-            <div className="rounded-md border bg-muted/10 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                        <div className="text-sm font-medium">{t('vibehub.next.title')}</div>
-                        <div className="mt-1 text-sm text-muted-foreground">
-                            {recommendedAction?.description || t('vibehub.next.loading')}
-                        </div>
-                    </div>
-                    {recommendedAction && (
-                        <Button
-                            onClick={() => runAction(recommendedAction.action)}
-                            disabled={actionDisabled || recommendedAction.disabled}
-                        >
-                            {recommendedAction.action === 'init' ? <Wrench className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                            {recommendedAction.title}
-                        </Button>
-                    )}
-                </div>
-                {unavailableReason && (
-                    <div className="mt-2 text-xs text-muted-foreground">{unavailableReason}</div>
-                )}
-            </div>
-
-            <details
-                className="rounded-md border bg-muted/10 p-4"
-                open={showAdvancedDiagnostics}
-                onToggle={(event) => setShowAdvancedDiagnostics(event.currentTarget.open)}
-            >
-                <summary className="cursor-pointer text-sm font-medium">
-                    {t('vibehub.advanced.title')}
-                    <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        {t('vibehub.advanced.subtitle')}
-                    </span>
-                </summary>
-
-                <div className="mt-4 space-y-5">
-                    <div className="space-y-3">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                                <div className="text-sm font-medium">{t('vibehub.ai.title')}</div>
-                                <div className="text-xs text-muted-foreground">
-                                    {t('vibehub.ai.subtitle')}
-                                </div>
+                <>
+                    {!status.current_task_id && (
+                        <div className="rounded-md border bg-muted/20 p-4">
+                            <div className="flex items-center gap-2 text-sm font-semibold">
+                                <Lightbulb className="h-4 w-4" />
+                                {t('vibehub.dashboard.firstTaskTitle')}
                             </div>
-                            {adapterStatus && (
-                                <Badge variant="outline">{t('vibehub.ai.commandCount', { count: adapterStatus.commands.length })}</Badge>
-                            )}
-                        </div>
-
-                        <div className="grid gap-2 md:grid-cols-3">
-                            {AGENT_TOOL_OPTIONS.map((tool) => (
-                                <label key={tool.id} className="flex items-start gap-2 rounded-md border bg-background p-3 text-sm">
-                                    <Checkbox
-                                        checked={agentTools.includes(tool.id)}
-                                        onCheckedChange={(checked) => toggleAgentTool(tool.id, checked === true)}
-                                        disabled={actionDisabled}
+                            <div className="mt-1 text-xs text-muted-foreground">
+                                {t('vibehub.dashboard.firstTaskHint')}
+                            </div>
+                            <div className="mt-3 grid gap-3 md:grid-cols-[1.4fr_0.8fr_auto]">
+                                <div className="space-y-1">
+                                    <Label htmlFor="vibehub-first-task-title" className="text-xs">{t('vibehub.dashboard.firstTaskTitleLabel')}</Label>
+                                    <Input
+                                        id="vibehub-first-task-title"
+                                        value={firstTaskTitle}
+                                        onChange={(event) => setFirstTaskTitle(event.target.value)}
+                                        placeholder={t('vibehub.dashboard.firstTaskTitlePlaceholder')}
+                                        disabled={isStartingFirstTask}
                                     />
-                                    <span>
-                                        <span className="block font-medium">{tool.label}</span>
-                                        <span className="block text-xs text-muted-foreground">{t(`vibehub.ai.tools.${tool.id}`)}</span>
-                                    </span>
-                                </label>
-                            ))}
-                        </div>
-
-                        {adapterStatus && (
-                            <>
-                        <div className="grid gap-2 md:grid-cols-2">
-                            {adapterStatus.files.slice(0, 8).map((file) => (
-                                <div key={`${file.tool}:${file.path}`} className="rounded-md border bg-background p-2 text-xs">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="truncate font-medium">{file.path}</span>
-                                        <Badge variant={file.status === 'in_sync' ? 'secondary' : file.status === 'missing' ? 'outline' : 'destructive'}>
-                                            {file.status}
-                                        </Badge>
-                                    </div>
-                                    <div className="mt-1 text-muted-foreground">{file.description}</div>
                                 </div>
-                            ))}
-                        </div>
-
-                        {selectedCommand && (
-                            <div className="grid gap-3 md:grid-cols-[0.7fr_1.3fr]">
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="vibehub-command-select">{t('vibehub.ai.command')}</Label>
+                                <div className="space-y-1">
+                                    <Label htmlFor="vibehub-first-task-mode" className="text-xs">{t('vibehub.status.mode')}</Label>
                                     <select
-                                        id="vibehub-command-select"
-                                        value={selectedCommand.name}
-                                        onChange={(event) => setSelectedCommandName(event.target.value)}
-                                        disabled={actionDisabled}
-                                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm"
+                                        id="vibehub-first-task-mode"
+                                        value={firstTaskMode}
+                                        onChange={(event) => setFirstTaskMode(event.target.value)}
+                                        disabled={isStartingFirstTask}
+                                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm"
                                     >
-                                        {adapterStatus.commands.map((command) => (
-                                            <option key={command.name} value={command.name}>
-                                                {command.name}
-                                            </option>
+                                        {Object.keys(MODE_STAGE_PHASES).map((mode) => (
+                                            <option key={mode} value={mode}>{t(`vibehub.modes.${mode}`)}</option>
                                         ))}
                                     </select>
-                                    <div className="rounded-md border bg-background p-2 text-xs text-muted-foreground">
-                                        <div>{selectedCommand.description_zh}</div>
-                                        <div>{selectedCommand.description_en}</div>
+                                </div>
+                                <div className="flex items-end">
+                                    <Button onClick={runStartFirstTask} disabled={isStartingFirstTask || !firstTaskTitle.trim() || !project}>
+                                        {isStartingFirstTask ? t('common.loading') : t('vibehub.actions.startTask')}
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {status.warnings.length > 0 && (
+                        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+                            <div className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+                                <AlertCircle className="h-4 w-4" />
+                                {t('vibehub.tabs.warnings')}
+                                <Badge variant="destructive">{status.warnings.length}</Badge>
+                            </div>
+                            <ul className="mt-2 space-y-1 text-xs text-amber-800 dark:text-amber-300">
+                                {status.warnings.map((warning) => (
+                                    <li key={warning} className="break-words">• {warning}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    <div className="grid gap-3 md:grid-cols-4">
+                        <Metric label={t('vibehub.status.mode')} value={formatMode(status.current_mode, t)} />
+                        <Metric label={t('vibehub.status.currentTaskRun')} value={taskLabel} />
+                        <Metric label={t('vibehub.status.phase')} value={status.current_phase || t('common.none')} />
+                        <Metric label={t('vibehub.status.observability')} value={formatStatusValue(status.observability_level || 'best_effort', t)} />
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                        <DashboardCard
+                            title={t('vibehub.dashboard.phaseFlow')}
+                            description={t('vibehub.dashboard.phaseFlowHint')}
+                            icon={<ShieldCheck className="h-4 w-4" />}
+                            tone={phaseValidation?.missing_outputs.length ? 'warn' : 'neutral'}
+                            onClick={() => setDetailPanel('phase')}
+                        >
+                            <div className="grid gap-2 sm:grid-cols-5">
+                                {currentFlow.map((item) => (
+                                    <button
+                                        key={item.stage}
+                                        type="button"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            setSelectedPhase(item.phase);
+                                            setDetailPanel('phase');
+                                        }}
+                                        className={`rounded-md border px-3 py-2 text-left transition hover:border-primary/50 ${item.phase === status.current_phase ? 'min-h-28 ring-2 ring-primary/30' : 'min-h-24'} ${flowStatusClass(item.status)}`}
+                                    >
+                                        <div className="text-sm font-medium">{t(`vibehub.flow.${item.stage}`)}</div>
+                                        <div className="mt-1 text-xs text-muted-foreground">
+                                            {item.phase ? t(`vibehub.flowPhases.${item.phase}`) : t('vibehub.flow.skipped')}
+                                        </div>
+                                        <Badge variant={phaseBadgeVariant(item.status)} className="mt-3 text-[10px]">
+                                            {formatPhaseStatus(item.status, t)}
+                                        </Badge>
+                                    </button>
+                                ))}
+                            </div>
+                        </DashboardCard>
+
+                        <DashboardCard
+                            title={t('vibehub.dashboard.gitSummary')}
+                            description={driftReport?.head_changed ? t('vibehub.dashboard.headChanged') : t('vibehub.dashboard.gitSummaryHint')}
+                            icon={<GitBranch className="h-4 w-4" />}
+                            tone={status.git_dirty || driftReport?.head_changed ? 'warn' : 'ok'}
+                            onClick={() => setDetailPanel('git')}
+                        >
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <StatusPanel
+                                    icon={<GitBranch className="h-4 w-4" />}
+                                    label={t('vibehub.dashboard.branch')}
+                                    value={gitBranches?.current_branch || project?.metadata.git_branch || t('common.unknown')}
+                                    tone="neutral"
+                                />
+                                <StatusPanel
+                                    icon={<GitBranch className="h-4 w-4" />}
+                                    label={t('vibehub.status.gitDirty')}
+                                    value={gitStatusLabel(status, t)}
+                                    tone={status.git_dirty ? 'warn' : 'ok'}
+                                />
+                                <StatusPanel
+                                    icon={<RefreshCw className="h-4 w-4" />}
+                                    label={t('vibehub.drift.headChanged')}
+                                    value={driftReport?.head_changed ? t('common.yes') : t('common.no')}
+                                    tone={driftReport?.head_changed ? 'warn' : 'ok'}
+                                />
+                            </div>
+                            {gitBranches?.branches.slice(0, 3).map((branch) => (
+                                <div key={branch.name} className="flex items-center justify-between gap-3 rounded border bg-muted/20 px-2 py-1 text-xs">
+                                    <span className="truncate font-mono">{branch.is_current ? '* ' : ''}{branch.name}</span>
+                                    <span className="shrink-0 text-muted-foreground">
+                                        {formatAheadBehind(branch.ahead, branch.behind, t)}
+                                    </span>
+                                </div>
+                            ))}
+                            {diffView?.changed_files.slice(0, 4).map((file) => (
+                                <div key={file} className="truncate rounded border bg-muted/20 px-2 py-1 font-mono text-xs">
+                                    {file}
+                                </div>
+                            ))}
+                        </DashboardCard>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                        {fileHealth.map((item) => (
+                            <DashboardCard
+                                key={item.detail}
+                                title={item.title}
+                                description={item.description}
+                                icon={item.icon}
+                                tone={item.tone}
+                                compact
+                                onClick={() => setDetailPanel(item.detail)}
+                            >
+                                <Badge variant={item.tone === 'warn' ? 'destructive' : item.tone === 'ok' ? 'secondary' : 'outline'}>
+                                    {item.value}
+                                </Badge>
+                                {item.path && <div className="mt-2 truncate text-xs text-muted-foreground">{item.path}</div>}
+                            </DashboardCard>
+                        ))}
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
+                        <div className="rounded-md border bg-muted/10 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-sm font-medium">{t('vibehub.dashboard.readOnlyActions')}</div>
+                                    <div className="mt-1 text-xs text-muted-foreground">{t('vibehub.dashboard.readOnlyHint')}</div>
+                                </div>
+                                <Badge variant="outline">{t('vibehub.dashboard.readOnlyBadge')}</Badge>
+                            </div>
+                            <div className="mt-3 grid gap-2">
+                                {readOnlyActions.length ? readOnlyActions.map((action) => (
+                                    <div key={`${action.command}-${action.title}`} className="rounded-md border bg-background p-3">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <Badge>{action.command}</Badge>
+                                            <span className="text-sm font-medium">{action.title}</span>
+                                        </div>
+                                        <div className="mt-1 text-xs text-muted-foreground">{action.description}</div>
                                     </div>
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="vibehub-command-body">{t('vibehub.ai.commandBodyOverride')}</Label>
-                                    <textarea
-                                        id="vibehub-command-body"
-                                        value={commandOverrideBody}
-                                        onChange={(event) => setCommandOverrideBody(event.target.value)}
-                                        disabled={actionDisabled}
-                                        className="min-h-40 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                                    />
-                                </div>
+                                )) : (
+                                    <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
+                                        {t('vibehub.dashboard.noActionNeeded')}
+                                    </div>
+                                )}
                             </div>
-                        )}
-
-                        <div className="flex flex-wrap gap-2">
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('agent-sync')}
-                                disabled={actionDisabled || !status?.initialized}
-                            >
-                                <Bot className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.updateAiInstructions')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={saveCommandOverride}
-                                disabled={actionDisabled || !status?.initialized || !selectedCommand}
-                            >
-                                <FileText className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.saveCommandOverride')}
-                            </Button>
                         </div>
-                            </>
-                        )}
-                    </div>
 
-                    <div className="space-y-2 border-t pt-4">
-                        {!status?.initialized && (
-                            <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
-                                {t('vibehub.notices.initializeCreates')}
+                        <DashboardCard
+                            title={t('vibehub.dashboard.evidenceMap')}
+                            description={t('vibehub.dashboard.evidenceMapHint')}
+                            icon={<ShieldCheck className="h-4 w-4" />}
+                            tone={status.warnings.length ? 'warn' : 'neutral'}
+                            onClick={() => setDetailPanel('evidence')}
+                        >
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                <ViewField label={t('vibehub.tabs.context')} value={contextView?.pack_exists ? t('common.yes') : t('common.no')} />
+                                <ViewField label={t('vibehub.tabs.review')} value={reviewView?.review_exists ? t('common.yes') : t('common.no')} />
+                                <ViewField label={t('vibehub.tabs.handoff')} value={handoffView?.handoff_exists ? t('common.yes') : t('common.no')} />
+                                <ViewField label={t('vibehub.tabs.research')} value={researchStatus?.status || t('common.unknown')} />
                             </div>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                            <div className="flex min-w-48 flex-col gap-1">
-                                <Label htmlFor="vibehub-start-mode" className="text-xs">
-                                    {t('vibehub.status.mode')}
-                                </Label>
-                                <select
-                                    id="vibehub-start-mode"
-                                    value={taskMode}
-                                    onChange={(event) => setTaskMode(event.target.value as (typeof DRIVE_MODE_OPTIONS)[number])}
-                                    disabled={actionDisabled || !status?.initialized}
-                                    className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
-                                >
-                                    {DRIVE_MODE_OPTIONS.map((mode) => (
-                                        <option key={mode} value={mode}>
-                                            {t(`vibehub.modes.${mode}`)}
-                                        </option>
-                                    ))}
-                                </select>
+                        </DashboardCard>
+                    </div>
+
+                    {adapterStatus && (
+                        <DashboardCard
+                            title={t('vibehub.dashboard.adapterStatus')}
+                            description={t('vibehub.dashboard.adapterStatusHint')}
+                            icon={<Bot className="h-4 w-4" />}
+                            tone={adapterStatus.files.some((file) => file.status === 'conflict') ? 'warn' : 'neutral'}
+                            onClick={() => setDetailPanel('adapters')}
+                        >
+                            <div className="flex flex-wrap gap-2">
+                                {adapterStatus.enabled_tools.map((tool) => (
+                                    <Badge key={tool} variant="secondary">{tool}</Badge>
+                                ))}
+                                <Badge variant="outline">{t('vibehub.ai.commandCount', { count: adapterStatus.commands.length })}</Badge>
                             </div>
-                            <Button onClick={() => runAction('init')} disabled={actionDisabled || !!status?.initialized}>
-                                <Wrench className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.initialize')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('start-task')}
-                                disabled={actionDisabled || !status?.initialized}
-                            >
-                                <Play className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.startTask')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('build-context')}
-                                disabled={actionDisabled || !hasActiveContextTarget}
-                            >
-                                <PackagePlus className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.buildContext')}
-                            </Button>
-                            <Button onClick={() => runAction('continue')} disabled={actionDisabled || !hasActiveContextTarget}>
-                                <Play className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.continue')}
-                            </Button>
-                            <Button variant="outline" onClick={() => runAction('workspace-sync')} disabled={actionDisabled || !status?.initialized}>
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.syncWorkspace')}
-                            </Button>
-                            <Button variant="outline" onClick={() => runAction('recover-drift')} disabled={actionDisabled || !status?.initialized}>
-                                <AlertCircle className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.recoverDrift')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('review')}
-                                disabled={actionDisabled || !hasActiveContextTarget}
-                            >
-                                <SearchCheck className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.reviewEvidence')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('handoff')}
-                                disabled={actionDisabled || !hasActiveContextTarget}
-                            >
-                                <FileText className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.buildHandoff')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('validate-phase')}
-                                disabled={actionDisabled || !hasActiveContextTarget}
-                            >
-                                <SearchCheck className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.validatePhase')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('complete-phase')}
-                                disabled={actionDisabled || !hasActiveContextTarget}
-                            >
-                                <FileText className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.completePhase')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('advance-phase')}
-                                disabled={actionDisabled || !hasActiveContextTarget}
-                            >
-                                <Play className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.advancePhase')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => runAction('pause-phase')}
-                                disabled={actionDisabled || !hasActiveContextTarget}
-                            >
-                                <Pause className="mr-2 h-4 w-4" />
-                                {t('vibehub.actions.pausePhase')}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            </details>
+                        </DashboardCard>
+                    )}
 
-            {driftReport && (
-                <div className="rounded-md border p-3 text-sm">
-                    <div className="font-medium">{t('vibehub.drift.title')}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                        {t('vibehub.drift.dirty')}: {driftReport.dirty ? t('common.yes') : t('common.no')} | {t('vibehub.drift.headChanged')}: {driftReport.head_changed ? t('common.yes') : t('common.no')} | {t('vibehub.drift.contextStale')}: {driftReport.context_stale ? t('common.yes') : t('common.no')}
-                    </div>
-                    {driftReport.recommended_actions.length > 0 && (
-                        <div className="mt-2 space-y-1 text-xs">
-                            {driftReport.recommended_actions.map((action) => (
-                                <div key={action}>- {action}</div>
-                            ))}
-                        </div>
+                    {!hasActiveContextTarget && (
+                        <Notice error={false} message={t('vibehub.dashboard.noActiveTaskReadOnly')} />
                     )}
-                </div>
-            )}
-
-            {syncReport && (
-                <div className="rounded-md border p-3 text-sm">
-                    <div className="font-medium">{t('vibehub.sync.title')}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                        {t('vibehub.sync.report')}: {syncReport.report_path || syncReport.agent_view_sync_path}
-                    </div>
-                    {syncReport.questions_for_user.length > 0 && (
-                        <div className="mt-2 space-y-1 text-xs">
-                            <div className="font-medium text-muted-foreground">{t('vibehub.sync.questions')}</div>
-                            {syncReport.questions_for_user.map((question) => (
-                                <div key={question}>- {question}</div>
-                            ))}
-                        </div>
-                    )}
-                    {syncReport.recommended_actions.length > 0 && (
-                        <div className="mt-2 space-y-1 text-xs">
-                            <div className="font-medium text-muted-foreground">{t('vibehub.sync.actions')}</div>
-                            {syncReport.recommended_actions.map((action) => (
-                                <div key={action}>- {action}</div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                </>
             )}
 
             {actionState && <Notice error={actionState.error} message={actionState.message} />}
 
-            <div className="space-y-3 border-t pt-4">
-                <div className="grid gap-3 md:grid-cols-[0.7fr_1.3fr]">
-                    <div className="space-y-1.5">
-                        <Label htmlFor="vibehub-journal-title">{t('vibehub.journal.title')}</Label>
-                        <Input
-                            id="vibehub-journal-title"
-                            value={journalTitle}
-                            onChange={(event) => setJournalTitle(event.target.value)}
-                            placeholder={t('vibehub.journal.titlePlaceholder')}
-                            disabled={actionDisabled || !status?.initialized}
-                        />
-                    </div>
-                    <div className="space-y-1.5">
-                        <Label htmlFor="vibehub-journal-body">{t('vibehub.journal.body')}</Label>
-                        <textarea
-                            id="vibehub-journal-body"
-                            value={journalBody}
-                            onChange={(event) => setJournalBody(event.target.value)}
-                            placeholder={t('vibehub.journal.bodyPlaceholder')}
-                            disabled={actionDisabled || !status?.initialized}
-                            className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                    </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    <Button
-                        variant="outline"
-                        onClick={() => runAction('journal')}
-                        disabled={actionDisabled || !status?.initialized}
-                    >
-                        <FileText className="mr-2 h-4 w-4" />
-                        {t('vibehub.actions.addJournalNote')}
-                    </Button>
-                </div>
-            </div>
+            {detailPanel && status?.initialized && (
+                <DetailDrawer
+                    detail={detailPanel}
+                    onClose={() => setDetailPanel(null)}
+                    status={status}
+                    adapterStatus={adapterStatus}
+                    contextView={contextView}
+                    reviewView={reviewView}
+                    handoffView={handoffView}
+                    researchStatus={researchStatus}
+                    diffView={diffView}
+                    driftReport={driftReport}
+                    phaseValidation={phaseValidation}
+                    selectedPhase={selectedPhase}
+                    flowDetails={flowDetails}
+                    gitBranches={gitBranches}
+                    previewCandidates={previewCandidates}
+                    previewPath={previewPath}
+                    setPreviewPath={setPreviewPath}
+                    previewFile={previewFile}
+                    isPreviewLoading={isPreviewLoading}
+                    previewError={previewError}
+                    readOnlyActions={readOnlyActions}
+                    t={t}
+                    agentTools={agentTools}
+                    selectedLocale={selectedLocale}
+                    isSyncingAdapters={isSyncingAdapters}
+                    isSavingLocale={isSavingLocale}
+                    onToggleAgentTool={toggleAgentTool}
+                    onSelectedLocaleChange={setSelectedLocale}
+                    onSyncAgentAdapters={runSyncAgentAdapters}
+                    onSaveLocale={runSaveLocale}
+                />
+            )}
+        </div>
+    );
+}
 
-            <div className="space-y-3 border-t pt-4">
-                <div className="space-y-1.5">
-                    <Label htmlFor="vibehub-knowledge-note">{t('vibehub.knowledge.note')}</Label>
-                    <textarea
-                        id="vibehub-knowledge-note"
-                        value={knowledgeNote}
-                        onChange={(event) => setKnowledgeNote(event.target.value)}
-                        placeholder={t('vibehub.knowledge.placeholder')}
-                        disabled={actionDisabled || !status?.initialized}
-                        className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    <Button
-                        variant="outline"
-                        onClick={() => runAction('knowledge')}
-                        disabled={actionDisabled || !status?.initialized || !hasKnowledgeNote}
-                    >
-                        <Lightbulb className="mr-2 h-4 w-4" />
-                        {t('vibehub.actions.addKnowledgeNote')}
+function DetailDrawer({
+    detail,
+    onClose,
+    status,
+    adapterStatus,
+    contextView,
+    reviewView,
+    handoffView,
+    researchStatus,
+    diffView,
+    driftReport,
+    phaseValidation,
+    selectedPhase,
+    flowDetails,
+    gitBranches,
+    previewCandidates,
+    previewPath,
+    setPreviewPath,
+    previewFile,
+    isPreviewLoading,
+    previewError,
+    readOnlyActions,
+    t,
+    agentTools,
+    selectedLocale,
+    isSyncingAdapters,
+    isSavingLocale,
+    onToggleAgentTool,
+    onSelectedLocaleChange,
+    onSyncAgentAdapters,
+    onSaveLocale,
+}: {
+    detail: DashboardDetail;
+    onClose: () => void;
+    status: VibehubCockpitStatus;
+    adapterStatus: AgentAdapterStatus | null;
+    contextView: VibehubContextViewData | null;
+    reviewView: VibehubReviewViewData | null;
+    handoffView: VibehubHandoffViewData | null;
+    researchStatus: ResearchStatus | null;
+    diffView: VibehubDiffViewData | null;
+    driftReport: WorkspaceDriftReport | null;
+    phaseValidation: PhaseValidationResult | null;
+    selectedPhase: string | null;
+    flowDetails: VibehubFlowDetail[];
+    gitBranches: VibehubGitBranchesView | null;
+    previewCandidates: PreviewCandidate[];
+    previewPath: string;
+    setPreviewPath: (path: string) => void;
+    previewFile: VibehubFileReadResult | null;
+    isPreviewLoading: boolean;
+    previewError: string | null;
+    readOnlyActions: RecommendedReadOnlyAction[];
+    t: (key: string, options?: Record<string, unknown>) => string;
+    agentTools: AgentTool[];
+    selectedLocale: string;
+    isSyncingAdapters: boolean;
+    isSavingLocale: boolean;
+    onToggleAgentTool: (tool: AgentTool, checked: boolean) => void;
+    onSelectedLocaleChange: (locale: string) => void;
+    onSyncAgentAdapters: () => void;
+    onSaveLocale: () => void;
+}) {
+    const title = getDetailTitle(detail, t);
+
+    return (
+        <div
+            className="fixed inset-0 z-50 flex justify-end bg-background/40 backdrop-blur-[1px]"
+            onMouseDown={onClose}
+        >
+            <div
+                className="flex h-full w-full max-w-xl flex-col border-l bg-background shadow-xl"
+                onMouseDown={(event) => event.stopPropagation()}
+            >
+                <div className="flex flex-none items-start justify-between gap-3 border-b px-5 py-4">
+                    <div>
+                        <div className="text-xs text-muted-foreground">{t('vibehub.dashboard.details')}</div>
+                        <div className="text-lg font-semibold">{title}</div>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={onClose} aria-label={t('common.close')}>
+                        <X className="h-4 w-4" />
                     </Button>
+                </div>
+
+                <div className="flex-1 space-y-4 overflow-y-auto p-5">
+                    {detail === 'phase' && (
+                        <StatusTabContent
+                            status={status}
+                            phaseValidation={phaseValidation}
+                            selectedPhase={selectedPhase}
+                            flowDetails={flowDetails}
+                            readOnlyActions={readOnlyActions}
+                            t={t}
+                        />
+                    )}
+                    {detail === 'git' && (
+                        <>
+                            <DiffTabContent diffView={diffView} t={t} />
+                            <GitBranchesContent gitBranches={gitBranches} t={t} />
+                            {driftReport && (
+                                <div className="rounded-md border bg-muted/10 p-3 text-sm">
+                                    <div className="font-medium">{t('vibehub.drift.title')}</div>
+                                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                        <ViewField label="HEAD" value={driftReport.head || t('common.unknown')} />
+                                        <ViewField label={t('vibehub.drift.lastSeen')} value={driftReport.last_seen_head || t('common.unknown')} />
+                                        <ViewField label={t('vibehub.drift.headChanged')} value={driftReport.head_changed ? t('common.yes') : t('common.no')} />
+                                        <ViewField label={t('vibehub.drift.contextStale')} value={driftReport.context_stale ? t('common.yes') : t('common.no')} />
+                                    </div>
+                                    {driftReport.warnings.length > 0 && (
+                                        <div className="mt-3 space-y-1">
+                                            {driftReport.warnings.map((warning) => (
+                                                <Notice key={warning} error message={warning} />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </>
+                    )}
+                    {detail === 'context' && <ContextTabContent contextView={contextView} t={t} />}
+                    {detail === 'output' && (
+                        <div className="space-y-3">
+                            <div className="text-sm font-medium">{t('vibehub.status.agentOutput')}</div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                <ViewField label={t('vibehub.tabs.agentOutputStatus')} value={formatStatusValue(status.agent_output_status.status, t)} />
+                                <ViewField label={t('vibehub.tabs.previewPath')} value={status.agent_output_status.path || t('vibehub.tabs.notAvailable')} />
+                                <ViewField label={t('vibehub.tabs.packExists')} value={status.agent_output_status.exists ? t('common.yes') : t('common.no')} />
+                                <ViewField label={t('vibehub.tabs.stale')} value={status.agent_output_status.stale ? t('common.yes') : t('common.no')} />
+                            </div>
+                            <RecommendedCommand command="vibehub-checkpoint" text={t('vibehub.dashboard.agentOutputHint')} />
+                        </div>
+                    )}
+                    {detail === 'handoff' && <HandoffTabContent handoffView={handoffView} t={t} />}
+                    {detail === 'review' && <ReviewTabContent reviewView={reviewView} t={t} />}
+                    {detail === 'research' && <ResearchTabContent researchStatus={researchStatus} t={t} />}
+                    {detail === 'evidence' && (
+                        <EvidenceTabContent
+                            status={status}
+                            contextView={contextView}
+                            reviewView={reviewView}
+                            handoffView={handoffView}
+                            researchStatus={researchStatus}
+                            diffView={diffView}
+                            t={t}
+                        />
+                    )}
+                    {detail === 'preview' && (
+                        <PreviewTabContent
+                            candidates={previewCandidates}
+                            selectedPath={previewPath}
+                            onSelectedPathChange={setPreviewPath}
+                            file={previewFile}
+                            loading={isPreviewLoading}
+                            error={previewError}
+                            t={t}
+                        />
+                    )}
+                    {detail === 'adapters' && (
+                        <AdapterDetailContent
+                            adapterStatus={adapterStatus}
+                            agentTools={agentTools}
+                            selectedLocale={selectedLocale}
+                            isSyncingAdapters={isSyncingAdapters}
+                            isSavingLocale={isSavingLocale}
+                            onToggleAgentTool={onToggleAgentTool}
+                            onSelectedLocaleChange={onSelectedLocaleChange}
+                            onSyncAgentAdapters={onSyncAgentAdapters}
+                            onSaveLocale={onSaveLocale}
+                            t={t}
+                        />
+                    )}
+
+                    {readOnlyActions.length > 0 && detail !== 'phase' && (
+                        <div className="rounded-md border bg-muted/10 p-3">
+                            <div className="text-sm font-medium">{t('vibehub.dashboard.recommendedCommands')}</div>
+                            <div className="mt-2 space-y-2">
+                                {readOnlyActions.map((action) => (
+                                    <RecommendedCommand key={`${action.command}-${action.title}`} command={action.command} text={action.description} />
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     );
 }
 
+function DashboardCard({
+    title,
+    description,
+    icon,
+    tone,
+    compact = false,
+    children,
+    onClick,
+}: {
+    title: string;
+    description: string;
+    icon: ReactNode;
+    tone: 'ok' | 'warn' | 'neutral';
+    compact?: boolean;
+    children: ReactNode;
+    onClick: () => void;
+}) {
+    const toneClass = tone === 'warn'
+        ? 'border-destructive/40 bg-destructive/5'
+        : tone === 'ok'
+            ? 'border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-950/10'
+            : 'bg-card';
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={`w-full rounded-md border p-4 text-left transition hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${toneClass} ${compact ? 'min-h-36' : ''}`}
+        >
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                        {icon}
+                        <span className="truncate">{title}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">{description}</div>
+                </div>
+                {tone === 'ok' ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                ) : tone === 'warn' ? (
+                    <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
+                ) : (
+                    <Eye className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+            </div>
+            <div className="mt-3 space-y-2">{children}</div>
+        </button>
+    );
+}
+
+function AdapterDetailContent({
+    adapterStatus,
+    agentTools,
+    selectedLocale,
+    isSyncingAdapters,
+    isSavingLocale,
+    onToggleAgentTool,
+    onSelectedLocaleChange,
+    onSyncAgentAdapters,
+    onSaveLocale,
+    t,
+}: {
+    adapterStatus: AgentAdapterStatus | null;
+    agentTools: AgentTool[];
+    selectedLocale: string;
+    isSyncingAdapters: boolean;
+    isSavingLocale: boolean;
+    onToggleAgentTool: (tool: AgentTool, checked: boolean) => void;
+    onSelectedLocaleChange: (locale: string) => void;
+    onSyncAgentAdapters: () => void;
+    onSaveLocale: () => void;
+    t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+    if (!adapterStatus) {
+        return <div className="text-xs text-muted-foreground">{t('common.loading')}</div>;
+    }
+
+    return (
+        <div className="space-y-3">
+            <div className="text-sm font-medium">{t('vibehub.dashboard.adapterStatus')}</div>
+            <div className="rounded-md border bg-muted/10 p-3">
+                <div className="text-xs font-medium">{t('vibehub.dashboard.adapterRepair')}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{t('vibehub.dashboard.adapterRepairHint')}</div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    {AGENT_TOOL_OPTIONS.map((tool) => (
+                        <label key={tool.id} className="flex items-start gap-2 rounded-md border bg-background p-2 text-xs">
+                            <Checkbox
+                                checked={agentTools.includes(tool.id)}
+                                onCheckedChange={(checked) => onToggleAgentTool(tool.id, checked === true)}
+                                disabled={isSyncingAdapters}
+                            />
+                            <span>
+                                <span className="block font-medium">{tool.label}</span>
+                                <span className="block text-muted-foreground">{t(`vibehub.ai.tools.${tool.id}`)}</span>
+                            </span>
+                        </label>
+                    ))}
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <select
+                        value={selectedLocale}
+                        onChange={(event) => onSelectedLocaleChange(event.target.value)}
+                        disabled={isSavingLocale}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm"
+                    >
+                        {LOCALE_OPTIONS.map((locale) => (
+                            <option key={locale} value={locale}>
+                                {t(`vibehub.locales.${locale}`)}
+                            </option>
+                        ))}
+                    </select>
+                    <Button variant="outline" size="sm" onClick={onSaveLocale} disabled={isSavingLocale}>
+                        {isSavingLocale ? t('common.loading') : t('vibehub.actions.saveLanguage')}
+                    </Button>
+                </div>
+                <Button className="mt-3 w-full" size="sm" onClick={onSyncAgentAdapters} disabled={isSyncingAdapters}>
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isSyncingAdapters ? 'animate-spin' : ''}`} />
+                    {isSyncingAdapters ? t('common.loading') : t('vibehub.actions.repairAgentInstructions')}
+                </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {adapterStatus.enabled_tools.map((tool) => (
+                    <Badge key={tool} variant="secondary">{tool}</Badge>
+                ))}
+                <Badge variant="outline">{t('vibehub.ai.commandCount', { count: adapterStatus.commands.length })}</Badge>
+            </div>
+            <div className="grid gap-2">
+                {adapterStatus.files.map((file) => (
+                    <div key={`${file.tool}:${file.path}`} className="rounded-md border bg-muted/10 p-3 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="truncate font-medium">{file.path}</span>
+                            <Badge variant={file.status === 'in_sync' ? 'secondary' : file.status === 'missing' ? 'outline' : 'destructive'}>
+                                {formatStatusValue(file.status, t)}
+                            </Badge>
+                        </div>
+                        <div className="mt-1 text-muted-foreground">{formatAdapterDescription(file.description, t)}</div>
+                    </div>
+                ))}
+            </div>
+            {adapterStatus.warnings.map((warning) => (
+                <Notice key={warning} error message={warning} />
+            ))}
+            <RecommendedCommand command="vibehub-sync" text={t('vibehub.dashboard.adapterCommandHint')} />
+        </div>
+    );
+}
+
+function RecommendedCommand({ command, text }: { command: string; text: string }) {
+    return (
+        <div className="rounded-md border bg-background p-2 text-xs">
+            <Badge className="mb-1">{command}</Badge>
+            <div className="text-muted-foreground">{text}</div>
+        </div>
+    );
+}
+
 // Tab content components.
+
+function FlowDetailPanel({
+    detail,
+    t,
+}: {
+    detail: VibehubFlowDetail;
+    t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+    return (
+        <div className="rounded-md border bg-muted/10 p-3">
+            <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-medium">{t(`vibehub.flowPhases.${detail.phase}`)}</div>
+                <Badge variant={phaseBadgeVariant(detail.status)}>{formatPhaseStatus(detail.status, t)}</Badge>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <ArtifactList title={t('vibehub.dashboard.readInputs')} artifacts={detail.read_inputs} t={t} />
+                <ArtifactList title={t('vibehub.dashboard.writtenOutputs')} artifacts={detail.written_outputs} t={t} />
+            </div>
+        </div>
+    );
+}
+
+function ArtifactList({
+    title,
+    artifacts,
+    t,
+}: {
+    title: string;
+    artifacts: Array<{ label: string; path: string; exists: boolean }>;
+    t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+    return (
+        <div>
+            <div className="text-xs font-medium text-muted-foreground">{title}</div>
+            <div className="mt-2 space-y-2">
+                {artifacts.map((artifact) => (
+                    <div key={`${artifact.label}:${artifact.path}`} className="rounded border bg-background px-2 py-1.5 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium">{artifact.label}</span>
+                            <Badge variant={artifact.exists ? 'secondary' : 'outline'}>
+                                {artifact.exists ? t('vibehub.stateValues.exists') : t('vibehub.stateValues.missing')}
+                            </Badge>
+                        </div>
+                        <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{artifact.path}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function GitBranchesContent({
+    gitBranches,
+    t,
+}: {
+    gitBranches: VibehubGitBranchesView | null;
+    t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+    if (!gitBranches?.git_available) return null;
+    return (
+        <div className="rounded-md border bg-muted/10 p-3 text-sm">
+            <div className="font-medium">{t('vibehub.dashboard.gitBranches')}</div>
+            <div className="mt-2 space-y-2">
+                {gitBranches.branches.map((branch) => (
+                    <div key={branch.name} className="rounded border bg-background p-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="truncate font-mono">{branch.is_current ? '* ' : ''}{branch.name}</span>
+                            <Badge variant={branch.is_current ? 'default' : 'outline'}>{formatAheadBehind(branch.ahead, branch.behind, t)}</Badge>
+                        </div>
+                        <div className="mt-1 truncate text-muted-foreground">{branch.last_commit_subject}</div>
+                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">{branch.head_sha} · {branch.last_commit_time}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
 
 function StatusTabContent({
     status,
     phaseValidation,
-    recommendedAction,
-    unavailableReason,
-    actionDisabled,
-    hasActiveContextTarget,
-    runAction,
+    selectedPhase,
+    flowDetails,
+    readOnlyActions,
     t,
 }: {
     status: VibehubCockpitStatus | null;
     phaseValidation: PhaseValidationResult | null;
-    recommendedAction: RecommendedAction | null;
-    unavailableReason: string | null;
-    actionDisabled: boolean;
-    hasActiveContextTarget: boolean;
-    runAction: (action: CockpitAction) => void;
+    selectedPhase: string | null;
+    flowDetails: VibehubFlowDetail[];
+    readOnlyActions: RecommendedReadOnlyAction[];
     t: (key: string, options?: Record<string, unknown>) => string;
 }) {
     if (!status) return null;
+    const selectedDetail = flowDetails.find((detail) => detail.phase === selectedPhase)
+        || flowDetails.find((detail) => detail.phase === status.current_phase)
+        || null;
 
     return (
         <div className="space-y-3 pt-1">
             <div className="text-sm font-medium">{t('vibehub.tabs.statusDetail')}</div>
 
+            {selectedDetail && (
+                <FlowDetailPanel detail={selectedDetail} t={t} />
+            )}
+
             <div className="grid grid-cols-2 gap-2 text-xs">
-                <ViewField label={t('vibehub.status.mode')} value={status.current_mode || t('common.none')} />
+                <ViewField label={t('vibehub.status.mode')} value={formatMode(status.current_mode, t)} />
                 <ViewField label={t('vibehub.status.phase')} value={status.current_phase || t('common.none')} />
-                <ViewField label={t('vibehub.status.phaseStatus')} value={status.phase_status || t('common.unknown')} />
-                <ViewField label={t('vibehub.status.observability')} value={status.observability_level || 'best_effort'} />
+                <ViewField label={t('vibehub.status.phaseStatus')} value={formatStatusValue(status.phase_status, t)} />
+                <ViewField label={t('vibehub.status.observability')} value={formatStatusValue(status.observability_level || 'best_effort', t)} />
                 <ViewField label={t('vibehub.drift.dirty')} value={status.git_dirty ? t('common.yes') : t('common.no')} />
-                <ViewField label={t('vibehub.tabs.contextPackStatus')} value={status.context_pack_status.status} />
-                <ViewField label={t('vibehub.tabs.agentOutputStatus')} value={status.agent_output_status.status} />
-                <ViewField label={t('vibehub.tabs.handoffStatus')} value={status.handoff_status.status} />
+                <ViewField label={t('vibehub.tabs.contextPackStatus')} value={formatStatusValue(status.context_pack_status.status, t)} />
+                <ViewField label={t('vibehub.tabs.agentOutputStatus')} value={formatStatusValue(status.agent_output_status.status, t)} />
+                <ViewField label={t('vibehub.tabs.handoffStatus')} value={formatStatusValue(status.handoff_status.status, t)} />
             </div>
 
             {status.warnings.length > 0 && (
@@ -1077,7 +1171,7 @@ function StatusTabContent({
                     <div className="mt-2 space-y-2 text-xs">
                         <div className="grid grid-cols-2 gap-2">
                             <ViewField label={t('vibehub.phase.phase')} value={phaseValidation.phase} />
-                            <ViewField label={t('vibehub.phase.validationStatus')} value={phaseValidation.status} />
+                            <ViewField label={t('vibehub.phase.validationStatus')} value={formatStatusValue(phaseValidation.status, t)} />
                             <ViewField label={t('vibehub.phase.requiredOutputs')} value={String(phaseValidation.required_outputs.length)} />
                             <ViewField label={t('vibehub.phase.missingOutputs')} value={String(phaseValidation.missing_outputs.length)} />
                         </div>
@@ -1098,44 +1192,17 @@ function StatusTabContent({
                 ) : (
                     <div className="mt-1 text-xs text-muted-foreground">{t('vibehub.phase.notValidated')}</div>
                 )}
-                <div className="mt-3 flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" onClick={() => runAction('validate-phase')} disabled={actionDisabled || !hasActiveContextTarget}>
-                        <SearchCheck className="mr-1 h-3 w-3" />
-                        {t('vibehub.actions.validatePhase')}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => runAction('complete-phase')} disabled={actionDisabled || !hasActiveContextTarget}>
-                        <FileText className="mr-1 h-3 w-3" />
-                        {t('vibehub.actions.completePhase')}
-                    </Button>
-                    <Button size="sm" onClick={() => runAction('advance-phase')} disabled={actionDisabled || !hasActiveContextTarget}>
-                        <Play className="mr-1 h-3 w-3" />
-                        {t('vibehub.actions.advancePhase')}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => runAction('pause-phase')} disabled={actionDisabled || !hasActiveContextTarget}>
-                        <Pause className="mr-1 h-3 w-3" />
-                        {t('vibehub.actions.pausePhase')}
-                    </Button>
-                </div>
             </div>
 
-            {recommendedAction && (
+            {readOnlyActions.length > 0 && (
                 <div className="rounded-md border bg-muted/10 p-3">
-                    <div className="text-xs font-medium">{t('vibehub.next.title')}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">{recommendedAction.description}</div>
-                    <Button
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => runAction(recommendedAction.action)}
-                        disabled={actionDisabled || recommendedAction.disabled}
-                    >
-                        <Play className="mr-1 h-3 w-3" />
-                        {recommendedAction.title}
-                    </Button>
+                    <div className="text-xs font-medium">{t('vibehub.dashboard.recommendedCommands')}</div>
+                    <div className="mt-2 space-y-2">
+                        {readOnlyActions.map((action) => (
+                            <RecommendedCommand key={`${action.command}-${action.title}`} command={action.command} text={action.description} />
+                        ))}
+                    </div>
                 </div>
-            )}
-
-            {unavailableReason && (
-                <div className="text-xs text-muted-foreground">{unavailableReason}</div>
             )}
         </div>
     );
@@ -1203,7 +1270,7 @@ function EvidenceTabContent({
         {
             grade: 'hard_observed',
             icon: <ShieldCheck className="h-4 w-4" />,
-            title: 'Task/run state',
+            title: t('vibehub.evidence.taskRunState'),
             value: status.current_task_id && status.current_run_id
                 ? `${status.current_task_id} / ${status.current_run_id}`
                 : t('vibehub.status.noCurrentTask'),
@@ -1211,44 +1278,48 @@ function EvidenceTabContent({
         {
             grade: 'hard_observed',
             icon: <GitBranch className="h-4 w-4" />,
-            title: 'Workspace diff',
-            value: diffView ? `${diffView.changed_files_count} changed file(s)` : t('common.unknown'),
+            title: t('vibehub.evidence.workspaceDiff'),
+            value: diffView ? t('vibehub.dashboard.changedFilesCount', { count: diffView.changed_files_count }) : t('common.unknown'),
         },
         {
             grade: 'hard_observed',
             icon: <FileText className="h-4 w-4" />,
-            title: 'Context pack',
-            value: contextView?.pack_exists ? `${contextView.included_count} included / ${contextView.missing_count} missing` : status.context_pack_status.status,
+            title: t('vibehub.status.contextPack'),
+            value: contextView?.pack_exists
+                ? t('vibehub.dashboard.contextCounts', { included: contextView.included_count, missing: contextView.missing_count })
+                : formatStatusValue(status.context_pack_status.status, t),
         },
         {
             grade: 'hard_observed',
             icon: <FileText className="h-4 w-4" />,
-            title: 'Review evidence',
-            value: reviewView?.review_exists ? `${reviewView.changed_files_count} changed file(s) captured` : 'not generated',
+            title: t('vibehub.status.reviewEvidence'),
+            value: reviewView?.review_exists ? t('vibehub.dashboard.changedFilesCount', { count: reviewView.changed_files_count }) : t('vibehub.dashboard.notGenerated'),
         },
         {
             grade: 'agent_reported',
             icon: <Bot className="h-4 w-4" />,
-            title: 'Agent output',
-            value: status.agent_output_status.exists ? status.agent_output_status.path || status.agent_output_status.status : status.agent_output_status.status,
+            title: t('vibehub.status.agentOutput'),
+            value: status.agent_output_status.exists
+                ? status.agent_output_status.path || formatStatusValue(status.agent_output_status.status, t)
+                : formatStatusValue(status.agent_output_status.status, t),
         },
         {
             grade: 'agent_reported',
             icon: <FileText className="h-4 w-4" />,
-            title: 'Handoff',
-            value: handoffView?.complete ? 'complete' : `${handoffView?.missing_sections.length || 0} missing section(s)`,
+            title: t('vibehub.status.handoff'),
+            value: handoffView?.complete ? t('vibehub.stateValues.complete') : t('vibehub.dashboard.missingSectionsCount', { count: handoffView?.missing_sections.length || 0 }),
         },
         {
             grade: 'inferred',
             icon: <Lightbulb className="h-4 w-4" />,
-            title: 'Research gate',
-            value: researchStatus?.required ? researchStatus.status : 'not required',
+            title: t('vibehub.evidence.researchGate'),
+            value: researchStatus?.required ? formatStatusValue(researchStatus.status, t) : t('vibehub.dashboard.notRequired'),
         },
         {
             grade: 'inferred',
             icon: <AlertCircle className="h-4 w-4" />,
-            title: 'Warnings',
-            value: status.warnings.length ? `${status.warnings.length} warning(s)` : 'none',
+            title: t('vibehub.tabs.warnings'),
+            value: status.warnings.length ? t('vibehub.evidence.warningCount', { count: status.warnings.length }) : t('common.none'),
         },
     ];
 
@@ -1275,7 +1346,7 @@ function EvidenceTabContent({
                 ))}
             </div>
             <div className="text-xs text-muted-foreground">
-                {labelOrFallback(t, 'vibehub.tabs.evidenceDataSource', 'Source')}: status, context, review, handoff, research, and diff overview data
+                {t('vibehub.tabs.evidenceDataSource')}: {t('vibehub.evidence.dataSource')}
             </div>
         </div>
     );
@@ -1316,11 +1387,13 @@ function PreviewTabContent({
                 >
                     {candidates.map((candidate) => (
                         <option key={candidate.path} value={candidate.path}>
-                            {candidate.label} - {candidate.path}
+                            {formatPreviewLabel(candidate.label, t)} - {candidate.path}
                         </option>
                     ))}
                 </select>
-                <Badge variant={file?.exists ? 'default' : 'secondary'}>{file?.exists ? t('common.yes') : t('common.no')}</Badge>
+                <Badge variant={file?.exists ? 'default' : 'secondary'}>
+                    {file?.exists ? t('vibehub.stateValues.exists') : t('vibehub.stateValues.missing')}
+                </Badge>
             </div>
 
             {loading && <div className="text-xs text-muted-foreground">{t('common.loading')}</div>}
@@ -1476,7 +1549,7 @@ function ResearchTabContent({
 
             <div className="grid grid-cols-2 gap-2 text-xs">
                 <ViewField label={t('vibehub.tabs.researchRequired')} value={researchStatus.required ? t('common.yes') : t('common.no')} />
-                <ViewField label={t('vibehub.tabs.researchStatus')} value={researchStatus.status} />
+                <ViewField label={t('vibehub.tabs.researchStatus')} value={formatStatusValue(researchStatus.status, t)} />
                 <ViewField label={t('vibehub.tabs.researchPackExists')} value={researchStatus.research_pack_exists ? t('common.yes') : t('common.no')} />
                 <ViewField label={t('vibehub.tabs.researchPackPath')} value={RESEARCH_PACK_PATH} />
             </div>
@@ -1665,26 +1738,6 @@ function StatusPanel({
     );
 }
 
-function FileStatusPanel({
-    icon,
-    label,
-    fileStatus,
-}: {
-    icon: ReactNode;
-    label: string;
-    fileStatus: VibehubFileStatus;
-}) {
-    const tone = fileStatus.exists && fileStatus.stale !== true ? 'ok' : fileStatus.configured ? 'warn' : 'neutral';
-    return (
-        <StatusPanel
-            icon={icon}
-            label={label}
-            value={`${fileStatus.status}${fileStatus.exists ? '' : ' / missing'}`}
-            tone={tone}
-        />
-    );
-}
-
 function Notice({ message, error }: { message: string; error: boolean }) {
     return (
         <div className={`flex items-start gap-2 rounded-md border p-3 text-sm ${error ? 'border-destructive/40 text-destructive' : 'border-border text-muted-foreground'}`}>
@@ -1715,6 +1768,112 @@ function CountBadge({ label, count, tone }: { label: string; count: number; tone
     );
 }
 
+function normalizeLocale(locale: string) {
+    if (locale.startsWith('zh-TW')) return 'zh-TW';
+    if (locale.startsWith('zh')) return 'zh-CN';
+    return 'en';
+}
+
+function getDetailTitle(detail: DashboardDetail, t: (key: string, options?: Record<string, unknown>) => string) {
+    const titles: Record<DashboardDetail, string> = {
+        phase: t('vibehub.dashboard.phaseFlow'),
+        git: t('vibehub.dashboard.gitSummary'),
+        context: t('vibehub.status.contextPack'),
+        output: t('vibehub.status.agentOutput'),
+        handoff: t('vibehub.status.handoff'),
+        review: t('vibehub.status.reviewEvidence'),
+        research: t('vibehub.tabs.research'),
+        evidence: t('vibehub.dashboard.evidenceMap'),
+        preview: labelOrFallback(t, 'vibehub.tabs.preview', 'Preview'),
+        adapters: t('vibehub.dashboard.adapterStatus'),
+    };
+    return titles[detail];
+}
+
+function phaseBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+    if (status === 'active') return 'default';
+    if (status === 'completed') return 'secondary';
+    if (status === 'needs_action' || status === 'blocked' || status === 'failed') return 'destructive';
+    return 'outline';
+}
+
+function getFileHealthCards(
+    status: VibehubCockpitStatus | null,
+    contextView: VibehubContextViewData | null,
+    reviewView: VibehubReviewViewData | null,
+    handoffView: VibehubHandoffViewData | null,
+    researchStatus: ResearchStatus | null,
+    t: (key: string, options?: Record<string, unknown>) => string
+): Array<{
+    detail: DashboardDetail;
+    title: string;
+    description: string;
+    value: string;
+    path?: string | null;
+    tone: 'ok' | 'warn' | 'neutral';
+    icon: ReactNode;
+}> {
+    if (!status) return [];
+
+    const contextTone = status.context_pack_status.exists && status.context_pack_status.stale !== true && contextView?.stale !== true
+        ? 'ok'
+        : 'warn';
+    const outputTone = status.agent_output_status.exists && status.agent_output_status.stale !== true ? 'ok' : 'warn';
+    const handoffTone = handoffView?.complete || (status.handoff_status.exists && status.handoff_status.stale !== true) ? 'ok' : 'warn';
+    const reviewTone = reviewView?.review_exists ? 'ok' : 'neutral';
+    const researchTone = researchStatus?.required && researchStatus.status !== 'complete' ? 'warn' : 'neutral';
+
+    return [
+        {
+            detail: 'context',
+            title: t('vibehub.status.contextPack'),
+            description: contextView?.stale
+                ? t('vibehub.dashboard.stale')
+                : t('vibehub.dashboard.contextCounts', { included: contextView?.included_count ?? 0, missing: contextView?.missing_count ?? 0 }),
+            value: formatStatusValue(status.context_pack_status.status, t),
+            path: contextView?.pack_path || status.context_pack_status.path,
+            tone: contextTone,
+            icon: <FileText className="h-4 w-4" />,
+        },
+        {
+            detail: 'output',
+            title: t('vibehub.status.agentOutput'),
+            description: status.agent_output_status.exists ? t('vibehub.dashboard.reportedStateAvailable') : t('vibehub.dashboard.missingOutput'),
+            value: formatStatusValue(status.agent_output_status.status, t),
+            path: status.agent_output_status.path,
+            tone: outputTone,
+            icon: <Bot className="h-4 w-4" />,
+        },
+        {
+            detail: 'handoff',
+            title: t('vibehub.status.handoff'),
+            description: handoffView?.complete ? t('common.success') : t('vibehub.dashboard.missingSectionsCount', { count: handoffView?.missing_sections.length ?? 0 }),
+            value: formatStatusValue(status.handoff_status.status, t),
+            path: handoffView?.handoff_path || status.handoff_status.path,
+            tone: handoffTone,
+            icon: <FileText className="h-4 w-4" />,
+        },
+        {
+            detail: 'review',
+            title: t('vibehub.status.reviewEvidence'),
+            description: reviewView?.review_exists ? t('vibehub.dashboard.changedFilesCount', { count: reviewView.changed_files_count }) : t('vibehub.dashboard.notGenerated'),
+            value: reviewView?.review_exists ? t('vibehub.dashboard.available') : t('vibehub.dashboard.missing'),
+            path: reviewView?.review_path,
+            tone: reviewTone,
+            icon: <SearchCheck className="h-4 w-4" />,
+        },
+        {
+            detail: 'research',
+            title: t('vibehub.tabs.research'),
+            description: researchStatus?.required ? t('vibehub.dashboard.requiredGate') : t('vibehub.dashboard.notRequired'),
+            value: formatStatusValue(researchStatus?.status, t),
+            path: '.vibehub/research/current/research-pack.md',
+            tone: researchTone,
+            icon: <Lightbulb className="h-4 w-4" />,
+        },
+    ];
+}
+
 function getModeFlow(status: VibehubCockpitStatus | null, fallbackMode: string) {
     const mode = status?.current_mode || fallbackMode;
     const phases = MODE_STAGE_PHASES[mode] || MODE_STAGE_PHASES.guided_drive;
@@ -1740,11 +1899,33 @@ function flowStatusClass(status: string) {
     return 'bg-background';
 }
 
-function formatPhaseStatus(status: string) {
-    return status
-        .split('_')
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(' ');
+function formatPhaseStatus(status: string, t: (key: string, options?: Record<string, unknown>) => string) {
+    return formatStatusValue(status, t);
+}
+
+function formatMode(mode: string | null | undefined, t: (key: string, options?: Record<string, unknown>) => string) {
+    if (!mode) return t('common.unknown');
+    return labelOrFallback(t, `vibehub.modes.${mode}`, mode);
+}
+
+function formatStatusValue(value: string | null | undefined, t: (key: string, options?: Record<string, unknown>) => string) {
+    if (!value) return t('common.unknown');
+    return labelOrFallback(t, `vibehub.stateValues.${value}`, value);
+}
+
+function formatAheadBehind(ahead: number | null, behind: number | null, t: (key: string, options?: Record<string, unknown>) => string) {
+    if (ahead === null && behind === null) return t('vibehub.stateValues.local');
+    return `+${ahead ?? 0}/-${behind ?? 0}`;
+}
+
+function formatPreviewLabel(label: string, t: (key: string, options?: Record<string, unknown>) => string) {
+    const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    return labelOrFallback(t, `vibehub.previewLabels.${key}`, label);
+}
+
+function formatAdapterDescription(description: string, t: (key: string, options?: Record<string, unknown>) => string) {
+    const key = description.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    return labelOrFallback(t, `vibehub.adapterDescriptions.${key}`, description);
 }
 
 function getPreviewCandidates(
@@ -1762,7 +1943,12 @@ function getPreviewCandidates(
     addPreviewCandidate(candidates, reviewView?.review_path, 'Review evidence', Boolean(reviewView?.review_exists));
     addPreviewCandidate(candidates, reviewView?.diff_patch_path, 'Diff patch', Boolean(reviewView?.diff_patch_exists));
     addPreviewCandidate(candidates, reviewView?.changed_files_path, 'Changed files', Boolean(reviewView?.changed_files_path));
-    addPreviewCandidate(candidates, '.vibehub/sync.md', 'Sync report', true);
+    // Prefer canonical agent-view sync report. Do NOT inject the workspace-root
+    // `.vibehub/sync.md` — that path is an r9 orphan and not produced by the
+    // current sync pipeline. If the backend later surfaces `state.sync.last_report`
+    // on the cockpit status, this should be threaded through here as the first
+    // sync candidate, with `.vibehub/agent-view/sync.md` as the fallback.
+    addPreviewCandidate(candidates, '.vibehub/agent-view/sync.md', 'Sync report', true);
     return candidates;
 }
 
@@ -1776,54 +1962,53 @@ function labelOrFallback(t: (key: string, options?: Record<string, unknown>) => 
     return value === key ? fallback : value;
 }
 
-function getRecommendedAction(
+function getReadOnlyRecommendedActions(
     status: VibehubCockpitStatus | null,
-    hasActiveContextTarget: boolean,
+    driftReport: WorkspaceDriftReport | null,
+    contextView: VibehubContextViewData | null,
+    handoffView: VibehubHandoffViewData | null,
+    phaseValidation: PhaseValidationResult | null,
     t: (key: string, options?: Record<string, unknown>) => string
-): RecommendedAction | null {
-    if (!status) return null;
-    if (!status.initialized) {
-        return {
-            action: 'init',
-            title: t('vibehub.actions.initialize'),
-            description: t('vibehub.next.initialize'),
-        };
+): RecommendedReadOnlyAction[] {
+    if (!status?.initialized) return [];
+    const actions: RecommendedReadOnlyAction[] = [];
+
+    if (!status.current_task_id || !status.current_run_id || !status.current_phase) {
+        actions.push({
+            command: 'vibehub-sync',
+            title: t('vibehub.dashboard.actionNeedTask'),
+            description: t('vibehub.dashboard.actionNeedTaskDesc'),
+        });
     }
-    if (!hasActiveContextTarget) {
-        return {
-            action: 'start-task',
-            title: t('vibehub.actions.startTask'),
-            description: t('vibehub.next.startTask'),
-        };
+    if (status.git_dirty || driftReport?.head_changed || driftReport?.dirty) {
+        actions.push({
+            command: 'vibehub-sync',
+            title: t('vibehub.dashboard.actionDrift'),
+            description: t('vibehub.dashboard.actionDriftDesc', { count: status.git_changed_files_count || 0 }),
+        });
     }
-    if (status.git_dirty) {
-        return {
-            action: 'workspace-sync',
-            title: t('vibehub.actions.syncWorkspace'),
-            description: t('vibehub.next.syncWorkspace', {
-                count: status.git_changed_files_count || 0,
-            }),
-        };
+    if (driftReport?.context_stale || contextView?.stale || !status.context_pack_status.exists) {
+        actions.push({
+            command: 'vibehub-context',
+            title: t('vibehub.dashboard.actionContext'),
+            description: t('vibehub.dashboard.actionContextDesc'),
+        });
     }
-    if (!status.context_pack_status.exists || status.context_pack_status.stale === true) {
-        return {
-            action: 'build-context',
-            title: t('vibehub.actions.buildContext'),
-            description: t('vibehub.next.buildContext'),
-        };
+    if (phaseValidation?.missing_outputs.length) {
+        actions.push({
+            command: 'vibehub-checkpoint',
+            title: t('vibehub.dashboard.actionPhaseOutput'),
+            description: t('vibehub.dashboard.actionPhaseOutputDesc', { count: phaseValidation.missing_outputs.length }),
+        });
     }
-    if (!status.handoff_status.exists || status.handoff_status.status !== 'available') {
-        return {
-            action: 'handoff',
-            title: t('vibehub.actions.buildHandoff'),
-            description: t('vibehub.next.handoff'),
-        };
+    if (!handoffView?.handoff_exists || handoffView.missing_sections.length > 0) {
+        actions.push({
+            command: 'vibehub-handoff',
+            title: t('vibehub.dashboard.actionHandoff'),
+            description: t('vibehub.dashboard.actionHandoffDesc'),
+        });
     }
-    return {
-        action: 'continue',
-        title: t('vibehub.actions.continue'),
-        description: t('vibehub.next.continue'),
-    };
+    return actions;
 }
 
 function gitStatusLabel(status: VibehubCockpitStatus, t: (key: string, options?: Record<string, unknown>) => string) {

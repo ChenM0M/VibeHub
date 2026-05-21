@@ -21,6 +21,7 @@ Task:
 Continue the active phase using current.md and the context pack. Keep changes scoped to the active task.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
