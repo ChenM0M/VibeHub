@@ -15,6 +15,8 @@ Evidence grade: mixed
 - `user_confirmed`: The Homebrew tap `ChenM0M/homebrew-vibehub` exists and the repository environment/secrets have been configured.
 - `hard_observed`: Prepared preview version `2.0.0-pre.3` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - `hard_observed`: Dirty-change inspection found the remaining uncommitted code changes are the previously reported VibeHub cockpit/lifecycle work; root `task.md` is an unreferenced first-commit checklist and is not required for the preview release.
+- `hard_observed`: After `2.0.0-pre.3` release workflow failed on Windows MSI packaging (`optional pre-release identifier in app version must be numeric-only`), `.github/workflows/release.yml` was restored to skip MSI for prerelease Windows builds by passing `--bundles nsis`.
+- `hard_observed`: Prepared replacement preview version `2.0.0-pre.4` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - `hard_observed`: Project center duplicate header was removed from `src/components/VibehubProjectCenter.tsx`; the project/status summary now appears only in the lower cockpit status block.
 - `hard_observed`: The right-side detail drawer now separates overlay, fixed header, and scroll body, preventing phase content from bleeding above the drawer header.
 - `hard_observed`: The detail drawer overlay now closes when the user clicks outside the drawer panel, while clicks inside the panel remain interactive.
@@ -53,6 +55,7 @@ Evidence grade: mixed
 - `hard_observed`: `src-tauri/Cargo.toml`
 - `hard_observed`: `src-tauri/Cargo.lock`
 - `hard_observed`: `src-tauri/tauri.conf.json`
+- `hard_observed`: `.github/workflows/release.yml`
 - `hard_observed`: `src/components/VibehubProjectCenter.tsx`
 - `hard_observed`: `src/components/VibehubCockpitDialog.tsx`
 - `hard_observed`: `src/locales/en.json`
@@ -128,6 +131,10 @@ Evidence grade: mixed
 - `git log --oneline -- task.md`
 - `npm run build`
 - `cargo check`
+- `git show 486f718:.github/workflows/release.yml`
+- `npm run tauri -- build --help`
+- `rg -n "msi|nsis|bundle|bundles|tauri_args|pre\\.1|skip msi" ...`
+- `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/release.yml'); YAML.load_file('.github/workflows/homebrew.yml')"`
 - `sed -n ...` on VibeHub current/context/handoff/rules/protocol/context-pack/output files.
 - `git status --short`
 - `rg -n ...` across `src`, `src-tauri`, `.vibehub/adapters/generated`.
@@ -151,6 +158,9 @@ Evidence grade: mixed
 - `hard_observed`: `brew style --cask` could not complete because Homebrew requires casks to be inside a tap; developer mode was turned off afterwards.
 - `hard_observed`: `npm run build` passed for `2.0.0-pre.3`; existing browser data and chunk-size warnings were reported.
 - `hard_observed`: `cargo check` passed for `vibehub v2.0.0-pre.3`; existing dead-code warnings were reported.
+- `hard_observed`: `.github/workflows/release.yml` and `.github/workflows/homebrew.yml` parsed successfully with Ruby YAML after the prerelease Windows NSIS-only fix.
+- `hard_observed`: `npm run build` passed for `2.0.0-pre.4`; existing browser data and chunk-size warnings were reported.
+- `hard_observed`: `cargo check` passed for `vibehub v2.0.0-pre.4`; existing dead-code warnings were reported.
 - `hard_observed`: `cargo check` passed; existing dead-code warnings in gateway/vibehub modules were reported.
 - `hard_observed`: `./src-tauri/target/debug/vibehub validate /Users/chenm0m/LocalRepo/VibeHub` returned `align` validation status `completed` with no missing outputs.
 - `hard_observed`: Locale JSON parse check passed for `en`, `zh`, and `zh-TW`.
@@ -177,7 +187,7 @@ Evidence grade: mixed
 
 1. Use the user-confirmed `ChenM0M/homebrew-vibehub` tap and configured `HOMEBREW_TAP_TOKEN` for the preview release.
 2. Commit the VibeHub cockpit/lifecycle changes plus Homebrew/`2.0.0-pre.3` release prep; keep root `task.md` deletion out unless the user chooses to clean it up.
-3. Push current branch and tag `2.0.0-pre.3`, wait for the draft prerelease build, publish it, then confirm `Update Homebrew Cask` pushes `Casks/vibehub.rb`.
+3. Push current branch and tag `2.0.0-pre.4`, wait for the draft prerelease build, publish it, then confirm `Update Homebrew Cask` pushes `Casks/vibehub.rb`.
 4. On macOS, validate `brew install --cask chenm0m/vibehub/vibehub` and `brew upgrade --cask vibehub` against the published release.
 1. Run VibeHub validation against this output and decide whether to advance from `align`.
 2. If visual QA is required, register/open this repo in the app and click through project center drawer interactions.
