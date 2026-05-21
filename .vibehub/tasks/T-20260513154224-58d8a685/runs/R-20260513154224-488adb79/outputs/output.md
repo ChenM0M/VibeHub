@@ -21,6 +21,9 @@ Evidence grade: mixed
 - `hard_observed`: Prepared replacement preview version `2.0.0-pre.5` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - `hard_observed`: After `2.0.0-pre.5` showed `tauri-action` passes `args` after npm's `--`, macOS builds now run `npm run tauri -- build ...` directly in shell so `--bundles app` is handled by the Tauri CLI instead of cargo.
 - `hard_observed`: Prepared replacement preview version `2.0.0-pre.6` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
+- `hard_observed`: Pushed commit `0c5f028` and tag `2.0.0-pre.6`; GitHub Release run `26217288801` showed Windows and Ubuntu succeeded, both macOS jobs failed in the direct shell `Build macOS app bundle` step, and the original `tauri-action` step was correctly skipped.
+- `hard_observed`: Replaced the direct macOS shell build with `tauri-action` again and set `tauriScript: npm run tauri --`, so the action keeps its signing/release setup while the generated command receives `--target ... --bundles app` before APFS DMG packaging.
+- `hard_observed`: Prepared replacement preview version `2.0.0-pre.7` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - `hard_observed`: Project center duplicate header was removed from `src/components/VibehubProjectCenter.tsx`; the project/status summary now appears only in the lower cockpit status block.
 - `hard_observed`: The right-side detail drawer now separates overlay, fixed header, and scroll body, preventing phase content from bleeding above the drawer header.
 - `hard_observed`: The detail drawer overlay now closes when the user clicks outside the drawer panel, while clicks inside the panel remain interactive.
@@ -71,6 +74,7 @@ Evidence grade: mixed
 - `hard_observed`: `.vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/evidence/diff.patch`
 - `hard_observed`: `.vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/events.jsonl`
 - `hard_observed`: Existing dirty files from earlier sessions remain in the worktree, including VibeHub backend/frontend files, generated adapter files, docs, and deleted `task.md`.
+- `hard_observed`: VibeHub sync generated `.vibehub/agent-view/sync.md`, `.vibehub/agent-view/handoff.md`, `.vibehub/state.yaml`, rebuilt align context-pack files, appended events, and wrote `.vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260521-091640.md`; these sync metadata files were not included in the `2.0.0-pre.6` release commit.
 
 ## Files Reportedly Read
 
@@ -104,6 +108,9 @@ Evidence grade: mixed
 - `hard_observed`: `docs/vibehub-p0-p1.md`
 - `hard_observed`: `package.json`
 - `hard_observed`: Browser skill instructions at `/Users/chenm0m/.codex/plugins/cache/openai-bundled/browser/0.1.0-alpha2/skills/browser/SKILL.md`
+- `hard_observed`: `.vibehub/agent-view/sync.md`
+- `hard_observed`: GitHub public commit checks page for `0c5f0283c2dd5613248bd34b9ee62b7b1124224f`
+- `hard_observed`: Tauri action README and Tauri macOS signing documentation snippets from public docs.
 
 ## Commands Run
 
@@ -157,6 +164,19 @@ Evidence grade: mixed
 - `git diff --name-status`
 - `npm run dev -- --host 127.0.0.1` (sandbox attempt failed with `EPERM`; escalated run succeeded).
 - Browser opened `http://127.0.0.1:1420/` and inspected the app shell DOM.
+- `./src-tauri/target/debug/vibehub sync /Users/chenm0m/LocalRepo/VibeHub`
+- `git commit -m "fix(release): build macos prerelease app directly"`
+- `git tag 2.0.0-pre.6`
+- `git push origin feature/vibehub-v2-p0`
+- `git push origin 2.0.0-pre.6`
+- `git ls-remote origin refs/tags/2.0.0-pre.6`
+- `git ls-remote origin refs/heads/feature/vibehub-v2-p0`
+- `curl -sS/-I ...` against GitHub release, assets, commit, checks, and job pages for `2.0.0-pre.6`.
+- `rg -n ...` and `sed -n ...` on saved GitHub HTML/check fragments and release workflow files.
+- `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/release.yml')"`
+- `git diff --check -- .github/workflows/release.yml package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json ...`
+- `npm run build`
+- `cargo check`
 
 ## Tests Run
 
@@ -178,6 +198,12 @@ Evidence grade: mixed
 - `hard_observed`: `.github/workflows/release.yml` parsed successfully with Ruby YAML after replacing macOS `tauri-action` build with a direct shell Tauri build.
 - `hard_observed`: `npm run build` passed for `2.0.0-pre.6`; existing browser data and chunk-size warnings were reported.
 - `hard_observed`: `cargo check` passed for `vibehub v2.0.0-pre.6`; existing dead-code warnings were reported.
+- `hard_observed`: Remote branch `feature/vibehub-v2-p0` and tag `2.0.0-pre.6` both point to `0c5f0283c2dd5613248bd34b9ee62b7b1124224f`.
+- `hard_observed`: GitHub run `26217288801` for `2.0.0-pre.6` has Windows and Ubuntu release jobs succeeded, macOS aarch64/x64 release jobs failed in `Build macOS app bundle`.
+- `hard_observed`: `.github/workflows/release.yml` parsed successfully with Ruby YAML after switching macOS back through `tauri-action` with `tauriScript: npm run tauri --`.
+- `hard_observed`: `git diff --check` passed for the `2.0.0-pre.7` workflow/version/output changes.
+- `hard_observed`: `npm run build` passed for `2.0.0-pre.7`; existing browser data and chunk-size warnings were reported.
+- `hard_observed`: `cargo check` passed for `vibehub v2.0.0-pre.7`; existing dead-code warnings were reported.
 - `hard_observed`: `cargo check` passed; existing dead-code warnings in gateway/vibehub modules were reported.
 - `hard_observed`: `./src-tauri/target/debug/vibehub validate /Users/chenm0m/LocalRepo/VibeHub` returned `align` validation status `completed` with no missing outputs.
 - `hard_observed`: Locale JSON parse check passed for `en`, `zh`, and `zh-TW`.
@@ -199,14 +225,13 @@ Evidence grade: mixed
 - `hard_observed`: `npm run build` reported existing baseline browser data/chunk-size warnings; build still passed.
 - `agent_reported`: Full cockpit visual QA remains partial because the app shell had no registered workspace/project.
 - `hard_observed`: Current VibeHub status reports Git dirty state and loop warning due to many changed files.
+- `hard_observed`: GitHub unauthenticated REST API was rate-limited, so CI status was inspected through public release/check/job HTML instead.
+- `hard_observed`: The `2.0.0-pre.6` public release/tag page only exposed source archives while the binary release jobs were failing; Homebrew publish remains blocked until a successful release with macOS DMG assets is published.
 
 ## Next Session Should
 
-1. Use the user-confirmed `ChenM0M/homebrew-vibehub` tap and configured `HOMEBREW_TAP_TOKEN` for the preview release.
-2. Commit the VibeHub cockpit/lifecycle changes plus Homebrew/`2.0.0-pre.3` release prep; keep root `task.md` deletion out unless the user chooses to clean it up.
-3. Push current branch and tag `2.0.0-pre.6`, wait for the draft prerelease build, publish it, then confirm `Update Homebrew Cask` pushes `Casks/vibehub.rb`.
-4. On macOS, validate `brew install --cask chenm0m/vibehub/vibehub` and `brew upgrade --cask vibehub` against the published release.
-1. Run VibeHub validation against this output and decide whether to advance from `align`.
-2. If visual QA is required, register/open this repo in the app and click through project center drawer interactions.
-3. Resolve ownership of the deleted `task.md`.
-4. Decide whether direct lifecycle action buttons should be restored/exposed on the project detail page, or whether the intended design is read-only diagnostics plus agent command recommendations.
+1. Commit and push the `2.0.0-pre.7` release workflow/version fix, tag `2.0.0-pre.7`, then inspect the new Release run.
+2. After all release jobs succeed, publish the draft prerelease and confirm `Update Homebrew Cask` pushes `Casks/vibehub.rb` to `ChenM0M/homebrew-vibehub`.
+3. On macOS, validate `brew install --cask chenm0m/vibehub/vibehub` and `brew upgrade --cask vibehub` against the published release.
+4. Run VibeHub validation against this output and decide whether to advance from `align`.
+5. Resolve ownership of the deleted `task.md`.
