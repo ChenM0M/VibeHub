@@ -19,6 +19,8 @@ Evidence grade: mixed
 - `hard_observed`: Prepared replacement preview version `2.0.0-pre.4` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - `hard_observed`: After `2.0.0-pre.4` fixed Windows but both macOS jobs failed during Tauri's built-in HFS+ DMG creation (`hdiutil: create failed - 设备未配置` reproduced locally), release workflow now builds macOS `.app` bundles only and creates APFS DMGs with explicit `hdiutil create -fs APFS`.
 - `hard_observed`: Prepared replacement preview version `2.0.0-pre.5` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
+- `hard_observed`: After `2.0.0-pre.5` showed `tauri-action` passes `args` after npm's `--`, macOS builds now run `npm run tauri -- build ...` directly in shell so `--bundles app` is handled by the Tauri CLI instead of cargo.
+- `hard_observed`: Prepared replacement preview version `2.0.0-pre.6` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - `hard_observed`: Project center duplicate header was removed from `src/components/VibehubProjectCenter.tsx`; the project/status summary now appears only in the lower cockpit status block.
 - `hard_observed`: The right-side detail drawer now separates overlay, fixed header, and scroll body, preventing phase content from bleeding above the drawer header.
 - `hard_observed`: The detail drawer overlay now closes when the user clicks outside the drawer panel, while clicks inside the panel remain interactive.
@@ -141,6 +143,7 @@ Evidence grade: mixed
 - `npm run tauri -- build --target aarch64-apple-darwin --bundles app`
 - `hdiutil create -volname VibeHub -fs APFS -srcfolder ...`
 - `hdiutil verify /private/tmp/VibeHub_2.0.0-pre.5_aarch64.dmg`
+- `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/release.yml')"`
 - `sed -n ...` on VibeHub current/context/handoff/rules/protocol/context-pack/output files.
 - `git status --short`
 - `rg -n ...` across `src`, `src-tauri`, `.vibehub/adapters/generated`.
@@ -172,6 +175,9 @@ Evidence grade: mixed
 - `hard_observed`: `cargo check` passed for `vibehub v2.0.0-pre.5`; existing dead-code warnings were reported.
 - `hard_observed`: Local `npm run tauri -- build --target aarch64-apple-darwin --bundles app` passed and produced `VibeHub.app`.
 - `hard_observed`: Local APFS DMG packaging and `hdiutil verify` passed for `/private/tmp/VibeHub_2.0.0-pre.5_aarch64.dmg`.
+- `hard_observed`: `.github/workflows/release.yml` parsed successfully with Ruby YAML after replacing macOS `tauri-action` build with a direct shell Tauri build.
+- `hard_observed`: `npm run build` passed for `2.0.0-pre.6`; existing browser data and chunk-size warnings were reported.
+- `hard_observed`: `cargo check` passed for `vibehub v2.0.0-pre.6`; existing dead-code warnings were reported.
 - `hard_observed`: `cargo check` passed; existing dead-code warnings in gateway/vibehub modules were reported.
 - `hard_observed`: `./src-tauri/target/debug/vibehub validate /Users/chenm0m/LocalRepo/VibeHub` returned `align` validation status `completed` with no missing outputs.
 - `hard_observed`: Locale JSON parse check passed for `en`, `zh`, and `zh-TW`.
@@ -198,7 +204,7 @@ Evidence grade: mixed
 
 1. Use the user-confirmed `ChenM0M/homebrew-vibehub` tap and configured `HOMEBREW_TAP_TOKEN` for the preview release.
 2. Commit the VibeHub cockpit/lifecycle changes plus Homebrew/`2.0.0-pre.3` release prep; keep root `task.md` deletion out unless the user chooses to clean it up.
-3. Push current branch and tag `2.0.0-pre.5`, wait for the draft prerelease build, publish it, then confirm `Update Homebrew Cask` pushes `Casks/vibehub.rb`.
+3. Push current branch and tag `2.0.0-pre.6`, wait for the draft prerelease build, publish it, then confirm `Update Homebrew Cask` pushes `Casks/vibehub.rb`.
 4. On macOS, validate `brew install --cask chenm0m/vibehub/vibehub` and `brew upgrade --cask vibehub` against the published release.
 1. Run VibeHub validation against this output and decide whether to advance from `align`.
 2. If visual QA is required, register/open this repo in the app and click through project center drawer interactions.
