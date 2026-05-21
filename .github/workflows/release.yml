@@ -26,16 +26,20 @@ jobs:
         include:
           - platform: macos-latest
             rust_targets: aarch64-apple-darwin
-            tauri_args: --target aarch64-apple-darwin
+            tauri_args: --target aarch64-apple-darwin --bundles app
+            dmg_arch: aarch64
           - platform: macos-latest
             rust_targets: x86_64-apple-darwin
-            tauri_args: --target x86_64-apple-darwin
+            tauri_args: --target x86_64-apple-darwin --bundles app
+            dmg_arch: x64
           - platform: windows-latest
             rust_targets: ''
             tauri_args: ''
+            dmg_arch: ''
           - platform: ubuntu-22.04
             rust_targets: ''
             tauri_args: ''
+            dmg_arch: ''
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -120,6 +124,39 @@ jobs:
             ```
 
             如果 Homebrew workflow 没有运行，请检查 `ChenM0M/homebrew-vibehub` 是否存在，以及本仓库是否配置了 `HOMEBREW_TAP_TOKEN`。
+
+      - name: Package macOS APFS DMG
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          DMG_ARCH: ${{ matrix.dmg_arch }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${RELEASE_TAG#v}"
+          APP_PATH="$(find src-tauri/target -path '*/release/bundle/macos/VibeHub.app' -type d | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "VibeHub.app was not found under src-tauri/target."
+            find src-tauri/target -path '*/release/bundle/macos' -type d -print
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          DMG_PATH="release-assets/VibeHub_${VERSION}_${DMG_ARCH}.dmg"
+          hdiutil create -volname VibeHub -fs APFS -srcfolder "$APP_PATH" "$DMG_PATH"
+          hdiutil verify "$DMG_PATH"
+
+      - name: Attach macOS APFS DMG
+        if: startsWith(matrix.platform, 'macos')
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: release-assets/*.dmg
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          draft: true
+          prerelease: ${{ contains(inputs.tag || github.ref_name, '-') }}
 
       - name: Prepare portable executable (Windows)
         if: matrix.platform == 'windows-latest'
