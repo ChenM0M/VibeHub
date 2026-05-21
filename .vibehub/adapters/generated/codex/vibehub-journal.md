@@ -21,6 +21,7 @@ Task:
 Draft durable session notes suitable for VibeHub journal promotion.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

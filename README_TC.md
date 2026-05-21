@@ -20,17 +20,44 @@
 - **Git 資訊** — 卡片上直接顯示目前分支和變更狀態
 - **深色模式** — 跟隨系統或手動切換
 
-## 下載
+## 安裝與下載
+
+### macOS：Homebrew
+
+推薦用 Homebrew 安裝 macOS 版本：
+
+```bash
+brew install --cask chenm0m/vibehub/vibehub
+```
+
+更新：
+
+```bash
+brew update
+brew upgrade --cask vibehub
+```
+
+Homebrew tap 倉庫名約定為 `ChenM0M/homebrew-vibehub`。每次 GitHub Release 從草稿發布後，CI 會根據 Apple Silicon 和 Intel 兩個 DMG 產物自動更新 cask。預覽版 / prerelease 也走同一套 cask 更新流程，指向目前發布的預覽版 DMG。
+
+### 手動下載
 
 [→ Releases 頁面](https://github.com/ChenM0M/VibeHub/releases)
 
 | 平台 | 格式 |
 |------|------|
-| Windows | `.exe` 安裝包 / `Portable.zip` 便攜版 |
+| Windows | `.exe` 安裝包 / 便攜執行檔 |
 | macOS | `.dmg` (Intel & Apple Silicon) |
 | Linux | `.deb` / `.AppImage` |
 
-Portable 版解壓即用，設定自動存在 `data/` 下，刪掉資料夾就是乾淨移除。
+Windows / Linux Portable 版解壓即用。macOS 安裝版的設定和 AI 閘道資料會寫入系統應用資料目錄：
+
+```text
+~/Library/Application Support/VibeHub
+```
+
+如果確實需要便攜模式，可以用 `VIBEHUB_PORTABLE=1` 啟動，此時設定會寫到可執行檔旁邊的 `data/`。普通 macOS `.app` / DMG / Homebrew 安裝不建議使用便攜模式，因為應用程式包內部通常不可寫。
+
+AI 閘道預設只監聽本機回環位址 `127.0.0.1`，不會暴露到區域網路。
 
 ## 從原始碼執行
 
@@ -43,6 +70,13 @@ npm install
 npm run tauri dev
 ```
 
+macOS 可以直接跑環境檢查和開發啟動腳本：
+
+```bash
+./start-dev.sh --check
+./start-dev.sh
+```
+
 建置發行版：
 
 ```bash
@@ -53,6 +87,16 @@ npm run tauri build
 - Windows → Visual Studio Build Tools
 - macOS → Xcode Command Line Tools
 - Linux → `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev`
+
+## 發布流程
+
+1. 建立版本標籤，例如 `v2.0.0`。
+2. `Release` workflow 會建置 Windows、Linux、macOS Apple Silicon、macOS Intel 產物，並建立草稿 Release。
+3. 按草稿 Release 裡的檢查清單測試兩個 macOS DMG，確認能首次啟動、開啟專案、啟動 CLI/IDE、AI 閘道可儲存設定。
+4. 發布草稿 Release。
+5. `Update Homebrew Cask` workflow 會下載公開的 DMG、計算 SHA256，並用實際發布資產檔名更新 `ChenM0M/homebrew-vibehub` 裡的 `Casks/vibehub.rb`，適配正式版和預覽版。
+
+Homebrew 自動更新需要先建立 `ChenM0M/homebrew-vibehub` 倉庫，並在本倉庫 Secrets 裡設定 `HOMEBREW_TAP_TOKEN`。如果要讓 macOS 使用者雙擊即正常開啟，Release workflow 還需要設定 Apple 簽名/公證相關 Secrets：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`。
 
 ## 專案結構
 
