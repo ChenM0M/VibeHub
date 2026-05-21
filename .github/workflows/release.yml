@@ -84,7 +84,7 @@ jobs:
         with:
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: VibeHub ${{ inputs.tag || github.ref_name }}
-          tauriScript: npm run tauri --
+          tauriScript: npx tauri
           args: ${{ matrix.tauri_args }} ${{ matrix.platform == 'windows-latest' && contains(inputs.tag || github.ref_name, '-') && '--bundles nsis' || '' }}
           releaseDraft: true
           prerelease: ${{ contains(inputs.tag || github.ref_name, '-') }}
