@@ -1,4 +1,4 @@
-﻿use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::vibehub::util::{
     canonical_initialized_project_root, normalize_path, relative_to_project,
 };
-use crate::vibehub::{agent_view, context, events, start_task};
+use crate::vibehub::{agent_view, context, events, handoff, start_task};
 
 pub const STATUS_PENDING: &str = "pending";
 pub const STATUS_ACTIVE: &str = "active";
@@ -50,6 +50,30 @@ pub struct PhaseAdvanceResult {
     pub current_status: String,
     pub next_phase: Option<String>,
     pub validation: PhaseValidationResult,
+    /// True when the current phase handoff was complete at the time advance
+    /// was attempted. Surfaced for the SOFT handoff gate (Phase B step 8):
+    /// `advance_phase` defaults to `force=false`, in which case an incomplete
+    /// handoff blocks advance with `current_status="needs_action"` and the
+    /// missing section names returned in `missing_handoff_sections`. Pass
+    /// `force=true` (via `advance_phase_with_force`) to override.
+    #[serde(default)]
+    pub handoff_complete: bool,
+    /// Sections that were missing in the handoff at the time advance was
+    /// attempted. Empty when the handoff was complete OR when no handoff has
+    /// been generated yet (in which case `handoff_complete` is `false`).
+    #[serde(default)]
+    pub missing_handoff_sections: Vec<String>,
+    /// True when the advance proceeded only because `force=true` was passed
+    /// while the handoff gate would otherwise have blocked it. Frontends can
+    /// surface this as an audit hint.
+    #[serde(default)]
+    pub forced: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HandoffGate {
+    complete: bool,
+    missing_sections: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -537,10 +561,20 @@ pub fn complete_phase(project_root: impl AsRef<Path>) -> Result<PhaseAdvanceResu
         current_status: target_status,
         next_phase,
         validation,
+        handoff_complete: false,
+        missing_handoff_sections: vec![],
+        forced: false,
     })
 }
 
 pub fn advance_phase(project_root: impl AsRef<Path>) -> Result<PhaseAdvanceResult> {
+    advance_phase_with_force(project_root, false)
+}
+
+pub fn advance_phase_with_force(
+    project_root: impl AsRef<Path>,
+    force: bool,
+) -> Result<PhaseAdvanceResult> {
     let project_root = canonical_initialized_project_root(project_root.as_ref())?;
     let (mut state, state_path) = read_state(&project_root)?;
 
@@ -597,6 +631,63 @@ pub fn advance_phase(project_root: impl AsRef<Path>) -> Result<PhaseAdvanceResul
             current_status: STATUS_NEEDS_ACTION.to_string(),
             next_phase: None,
             validation,
+            handoff_complete: false,
+            missing_handoff_sections: vec![],
+            forced: false,
+        });
+    }
+
+    let handoff_gate = read_handoff_gate(&project_root)?;
+    if !handoff_gate.complete && !force {
+        set_yaml_string(&mut state, &["flow", &phase], STATUS_NEEDS_ACTION);
+        set_yaml_string(
+            &mut state,
+            &["current", "phase_status"],
+            STATUS_NEEDS_ACTION,
+        );
+        if let (Some(task_id), Some(run_id)) =
+            (get_current_task_id(&state), get_current_run_id(&state))
+        {
+            update_task_run_phase(
+                &project_root,
+                &task_id,
+                &run_id,
+                &phase,
+                STATUS_NEEDS_ACTION,
+            )?;
+        }
+
+        let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+        set_yaml_string(&mut state, &["last_updated"], &now);
+        write_state(&state_path, &state)?;
+        if let (Some(task_id), Some(run_id)) =
+            (get_current_task_id(&state), get_current_run_id(&state))
+        {
+            let _ = events::append_run_event(
+                &project_root,
+                &task_id,
+                &run_id,
+                "phase_advance_blocked",
+                "Phase advance blocked by incomplete handoff.",
+                serde_json::json!({
+                    "phase": phase.clone(),
+                    "status": STATUS_NEEDS_ACTION,
+                    "missing_handoff_sections": handoff_gate.missing_sections.clone(),
+                }),
+            );
+        }
+
+        return Ok(PhaseAdvanceResult {
+            mode,
+            previous_phase: phase.clone(),
+            previous_status: STATUS_ACTIVE.to_string(),
+            current_phase: phase,
+            current_status: STATUS_NEEDS_ACTION.to_string(),
+            next_phase: None,
+            validation,
+            handoff_complete: false,
+            missing_handoff_sections: handoff_gate.missing_sections,
+            forced: false,
         });
     }
 
@@ -634,6 +725,20 @@ pub fn advance_phase(project_root: impl AsRef<Path>) -> Result<PhaseAdvanceResul
                         "next_phase": Option::<String>::None,
                     }),
                 );
+                if force && !handoff_gate.complete {
+                    let _ = events::append_run_event(
+                        &project_root,
+                        &task_id,
+                        &run_id,
+                        "handoff_force_advance",
+                        "Final phase completed despite incomplete handoff.",
+                        serde_json::json!({
+                            "previous_phase": phase.clone(),
+                            "current_phase": phase.clone(),
+                            "missing_handoff_sections": handoff_gate.missing_sections.clone(),
+                        }),
+                    );
+                }
             }
 
             return Ok(PhaseAdvanceResult {
@@ -644,6 +749,9 @@ pub fn advance_phase(project_root: impl AsRef<Path>) -> Result<PhaseAdvanceResul
                 current_status: STATUS_COMPLETED.to_string(),
                 next_phase: None,
                 validation,
+                handoff_complete: handoff_gate.complete,
+                missing_handoff_sections: handoff_gate.missing_sections,
+                forced: force && !handoff_gate.complete,
             });
         }
     };
@@ -708,6 +816,20 @@ pub fn advance_phase(project_root: impl AsRef<Path>) -> Result<PhaseAdvanceResul
             "context_manifest": format!("{run_path}/context-packs/{next_phase}.manifest.yaml"),
         }),
     );
+    if force && !handoff_gate.complete {
+        let _ = events::append_run_event(
+            &project_root,
+            &task_id,
+            &run_id,
+            "handoff_force_advance",
+            "Phase advanced despite incomplete handoff.",
+            serde_json::json!({
+                "previous_phase": phase.clone(),
+                "current_phase": next_phase.clone(),
+                "missing_handoff_sections": handoff_gate.missing_sections.clone(),
+            }),
+        );
+    }
 
     Ok(PhaseAdvanceResult {
         mode,
@@ -717,6 +839,17 @@ pub fn advance_phase(project_root: impl AsRef<Path>) -> Result<PhaseAdvanceResul
         current_status: STATUS_ACTIVE.to_string(),
         next_phase: next_next,
         validation,
+        handoff_complete: handoff_gate.complete,
+        missing_handoff_sections: handoff_gate.missing_sections,
+        forced: force && !handoff_gate.complete,
+    })
+}
+
+fn read_handoff_gate(project_root: &Path) -> Result<HandoffGate> {
+    let result = handoff::build_handoff(project_root)?;
+    Ok(HandoffGate {
+        complete: result.complete,
+        missing_sections: result.missing_required_sections,
     })
 }
 
@@ -872,7 +1005,60 @@ mod tests {
         for (heading, body) in sections {
             content.push_str(&format!("## {}\n{}\n\n", heading, body));
         }
+        let has_heading = |candidate: &str| {
+            sections
+                .iter()
+                .any(|(heading, _)| heading.eq_ignore_ascii_case(candidate))
+        };
+        let has_what_changed = [
+            "Completed",
+            "Not Yet Done",
+            "Key Decisions Made",
+            "Files Changed",
+        ]
+        .iter()
+        .any(|heading| has_heading(heading));
+        if !has_what_changed {
+            content.push_str("## Completed\n- Test fixture phase output.\n\n");
+        }
+        if !has_heading("Commands Run") {
+            content.push_str("## Commands Run\n- cargo test vibehub::phase\n\n");
+        }
+        if !has_heading("Tests Run") {
+            content.push_str("## Tests Run\n- cargo test vibehub::phase\n\n");
+        }
+        if !has_heading("Context Still Needed") {
+            content.push_str("## Context Still Needed\n- None.\n\n");
+        }
+        if !has_heading("Warnings") {
+            content.push_str("## Warnings\n- None.\n\n");
+        }
+        if !has_heading("Next Session Should") {
+            content.push_str("## Next Session Should\n1. Continue.\n\n");
+        }
         fs::write(outputs_dir.join("output.md"), content).expect("write output");
+    }
+
+    fn write_raw_output_with_sections(
+        project: &Path,
+        task_id: &str,
+        run_id: &str,
+        sections: &[(&str, &str)],
+    ) {
+        let outputs_dir = project
+            .join(".vibehub")
+            .join("tasks")
+            .join(task_id)
+            .join("runs")
+            .join(run_id)
+            .join("outputs");
+        fs::create_dir_all(&outputs_dir).expect("create outputs dir");
+
+        let mut content = String::from("# Session Output\n\n");
+        for (heading, body) in sections {
+            content.push_str(&format!("## {}\n{}\n\n", heading, body));
+        }
+        fs::write(outputs_dir.join("output.md"), content).expect("write raw output");
     }
 
     fn write_session_output_with_sections(
@@ -1109,6 +1295,67 @@ mod tests {
             yaml_string(&state, &["current", "phase_status"]).as_deref(),
             Some(STATUS_NEEDS_ACTION)
         );
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn incomplete_handoff_blocks_advance_after_outputs_validate() {
+        let project = temp_project();
+        let started = setup_guided_drive(&project);
+
+        write_raw_output_with_sections(
+            &project,
+            &started.task_id,
+            &started.run_id,
+            &[
+                ("Files Changed", "- src/main.rs"),
+                ("Completed", "- Implemented phase system"),
+                ("Not Yet Done", "- Need more docs"),
+            ],
+        );
+
+        let result = advance_phase(&project).expect("advance");
+
+        assert_eq!(result.current_phase, "implement");
+        assert_eq!(result.current_status, STATUS_NEEDS_ACTION);
+        assert!(result.validation.missing_outputs.is_empty());
+        assert!(!result.handoff_complete);
+        assert!(result
+            .missing_handoff_sections
+            .contains(&"Commands Run".to_string()));
+        assert!(!result.forced);
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn force_allows_advance_with_incomplete_handoff() {
+        let project = temp_project();
+        let started = setup_guided_drive(&project);
+
+        write_raw_output_with_sections(
+            &project,
+            &started.task_id,
+            &started.run_id,
+            &[
+                ("Files Changed", "- src/main.rs"),
+                ("Completed", "- Implemented phase system"),
+                ("Not Yet Done", "- Need more docs"),
+            ],
+        );
+
+        let result = advance_phase_with_force(&project, true).expect("advance");
+
+        assert_eq!(result.previous_phase, "implement");
+        assert_eq!(result.current_phase, "review");
+        assert_eq!(result.current_status, STATUS_ACTIVE);
+        assert!(result.validation.missing_outputs.is_empty());
+        assert!(!result.handoff_complete);
+        assert!(result.forced);
+        assert!(result
+            .missing_handoff_sections
+            .contains(&"Commands Run".to_string()));
 
         fs::remove_dir_all(project).expect("cleanup");
     }

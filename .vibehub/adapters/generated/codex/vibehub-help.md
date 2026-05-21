@@ -21,6 +21,7 @@ Task:
 List available VibeHub commands and explain when to use each one.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

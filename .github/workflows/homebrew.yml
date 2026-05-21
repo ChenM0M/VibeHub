@@ -36,18 +36,20 @@ jobs:
 
       - name: Download macOS release assets
         run: |
+          set -euo pipefail
+
           mkdir -p release-assets
           gh release download "$RELEASE_TAG" \
             --repo ChenM0M/VibeHub \
             --pattern "*.dmg" \
             --dir release-assets
 
-          ARM_DMG="$(find release-assets -name '*aarch64*.dmg' -o -name '*arm64*.dmg' | head -n 1)"
-          INTEL_DMG="$(find release-assets -name '*x64*.dmg' -o -name '*x86_64*.dmg' | head -n 1)"
+          ARM_DMG="$(find release-assets -type f \( -name '*aarch64*.dmg' -o -name '*arm64*.dmg' \) -print | sort | sed -n '1p')"
+          INTEL_DMG="$(find release-assets -type f \( -name '*x64*.dmg' -o -name '*x86_64*.dmg' \) -print | sort | sed -n '1p')"
 
           if [ -z "$ARM_DMG" ] || [ -z "$INTEL_DMG" ]; then
             echo "Expected both Apple Silicon and Intel DMG assets."
-            find release-assets -type f -maxdepth 1 -print
+            find release-assets -type f -print | sort
             exit 1
           fi
 
@@ -59,11 +61,15 @@ jobs:
 
       - name: Checkout Homebrew tap
         run: |
+          set -euo pipefail
+
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" homebrew-tap
 
       - name: Update cask
         working-directory: homebrew-tap
         run: |
+          set -euo pipefail
+
           mkdir -p Casks
           cat > "Casks/${CASK_TOKEN}.rb" <<EOF
           cask "${CASK_TOKEN}" do
@@ -84,6 +90,7 @@ jobs:
             name "VibeHub"
             desc "Cross-platform launcher for development tools with an AI gateway"
             homepage "https://github.com/ChenM0M/VibeHub"
+            depends_on macos: ">= :high_sierra"
 
             app "VibeHub.app"
 
@@ -100,6 +107,8 @@ jobs:
       - name: Commit and push cask
         working-directory: homebrew-tap
         run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "Casks/${CASK_TOKEN}.rb"

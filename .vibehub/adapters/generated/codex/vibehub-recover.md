@@ -21,6 +21,7 @@ Task:
 Analyze interrupted or drifted work and produce a recover report with safe next actions.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

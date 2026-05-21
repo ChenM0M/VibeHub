@@ -21,6 +21,7 @@ Task:
 Convert the user's request into a VibeHub task draft with goal, acceptance criteria, mode suggestion, and context candidates.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

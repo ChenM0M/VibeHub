@@ -970,9 +970,10 @@ fn build_diff_patch(project_root: &Path, baseline_ref: Option<&str>) -> Result<S
             ));
             continue;
         }
+        let null_path = if cfg!(windows) { "NUL" } else { "/dev/null" };
         output.push_str(&run_git_patch(
             project_root,
-            &["diff", "--no-index", "--", "NUL", &file],
+            &["diff", "--no-index", "--", null_path, &file],
         )?);
     }
     if output.trim().is_empty() {

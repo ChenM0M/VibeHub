@@ -21,6 +21,7 @@ Task:
 Promote repeated lessons into reusable rules, preferences, or knowledge notes.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
