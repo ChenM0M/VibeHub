@@ -73,6 +73,7 @@ fn main() {
             commands::vibehub_build_handoff,
             commands::vibehub_generate_review_evidence,
             commands::vibehub_read_overview,
+            commands::vibehub_read_project_digest,
             commands::vibehub_append_journal_entry,
             commands::vibehub_append_knowledge_note,
             commands::vibehub_validate_phase,
@@ -188,7 +189,13 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
             print_json(Ok::<_, anyhow::Error>(report));
         }
         "validate" => print_json(vibehub::phase::validate_phase(project_path)),
-        "advance" => print_json(vibehub::phase::advance_phase(project_path)),
+        "advance" => {
+            let force = args.iter().any(|a| a == "--force");
+            print_json(vibehub::phase::advance_phase_with_force(
+                project_path,
+                force,
+            ));
+        }
         "finish" => print_json(vibehub::phase::complete_phase(project_path)),
         "migrate" => {
             let dry_run = args.iter().any(|a| a == "--dry-run");

@@ -21,6 +21,7 @@ Task:
 Run evidence-backed research, cite sources when external facts are used, and write research notes for VibeHub review.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

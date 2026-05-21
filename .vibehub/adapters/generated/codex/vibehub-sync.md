@@ -27,6 +27,7 @@ Sync behavior:
 - Do not block the sync when the user gives no answer; write the open questions and inferred risk into the output.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

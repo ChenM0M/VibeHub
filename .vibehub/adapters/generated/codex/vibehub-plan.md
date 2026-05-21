@@ -21,6 +21,7 @@ Task:
 Create or repair the implementation plan, validation plan, risk list, and context plan.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

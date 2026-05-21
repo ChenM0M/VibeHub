@@ -101,27 +101,34 @@ pub fn build_handoff_with_locale(
     fs::create_dir_all(&agent_view_dir)
         .with_context(|| format!("Failed to create {}", agent_view_dir.display()))?;
     let handoff_path = agent_view_dir.join("handoff.md");
-    fs::write(
-        &handoff_path,
-        render_handoff(&input, complete, &missing_required_sections, locale),
-    )
-    .with_context(|| format!("Failed to write {}", handoff_path.display()))?;
+    let rendered = render_handoff(&input, complete, &missing_required_sections, locale);
+    // Detect "nothing actually changed" so we can avoid spamming the event log
+    // with identical `handoff_built` entries on every `generate_agent_view`
+    // poll. The handoff body changes only via state — but it carries a fresh
+    // "Generated at" timestamp every call, so compare with that line stripped.
+    let previous_content = fs::read_to_string(&handoff_path).ok();
+    let content_changed = previous_content.as_deref().map(strip_generated_at_line)
+        != Some(strip_generated_at_line(rendered.as_str()));
+    fs::write(&handoff_path, &rendered)
+        .with_context(|| format!("Failed to write {}", handoff_path.display()))?;
     let handoff_rel = normalize_path(&relative_to_project(&project_root, &handoff_path)?);
     update_handoff_state(&project_root, &handoff_rel, complete)?;
-    let _ = events::append_run_event(
-        &project_root,
-        &input.task_id,
-        &input.run_id,
-        "handoff_built",
-        "Handoff generated.",
-        serde_json::json!({
-            "handoff_path": handoff_rel.clone(),
-            "complete": complete,
-            "missing_required_sections": missing_required_sections.clone(),
-            "source_output_path": input.source_output_path.clone(),
-            "session_id": input.session_id.clone(),
-        }),
-    );
+    if content_changed {
+        let _ = events::append_run_event(
+            &project_root,
+            &input.task_id,
+            &input.run_id,
+            "handoff_built",
+            "Handoff generated.",
+            serde_json::json!({
+                "handoff_path": handoff_rel.clone(),
+                "complete": complete,
+                "missing_required_sections": missing_required_sections.clone(),
+                "source_output_path": input.source_output_path.clone(),
+                "session_id": input.session_id.clone(),
+            }),
+        );
+    }
 
     Ok(HandoffBuildResult {
         handoff_path: handoff_rel,
@@ -137,6 +144,24 @@ pub fn build_handoff_with_locale(
         run_id: input.run_id,
         session_id: input.session_id,
     })
+}
+
+/// Drop the "Generated at: <timestamp>" header line so that
+/// `build_handoff` can detect "nothing actually changed" content-wise. Works
+/// across all supported locales (`Generated at`, `生成时间`, `產生時間`,
+/// etc.) by matching any line that starts with one of the localized labels
+/// followed by `: `.
+fn strip_generated_at_line(content: &str) -> String {
+    content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !(trimmed.starts_with("Generated at:")
+                || trimmed.starts_with("生成时间:")
+                || trimmed.starts_with("產生時間:"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn render_handoff(

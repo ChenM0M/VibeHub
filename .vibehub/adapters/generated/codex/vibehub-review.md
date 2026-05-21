@@ -21,6 +21,7 @@ Task:
 Review the current diff against context, plan, research, tests, and VibeHub hard rules.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

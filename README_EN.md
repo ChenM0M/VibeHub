@@ -20,17 +20,44 @@
 - **Git info** — Shows current branch and change status on each card
 - **Dark mode** — System-follow or manual toggle
 
-## Download
+## Install and Download
+
+### macOS: Homebrew
+
+Homebrew is the recommended install path for macOS:
+
+```bash
+brew install --cask chenm0m/vibehub/vibehub
+```
+
+Update:
+
+```bash
+brew update
+brew upgrade --cask vibehub
+```
+
+The tap repository is expected to be `ChenM0M/homebrew-vibehub`. After each GitHub Release draft is published, CI downloads the Apple Silicon and Intel DMG assets, calculates their SHA256 checksums, and updates `Casks/vibehub.rb` in the tap. Preview / prerelease builds use the same cask update flow and point to the current published preview DMG.
+
+### Manual Download
 
 [→ Releases page](https://github.com/ChenM0M/VibeHub/releases)
 
 | Platform | Format |
 |----------|--------|
-| Windows | `.exe` installer / `Portable.zip` |
+| Windows | `.exe` installer / portable executable |
 | macOS | `.dmg` (Intel & Apple Silicon) |
 | Linux | `.deb` / `.AppImage` |
 
-The portable version is extract-and-run. Config is saved under `data/` — delete the folder for a clean uninstall.
+Windows / Linux portable builds are extract-and-run. On installed macOS builds, including DMG and Homebrew installs, configuration and AI gateway data are stored under:
+
+```text
+~/Library/Application Support/VibeHub
+```
+
+If you really need portable mode, launch with `VIBEHUB_PORTABLE=1`; data will be written next to the executable under `data/`. Normal macOS `.app` / DMG / Homebrew installs should not use portable mode because app bundles are usually not writable.
+
+The AI gateway listens on the local loopback address `127.0.0.1` by default and is not exposed to the LAN.
 
 ## Build from source
 
@@ -43,6 +70,13 @@ npm install
 npm run tauri dev
 ```
 
+On macOS, you can run the environment check and dev helper directly:
+
+```bash
+./start-dev.sh --check
+./start-dev.sh
+```
+
 Production build:
 
 ```bash
@@ -53,6 +87,16 @@ Platform deps:
 - Windows → Visual Studio Build Tools
 - macOS → Xcode Command Line Tools
 - Linux → `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev`
+
+## Release Flow
+
+1. Create a version tag, for example `v2.0.0`.
+2. The `Release` workflow builds Windows, Linux, macOS Apple Silicon, and macOS Intel artifacts, then creates a draft GitHub Release.
+3. Test both macOS DMGs from the draft release and confirm first launch, project opening, CLI/IDE launch, and AI gateway configuration saving.
+4. Publish the draft release.
+5. The `Update Homebrew Cask` workflow downloads the public DMGs, calculates SHA256 checksums, and updates `ChenM0M/homebrew-vibehub` with the actual published asset filenames.
+
+Homebrew automation requires the `ChenM0M/homebrew-vibehub` repository and a `HOMEBREW_TAP_TOKEN` secret with write access to that tap. For macOS users to open the app normally by double-clicking, the release workflow also needs Apple signing/notarization secrets: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`.
 
 ## Project structure
 

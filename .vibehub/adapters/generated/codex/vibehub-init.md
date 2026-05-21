@@ -21,6 +21,7 @@ Task:
 Check whether `.vibehub/` exists. If it is missing, ask the user to initialize from the VibeHub app; do not create canonical state yourself.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

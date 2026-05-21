@@ -53,6 +53,9 @@ pub fn init_project_with_options(
         ));
     }
 
+    fs::create_dir_all(&vibehub_root)
+        .with_context(|| "Failed to create .vibehub directory".to_string())?;
+
     for dir in init_dirs() {
         fs::create_dir_all(vibehub_root.join(dir))
             .with_context(|| format!("Failed to create .vibehub directory: {}", dir))?;
@@ -125,13 +128,13 @@ pub fn init_project_with_options(
 
 fn init_dirs() -> &'static [&'static str] {
     &[
-        ".",
         "agent-view",
         "rules",
         "tasks",
         "research/current",
         "research/archive",
         "journal",
+        "notes",
         "adapters/templates",
         "adapters/generated",
     ]
@@ -198,6 +201,14 @@ fn init_files(project_name: &str) -> Vec<InitFile> {
         InitFile {
             path: "journal/index.md",
             content: JOURNAL_INDEX_MD.to_string(),
+        },
+        InitFile {
+            path: "notes/summary.md",
+            content: NOTES_SUMMARY_MD.to_string(),
+        },
+        InitFile {
+            path: "notes/status.md",
+            content: NOTES_STATUS_MD.to_string(),
         },
         InitFile {
             path: "adapters/sync-state.yaml",
@@ -593,6 +604,32 @@ const HARD_RULES_MD: &str = r#"# VibeHub Hard Rules
 const JOURNAL_INDEX_MD: &str = r#"# VibeHub Journal
 
 No journal entries yet.
+"#;
+
+/// Agent-writable, project-level one-sentence summary surfaced in the cockpit
+/// dashboard header. VibeHub seeds this template at init and NEVER overwrites
+/// it afterwards. Agents update it (typically via `vibehub-checkpoint` /
+/// `vibehub-finish`) when project scope shifts.
+const NOTES_SUMMARY_MD: &str = r#"# Project Summary
+
+<!-- One sentence describing what this project is and its current focus.
+     Agents (not VibeHub) update this line when project scope shifts. -->
+
+_No project summary yet. Run `vibehub-finish` (or have an agent write here) to
+fill in one sentence about the project goal._
+"#;
+
+/// Agent-writable, project-level one-sentence status surfaced in the cockpit
+/// dashboard. VibeHub seeds this template at init and NEVER overwrites it
+/// afterwards. Agents update it at the end of each session.
+const NOTES_STATUS_MD: &str = r#"# Project Status
+
+<!-- One sentence describing where the project stands right now: what is in
+     progress, what is blocked, and what the next concrete step is.
+     Agents (not VibeHub) update this line at the end of each session. -->
+
+_No project status yet. Run `vibehub-checkpoint` (or have an agent write here)
+to record where the project currently stands._
 "#;
 
 fn format_vibehub_path(project_root: &Path, target: &Path) -> String {

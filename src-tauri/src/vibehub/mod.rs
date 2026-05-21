@@ -1,5 +1,6 @@
 pub mod agent_adapter;
 pub mod agent_view;
+pub mod branches;
 pub mod cockpit;
 pub mod context;
 pub mod current;
@@ -10,6 +11,7 @@ pub mod init;
 pub mod journal;
 pub mod knowledge;
 pub mod locale;
+pub mod notes;
 pub mod overview;
 pub mod phase;
 pub mod research;
