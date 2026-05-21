@@ -80,7 +80,7 @@ jobs:
         with:
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: VibeHub ${{ inputs.tag || github.ref_name }}
-          args: ${{ matrix.tauri_args }}
+          args: ${{ matrix.tauri_args }} ${{ matrix.platform == 'windows-latest' && contains(inputs.tag || github.ref_name, '-') && '--bundles nsis' || '' }}
           releaseDraft: true
           prerelease: ${{ contains(inputs.tag || github.ref_name, '-') }}
           releaseBody: |
@@ -106,7 +106,7 @@ jobs:
             | `VibeHub_*_aarch64.dmg` | macOS Apple Silicon | DMG | M1/M2/M3/M4 芯片 |
             | `VibeHub_*_x64.dmg` | macOS Intel | DMG | Intel 芯片 |
             | `VibeHub_*_x64-setup.exe` | Windows | 安装包 | 推荐，自动安装到系统 |
-            | `VibeHub_*_x64_en-US.msi` | Windows | MSI | 企业部署 |
+            | `VibeHub_*_x64_en-US.msi` | Windows | MSI | 企业部署，正式版提供 |
             | `VibeHub_*_amd64.deb` | Linux Debian/Ubuntu | DEB | `sudo dpkg -i xxx.deb` |
             | `VibeHub_*_amd64.AppImage` | Linux | AppImage | `chmod +x` 后运行 |
 
