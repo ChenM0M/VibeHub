@@ -259,6 +259,9 @@ export interface PhaseAdvanceResult {
     current_status: string;
     next_phase?: string | null;
     validation: PhaseValidationResult;
+    handoff_complete: boolean;
+    missing_handoff_sections: string[];
+    forced: boolean;
 }
 
 export interface PhaseSetResult {
@@ -355,6 +358,60 @@ export interface VibehubSyncReport {
     recommended_actions: string[];
 }
 
+// Agent-written project-level digest sourced from `.vibehub/notes/`.
+// VibeHub seeds the files at init and NEVER overwrites them; both `*_line`
+// fields are `null` until an agent fills them in via the adapter commands.
+export interface VibehubProjectDigest {
+    summary_line: string | null;
+    status_line: string | null;
+    summary_path: string;
+    status_path: string;
+    summary_exists: boolean;
+    status_exists: boolean;
+}
+
+export interface VibehubGitBranchInfo {
+    name: string;
+    is_current: boolean;
+    upstream: string | null;
+    ahead: number | null;
+    behind: number | null;
+    head_sha: string;
+    last_commit_subject: string;
+    /// ISO-8601 committer date string emitted directly by `git for-each-ref`.
+    last_commit_time: string;
+}
+
+export interface VibehubGitBranchesView {
+    git_available: boolean;
+    current_branch: string | null;
+    branches: VibehubGitBranchInfo[];
+    detached_head: boolean;
+}
+
+export interface VibehubFlowArtifact {
+    label: string;
+    path: string;
+    exists: boolean;
+}
+
+export interface VibehubFlowDetail {
+    phase: string;
+    status: string;
+    context_spec_path: string;
+    context_spec_exists: boolean;
+    context_pack_path: string;
+    context_pack_exists: boolean;
+    manifest_path: string;
+    manifest_exists: boolean;
+    phase_output_path: string;
+    phase_output_exists: boolean;
+    review_path: string | null;
+    review_exists: boolean;
+    read_inputs: VibehubFlowArtifact[];
+    written_outputs: VibehubFlowArtifact[];
+}
+
 // Aggregated cockpit overview (replaces the 6 per-tab read commands).
 export interface VibehubCockpitOverview {
     status: VibehubCockpitStatus;
@@ -363,6 +420,9 @@ export interface VibehubCockpitOverview {
     handoff: VibehubHandoffViewData | null;
     diff: VibehubDiffViewData;
     research: ResearchStatus;
+    project_digest: VibehubProjectDigest;
+    git_branches: VibehubGitBranchesView;
+    flow_details: VibehubFlowDetail[];
     initialized: boolean;
 }
 

@@ -17,6 +17,7 @@ import {
     Tag,
     VibehubCockpitOverview,
     VibehubFileReadResult,
+    VibehubProjectDigest,
     VibehubJournalAppendResult,
     VibehubKnowledgeAppendResult,
     VibehubStartTaskResult,
@@ -263,6 +264,14 @@ export const tauriApi = {
         return await invoke('vibehub_read_overview', { projectPath });
     },
 
+    // Project-level digest reader. Read-only. Same data is also available
+    // inside `vibehubReadOverview` under `project_digest`; this method exists
+    // for panels that only need the digest and want to skip the heavier
+    // overview pull.
+    vibehubReadProjectDigest: async (projectPath: string): Promise<VibehubProjectDigest> => {
+        return await invoke('vibehub_read_project_digest', { projectPath });
+    },
+
     vibehubAppendJournalEntry: async (
         projectPath: string,
         title?: string,
@@ -294,8 +303,8 @@ export const tauriApi = {
         return await invoke('vibehub_complete_phase', { projectPath });
     },
 
-    vibehubAdvancePhase: async (projectPath: string): Promise<PhaseAdvanceResult> => {
-        return await invoke('vibehub_advance_phase', { projectPath });
+    vibehubAdvancePhase: async (projectPath: string, force: boolean = false): Promise<PhaseAdvanceResult> => {
+        return await invoke('vibehub_advance_phase', { projectPath, force });
     },
 
     vibehubPausePhase: async (projectPath: string): Promise<PhaseSetResult> => {

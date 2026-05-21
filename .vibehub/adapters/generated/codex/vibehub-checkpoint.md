@@ -18,7 +18,13 @@ Read first:
 - `.vibehub/adapters/protocol.md`
 
 Task:
-Capture progress, decisions, commands, tests, changed files, risks, and next steps without marking state complete.
+Capture progress, decisions, commands, tests, changed files, risks, and next steps without marking state complete. Also write the current phase snapshot to `runs/<run_id>/phases/<phase>.output.md`, update `.vibehub/notes/status.md` with a one-sentence current status, and update `.vibehub/notes/summary.md` only if project scope changed.
+
+Agent-written lifecycle artifacts:
+- Mirror the phase output into `.vibehub/tasks/<task_id>/runs/<run_id>/phases/<phase>.output.md`.
+- Update `.vibehub/notes/status.md` with exactly one current-status sentence at the end of the session.
+- Update `.vibehub/notes/summary.md` only when the project scope or goal changes.
+- These files are agent-owned business artifacts; VibeHub should read them, not generate them.
 
 
 Output requirements:
@@ -36,4 +42,3 @@ Constraints:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
-

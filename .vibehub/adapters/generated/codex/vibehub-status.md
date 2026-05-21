@@ -21,6 +21,7 @@ Task:
 Summarize current task, run, phase, context pack, handoff, Git status, and visible warnings.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`

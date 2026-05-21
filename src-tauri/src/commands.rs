@@ -22,6 +22,7 @@ use crate::{
     vibehub::init::{self, VibehubInitOptions, VibehubInitResult},
     vibehub::journal::{self, JournalAppendResult},
     vibehub::knowledge::{self, KnowledgeAppendResult},
+    vibehub::notes::{self, ProjectDigest},
     vibehub::overview::{self, CockpitOverview},
     vibehub::phase::{self, PhaseAdvanceResult, PhaseSetResult, PhaseValidationResult},
     vibehub::research::{self, ResearchPackArchiveResult, ResearchPackBuildResult},
@@ -1054,6 +1055,15 @@ pub async fn vibehub_read_overview(project_path: String) -> Result<CockpitOvervi
     overview::read_overview(project_path).map_err(|e| e.to_string())
 }
 
+/// Read the agent-written project-level digest (`.vibehub/notes/summary.md`
+/// and `.vibehub/notes/status.md`). Pure read; never writes. The frontend
+/// already gets the same data via `vibehub_read_overview`, but this command
+/// lets a panel reload only the digest cheaply.
+#[tauri::command]
+pub async fn vibehub_read_project_digest(project_path: String) -> Result<ProjectDigest, String> {
+    notes::read_project_digest(project_path).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn vibehub_append_journal_entry(
     project_path: String,
@@ -1099,8 +1109,11 @@ pub async fn vibehub_complete_phase(project_path: String) -> Result<PhaseAdvance
 }
 
 #[tauri::command]
-pub async fn vibehub_advance_phase(project_path: String) -> Result<PhaseAdvanceResult, String> {
-    phase::advance_phase(project_path).map_err(|e| e.to_string())
+pub async fn vibehub_advance_phase(
+    project_path: String,
+    force: Option<bool>,
+) -> Result<PhaseAdvanceResult, String> {
+    phase::advance_phase_with_force(project_path, force.unwrap_or(false)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

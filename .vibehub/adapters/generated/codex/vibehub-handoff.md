@@ -21,6 +21,7 @@ Task:
 Create handoff notes that let the next session resume without chat history.
 
 
+
 Output requirements:
 - write the active run phase output before ending work:
   `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
