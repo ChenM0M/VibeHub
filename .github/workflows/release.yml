@@ -130,36 +130,9 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         shell: bash
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: "-"
         run: |
           set -euo pipefail
-
-          if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
-            KEYCHAIN_PATH="$RUNNER_TEMP/vibehub-build.keychain-db"
-            KEYCHAIN_PASSWORD="$(uuidgen)"
-            CERTIFICATE_PATH="$RUNNER_TEMP/vibehub-certificate.p12"
-
-            echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
-            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-            security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-            security list-keychains -d user -s "$KEYCHAIN_PATH"
-
-            if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
-              APPLE_SIGNING_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F'"' '/"/ { print $2; exit }')"
-              export APPLE_SIGNING_IDENTITY
-            fi
-          elif [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
-            export APPLE_SIGNING_IDENTITY="-"
-          fi
-
           npm run tauri -- build ${{ matrix.tauri_args }}
 
       - name: Package macOS APFS DMG
