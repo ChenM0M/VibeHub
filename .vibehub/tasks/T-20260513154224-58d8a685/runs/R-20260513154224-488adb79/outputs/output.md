@@ -24,6 +24,9 @@ Evidence grade: mixed
 - `hard_observed`: Pushed commit `0c5f028` and tag `2.0.0-pre.6`; GitHub Release run `26217288801` showed Windows and Ubuntu succeeded, both macOS jobs failed in the direct shell `Build macOS app bundle` step, and the original `tauri-action` step was correctly skipped.
 - `hard_observed`: Replaced the direct macOS shell build with `tauri-action` again and set `tauriScript: npm run tauri --`, so the action keeps its signing/release setup while the generated command receives `--target ... --bundles app` before APFS DMG packaging.
 - `hard_observed`: Prepared replacement preview version `2.0.0-pre.7` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
+- `hard_observed`: GitHub Release run `26218072799` for `2.0.0-pre.7` showed both macOS jobs failed because `tauri-action` invoked `npm ["run","tauri","--","build","--","--target",...]`, adding a second `--` before the Tauri build options.
+- `hard_observed`: Updated `tauriScript` to `npx tauri` so `tauri-action` should invoke `npx tauri build --target ... --bundles app` without npm's separator issue.
+- `hard_observed`: Prepared replacement preview version `2.0.0-pre.8` across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - `hard_observed`: Project center duplicate header was removed from `src/components/VibehubProjectCenter.tsx`; the project/status summary now appears only in the lower cockpit status block.
 - `hard_observed`: The right-side detail drawer now separates overlay, fixed header, and scroll body, preventing phase content from bleeding above the drawer header.
 - `hard_observed`: The detail drawer overlay now closes when the user clicks outside the drawer panel, while clicks inside the panel remain interactive.
@@ -177,6 +180,15 @@ Evidence grade: mixed
 - `git diff --check -- .github/workflows/release.yml package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json ...`
 - `npm run build`
 - `cargo check`
+- `git commit -m "fix(release): route macos app build through tauri action"`
+- `git tag 2.0.0-pre.7`
+- `git push origin feature/vibehub-v2-p0`
+- `git push origin 2.0.0-pre.7`
+- `curl -sS -L ...` against GitHub commit/check/job pages for `2.0.0-pre.7`.
+- `ruby -e "require 'yaml'; YAML.load_file('.github/workflows/release.yml')"`
+- `git diff --check -- .github/workflows/release.yml package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json ...`
+- `npm run build`
+- `cargo check`
 
 ## Tests Run
 
@@ -204,6 +216,12 @@ Evidence grade: mixed
 - `hard_observed`: `git diff --check` passed for the `2.0.0-pre.7` workflow/version/output changes.
 - `hard_observed`: `npm run build` passed for `2.0.0-pre.7`; existing browser data and chunk-size warnings were reported.
 - `hard_observed`: `cargo check` passed for `vibehub v2.0.0-pre.7`; existing dead-code warnings were reported.
+- `hard_observed`: Remote branch `feature/vibehub-v2-p0` and tag `2.0.0-pre.7` both point to `e3d334f596cc5d906f137171ab1e6dc09a95b132`.
+- `hard_observed`: GitHub run `26218072799` for `2.0.0-pre.7` has macOS aarch64/x64 release jobs failed in `Build and upload Tauri bundles` due the generated `npm run tauri -- build -- --target ...` command shape.
+- `hard_observed`: `.github/workflows/release.yml` parsed successfully with Ruby YAML after changing `tauriScript` to `npx tauri`.
+- `hard_observed`: `git diff --check` passed for the `2.0.0-pre.8` workflow/version/output changes.
+- `hard_observed`: `npm run build` passed for `2.0.0-pre.8`; existing browser data and chunk-size warnings were reported.
+- `hard_observed`: `cargo check` passed for `vibehub v2.0.0-pre.8`; existing dead-code warnings were reported.
 - `hard_observed`: `cargo check` passed; existing dead-code warnings in gateway/vibehub modules were reported.
 - `hard_observed`: `./src-tauri/target/debug/vibehub validate /Users/chenm0m/LocalRepo/VibeHub` returned `align` validation status `completed` with no missing outputs.
 - `hard_observed`: Locale JSON parse check passed for `en`, `zh`, and `zh-TW`.
@@ -230,7 +248,7 @@ Evidence grade: mixed
 
 ## Next Session Should
 
-1. Commit and push the `2.0.0-pre.7` release workflow/version fix, tag `2.0.0-pre.7`, then inspect the new Release run.
+1. Commit and push the `2.0.0-pre.8` release workflow/version fix, tag `2.0.0-pre.8`, then inspect the new Release run.
 2. After all release jobs succeed, publish the draft prerelease and confirm `Update Homebrew Cask` pushes `Casks/vibehub.rb` to `ChenM0M/homebrew-vibehub`.
 3. On macOS, validate `brew install --cask chenm0m/vibehub/vibehub` and `brew upgrade --cask vibehub` against the published release.
 4. Run VibeHub validation against this output and decide whether to advance from `align`.
