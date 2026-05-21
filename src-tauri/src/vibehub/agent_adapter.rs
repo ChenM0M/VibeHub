@@ -887,11 +887,11 @@ fn default_command_body(name: &str) -> String {
         "vibehub-research" => "Run evidence-backed research, cite sources when external facts are used, and write research notes for VibeHub review.",
         "vibehub-plan" => "Create or repair the implementation plan, validation plan, risk list, and context plan.",
         "vibehub-continue" => "Continue the active phase using current.md and the context pack. Keep changes scoped to the active task.",
-        "vibehub-checkpoint" => "Capture progress, decisions, commands, tests, changed files, risks, and next steps without marking state complete.",
+        "vibehub-checkpoint" => "Capture progress, decisions, commands, tests, changed files, risks, and next steps without marking state complete. Also write the current phase snapshot to `runs/<run_id>/phases/<phase>.output.md`, update `.vibehub/notes/status.md` with a one-sentence current status, and update `.vibehub/notes/summary.md` only if project scope changed.",
         "vibehub-review" => "Review the current diff against context, plan, research, tests, and VibeHub hard rules.",
         "vibehub-handoff" => "Create handoff notes that let the next session resume without chat history.",
         "vibehub-recover" => "Analyze interrupted or drifted work and produce a recover report with safe next actions.",
-        "vibehub-finish" => "Summarize completion evidence and recommend whether VibeHub should advance state, request review, or recover.",
+        "vibehub-finish" => "Summarize completion evidence and recommend whether VibeHub should advance state, request review, or recover. Also write the current phase snapshot to `runs/<run_id>/phases/<phase>.output.md`, update `.vibehub/notes/status.md` with a one-sentence handoff-ready status, and update `.vibehub/notes/summary.md` only if project scope changed.",
         "vibehub-journal" => "Draft durable session notes suitable for VibeHub journal promotion.",
         "vibehub-knowledge" => "Promote repeated lessons into reusable rules, preferences, or knowledge notes.",
         _ => "Follow the VibeHub agent protocol.",
@@ -907,6 +907,17 @@ Sync behavior:
     } else {
         ""
     };
+    let lifecycle_artifacts = if matches!(name, "vibehub-checkpoint" | "vibehub-finish") {
+        r#"
+Agent-written lifecycle artifacts:
+- Mirror the phase output into `.vibehub/tasks/<task_id>/runs/<run_id>/phases/<phase>.output.md`.
+- Update `.vibehub/notes/status.md` with exactly one current-status sentence at the end of the session.
+- Update `.vibehub/notes/summary.md` only when the project scope or goal changes.
+- These files are agent-owned business artifacts; VibeHub should read them, not generate them.
+"#
+    } else {
+        ""
+    };
     format!(
         r#"Read first:
 - `.vibehub/agent-view/current.md`
@@ -918,6 +929,7 @@ Sync behavior:
 Task:
 {extra}
 {sync_behavior}
+{lifecycle_artifacts}
 
 Output requirements:
 - write the active run phase output before ending work:

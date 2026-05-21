@@ -54,7 +54,7 @@ loop_detection:
   status: warning
   warnings:
   - 'Loop warning: 68 changed file(s) meets or exceeds repeated_file_edits threshold 8.'
-last_updated: 2026-05-20T04:19:35Z
+last_updated: 2026-05-21T01:34:23Z
 resume_hint: .vibehub/agent-view/current.md
 sync:
   last_synced_at: 2026-05-20T04:19:35Z
@@ -62,3 +62,5 @@ sync:
   agent_view_sync: .vibehub/agent-view/sync.md
   questions:
   - Git currently reports 68 changed file(s). Do all of these belong to the active VibeHub task? If not, identify which files should be excluded or moved to a separate task.
+preferences:
+  locale: zh-CN
