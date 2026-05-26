@@ -14,6 +14,7 @@ import {
     ResearchPackBuildResult,
     Project,
     SettingsImportResult,
+    StorageInfo,
     Tag,
     VibehubCockpitOverview,
     VibehubFileReadResult,
@@ -86,6 +87,26 @@ export const tauriApi = {
 
     openInExplorer: async (path: string): Promise<void> => {
         return await invoke('open_in_explorer', { path });
+    },
+
+    getStorageInfo: async (): Promise<StorageInfo> => {
+        return await invoke('get_storage_info');
+    },
+
+    setCustomDataDir: async (path: string): Promise<StorageInfo> => {
+        return await invoke('set_custom_data_dir', { path });
+    },
+
+    clearCustomDataDir: async (): Promise<StorageInfo> => {
+        return await invoke('clear_custom_data_dir');
+    },
+
+    dismissStorageMigrationNotice: async (): Promise<StorageInfo> => {
+        return await invoke('dismiss_storage_migration_notice');
+    },
+
+    dismissStorageCustomDirNotice: async (): Promise<StorageInfo> => {
+        return await invoke('dismiss_storage_custom_dir_notice');
     },
 
     openTerminal: async (path: string): Promise<void> => {

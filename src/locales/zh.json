@@ -450,6 +450,40 @@
             "sourceTarget": "源系统：{{source}} → 当前系统：{{target}}",
             "adjustments": "兼容性调整",
             "noAdjustments": "没有需要调整的项目。"
+        },
+        "storage": {
+            "title": "数据存储位置",
+            "subtitle": "选择 VibeHub 读取和写入 config.json、gateway_config.json、gateway_stats.json 的目录。",
+            "activeDir": "当前目录",
+            "sourceLabel": "来源",
+            "source": {
+                "env": "环境变量",
+                "custom": "自定义",
+                "portable": "便携模式（自动探测）",
+                "default": "系统默认"
+            },
+            "sourceHint": {
+                "env": "VIBEHUB_PORTABLE=1 强制使用与可执行文件同层的 data/ 目录。",
+                "custom": "由本设置面板手动指定。",
+                "portable": "与可执行文件同层的 data/ 目录下存在合法的 VibeHub config.json。",
+                "default": "平台默认的用户数据目录。"
+            },
+            "defaultDir": "默认目录",
+            "portableDir": "便携目录（exe 同层）",
+            "portableAvailable": "检测到便携配置",
+            "portableUnavailable": "未检测到便携配置",
+            "openActive": "打开当前目录",
+            "setCustom": "自定义存储目录…",
+            "clearCustom": "恢复默认",
+            "restartHint": "变更需重启 VibeHub 后生效。",
+            "saveSuccess": "已保存，请重启 VibeHub 让变更生效。",
+            "saveError": "保存失败：{{message}}",
+            "openError": "打开目录失败：{{message}}",
+            "dismiss": "不再提示",
+            "noticeMigration": "检测到两份 VibeHub 配置：当前使用的是便携目录 {{portable}}，而 {{default}} 中也存在副本。VibeHub 不会自动合并，如有需要请手动复制。",
+            "noticeCustom": "切换存储目录不会自动搬迁已有数据。若需保留旧数据，请手动从 {{from}} 复制到新目录。重启后生效。",
+            "confirmSwitchTitle": "使用该目录？",
+            "confirmSwitchBody": "如果该目录已存在合法的 VibeHub config.json 将直接使用现有数据；不会自动迁移旧目录中的数据。"
         }
     },
     "tag": {

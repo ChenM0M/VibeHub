@@ -450,6 +450,40 @@
             "sourceTarget": "來源系統：{{source}} → 目前系統：{{target}}",
             "adjustments": "相容性調整",
             "noAdjustments": "沒有需要調整的項目。"
+        },
+        "storage": {
+            "title": "資料儲存位置",
+            "subtitle": "選擇 VibeHub 讀寫 config.json、gateway_config.json、gateway_stats.json 的目錄。",
+            "activeDir": "目前目錄",
+            "sourceLabel": "來源",
+            "source": {
+                "env": "環境變數",
+                "custom": "自訂",
+                "portable": "可攜模式（自動偵測）",
+                "default": "系統預設"
+            },
+            "sourceHint": {
+                "env": "VIBEHUB_PORTABLE=1 強制使用與執行檔同層的 data/ 目錄。",
+                "custom": "由本設定面板手動指定。",
+                "portable": "與執行檔同層的 data/ 目錄下存在合法的 VibeHub config.json。",
+                "default": "平台預設的使用者資料目錄。"
+            },
+            "defaultDir": "預設目錄",
+            "portableDir": "可攜目錄（exe 同層）",
+            "portableAvailable": "偵測到可攜設定",
+            "portableUnavailable": "未偵測到可攜設定",
+            "openActive": "開啟目前目錄",
+            "setCustom": "自訂儲存目錄…",
+            "clearCustom": "還原預設",
+            "restartHint": "變更需重新啟動 VibeHub 後生效。",
+            "saveSuccess": "已儲存，請重新啟動 VibeHub 讓變更生效。",
+            "saveError": "儲存失敗：{{message}}",
+            "openError": "開啟目錄失敗：{{message}}",
+            "dismiss": "不再提示",
+            "noticeMigration": "偵測到兩份 VibeHub 設定：目前使用的是可攜目錄 {{portable}}，而 {{default}} 中也存在副本。VibeHub 不會自動合併，如有需要請手動複製。",
+            "noticeCustom": "切換儲存目錄不會自動搬遷既有資料。如需保留舊資料，請手動從 {{from}} 複製到新目錄。重新啟動後生效。",
+            "confirmSwitchTitle": "使用此目錄？",
+            "confirmSwitchBody": "若此目錄已存在合法的 VibeHub config.json 將直接使用既有資料；不會自動遷移舊目錄中的資料。"
         }
     },
     "tag": {
