@@ -102,8 +102,7 @@ pub fn storage_info() -> Result<StorageInfo> {
     // Dual-data notice: portable dir has a valid config AND the platform
     // default also has one. Most often happens after the f80687f upgrade,
     // where the old logic copied portable → AppData.
-    let dual_data_detected =
-        portable_available && default_dir.join(PORTABLE_PROBE_FILE).is_file();
+    let dual_data_detected = portable_available && default_dir.join(PORTABLE_PROBE_FILE).is_file();
 
     Ok(StorageInfo {
         active_dir: active.to_string_lossy().into_owned(),
