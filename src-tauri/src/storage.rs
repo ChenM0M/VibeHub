@@ -10,10 +10,15 @@ pub struct Storage {
 
 impl Storage {
     pub fn new() -> Result<Self> {
+        // Resolution priority (env → custom → portable auto-detect → default)
+        // lives in `app_paths::resolve_active_dir`. Storage is intentionally
+        // dumb here: it just consumes whatever dir was picked. We no longer
+        // copy/migrate files into the default dir — the old logic silently
+        // duplicated portable users' config.json into AppData and then
+        // started ignoring the portable copy, which is exactly the regression
+        // we're fixing.
         let data_dir = app_paths::app_data_dir()?;
-        let config_path = app_paths::migrate_legacy_file_if_needed("config.json", &data_dir)
-            .context("Failed to initialize config storage")?;
-
+        let config_path = data_dir.join("config.json");
         Ok(Self { config_path })
     }
 
