@@ -1,6 +1,7 @@
 #[cfg(target_os = "windows")]
 use crate::process_util::silent_command;
 use crate::{
+    app_paths,
     gateway::{
         config::{ApiType, GatewayConfig},
         GatewayConfigPath, GatewayState,
@@ -763,6 +764,45 @@ pub async fn open_in_explorer(path: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Storage location management
+//
+// These commands surface and mutate the resolution that `app_paths` performs
+// at startup. They never hot-swap the running `Storage`; instead they update
+// the pointer file and the UI tells the user to restart. That keeps the
+// runtime invariant "one Storage per process" and avoids partially-written
+// state across two directories.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn get_storage_info() -> Result<app_paths::StorageInfo, String> {
+    app_paths::storage_info().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_custom_data_dir(path: String) -> Result<app_paths::StorageInfo, String> {
+    app_paths::set_custom_data_dir(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    app_paths::storage_info().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn clear_custom_data_dir() -> Result<app_paths::StorageInfo, String> {
+    app_paths::clear_custom_data_dir().map_err(|e| e.to_string())?;
+    app_paths::storage_info().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn dismiss_storage_migration_notice() -> Result<app_paths::StorageInfo, String> {
+    app_paths::dismiss_migration_notice().map_err(|e| e.to_string())?;
+    app_paths::storage_info().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn dismiss_storage_custom_dir_notice() -> Result<app_paths::StorageInfo, String> {
+    app_paths::dismiss_custom_dir_notice().map_err(|e| e.to_string())?;
+    app_paths::storage_info().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

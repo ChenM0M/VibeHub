@@ -45,10 +45,14 @@ pub async fn get_gateway_stats(
 }
 
 pub fn init<R: Runtime>(app: &AppHandle<R>) {
+    // The active dir (env / custom / portable auto-detect / platform default)
+    // is decided centrally in `app_paths::resolve_active_dir`. Gateway just
+    // joins its filenames onto whatever was resolved. The previous
+    // `migrate_legacy_file_if_needed` step is gone on purpose — it copied
+    // portable files into AppData and then started ignoring the portable
+    // originals, which is the regression we're fixing.
     let data_dir = app_paths::app_data_dir().expect("Failed to initialize app data dir");
-    let config_path = app_paths::migrate_legacy_file_if_needed("gateway_config.json", &data_dir)
-        .expect("Failed to initialize gateway config storage");
-    let _ = app_paths::migrate_legacy_file_if_needed("gateway_stats.json", &data_dir);
+    let config_path = data_dir.join("gateway_config.json");
 
     // Load config
     let config = GatewayConfig::load(&config_path).unwrap_or_default();

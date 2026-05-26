@@ -450,6 +450,40 @@
             "sourceTarget": "Source system: {{source}} → current system: {{target}}",
             "adjustments": "Compatibility adjustments",
             "noAdjustments": "No adjustments were needed."
+        },
+        "storage": {
+            "title": "Data Storage Location",
+            "subtitle": "Choose where VibeHub reads and writes config.json, gateway_config.json, and gateway_stats.json.",
+            "activeDir": "Active directory",
+            "sourceLabel": "Source",
+            "source": {
+                "env": "Environment variable",
+                "custom": "Custom",
+                "portable": "Portable (auto-detected)",
+                "default": "System default"
+            },
+            "sourceHint": {
+                "env": "VIBEHUB_PORTABLE=1 forces the directory next to the executable.",
+                "custom": "Path set in this settings panel.",
+                "portable": "data/ next to the executable contains a valid VibeHub config.json.",
+                "default": "Platform default user-data directory."
+            },
+            "defaultDir": "Default directory",
+            "portableDir": "Portable directory (next to executable)",
+            "portableAvailable": "Portable config detected",
+            "portableUnavailable": "No portable config detected",
+            "openActive": "Open Active Directory",
+            "setCustom": "Custom Storage Directory…",
+            "clearCustom": "Restore Default",
+            "restartHint": "Changes take effect after restarting VibeHub.",
+            "saveSuccess": "Saved. Please restart VibeHub for the change to take effect.",
+            "saveError": "Failed to save: {{message}}",
+            "openError": "Failed to open directory: {{message}}",
+            "dismiss": "Don't show again",
+            "noticeMigration": "Two VibeHub configs detected: the portable {{portable}} is being used, and a copy is also present in {{default}}. VibeHub will not auto-merge them — copy by hand if needed.",
+            "noticeCustom": "Switching the storage directory does not move existing data. If your old data should follow, copy it from {{from}} to the new location manually. Take effect after restart.",
+            "confirmSwitchTitle": "Use this directory?",
+            "confirmSwitchBody": "If this directory already contains a valid VibeHub config.json, it will be used as-is. Existing data will NOT be migrated automatically."
         }
     },
     "tag": {
