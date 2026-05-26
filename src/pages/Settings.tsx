@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { Button } from '@/components/ui/button';
-import { Trash2, Plus, FolderOpen, Tags, Settings as SettingsIcon, Sun, Moon, Monitor, FileDown, FileUp, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Trash2, Plus, FolderOpen, Tags, Settings as SettingsIcon, Sun, Moon, Monitor, FileDown, FileUp, CheckCircle2, AlertCircle, HardDrive, FolderCog, RotateCcw, ExternalLink, Info } from 'lucide-react';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { SettingsImportResult, Tag } from '@/types';
+import { SettingsImportResult, StorageInfo, Tag } from '@/types';
 import { TagEditDialog } from '@/components/TagEditDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +19,81 @@ export function Settings() {
     const [transferError, setTransferError] = useState<string | null>(null);
     const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
     const [importResult, setImportResult] = useState<SettingsImportResult | null>(null);
+    const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
+    const [storageBusy, setStorageBusy] = useState(false);
+    const [storageMessage, setStorageMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+
+    useEffect(() => {
+        tauriApi.getStorageInfo()
+            .then(setStorageInfo)
+            .catch((e) => setStorageMessage({ kind: 'error', text: (e as Error).message || String(e) }));
+    }, []);
+
+    const handleOpenStorageDir = async () => {
+        if (!storageInfo) return;
+        try {
+            await tauriApi.openInExplorer(storageInfo.active_dir);
+        } catch (e) {
+            setStorageMessage({ kind: 'error', text: t('settings.storage.openError', { message: (e as Error).message || String(e) }) });
+        }
+    };
+
+    const handlePickCustomDir = async () => {
+        setStorageMessage(null);
+        try {
+            const selected = await open({ directory: true, multiple: false });
+            if (!selected || typeof selected !== 'string') return;
+            // Confirm so the user knows we won't auto-migrate existing data.
+            // We use the native confirm dialog since the user explicitly
+            // asked for "popup reminder, with dismiss" — the per-action
+            // confirmation here is intentionally lightweight and not
+            // dismiss-able (dismiss applies only to the persistent notice
+            // banner once the change is applied).
+            // eslint-disable-next-line no-restricted-globals
+            if (!confirm(t('settings.storage.confirmSwitchBody'))) return;
+
+            setStorageBusy(true);
+            const next = await tauriApi.setCustomDataDir(selected);
+            setStorageInfo(next);
+            setStorageMessage({ kind: 'success', text: t('settings.storage.saveSuccess') });
+        } catch (e) {
+            setStorageMessage({ kind: 'error', text: t('settings.storage.saveError', { message: (e as Error).message || String(e) }) });
+        } finally {
+            setStorageBusy(false);
+        }
+    };
+
+    const handleClearCustomDir = async () => {
+        setStorageMessage(null);
+        setStorageBusy(true);
+        try {
+            const next = await tauriApi.clearCustomDataDir();
+            setStorageInfo(next);
+            setStorageMessage({ kind: 'success', text: t('settings.storage.saveSuccess') });
+        } catch (e) {
+            setStorageMessage({ kind: 'error', text: t('settings.storage.saveError', { message: (e as Error).message || String(e) }) });
+        } finally {
+            setStorageBusy(false);
+        }
+    };
+
+    const handleDismissMigrationNotice = async () => {
+        try {
+            const next = await tauriApi.dismissStorageMigrationNotice();
+            setStorageInfo(next);
+        } catch (e) {
+            setStorageMessage({ kind: 'error', text: (e as Error).message || String(e) });
+        }
+    };
+
+    const handleDismissCustomDirNotice = async () => {
+        try {
+            const next = await tauriApi.dismissStorageCustomDirNotice();
+            setStorageInfo(next);
+        } catch (e) {
+            setStorageMessage({ kind: 'error', text: (e as Error).message || String(e) });
+        }
+    };
 
     const handleAddWorkspace = async () => {
         try {
@@ -286,6 +361,132 @@ export function Settings() {
                                 繁體中文
                             </Button>
                         </div>
+                    </div>
+
+                    <div className="space-y-4 border-t pt-6">
+                        <div>
+                            <h3 className="text-lg font-medium flex items-center gap-2">
+                                <HardDrive className="h-4 w-4" />
+                                {t('settings.storage.title')}
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                                {t('settings.storage.subtitle')}
+                            </p>
+                        </div>
+
+                        {storageInfo && (
+                            <div className="rounded-md border bg-card p-4 space-y-3 text-sm">
+                                <div className="flex flex-col gap-1">
+                                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                        {t('settings.storage.activeDir')}
+                                    </div>
+                                    <div className="font-mono break-all">{storageInfo.active_dir}</div>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                                            {t('settings.storage.sourceLabel')}: {t(`settings.storage.source.${storageInfo.source}`)}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {t(`settings.storage.sourceHint.${storageInfo.source}`)}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t">
+                                    <div>
+                                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                            {t('settings.storage.defaultDir')}
+                                        </div>
+                                        <div className="font-mono text-xs break-all">{storageInfo.default_dir}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                            {t('settings.storage.portableDir')}
+                                        </div>
+                                        <div className="font-mono text-xs break-all">
+                                            {storageInfo.portable_dir || '—'}
+                                        </div>
+                                        <div className={`text-xs mt-0.5 ${storageInfo.portable_available ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                                            {storageInfo.portable_available
+                                                ? `✓ ${t('settings.storage.portableAvailable')}`
+                                                : t('settings.storage.portableUnavailable')}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {storageInfo.custom_dir && (
+                                    <div className="pt-2 border-t">
+                                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                            {t('settings.storage.source.custom')}
+                                        </div>
+                                        <div className="font-mono text-xs break-all">{storageInfo.custom_dir}</div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-3">
+                            <Button variant="outline" onClick={handleOpenStorageDir} disabled={!storageInfo}>
+                                <ExternalLink className="mr-2 h-4 w-4" />
+                                {t('settings.storage.openActive')}
+                            </Button>
+                            <Button variant="outline" onClick={handlePickCustomDir} disabled={storageBusy}>
+                                <FolderCog className="mr-2 h-4 w-4" />
+                                {t('settings.storage.setCustom')}
+                            </Button>
+                            {storageInfo?.custom_dir && (
+                                <Button variant="ghost" onClick={handleClearCustomDir} disabled={storageBusy}>
+                                    <RotateCcw className="mr-2 h-4 w-4" />
+                                    {t('settings.storage.clearCustom')}
+                                </Button>
+                            )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{t('settings.storage.restartHint')}</p>
+
+                        {storageMessage && (
+                            <div className={`rounded-md border p-3 text-sm flex items-start gap-2 ${
+                                storageMessage.kind === 'success'
+                                    ? 'border-green-500/30 bg-green-500/5 text-green-700 dark:text-green-300'
+                                    : 'border-destructive/30 bg-destructive/5 text-destructive'
+                            }`}>
+                                {storageMessage.kind === 'success'
+                                    ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                                    : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+                                <span>{storageMessage.text}</span>
+                            </div>
+                        )}
+
+                        {storageInfo?.dual_data_detected && !storageInfo.migration_notice_dismissed && (
+                            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                                <div className="flex-1 space-y-2">
+                                    <p>
+                                        {t('settings.storage.noticeMigration', {
+                                            portable: storageInfo.portable_dir || '',
+                                            default: storageInfo.default_dir,
+                                        })}
+                                    </p>
+                                    <Button size="sm" variant="ghost" onClick={handleDismissMigrationNotice}>
+                                        {t('settings.storage.dismiss')}
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        {storageInfo?.custom_dir && !storageInfo.custom_dir_notice_dismissed && (
+                            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                                <div className="flex-1 space-y-2">
+                                    <p>
+                                        {t('settings.storage.noticeCustom', {
+                                            from: storageInfo.portable_dir || storageInfo.default_dir,
+                                        })}
+                                    </p>
+                                    <Button size="sm" variant="ghost" onClick={handleDismissCustomDirNotice}>
+                                        {t('settings.storage.dismiss')}
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="space-y-4 border-t pt-6">

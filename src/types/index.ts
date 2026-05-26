@@ -426,6 +426,22 @@ export interface VibehubCockpitOverview {
     initialized: boolean;
 }
 
+// Tells the UI why the active data dir was picked. Mirrors `StorageSource`
+// in `src-tauri/src/app_paths.rs` (serde renames to lowercase).
+export type StorageSource = 'env' | 'custom' | 'portable' | 'default';
+
+export interface StorageInfo {
+    active_dir: string;
+    source: StorageSource;
+    custom_dir?: string | null;
+    default_dir: string;
+    portable_dir?: string | null;
+    portable_available: boolean;
+    dual_data_detected: boolean;
+    migration_notice_dismissed: boolean;
+    custom_dir_notice_dismissed: boolean;
+}
+
 // Forward migration of `.vibehub/state.yaml` from r9 schema 1 to r10 schema 2.
 export interface VibehubStateMigrationReport {
     state_path: string;
