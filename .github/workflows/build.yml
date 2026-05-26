@@ -55,4 +55,16 @@ jobs:
         working-directory: ./src-tauri
 
       - name: Build Tauri app
+        if: matrix.platform != 'windows-latest'
         run: npm run tauri build
+
+      - name: Build Tauri app (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ($version.Contains("-")) {
+            npm run tauri -- build --bundles nsis
+          } else {
+            npm run tauri build
+          }
