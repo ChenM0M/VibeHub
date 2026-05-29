@@ -10,39 +10,47 @@ English: Reconcile external workspace state with VibeHub.
 
 Invocation input: <project_root> [mode]
 
-Read first:
+Read first / 先读:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
 - `.vibehub/rules/hard-rules.md`
 - `.vibehub/adapters/protocol.md`
 
-Task:
-Run a best-effort sync of actual project state into VibeHub. Inspect Git diff/status, VibeHub pointers, current context, latest output, and handoff. If a VibeHub CLI is available, prefer `vibehub sync <project_path>` or `sync <project_path>`; accept `sycn` as a typo alias. Then summarize the generated `.vibehub/agent-view/sync.md` report. Ask the user only for missing intent/progress/future-plan details that cannot be inferred from hard evidence. If the user does not answer, record the questions as unresolved risks and continue from hard_observed evidence.
+CLI:
+  vibehub sync <project_path>   (accepts `sycn` typo)
+  Returns: {status, sync_level, task_id, run_id, phase, drift_warnings, changed_files, questions_for_user, recommended_actions}
+  After: sync report at .vibehub/agent-view/sync.md; follow recommended_actions.
+
+Pre-flight / 前置检查:
+  1. Check Git is available: `git status --porcelain`
+  2. Read `.vibehub/agent-view/current.md` to find current task/run.
+  3. Collect hard evidence BEFORE asking user questions.
+
+Task / 任务:Run a best-effort sync via `vibehub sync <project>`. Inspect Git diff/status, VibeHub pointers, current context, latest output, and handoff. Accept `sycn` as typo alias.
 
 Sync behavior:
 - Treat "sync", "sycn", "同步", "刷新状态", "update VibeHub", or plain requests to continue from current engineering reality as this command.
-- Autonomously collect hard evidence first: Git status/diff, current task/run/phase, context pack state, latest output, handoff, and visible warnings.
-- Ask concise follow-up questions when needed: current progress, whether dirty files belong to this task, validation/test status, unresolved risks, and next plan.
-- Do not block the sync when the user gives no answer; write the open questions and inferred risk into the output.
+- Autonomously collect hard evidence first: Git status/diff, current task/run/phase, context pack state, latest output, handoff, visible warnings.
+- Ask user only for missing intent/progress/future-plan details not inferrable from hard evidence.
+- If user does not answer, record questions as unresolved risks; continue from hard_observed evidence.
 
+Stop when:
+  1. Sync report at `.vibehub/agent-view/sync.md` is generated.
+  2. All hard-evidence questions answered or recorded as unresolved risks.
+  3. If state is broken, recommend vibehub-recover instead of silently advancing.
 
+Output / 输出:
+Write output to `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md` following `.vibehub/adapters/protocol.md`. Required sections (bilingual supported): Completed / 已完成, Not Yet Done / 未完成, Key Decisions Made / 关键决策, Files Changed / 变更文件, Files Reportedly Read / 已读文件, Commands Run / 执行命令, Tests Run / 测试, Context Still Needed / 仍需上下文, Warnings / 警告, Next Session Should / 后续应做。Use evidence labels.
 
-Output requirements:
-- write the active run phase output before ending work:
-  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
-- changed files, if any
-- files read
-- commands run
-- tests run, or reason not run
-- evidence labels: `hard_observed`, `agent_reported`, `inferred`, `user_confirmed`
-- unresolved risks
-- handoff notes or recommended VibeHub action
+**IMPORTANT: Output in Chinese (中文) unless user requests otherwise.**
 
-Constraints:
-- Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.
-- Do not claim runtime observation unless a runtime adapter captured it.
-- If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
+Constraints / 约束:
+- Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly. / 不要直接编辑。
+- Never manually create `.vibehub/tasks/` directories. / 不要手动创建目录，使用 CLI。
+- NEVER run `vibehub finish` or `vibehub advance` without user confirmation. / 未经确认绝不运行 finish/advance。
+- If CLI unavailable, ask user to run command. / 如 CLI 不可用请用户执行。
+- Run vibehub-sync first if state is stale or drifted. / 先运行 vibehub-sync。
 
 Registry contract:
 - name: `vibehub-sync`

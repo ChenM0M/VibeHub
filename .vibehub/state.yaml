@@ -5,15 +5,14 @@ project:
   root: .
 current:
   mode: evidence_drive
-  task_id: T-20260529090147-9df98d71
-  run_id: R-20260529090147-65de009c
+  task_id: null
+  run_id: null
   session_id: null
-  phase: review
-  phase_status: completed
-  event_log_path: .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/events.jsonl
+  phase: null
+  event_log_path: .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/events.jsonl
 pointers:
   task_pointer: .vibehub/tasks/current
-  run_pointer: .vibehub/tasks/T-20260529090147-9df98d71/runs/current
+  run_pointer: .vibehub/tasks/T-20260529145443-52bb4f48/runs/current
 flow:
   align_lite: pending
   align: completed
@@ -35,8 +34,8 @@ research:
   scope: active_task
   skipped_reason: null
 context:
-  current_pack: .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/review.md
-  current_manifest: .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/review.manifest.yaml
+  current_pack: .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/review.md
+  current_manifest: .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/review.manifest.yaml
   stale: false
   generated_by: vibehub_backend
 agent_report:
@@ -55,7 +54,7 @@ loop_detection:
   status: warning
   warnings:
   - 循环警告：125 个变更文件已达到或超过 repeated_file_edits 阈值 8。
-last_updated: 2026-05-29T09:49:38Z
+last_updated: 2026-05-29T15:02:54Z
 resume_hint: .vibehub/agent-view/current.md
 sync:
   last_synced_at: 2026-05-29T09:49:38Z
@@ -69,7 +68,7 @@ preferences:
   locale: zh-CN
 metrics:
   tasks:
-    active_count: 1
+    active_count: 2
   capabilities:
     active_count: 0
   sync:
@@ -81,7 +80,7 @@ metrics:
   schema:
     validation_failure_rate: 0.0
   events:
-    write_per_minute: 10.983214468939904
+    write_per_minute: 7.821554493218264
   subagent:
     timeout_count: 0
 derived:
@@ -91,5 +90,4 @@ derived:
   flow: true
   trace_path: .vibehub/derivation_trace.yaml
 tasks:
-  active:
-  - T-20260529090147-9df98d71
+  active: []

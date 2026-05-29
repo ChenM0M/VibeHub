@@ -7,7 +7,15 @@ Current mode: `{{mode}}`
 
 Please create a new VibeHub task from the request below.
 
-Request:
+## How
+Run the VibeHub CLI:
+```
+vibehub start {{project_root}} {{mode}} "<title>"
+```
+Or use the cockpit "Start Task" button. Do NOT manually create `.vibehub/tasks/` files — the CLI sets up pointers, state, and context automatically.
+
+## Request
 <paste the user's new requirement here>
 
-Use the project protocol. If the request should be split into multiple tasks, propose the split first and explain the dependency order. Do not edit `.vibehub/state.yaml` directly.
+## Output
+After creating the task, follow the phase output contract in `.vibehub/adapters/protocol.md`. Write output.md with all required sections before ending.
