@@ -3,6 +3,8 @@
 
 Applies to: Codex, OpenCode
 Source file: AGENTS.md
+Adapter template: 2.0.0-pre.3
+Skills registry: 1.0 (1967960beeae)
 
 VibeHub owns project state. Agent output is reported state only.
 

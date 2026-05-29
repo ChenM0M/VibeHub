@@ -1,0 +1,94 @@
+{
+  "step_id": "M1c",
+  "status": "done",
+  "completed_at": "2026-05-28T01:46:42Z",
+  "task_id": "T-20260513154224-58d8a685",
+  "run_id": "R-20260513154224-488adb79",
+  "code_paths": [
+    "src-tauri/src/vibehub/state_migration.rs",
+    "src-tauri/src/vibehub/events.rs",
+    "src-tauri/src/vibehub/init.rs",
+    "src-tauri/src/vibehub/start_task.rs"
+  ],
+  "doc_paths": [
+    "docs/vibehub-capability-implementation-steps-2026-05-27.md"
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "M1c-AC-1",
+      "description": "老 task 升级不丢任何已有字段，并新增 event_log_path。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked vibehub::state_migration => 4 passed; v2_to_v3_adds_event_log_path_without_losing_existing_fields covers schema v2 fixture and custom field preservation.",
+      "status": "pass"
+    },
+    {
+      "id": "M1c-AC-2",
+      "description": "100 次随机事件序列 fold/state 比对一致。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked vibehub::events => 12 passed; random_event_sequences_match_parallel_state_projection runs 100 generated sequences.",
+      "status": "pass"
+    },
+    {
+      "id": "M1c-AC-3",
+      "description": "模拟 10 次崩溃/重启后自检通过。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked vibehub::events => 12 passed; restart_self_check_survives_repeated_appends creates a fresh EventWriter 10 times.",
+      "status": "pass"
+    },
+    {
+      "id": "M1c-AC-4",
+      "description": "CI 增量测试绿。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo fmt --all -- --check passed; cargo test --locked passed with 127 tests.",
+      "status": "pass"
+    }
+  ],
+  "validation": [
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo fmt --all",
+      "result": "passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked vibehub::state_migration",
+      "result": "4 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked vibehub::events",
+      "result": "12 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked vibehub::start_task",
+      "result": "3 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo fmt --all -- --check",
+      "result": "passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked",
+      "result": "127 passed"
+    }
+  ],
+  "notes": [
+    {
+      "evidence_label": "agent_reported",
+      "summary": "The v3 field is stored as current.event_log_path because event logs are run-scoped and tied to current.task_id/current.run_id."
+    },
+    {
+      "evidence_label": "agent_reported",
+      "summary": "M1c extends ensure_consistency from latest PhaseProjected-only checking to a structured fold over CapabilityClaimed, CapabilityReleased, and PhaseProjected events."
+    }
+  ],
+  "next_step": "M2a",
+  "next_session_should": [
+    "Start M2a: extend workflow.yaml with capability/gate sections and parser support.",
+    "Keep legacy phase support intact while adding capability/gate parsing.",
+    "Update tests/docs for workflow explain or equivalent debug surface if implemented in M2a."
+  ]
+}

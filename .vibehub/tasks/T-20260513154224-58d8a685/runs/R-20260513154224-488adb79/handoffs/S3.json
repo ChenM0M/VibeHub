@@ -1,0 +1,60 @@
+{
+  "step_id": "S3",
+  "status": "done",
+  "completed_at": "2026-05-28T01:12:04Z",
+  "task_id": "T-20260513154224-58d8a685",
+  "run_id": "R-20260513154224-488adb79",
+  "registry_doc_path": "docs/vibehub-skills-registry-v1.md",
+  "registry_yaml_path": ".vibehub/skills.registry.yaml",
+  "skill_count": 17,
+  "sub_agent_candidates": [
+    "vibehub-sync",
+    "vibehub-handoff",
+    "vibehub-journal",
+    "vibehub-events",
+    "vibehub-build-pack",
+    "vibehub-validate-schema"
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "S3-AC-1",
+      "description": "17 个 skill 全部有完整字段。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "ruby YAML field validation => skills=17",
+      "status": "pass"
+    },
+    {
+      "id": "S3-AC-2",
+      "description": "sub-agent / main-agent 调用方矩阵清晰。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-skills-registry-v1.md:30",
+      "status": "pass"
+    },
+    {
+      "id": "S3-AC-3",
+      "description": ".vibehub/skills.registry.yaml 可被 YAML parser 解析。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "ruby -ryaml -e ... => skills=17",
+      "status": "pass"
+    },
+    {
+      "id": "S3-AC-4",
+      "description": "与基线 §22.1 统一返回格式匹配。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-skills-registry-v1.md:7",
+      "status": "pass"
+    }
+  ],
+  "open_items": [
+    {
+      "evidence_label": "agent_reported",
+      "summary": "Registry is a sample authority document; generator code that consumes it is deferred to adapter/workflow implementation steps."
+    }
+  ],
+  "next_step": "S4",
+  "next_session_should": [
+    "读取 S3 handoff 和基线 §6、§20、§26。",
+    "创建 docs/vibehub-sync-condition-algorithm.md。",
+    "形式化定义 Delta t、Delta head、Delta overlap，并列出 8 个典型场景。"
+  ]
+}

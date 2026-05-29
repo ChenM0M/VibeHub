@@ -1,0 +1,54 @@
+{
+  "task_id": "T-20260513154224-58d8a685",
+  "run_id": "R-20260513154224-488adb79",
+  "capability": "research",
+  "step": "X3",
+  "generated_at": "2026-05-29T05:45:17Z",
+  "evidence_grade": "mixed",
+  "completed": [
+    "`user_confirmed`: User asked to continue X3.",
+    "`hard_observed`: Added `.vibehub/.pending/*.write` pending event files with schema version, source metadata, creation timestamp, and the full event envelope.",
+    "`hard_observed`: Added fallback pending write APIs for structured run/current events in `crates/vibehub-core/src/vibehub/events.rs`.",
+    "`hard_observed`: Added pending replay that sorts `.write` files by filename, serially appends valid events to `events.jsonl`, updates `task-events.idx`, skips duplicate or out-of-order event IDs with warnings, and removes replayed/skipped pending files.",
+    "`hard_observed`: Pending replay and normal event append share `EventWriter.write_lock`, preserving the single-writer invariant during replay.",
+    "`hard_observed`: Tauri startup replays pending events for known projects from app config.",
+    "`hard_observed`: Added manual replay surfaces: Tauri command `vibehub_replay_pending_events`, TypeScript service `vibehubReplayPendingEvents`, workspace CLI `replay-pending`, and standalone CLI `replay-pending` / `pending-replay`.",
+    "`hard_observed`: Updated X3 documentation and baseline §21 coverage status in `docs/vibehub-capability-implementation-steps-2026-05-27.md`."
+  ],
+  "not_yet_done": [
+    "`agent_reported`: VibeHub canonical state was not advanced directly.",
+    "`hard_observed`: No real launcher runtime adapter captured startup replay; replay behavior is covered by unit tests and CLI/API surfaces."
+  ],
+  "key_decisions": [
+    "`inferred`: Pending files store complete event envelopes and preserve pending event IDs so duplicate event_id conflicts can be detected and skipped.",
+    "`inferred`: Out-of-order pending event IDs are skipped with warnings instead of rewritten, preserving append-only event ordering.",
+    "`inferred`: Startup replay runs best-effort for configured projects and ignores replay errors so one bad project does not prevent the launcher from opening."
+  ],
+  "changed_files": [
+    "crates/vibehub-core/src/vibehub/events.rs",
+    "crates/vibehub-cli/src/main.rs",
+    "src-tauri/src/main.rs",
+    "src-tauri/src/commands.rs",
+    "src/services/tauri.ts",
+    "src/types/index.ts",
+    "docs/vibehub-capability-implementation-steps-2026-05-27.md",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/X3.json",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/outputs/output.md"
+  ],
+  "tests": [
+    "`cargo test -p vibehub-core vibehub::events --offline` passed: 16 passed.",
+    "`cargo test --all --offline` passed: 8 Tauri bin tests, 0 CLI bin tests, 190 vibehub-core tests, 0 doc tests.",
+    "`npm run build` passed with existing bundle-size / browserslist freshness warnings.",
+    "`cargo run -p vibehub-cli --offline -- replay-pending .` passed with replayed=0, skipped=0, warnings=[]."
+  ],
+  "warnings": [
+    "`hard_observed`: Workspace remains dirty from broader active VibeHub work and this X3 session.",
+    "`hard_observed`: Existing Tauri gateway dead-code warnings remain in `cargo test --all --offline`.",
+    "`hard_observed`: `npm run build` reports existing bundle-size and stale browser-data warnings."
+  ],
+  "next_session_should": [
+    "Run VibeHub validation/handoff generation for this output.",
+    "Continue X4 `vibehub-debug-dump` if the X series continues.",
+    "Resolve prior adapter conflicts before non-dry-run adapter sync on the current project."
+  ]
+}

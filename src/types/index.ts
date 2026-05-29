@@ -107,6 +107,34 @@ export interface ContextPackBuildResult {
     estimated_tokens: number;
 }
 
+export interface PendingReplayResult {
+    pending_dir: string;
+    replayed: number;
+    skipped: number;
+    warnings: string[];
+}
+
+export interface DebugDumpOptions {
+    include_events?: boolean | null;
+    include_packs?: boolean | null;
+    redact_secrets?: boolean | null;
+}
+
+export interface DebugDumpResult {
+    dump_path: string;
+    manifest_path: string;
+    task_id: string | null;
+    run_id: string | null;
+    files_copied: number;
+    redacted_files: number;
+    events_copied: number;
+    context_packs_copied: number;
+    outputs_copied: number;
+    handoffs_copied: number;
+    sync_reports_copied: number;
+    warnings: string[];
+}
+
 export interface VibehubStartTaskResult {
     task_id: string;
     run_id: string;
@@ -124,7 +152,64 @@ export interface VibehubStartTaskResult {
     context_missing_count: number;
 }
 
-export type AgentTool = 'codex' | 'claude_code' | 'opencode';
+export type VibehubIntakeConfidence = 'high' | 'medium' | 'low';
+
+export interface VibehubTaskDraft {
+    title: string;
+    intent?: string | null;
+    acceptance_criteria?: string[];
+    dependencies?: string[];
+    suggested_order?: number | null;
+    mode?: string | null;
+    phase?: string | null;
+}
+
+export interface VibehubStartTaskIntakeRequest {
+    title?: string | null;
+    intent?: string | null;
+    mode?: string | null;
+    phase?: string | null;
+    source_message?: string | null;
+    split_confidence?: VibehubIntakeConfidence | null;
+    split_reason?: string | null;
+    not_split_reason?: string | null;
+    intake?: VibehubTaskDraft[];
+}
+
+export interface VibehubTaskIntakeItem {
+    order: number;
+    title: string;
+    intent?: string | null;
+    acceptance_criteria: string[];
+    dependencies: string[];
+    task_id?: string | null;
+    run_id?: string | null;
+    status: string;
+}
+
+export interface VibehubTaskIntakeFailure {
+    order: number;
+    title: string;
+    error: string;
+}
+
+export interface VibehubStartTaskIntakeResult {
+    classification: string;
+    confirmation_required: boolean;
+    source_message?: string | null;
+    split_reason?: string | null;
+    not_split_reason?: string | null;
+    proposed_tasks: VibehubTaskIntakeItem[];
+    created_tasks: VibehubStartTaskResult[];
+    failed_tasks: VibehubTaskIntakeFailure[];
+    active_tasks: string[];
+    current_task_id?: string | null;
+    current_run_id?: string | null;
+    queue_state_path?: string | null;
+    unresolved_risks: string[];
+}
+
+export type AgentTool = 'amp_code' | 'codex' | 'claude_code' | 'opencode' | 'cursor' | 'antigravity';
 
 export interface AgentCommandSpec {
     name: string;
@@ -210,6 +295,34 @@ export interface VibehubFlowPhaseStatus {
     status: string;
 }
 
+export interface VibehubTaskNeighbor {
+    task_id: string;
+    title?: string | null;
+    active_capabilities: string[];
+    shared_files: string[];
+}
+
+export interface VibehubActiveTask {
+    task_id: string;
+    title?: string | null;
+    run_id?: string | null;
+    mode?: string | null;
+    phase?: string | null;
+    phase_status?: string | null;
+    current: boolean;
+    active_capabilities: string[];
+    dependencies: string[];
+    intake_order?: number | null;
+}
+
+export interface CapabilityGateStatus {
+    capability: string;
+    claimable: boolean;
+    active: boolean;
+    blocked_by: string[];
+    reason: string | null;
+}
+
 export interface VibehubCockpitStatus {
     project_root: string;
     initialized: boolean;
@@ -226,6 +339,12 @@ export interface VibehubCockpitStatus {
     agent_output_status: VibehubFileStatus;
     handoff_status: VibehubFileStatus;
     flow: VibehubFlowPhaseStatus[];
+    active_tasks: VibehubActiveTask[];
+    active_capabilities: string[];
+    neighbor_tasks: VibehubTaskNeighbor[];
+    claimable_capabilities: string[];
+    gate_statuses: CapabilityGateStatus[];
+    derivation_trace_path?: string | null;
     observability_level?: string | null;
     locale?: string | null;
     warnings: string[];
@@ -412,6 +531,138 @@ export interface VibehubFlowDetail {
     written_outputs: VibehubFlowArtifact[];
 }
 
+export interface VibehubEventTimelineItem {
+    event_id: string;
+    timestamp: string;
+    task_id: string;
+    task_title?: string | null;
+    run_id: string;
+    event_type: string;
+    capability?: string | null;
+    summary: string;
+    event_log_path: string;
+    raw: unknown;
+}
+
+export interface VibehubArchiveArtifact {
+    label: string;
+    path: string;
+    exists: boolean;
+}
+
+export interface VibehubArchivedTaskEvent {
+    event_id?: string | null;
+    timestamp?: string | null;
+    event_type: string;
+    summary: string;
+    artifact_path: string;
+}
+
+export interface VibehubArchivedProcessStep {
+    name: string;
+    status: string;
+    event_count: number;
+}
+
+export interface VibehubArchivedTaskCard {
+    task_id: string;
+    title?: string | null;
+    label: string;
+    summary: string;
+    status: string;
+    status_reason?: string | null;
+    task_path: string;
+    run_id?: string | null;
+    run_path?: string | null;
+    mode?: string | null;
+    phase?: string | null;
+    phase_status?: string | null;
+    updated_at?: string | null;
+    event_count: number;
+    events: VibehubArchivedTaskEvent[];
+    process: VibehubArchivedProcessStep[];
+    handoff_artifacts: VibehubArchiveArtifact[];
+    output_artifacts: VibehubArchiveArtifact[];
+    event_artifacts: VibehubArchiveArtifact[];
+}
+
+export interface VibehubArchiveViewData {
+    cards: VibehubArchivedTaskCard[];
+    warnings: string[];
+}
+
+export type VibehubProjectStructureKind = 'root' | 'directory' | 'file';
+
+export interface VibehubProjectStructureGraphNode {
+    id: string;
+    label: string;
+    path: string;
+    kind: VibehubProjectStructureKind;
+    depth: number;
+    changed: boolean;
+    file_count: number;
+    directory_count: number;
+}
+
+export interface VibehubProjectStructureGraphEdge {
+    from: string;
+    to: string;
+    kind: string;
+}
+
+export interface VibehubProjectStructureTreeNode {
+    id: string;
+    label: string;
+    path: string;
+    kind: VibehubProjectStructureKind;
+    depth: number;
+    changed: boolean;
+    file_count: number;
+    directory_count: number;
+    children: VibehubProjectStructureTreeNode[];
+    truncated: boolean;
+}
+
+export interface VibehubProjectStructureViewData {
+    root_path: string;
+    source: string;
+    semantic_graph_available: boolean;
+    graph_nodes: VibehubProjectStructureGraphNode[];
+    graph_edges: VibehubProjectStructureGraphEdge[];
+    tree: VibehubProjectStructureTreeNode[];
+    scanned_files_count: number;
+    scanned_dirs_count: number;
+    truncated: boolean;
+    warnings: string[];
+}
+
+export type VibehubPromptTemplateId =
+    | 'new-task'
+    | 'sync'
+    | 'claim-capability'
+    | 'release-capability'
+    | 'cancel-task'
+    | 'force-rebuild'
+    | 'fix-schema';
+
+export interface VibehubPromptTemplateOption {
+    id: VibehubPromptTemplateId;
+    filename: string;
+    dangerous: boolean;
+}
+
+export interface VibehubPromptRenderResult {
+    template_id: VibehubPromptTemplateId;
+    template_path: string;
+    source: string;
+    locale: string;
+    dangerous: boolean;
+    confirmation_required: boolean;
+    confirmation_message?: string | null;
+    content: string;
+    warnings: string[];
+}
+
 // Aggregated cockpit overview (replaces the 6 per-tab read commands).
 export interface VibehubCockpitOverview {
     status: VibehubCockpitStatus;
@@ -423,6 +674,9 @@ export interface VibehubCockpitOverview {
     project_digest: VibehubProjectDigest;
     git_branches: VibehubGitBranchesView;
     flow_details: VibehubFlowDetail[];
+    event_timeline: VibehubEventTimelineItem[];
+    archive: VibehubArchiveViewData;
+    project_structure: VibehubProjectStructureViewData;
     initialized: boolean;
 }
 

@@ -1,14 +1,14 @@
 ---
 name: vibehub-checkpoint
-description: "Record progress, commands, risks, and next steps. Use for VibeHub workflow step: vibehub-checkpoint."
+description: "Record progress, commands, risks, and next actions. Use for VibeHub workflow step: vibehub-checkpoint."
 ---
 
 # vibehub-checkpoint
 
 中文: 记录进展、命令、风险和下一步。
-English: Record progress, commands, risks, and next steps.
+English: Record progress, commands, risks, and next actions.
 
-Invocation input: [note]
+Invocation input: <project_root> [note] [changed_files]
 
 Read first:
 - `.vibehub/agent-view/current.md`
@@ -19,6 +19,7 @@ Read first:
 
 Task:
 Capture progress, decisions, commands, tests, changed files, risks, and next steps without marking state complete. Also write the current phase snapshot to `runs/<run_id>/phases/<phase>.output.md`, update `.vibehub/notes/status.md` with a one-sentence current status, and update `.vibehub/notes/summary.md` only if project scope changed.
+
 
 Agent-written lifecycle artifacts:
 - Mirror the phase output into `.vibehub/tasks/<task_id>/runs/<run_id>/phases/<phase>.output.md`.
@@ -42,3 +43,11 @@ Constraints:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
+
+Registry contract:
+- name: `vibehub-checkpoint`
+- args: `<project_root> [note] [changed_files]`
+- returns: `skill_response_schema_v1`
+- callable_by: main-agent
+- side_effects: writes_events, writes_output
+- idempotent: false

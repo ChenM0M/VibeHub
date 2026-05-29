@@ -1,0 +1,61 @@
+{
+  "step": "M7e",
+  "title": "Project structure graph and directory-linked detail",
+  "generated_at": "2026-05-28T17:15:18Z",
+  "evidence_level": "mixed",
+  "completed": [
+    "user_confirmed: User asked to continue and complete M7e.",
+    "hard_observed: Added filesystem-backed project structure read-model in src-tauri/src/vibehub/project_structure.rs.",
+    "hard_observed: Project structure read-model returns graph nodes/edges, directory tree nodes, changed markers, scan counts, truncation state, and warnings.",
+    "hard_observed: Project structure scan skips heavy directories including .git, node_modules, target, dist, build, coverage, and related generated folders.",
+    "hard_observed: Cockpit overview now returns project_structure alongside status/context/review/handoff/diff/research/activity/archive data.",
+    "hard_observed: Added safe project file reveal/open commands that reject absolute and parent-escape paths.",
+    "hard_observed: Frontend project structure preview now uses backend graph/tree data instead of the M7a placeholder.",
+    "hard_observed: Structure detail drawer provides a split graph/directory view with shared node selection and highlighting.",
+    "hard_observed: Selected structure node metadata, changed marker, reveal-in-file-manager, and open-file actions are available in the drawer.",
+    "hard_observed: UI clearly reports that M7e v1 uses filesystem scan data and semantic dependency graph data is not configured yet.",
+    "hard_observed: Module/file history is explicitly reserved for a later slice.",
+    "hard_observed: Added TypeScript project structure types and English, Simplified Chinese, and Traditional Chinese localization.",
+    "hard_observed: Updated docs/vibehub-capability-implementation-steps-2026-05-27.md to Draft v3.1, marked M7e DoD complete, and resolved UI-Q6/UI-Q7.",
+    "hard_observed: Corrected the full implementation manual title and Step map row so M7e appears as completed in the overview table."
+  ],
+  "files_changed": [
+    "src-tauri/src/vibehub/project_structure.rs",
+    "src-tauri/src/vibehub/mod.rs",
+    "src-tauri/src/vibehub/overview.rs",
+    "src-tauri/src/commands.rs",
+    "src-tauri/src/main.rs",
+    "src/types/index.ts",
+    "src/services/tauri.ts",
+    "src/components/VibehubCockpitDialog.tsx",
+    "src/locales/en.json",
+    "src/locales/zh.json",
+    "src/locales/zh-TW.json",
+    "docs/vibehub-capability-implementation-steps-2026-05-27.md",
+    ".vibehub/agent-view/handoff.md",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M7e.json",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/outputs/output.md"
+  ],
+  "tests_run": [
+    "hard_observed: cargo fmt passed.",
+    "hard_observed: cargo test project_structure passed: 2 passed.",
+    "hard_observed: npm run build passed with existing baseline-browser-mapping, browserslist, and chunk-size warnings.",
+    "hard_observed: cargo test overview passed: 2 passed.",
+    "hard_observed: npm run dev failed in sandbox with EPERM, then ran with user-approved escalation on http://127.0.0.1:1420/.",
+    "hard_observed: Browser smoke opened http://127.0.0.1:1420/ and confirmed the Vite app shell rendered; no Tauri bridge/workspace data was present, so real cockpit structure click-through was not captured.",
+    "hard_observed: lsof -ti tcp:1420 returned no process after stopping the escalated dev server.",
+    "hard_observed: JSON parse passed for M7e handoff and locale files.",
+    "hard_observed: git diff --check passed for M7e-touched files.",
+    "hard_observed: cargo run -- handoff passed with complete: true and no missing required sections.",
+    "hard_observed: cargo run -- validate passed with phase research, status completed, and no missing outputs.",
+    "hard_observed: Implementation manual grep confirmed the full-version title and completed M7e overview row."
+  ],
+  "risks": [
+    "hard_observed: Workspace still contains substantial pre-existing dirty/untracked state from prior VibeHub steps, including .vibehub/state.yaml; this session did not directly edit canonical state.",
+    "hard_observed: Current browser smoke could not exercise the real cockpit structure drawer because the plain browser context has no Tauri bridge/workspace data.",
+    "agent_reported: M7e v1 graph edges are filesystem containment edges, not semantic dependency edges.",
+    "agent_reported: Module/file history is reserved for a later slice.",
+    "agent_reported: Structure scan is capped by depth and per-directory child limits; UI reports truncation when it occurs."
+  ],
+  "next_step": "Validate M7e output, then continue to M8a or run VibeHub sync/recover first if the broad dirty state needs reconciliation."
+}
