@@ -1,26 +1,26 @@
 # 会话交接 run
 
-任务: T-20260529090147-9df98d71
-运行: R-20260529090147-65de009c
-阶段: Review
+任务: T-20260529145443-52bb4f48
+运行: R-20260529145443-224267fe
+阶段: Implement
 生成来源: VibeHub
-生成时间: 2026-05-29T09:49:38Z
-来源: .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/outputs/output.md
+生成时间: 2026-05-29T15:02:26Z
+来源: .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/outputs/output.md
 交接完成: 是
 证据等级: mixed
 
 ## 当前任务
 
-- 任务 ID: T-20260529090147-9df98d71
-- 任务路径: .vibehub/tasks/T-20260529090147-9df98d71
-- 运行 ID: R-20260529090147-65de009c
-- 运行路径: .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c
+- 任务 ID: T-20260529145443-52bb4f48
+- 任务路径: .vibehub/tasks/T-20260529145443-52bb4f48
+- 运行 ID: R-20260529145443-224267fe
+- 运行路径: .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe
 
 证据等级: hard_observed
 
 ## 当前阶段
 
-- 阶段: Review
+- 阶段: Implement
 - 状态: completed
 
 证据等级: hard_observed
@@ -28,25 +28,50 @@
 ## 变更内容
 
 ### Completed
-- `user_confirmed`: User requested closing out current VibeHub state, clearing the VibeHub phase, archiving the old structure, and treating this as a new task.
-- `hard_observed`: Prior task `T-20260513154224-58d8a685` research phase validation passed with required outputs `source_log`, `findings`, and `research_pack`.
-- `hard_observed`: Ran VibeHub CLI `finish`, rebuilt handoff, and ran `advance`; old task moved out of `research active` and VibeHub status later reported `current_phase=plan`, `phase_status=active`.
-- `hard_observed`: Created new VibeHub task `T-20260529090147-9df98d71` / run `R-20260529090147-65de009c` with title `收口 v2.0 发布前状态并归档旧 VibeHub 结构`.
-- `hard_observed`: Added `docs/archive/vibehub-legacy-structure-archive-2026-05-29.md`.
-- `hard_observed`: Archive document maps each retired `src-tauri/src/vibehub/*.rs` module to its active `crates/vibehub-core/src/vibehub/*.rs` replacement and records the Tauri shim boundary.
-- `hard_observed`: New task align output validated successfully, was finished, and was advanced through the optional research checkpoint.
-- `hard_observed`: Current VibeHub status reports new task `T-20260529090147-9df98d71` at `plan active`, with `align` and `research` completed.
-- `hard_observed`: New task was advanced through `plan` and `implement`; current status reached `review active`.
-- `hard_observed`: Ran VibeHub adapter sync after cleanup; adapter sync reported `created 0, updated 0, skipped 117, conflicts 0`.
-- `hard_observed`: Ran VibeHub adapter status after sync; `warnings` was empty and all generated adapter files were in sync.
-- `hard_observed`: Removed stale local build/debug artifacts from the workspace: `dist`, `target`, `src-tauri/target`, `.vibehub/debug-dumps`, and `.vibehub/state.yaml.bak.r2`.
-- `hard_observed`: Current VibeHub sync rebuilt `.vibehub/agent-view/current.md` and review context pack for task `T-20260529090147-9df98d71`.
+- `hard_observed`: 修改 `crates/vibehub-core/src/vibehub/agent_adapter.rs` 中 `default_command_body()` 函数 (行 1262-1337)，覆盖以下高优问题：
+
+### #1 vip-enabled start: CLI-first 指令
+- `vibehub-start` 的 task 描述从 "Convert the user's request into a VibeHub task draft..." 改为明确的 CLI 调用指令：
+  `Create one or more VibeHub tasks by running the CLI: vibehub start <project_path> <mode> <title>`
+- 新增: `DO NOT manually create .vibehub/tasks/ directories or edit state.yaml directly — the CLI handles task registration, pointer files, and state updates automatically.`
+- 新增 fallback: `If CLI is unavailable, ask the user to start the task from the VibeHub cockpit UI`
+
+### #3 + #5 vip-enabled continue/recover: 更详细的 phase 指引和 Stop Condition
+- `vibehub-continue` task 内容扩展为包含 phase-aware 指引：
+  `Read current.md for the current phase and run. Check workflow.yaml capabilities.<phase>.required_fields for phase-specific outputs. Read the context pack.`
+- 新增 Stop Condition: `Stop when: (1) all required phase outputs are written to output.md, (2) phase acceptance criteria are met, or (3) if blocked, report the blocker and write partial output.`
+- `vibehub-sync` task 新增 Stop Condition
+- `vibehub-recover` task 新增分析步骤清单
+- `vibehub-review` task 新增协议合规检查
+
+### #6 Output requirements 样板代码精简
+- 所有 skill 中的原始 `Output requirements` block（15 行变更文件+文件读取+命令+测试+证据标签+风险+交接注释）替换为 2 行简洁引用：
+  `Output: Write the phase output following the contract in .vibehub/adapters/protocol.md to .vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md. Include sections: Completed, Not Yet Done, Key Decisions Made, Files Changed, Files Reportedly Read, Commands Run, Tests Run, Context Still Needed, Warnings, Next Session Should. Use evidence labels.`
+
+### #12 AGENTS.md 命令发现机制澄清
+- `build_static_protocol()` 更新 `## Command Namespace` section 新增 `## Key Rules for VibeHub Commands` subsection，明确每个核心命令的正确用法
+
+### #4 protocol.md 补充 phase validation 说明
+- `build_adapter_protocol()` 新增说明：phase-specific required fields 定义在 workflow.yaml，advance 时的 needs_action 含义
+
+### GUI prompt templates (#10, #11, #14)
+- `templates/prompts/en/new-task.md`: 13 行 → 含 CLI 指令和输出合约引用
+- `templates/prompts/en/sync.md`: 9 行 → 含 4 步工作流和停止条件
+- 同步更新 `zh-CN` 和 `zh-TW` 版本
+
+### 代码质量
+- `cargo test -p vibehub-core` 全 192 测试通过
+- `vibehub sync-adapters` 成功生成 106 个文件更新到 6 个 agent tools
 ### Not Yet Done
-- `hard_observed`: Worktree remains dirty because the broader v2.0 migration is still unstaged/uncommitted.
-- `agent_reported`: No remote push, merge, tag, or release was performed.
+- `agent_reported`: #7 (adapter 多文件重叠) 需要更宽泛的架构重构，已推迟
+- `agent_reported`: #8 (phase validation 模糊 key 映射) 需要更宽泛的 `phase.rs:294-317` 改动，已推迟
+- `agent_reported`: #13 (loop detection 假阳性) 非本次 scope
+- `agent_reported`: #15 (vibehub-recover 缺少分析步骤) 已在 default_command_body 中做了基础改进
+- `agent_reported`: 一个 adapter 冲突仍需处理：`.vibehub/adapters/generated/codex/vibehub-help.md` 在 VibeHub 外部被修改
 ### Key Decisions Made
-- `inferred`: The old structure should be archived as a documented migration map, not as duplicated live Rust files under `src-tauri/src/vibehub/`, because duplicate implementations would create two backend ownership surfaces.
-- `inferred`: Adapter projection should now be treated as current; the remaining release gate is disciplined review/staging of the broad v2.0 dirty worktree.
+- `inferred`: 将 `Output requirements` 从每个 skill 中完全移除不可行，因为 agent 可能不读 protocol.md。折中方案：保留 2 行引用（列出 10 个 section 名称 + 证据标签），比原来的 15 行大幅精简。
+- `inferred`: `registry_command_body()` 也做了同样的精简，保持一致性。
+- `inferred`: Phase 映射表存在于 `phase.rs:294-317`（`required_output_to_section_keys`），但将其逐字包含在每个 skill 中不实际。更好的方式是在 Stop Condition 中提示 agent 去检查 workflow.yaml。
 ### Files Changed
 - .vibehub/adapters/config.yaml
 - .vibehub/adapters/generated/codex/vibehub-build-pack.md
@@ -61,7 +86,6 @@
 - .vibehub/adapters/generated/codex/vibehub-events.md
 - .vibehub/adapters/generated/codex/vibehub-finish.md
 - .vibehub/adapters/generated/codex/vibehub-handoff.md
-- .vibehub/adapters/generated/codex/vibehub-help.md
 - .vibehub/adapters/generated/codex/vibehub-init.md
 - .vibehub/adapters/generated/codex/vibehub-journal.md
 - .vibehub/adapters/generated/codex/vibehub-knowledge.md
@@ -79,220 +103,39 @@
 - .vibehub/agent-view/current-context.md
 - .vibehub/agent-view/current.md
 - .vibehub/agent-view/handoff.md
-- .vibehub/agent-view/sync.md
 - .vibehub/derivation_trace.yaml
 - .vibehub/index/task-events.idx
-- .vibehub/notes/status.md
-- .vibehub/notes/summary.md
-- .vibehub/policy.yaml
-- .vibehub/rules/hard-rules.md
-- .vibehub/skills.registry.yaml
 - .vibehub/state.yaml
-- .vibehub/tasks/T-20260513154224-58d8a685/context/plan.yaml
-- .vibehub/tasks/T-20260513154224-58d8a685/context/research.yaml
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/align.manifest.yaml
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/align.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/plan.manifest.yaml
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/plan.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/research.manifest.yaml
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/research.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/events.jsonl
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/evidence/changed-files.txt
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/evidence/diff.patch
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M1a.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M1b.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M1c.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M2a.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M2b.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M3.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M4a.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M4b.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M5.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M6a.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M6b.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M6c.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M6d-multi-intent-intake.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M6d.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M7-ux-alignment.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M7a-start-next-chat.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M7a.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M7b.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M7c.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M7d.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M7e.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M8a.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M8b.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/S0.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/S1.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/S2.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/S3.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/S4.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/S5.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/S6.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/S7.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/X1.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/X2.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/X3.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/X4.json
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/outputs/handoff-session-20260528.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/outputs/output.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/phases/align.output.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/phases/research.output.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/phases/review.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/run.yaml
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260521-091640.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260521-110505.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260522-025700.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260527-101409.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-010211.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-012501.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-013604.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-013627.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-015323.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-063147.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-063235.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-063340.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-063437.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/sync/sync-20260528-064307.md
-- .vibehub/tasks/T-20260513154224-58d8a685/task.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/context/align.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/context/implement.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/context/plan.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/context/research.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/context/review.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/align.manifest.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/align.md
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/implement.manifest.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/implement.md
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/plan.manifest.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/plan.md
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/research.manifest.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/research.md
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/review.manifest.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/review.md
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/events.jsonl
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/outputs/output.md
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/run.yaml
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/sync/sync-20260529-092013.md
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/sync/sync-20260529-093024.md
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/sync/sync-20260529-094511.md
-- .vibehub/tasks/T-20260529090147-9df98d71/runs/current
-- .vibehub/tasks/T-20260529090147-9df98d71/task.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/context/align.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/context/implement.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/context/plan.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/context/research.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/context/review.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/align.manifest.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/align.md
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/implement.manifest.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/implement.md
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/plan.manifest.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/plan.md
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/research.manifest.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/research.md
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/review.manifest.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/review.md
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/events.jsonl
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/outputs/output.md
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/run.yaml
+- .vibehub/tasks/T-20260529145443-52bb4f48/runs/current
+- .vibehub/tasks/T-20260529145443-52bb4f48/task.yaml
 - .vibehub/tasks/current
-- .vibehub/workflow.yaml
 - AGENTS.md
 - CLAUDE.md
-- Cargo.lock
-- Cargo.toml
-- crates/vibehub-cli/Cargo.toml
-- crates/vibehub-cli/src/main.rs
-- crates/vibehub-core/Cargo.toml
-- crates/vibehub-core/src/lib.rs
-- crates/vibehub-core/src/process_util.rs
 - crates/vibehub-core/src/vibehub/agent_adapter.rs
-- crates/vibehub-core/src/vibehub/agent_view.rs
-- crates/vibehub-core/src/vibehub/archive.rs
-- crates/vibehub-core/src/vibehub/branches.rs
-- crates/vibehub-core/src/vibehub/capability.rs
-- crates/vibehub-core/src/vibehub/cockpit.rs
-- crates/vibehub-core/src/vibehub/context.rs
-- crates/vibehub-core/src/vibehub/current.rs
-- crates/vibehub-core/src/vibehub/debug_dump.rs
-- crates/vibehub-core/src/vibehub/drift.rs
-- crates/vibehub-core/src/vibehub/events.rs
-- crates/vibehub-core/src/vibehub/fitness.rs
-- crates/vibehub-core/src/vibehub/handoff.rs
-- crates/vibehub-core/src/vibehub/init.rs
-- crates/vibehub-core/src/vibehub/journal.rs
-- crates/vibehub-core/src/vibehub/knowledge.rs
-- crates/vibehub-core/src/vibehub/locale.rs
-- crates/vibehub-core/src/vibehub/mod.rs
-- crates/vibehub-core/src/vibehub/neighbors.rs
-- crates/vibehub-core/src/vibehub/notes.rs
-- crates/vibehub-core/src/vibehub/overview.rs
-- crates/vibehub-core/src/vibehub/ownership.rs
-- crates/vibehub-core/src/vibehub/phase.rs
-- crates/vibehub-core/src/vibehub/policy.rs
-- crates/vibehub-core/src/vibehub/project_structure.rs
-- crates/vibehub-core/src/vibehub/projection.rs
-- crates/vibehub-core/src/vibehub/prompts.rs
-- crates/vibehub-core/src/vibehub/research.rs
-- crates/vibehub-core/src/vibehub/review.rs
-- crates/vibehub-core/src/vibehub/schema_check.rs
-- crates/vibehub-core/src/vibehub/start_task.rs
-- crates/vibehub-core/src/vibehub/state_migration.rs
-- crates/vibehub-core/src/vibehub/status.rs
-- crates/vibehub-core/src/vibehub/sync.rs
-- crates/vibehub-core/src/vibehub/task_switch.rs
-- crates/vibehub-core/src/vibehub/util.rs
-- crates/vibehub-core/src/vibehub/workflow.rs
-- crates/vibehub-core/templates/prompts/en/cancel-task.md
-- crates/vibehub-core/templates/prompts/en/claim-capability.md
-- crates/vibehub-core/templates/prompts/en/fix-schema.md
-- crates/vibehub-core/templates/prompts/en/force-rebuild.md
 - crates/vibehub-core/templates/prompts/en/new-task.md
-- crates/vibehub-core/templates/prompts/en/release-capability.md
 - crates/vibehub-core/templates/prompts/en/sync.md
-- crates/vibehub-core/templates/prompts/zh-CN/cancel-task.md
-- crates/vibehub-core/templates/prompts/zh-CN/claim-capability.md
-- crates/vibehub-core/templates/prompts/zh-CN/fix-schema.md
-- crates/vibehub-core/templates/prompts/zh-CN/force-rebuild.md
 - crates/vibehub-core/templates/prompts/zh-CN/new-task.md
-- crates/vibehub-core/templates/prompts/zh-CN/release-capability.md
 - crates/vibehub-core/templates/prompts/zh-CN/sync.md
-- crates/vibehub-core/templates/prompts/zh-TW/cancel-task.md
-- crates/vibehub-core/templates/prompts/zh-TW/claim-capability.md
-- crates/vibehub-core/templates/prompts/zh-TW/fix-schema.md
-- crates/vibehub-core/templates/prompts/zh-TW/force-rebuild.md
 - crates/vibehub-core/templates/prompts/zh-TW/new-task.md
-- crates/vibehub-core/templates/prompts/zh-TW/release-capability.md
 - crates/vibehub-core/templates/prompts/zh-TW/sync.md
-- docs/archive/vibehub-legacy-structure-archive-2026-05-29.md
-- docs/rfc/0001-capability-gate-workflow.md
-- docs/vibehub-capability-implementation-steps-2026-05-27.md
-- docs/vibehub-capability-redesign-2026-05-27.md
-- docs/vibehub-capability-schema-v1.md
-- docs/vibehub-custom-capability-guide.md
-- docs/vibehub-file-ownership.md
-- docs/vibehub-m1-dual-write-coverage.md
-- docs/vibehub-skills-registry-v1.md
-- docs/vibehub-sync-condition-algorithm.md
-- docs/vibehub-test-plan.md
-- docs/vibehub-ui-kanban-mockup.md
-- src-tauri/Cargo.toml
-- src-tauri/src/commands.rs
-- src-tauri/src/main.rs
-- src-tauri/src/vibehub/agent_adapter.rs
-- src-tauri/src/vibehub/agent_view.rs
-- src-tauri/src/vibehub/branches.rs
-- src-tauri/src/vibehub/cockpit.rs
-- src-tauri/src/vibehub/context.rs
-- src-tauri/src/vibehub/current.rs
-- src-tauri/src/vibehub/drift.rs
-- src-tauri/src/vibehub/events.rs
-- src-tauri/src/vibehub/handoff.rs
-- src-tauri/src/vibehub/init.rs
-- src-tauri/src/vibehub/journal.rs
-- src-tauri/src/vibehub/knowledge.rs
-- src-tauri/src/vibehub/locale.rs
-- src-tauri/src/vibehub/mod.rs
-- src-tauri/src/vibehub/notes.rs
-- src-tauri/src/vibehub/overview.rs
-- src-tauri/src/vibehub/phase.rs
-- src-tauri/src/vibehub/research.rs
-- src-tauri/src/vibehub/review.rs
-- src-tauri/src/vibehub/start_task.rs
-- src-tauri/src/vibehub/state_migration.rs
-- src-tauri/src/vibehub/status.rs
-- src-tauri/src/vibehub/sync.rs
-- src-tauri/src/vibehub/util.rs
-- src/components/VibehubCockpitDialog.tsx
-- src/locales/en.json
-- src/locales/zh-TW.json
-- src/locales/zh.json
-- src/services/tauri.ts
-- src/types/index.ts
-- task.md
 
 证据等级: mixed
 
@@ -301,26 +144,41 @@
 ```json
 [
   {
-    "capability": "review",
+    "capability": "implement",
     "completed": [
-      "`user_confirmed`: User requested closing out current VibeHub state, clearing the VibeHub phase, archiving the old structure, and treating this as a new task.",
-      "`hard_observed`: Prior task `T-20260513154224-58d8a685` research phase validation passed with required outputs `source_log`, `findings`, and `research_pack`.",
-      "`hard_observed`: Ran VibeHub CLI `finish`, rebuilt handoff, and ran `advance`; old task moved out of `research active` and VibeHub status later reported `current_phase=plan`, `phase_status=active`.",
-      "`hard_observed`: Created new VibeHub task `T-20260529090147-9df98d71` / run `R-20260529090147-65de009c` with title `收口 v2.0 发布前状态并归档旧 VibeHub 结构`.",
-      "`hard_observed`: Added `docs/archive/vibehub-legacy-structure-archive-2026-05-29.md`.",
-      "`hard_observed`: Archive document maps each retired `src-tauri/src/vibehub/*.rs` module to its active `crates/vibehub-core/src/vibehub/*.rs` replacement and records the Tauri shim boundary.",
-      "`hard_observed`: New task align output validated successfully, was finished, and was advanced through the optional research checkpoint.",
-      "`hard_observed`: Current VibeHub status reports new task `T-20260529090147-9df98d71` at `plan active`, with `align` and `research` completed.",
-      "`hard_observed`: New task was advanced through `plan` and `implement`; current status reached `review active`.",
-      "`hard_observed`: Ran VibeHub adapter sync after cleanup; adapter sync reported `created 0, updated 0, skipped 117, conflicts 0`.",
-      "`hard_observed`: Ran VibeHub adapter status after sync; `warnings` was empty and all generated adapter files were in sync.",
-      "`hard_observed`: Removed stale local build/debug artifacts from the workspace: `dist`, `target`, `src-tauri/target`, `.vibehub/debug-dumps`, and `.vibehub/state.yaml.bak.r2`.",
-      "`hard_observed`: Current VibeHub sync rebuilt `.vibehub/agent-view/current.md` and review context pack for task `T-20260529090147-9df98d71`."
+      "`hard_observed`: 修改 `crates/vibehub-core/src/vibehub/agent_adapter.rs` 中 `default_command_body()` 函数 (行 1262-1337)，覆盖以下高优问题：",
+      "### #1 vip-enabled start: CLI-first 指令",
+      "`vibehub-start` 的 task 描述从 \"Convert the user's request into a VibeHub task draft...\" 改为明确的 CLI 调用指令：",
+      "`Create one or more VibeHub tasks by running the CLI: vibehub start <project_path> <mode> <title>`",
+      "新增: `DO NOT manually create .vibehub/tasks/ directories or edit state.yaml directly — the CLI handles task registration, pointer files, and state updates automatically.`",
+      "新增 fallback: `If CLI is unavailable, ask the user to start the task from the VibeHub cockpit UI`",
+      "### #3 + #5 vip-enabled continue/recover: 更详细的 phase 指引和 Stop Condition",
+      "`vibehub-continue` task 内容扩展为包含 phase-aware 指引：",
+      "`Read current.md for the current phase and run. Check workflow.yaml capabilities.<phase>.required_fields for phase-specific outputs. Read the context pack.`",
+      "新增 Stop Condition: `Stop when: (1) all required phase outputs are written to output.md, (2) phase acceptance criteria are met, or (3) if blocked, report the blocker and write partial output.`",
+      "`vibehub-sync` task 新增 Stop Condition",
+      "`vibehub-recover` task 新增分析步骤清单",
+      "`vibehub-review` task 新增协议合规检查",
+      "### #6 Output requirements 样板代码精简",
+      "所有 skill 中的原始 `Output requirements` block（15 行变更文件+文件读取+命令+测试+证据标签+风险+交接注释）替换为 2 行简洁引用：",
+      "`Output: Write the phase output following the contract in .vibehub/adapters/protocol.md to .vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md. Include sections: Completed, Not Yet Done, Key Decisions Made, Files Changed, Files Reportedly Read, Commands Run, Tests Run, Context Still Needed, Warnings, Next Session Should. Use evidence labels.`",
+      "### #12 AGENTS.md 命令发现机制澄清",
+      "`build_static_protocol()` 更新 `## Command Namespace` section 新增 `## Key Rules for VibeHub Commands` subsection，明确每个核心命令的正确用法",
+      "### #4 protocol.md 补充 phase validation 说明",
+      "`build_adapter_protocol()` 新增说明：phase-specific required fields 定义在 workflow.yaml，advance 时的 needs_action 含义",
+      "### GUI prompt templates (#10, #11, #14)",
+      "`templates/prompts/en/new-task.md`: 13 行 → 含 CLI 指令和输出合约引用",
+      "`templates/prompts/en/sync.md`: 9 行 → 含 4 步工作流和停止条件",
+      "同步更新 `zh-CN` 和 `zh-TW` 版本",
+      "### 代码质量",
+      "`cargo test -p vibehub-core` 全 192 测试通过",
+      "`vibehub sync-adapters` 成功生成 106 个文件更新到 6 个 agent tools"
     ],
-    "full_ref": ".vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/outputs/output.md",
+    "full_ref": ".vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/outputs/output.md",
     "key_decisions": [
-      "`inferred`: The old structure should be archived as a documented migration map, not as duplicated live Rust files under `src-tauri/src/vibehub/`, because duplicate implementations would create two backend ownership surfaces.",
-      "`inferred`: Adapter projection should now be treated as current; the remaining release gate is disciplined review/staging of the broad v2.0 dirty worktree."
+      "`inferred`: 将 `Output requirements` 从每个 skill 中完全移除不可行，因为 agent 可能不读 protocol.md。折中方案：保留 2 行引用（列出 10 个 section 名称 + 证据标签），比原来的 15 行大幅精简。",
+      "`inferred`: `registry_command_body()` 也做了同样的精简，保持一致性。",
+      "`inferred`: Phase 映射表存在于 `phase.rs:294-317`（`required_output_to_section_keys`），但将其逐字包含在每个 skill 中不实际。更好的方式是在 Stop Condition 中提示 agent 去检查 workflow.yaml。"
     ]
   }
 ]
@@ -337,75 +195,56 @@
 
 ## 执行的命令
 
-- `hard_observed`: `sed -n ...` for VibeHub protocol files, skills, current views, task metadata, and module files.
-- `hard_observed`: `git status --short --branch`
-- `hard_observed`: `./target/debug/vibehub status /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `./target/debug/vibehub validate /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `./target/debug/vibehub finish /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `./target/debug/vibehub handoff /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `./target/debug/vibehub advance /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `./target/debug/vibehub status /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `./target/debug/vibehub start /Users/chenm0m/LocalRepo/VibeHub evidence_drive 收口 v2.0 发布前状态并归档旧 VibeHub 结构`
-- `hard_observed`: `git ls-tree -r --name-only HEAD -- src-tauri/src/vibehub`
-- `hard_observed`: `find crates/vibehub-core/src/vibehub -maxdepth 1 -type f -name '*.rs' -print`
-- `hard_observed`: `git diff --stat`
-- `hard_observed`: `cargo run --target-dir /private/tmp/vibehub-target -p vibehub-cli --offline -- sync-adapters /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `cargo run --target-dir /private/tmp/vibehub-target -p vibehub-cli --offline -- adapters-status /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `cargo run --target-dir /private/tmp/vibehub-target -p vibehub-cli --offline -- validate /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `cargo run --target-dir /private/tmp/vibehub-target -p vibehub-cli --offline -- sync /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `rm -rf dist target src-tauri/target .vibehub/debug-dumps .vibehub/state.yaml.bak.r2`
-- `hard_observed`: `test ! -e dist`, `test ! -e target`, `test ! -e src-tauri/target`, `test ! -e .vibehub/debug-dumps`
+- `cargo build --target-dir /private/tmp/vibehub-target -p vibehub-cli --offline`
+- `cargo test --target-dir /private/tmp/vibehub-target -p vibehub-core --offline`
+- `cargo run --target-dir /private/tmp/vibehub-target -p vibehub-cli --offline -- sync-adapters /Users/chenm0m/LocalRepo/VibeHub`
 证据等级: agent_reported
 
 ## 运行的测试
 
-- `hard_observed`: `./target/debug/vibehub validate /Users/chenm0m/LocalRepo/VibeHub` initially reported the new align phase missing `intent`, `acceptance_criteria`, and `autonomy_level`; this output now supplies those required fields.
-- `hard_observed`: `./target/debug/vibehub validate /Users/chenm0m/LocalRepo/VibeHub` passed for the new align phase after this output was written.
-- `hard_observed`: `./target/debug/vibehub validate /Users/chenm0m/LocalRepo/VibeHub` also reported the new research phase complete from this output before advancing to plan.
-- `hard_observed`: `cargo run --target-dir /private/tmp/vibehub-target -p vibehub-cli --offline -- validate /Users/chenm0m/LocalRepo/VibeHub` passed for `review` with no missing required outputs.
-- `hard_observed`: `cargo run --target-dir /private/tmp/vibehub-target -p vibehub-cli --offline -- adapters-status /Users/chenm0m/LocalRepo/VibeHub` reported no adapter warnings.
-- `agent_reported`: Full `cargo test` / `npm run build` were not rerun after this documentation-only archive change; they passed in the immediately preceding status check.
+- `hard_observed`: `cargo test -p vibehub-core` — 全 192 测试通过，包含:
+  - `agent_adapter::tests::syncs_all_selected_platform_outputs`
+  - `agent_adapter::tests::override_changes_command_body`
+  - `agent_adapter::tests::preserves_unmanaged_content_in_agents_md`
+  - `agent_adapter::tests::detects_modified_generated_command_as_conflict`
+  - `agent_adapter::tests::dry_run_does_not_write_files`
+  - `prompts::tests::bundled_templates_cover_all_ids_for_all_locales`
+  - `prompts::tests::renderer_replaces_known_placeholders`
+- 未运行 `cargo test -p vibehub-cli`（CLI 测试在上次已验证）
+- 未运行 `npm run build`（无前端改动）
 证据等级: agent_reported
 
 ## 使用的上下文
 
 ### 读取的文件
-- `hard_observed`: `.agents/skills/vibehub-start/SKILL.md`
-- `hard_observed`: `.agents/skills/vibehub-finish/SKILL.md`
-- `hard_observed`: `.agents/skills/vibehub-sync/SKILL.md`
-- `hard_observed`: `.vibehub/agent-view/current.md`
-- `hard_observed`: `.vibehub/agent-view/current-context.md`
-- `hard_observed`: `.vibehub/agent-view/handoff.md`
-- `hard_observed`: `.vibehub/rules/hard-rules.md`
-- `hard_observed`: `.vibehub/adapters/protocol.md`
-- `hard_observed`: `.vibehub/adapters/config.yaml`
-- `hard_observed`: `crates/vibehub-core/src/vibehub/agent_adapter.rs`
-- `hard_observed`: `.vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/align.md`
-- `hard_observed`: `src-tauri/src/vibehub/mod.rs`
-- `hard_observed`: `crates/vibehub-core/src/vibehub/mod.rs`
-- `hard_observed`: `docs/archive/vibehub-legacy-structure-archive-2026-05-29.md`
+- `crates/vibehub-core/src/vibehub/agent_adapter.rs` — 完整阅读
+- `.agents/skills/vibehub-start/SKILL.md` — 验证生成
+- `.agents/skills/vibehub-continue/SKILL.md` — 验证生成
+- `.vibehub/adapters/protocol.md` — 验证生成
 ### 上下文包
-- 路径: .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/review.md
+- 路径: .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/review.md
 - 清单: 可用
 
 证据等级: mixed
 
 ## 仍需的上下文
 
-- `agent_reported`: Release readiness still needs a final staged-diff review and decision that the 117-file dirty worktree all belongs in the v2.0 release commit.
+- `agent_reported`: #7 (adapter file layer reduction) 需要讨论是否合并 constraints.md 和 protocol.md
+- `agent_reported`: 需要确认 adapter 冲突文件 `vibehub-help.md` 的处理方式
 证据等级: agent_reported
 
 ## 风险 / 警告
 
-- `hard_observed`: The repository still has substantial dirty/untracked state from the broader v2.0 migration.
-- `hard_observed`: VibeHub loop detection continues to warn about many changed files.
-- `agent_reported`: The archive is a documentation archive, not a duplicate source-code copy.
+- `hard_observed`: 1 个 adapter 冲突：`.vibehub/adapters/generated/codex/vibehub-help.md` 在 VibeHub 外部被修改
+- `hard_observed`: Loop detection 持续警告 125 个 dirty files（非本次引入）
+- `agent_reported`: AGENTS.md/CLAUDE.md 中的 "Use generated vibehub-* commands" 引用在 agent 启动时可能被 OpenCode 自己的系统提示词中加载，但 OpenCode 的 `available_skills` 列表已经包含所有 skill 名称
 证据等级: agent_reported
 
 ## 下次会话应
 
-- `agent_reported`: Continue from the remaining release-readiness risk: broad worktree review and staging.
-- `agent_reported`: After staging review, rerun local validation/build checks and prepare a single reviewed commit before pushing or tagging.
+- 解决 vibehub-help.md 的 adapter 冲突
+- 如果有需要，推进 #7（精简 adapter 文件层数）
+- 在大项目中实际测试新的 skill 提示词效果
 证据等级: agent_reported
 
 ## 交接完整性
