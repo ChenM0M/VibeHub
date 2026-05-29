@@ -4847,7 +4847,7 @@ dependencies = [
 
 [[package]]
 name = "vibehub-cli"
-version = "2.0.0-pre.14"
+version = "2.0.0-pre.15"
 dependencies = [
  "anyhow",
  "serde",
@@ -4857,7 +4857,7 @@ dependencies = [
 
 [[package]]
 name = "vibehub-core"
-version = "2.0.0-pre.14"
+version = "2.0.0-pre.15"
 dependencies = [
  "anyhow",
  "chrono",
