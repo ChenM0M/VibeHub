@@ -1,16 +1,70 @@
 use std::fs;
+use std::io::{self, Read};
 
 use vibehub_core::vibehub;
 
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(action) = args.next() else {
-        eprintln!("Missing VibeHub action. Expected start-task, sync, claim, gates, status, adapter-status, sync-adapters, replay-pending, debug-dump, review, recover, handoff, pause, validate, advance, finish, workflow-explain, schema-check, migrate, or locale.");
+        print_help();
         std::process::exit(2);
     };
 
+    if matches!(action.as_str(), "--help" | "-h" | "help") {
+        print_help();
+        return;
+    }
+
     let rest: Vec<String> = args.collect();
     run_vibehub_action(&action, rest);
+}
+
+fn print_help() {
+    eprintln!(
+        r#"vibehub <action> <project_path> [args...]
+
+=== Task Lifecycle ===
+  start                  Create a new task: vibehub start <project> <mode> <title>
+  start-intake           Create multiple tasks from JSON: vibehub start-intake <project> <json_path|--stdin|->
+  switch                 Switch active task: vibehub switch <project> <task_id>
+  finish                 Complete current phase: vibehub finish <project>
+  advance                Advance to next phase: vibehub advance <project> [--force]
+  validate               Validate current phase outputs: vibehub validate <project>
+  pause                  Pause current phase: vibehub pause <project>
+  archive                Archive completed tasks: vibehub archive <project> [task_id]
+
+=== Workspace Sync ===
+  sync / sycn            Sync workspace state: vibehub sync <project>
+  recover                Check workspace drift: vibehub recover <project>
+  status                 Show cockpit status: vibehub status <project>
+
+=== Capability & Gates ===
+  claim                  Claim a capability: vibehub claim <project> <capability>
+  gates                  Evaluate capability gates: vibehub gates <project> [capability]
+
+=== Context & Evidence ===
+  review                 Generate review evidence: vibehub review <project>
+  handoff                Build handoff: vibehub handoff <project>
+  ownership              Classify file ownership: vibehub ownership <project> [files...]
+  record                 Record file ownership: vibehub record <project> <files...>
+  schema-check           Validate capability output: vibehub schema-check <project> <capability> <json_path>
+  neighbors              Query neighbor tasks: vibehub neighbors <project>
+  workflow-explain       Explain workflow: vibehub workflow-explain <project>
+
+=== Adapter Management ===
+  sync-adapters          Sync adapter files: vibehub sync-adapters <project> [tools...] [--dry-run]
+  adapter-status         Show adapter file status: vibehub adapter-status <project>
+
+=== Maintenance ===
+  migrate                Migrate state schema: vibehub migrate <project> [--dry-run]
+  replay-pending         Replay pending events: vibehub replay-pending <project>
+  debug-dump             Create debug dump: vibehub debug-dump <project>
+  locale                 Set project locale: vibehub locale <project> <en|zh-CN|zh-TW>
+
+All commands output JSON to stdout. Errors go to stderr.
+Use `vibehub --help` to see this message again.
+"#
+    );
 }
 
 fn run_vibehub_action(action: &str, args: Vec<String>) {
@@ -36,23 +90,17 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
         }
         "start-intake" | "start_intake" => {
             let Some(request_path) = args.get(1) else {
-                eprintln!("Missing JSON request path for VibeHub action 'start-intake'");
+                eprintln!("Missing JSON request path for VibeHub action 'start-intake' (use --stdin or - to read from stdin)");
                 std::process::exit(2);
             };
-            let content = match fs::read_to_string(request_path) {
-                Ok(content) => content,
-                Err(error) => {
-                    eprintln!("Failed to read intake request '{}': {error}", request_path);
-                    std::process::exit(2);
-                }
-            };
+            let (content, request_label) = read_intake_request_content(request_path);
             let request = match serde_json::from_str::<
                 vibehub::start_task::VibehubStartTaskIntakeRequest,
             >(&content)
             {
                 Ok(request) => request,
                 Err(error) => {
-                    eprintln!("Invalid intake request JSON '{}': {error}", request_path);
+                    eprintln!("Invalid intake request JSON '{}': {error}", request_label);
                     std::process::exit(2);
                 }
             };
@@ -157,6 +205,13 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
         "neighbors" => print_json(vibehub::neighbors::query_current_task_neighbors(
             project_path,
         )),
+        "archive" => {
+            let target_task_id = args.get(1).map(String::as_str);
+            print_json(vibehub::archive::archive_completed_tasks(
+                project_path,
+                target_task_id,
+            ));
+        }
         "claim" => {
             let Some(capability) = args.get(1) else {
                 eprintln!("Missing capability for VibeHub claim action");
@@ -217,6 +272,25 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
         }
         _ => {
             eprintln!("Unknown VibeHub action '{action}'");
+            std::process::exit(2);
+        }
+    }
+}
+
+fn read_intake_request_content(request_path: &str) -> (String, String) {
+    if matches!(request_path, "--stdin" | "-") {
+        let mut content = String::new();
+        if let Err(error) = io::stdin().read_to_string(&mut content) {
+            eprintln!("Failed to read intake request from stdin: {error}");
+            std::process::exit(2);
+        }
+        return (content, "stdin".to_string());
+    }
+
+    match fs::read_to_string(request_path) {
+        Ok(content) => (content, request_path.to_string()),
+        Err(error) => {
+            eprintln!("Failed to read intake request '{}': {error}", request_path);
             std::process::exit(2);
         }
     }

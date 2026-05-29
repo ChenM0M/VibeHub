@@ -1,5 +1,7 @@
 use crate::vibehub::util::{canonical_project_root, normalize_path, relative_to_project};
+use crate::vibehub::{agent_view, context, current, start_task};
 use anyhow::{Context, Result};
+use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
@@ -75,6 +77,15 @@ struct RunSnapshot {
     terminal_status: Option<String>,
     status_reason: Option<String>,
     process: Vec<ArchivedProcessStep>,
+}
+
+#[derive(Debug, Clone)]
+struct CurrentRunSelection {
+    run_id: String,
+    run_path: PathBuf,
+    mode: String,
+    phase: String,
+    phase_status: String,
 }
 
 pub fn read_archive(project_root: impl AsRef<Path>) -> Result<ArchiveViewData> {
@@ -543,6 +554,7 @@ fn summary_text(title: Option<&str>, task_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vibehub::{current, init};
     use std::fs;
     use uuid::Uuid;
 
@@ -631,5 +643,461 @@ mod tests {
             .any(|artifact| artifact.path.ends_with("outputs/output.md")));
 
         fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn archive_current_task_switches_pointers_to_remaining_active_task() {
+        let project = temp_project();
+        init::init_project(&project).expect("init");
+        fs::create_dir_all(project.join(".vibehub/tasks/T-done/runs/R-done")).expect("done");
+        fs::create_dir_all(project.join(".vibehub/tasks/T-active/runs/R-active")).expect("active");
+        fs::write(
+            project.join(".vibehub/state.yaml"),
+            r#"current:
+  mode: guided_drive
+  task_id: T-done
+  run_id: R-done
+  phase: review
+  phase_status: completed
+tasks:
+  active:
+    - T-done
+    - T-active
+"#,
+        )
+        .expect("state");
+        fs::write(
+            project.join(".vibehub/tasks/T-done/task.yaml"),
+            "task_id: T-done\ntitle: Done task\nmode: guided_drive\nphase: review\nphase_status: completed\n",
+        )
+        .expect("done task");
+        fs::write(
+            project.join(".vibehub/tasks/T-done/runs/R-done/run.yaml"),
+            "run_id: R-done\nmode: guided_drive\nphase: review\nphase_status: completed\n",
+        )
+        .expect("done run");
+        fs::write(
+            project.join(".vibehub/tasks/T-active/task.yaml"),
+            "task_id: T-active\ntitle: Active task\nmode: evidence_drive\nphase: plan\nphase_status: active\n",
+        )
+        .expect("active task");
+        fs::write(
+            project.join(".vibehub/tasks/T-active/runs/R-active/run.yaml"),
+            "run_id: R-active\nmode: evidence_drive\nphase: plan\nphase_status: active\n",
+        )
+        .expect("active run");
+        current::write_current_task_pointer(&project, "T-done").expect("current task");
+        current::write_current_run_pointer(&project, "T-done", "R-done").expect("done run ptr");
+        current::write_current_run_pointer(&project, "T-active", "R-active")
+            .expect("active run ptr");
+
+        let archived = archive_completed_tasks(&project, None).expect("archive");
+
+        assert_eq!(archived.archived_task_ids, vec!["T-done"]);
+        assert_eq!(archived.remaining_active, vec!["T-active"]);
+        let current_task = current::resolve_current_task(&project).expect("current task");
+        let current_run = current::resolve_current_run(&project, "T-active").expect("current run");
+        assert_eq!(current_task.task_id, "T-active");
+        assert_eq!(current_run.run_id, "R-active");
+        assert!(!project.join(".vibehub/tasks/T-done/runs/current").exists());
+
+        let state = read_yaml_value(&project.join(".vibehub/state.yaml")).expect("state");
+        assert_eq!(
+            yaml_string(&state, &["current", "task_id"]).as_deref(),
+            Some("T-active")
+        );
+        assert_eq!(
+            yaml_string(&state, &["current", "run_id"]).as_deref(),
+            Some("R-active")
+        );
+        assert_eq!(
+            yaml_string(&state, &["current", "phase_status"]).as_deref(),
+            Some("active")
+        );
+        assert_eq!(
+            yaml_string(&state, &["context", "current_pack"]).as_deref(),
+            Some(".vibehub/tasks/T-active/runs/R-active/context-packs/plan.md")
+        );
+
+        fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn archive_last_current_task_clears_current_state_and_pointers() {
+        let project = temp_project();
+        init::init_project(&project).expect("init");
+        fs::create_dir_all(project.join(".vibehub/tasks/T-done/runs/R-done")).expect("done");
+        fs::write(
+            project.join(".vibehub/state.yaml"),
+            r#"current:
+  mode: guided_drive
+  task_id: T-done
+  run_id: R-done
+  phase: review
+  phase_status: completed
+tasks:
+  active:
+    - T-done
+"#,
+        )
+        .expect("state");
+        fs::write(
+            project.join(".vibehub/tasks/T-done/task.yaml"),
+            "task_id: T-done\ntitle: Done task\nmode: guided_drive\nphase: review\nphase_status: completed\n",
+        )
+        .expect("done task");
+        fs::write(
+            project.join(".vibehub/tasks/T-done/runs/R-done/run.yaml"),
+            "run_id: R-done\nmode: guided_drive\nphase: review\nphase_status: completed\n",
+        )
+        .expect("done run");
+        current::write_current_task_pointer(&project, "T-done").expect("current task");
+        current::write_current_run_pointer(&project, "T-done", "R-done").expect("run ptr");
+
+        let archived = archive_completed_tasks(&project, None).expect("archive");
+
+        assert_eq!(archived.archived_task_ids, vec!["T-done"]);
+        assert!(archived.remaining_active.is_empty());
+        assert!(!project.join(".vibehub/tasks/current").exists());
+        assert!(!project.join(".vibehub/tasks/T-done/runs/current").exists());
+        let state = read_yaml_value(&project.join(".vibehub/state.yaml")).expect("state");
+        assert!(yaml_string(&state, &["current", "task_id"]).is_none());
+        assert_eq!(
+            state
+                .get("context")
+                .and_then(|context| context.get("stale"))
+                .and_then(YamlValue::as_bool),
+            Some(true)
+        );
+
+        fs::remove_dir_all(project).ok();
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ArchiveTaskResult {
+    pub archived_count: usize,
+    pub archived_task_ids: Vec<String>,
+    pub remaining_active: Vec<String>,
+}
+
+pub fn archive_completed_tasks(
+    project_root: impl AsRef<Path>,
+    target_task_id: Option<&str>,
+) -> Result<ArchiveTaskResult> {
+    use crate::vibehub::util::canonical_project_root;
+    let project_root = canonical_project_root(project_root.as_ref())?;
+    let state_path = project_root.join(".vibehub/state.yaml");
+    if !state_path.is_file() {
+        return Ok(ArchiveTaskResult {
+            archived_count: 0,
+            archived_task_ids: Vec::new(),
+            remaining_active: Vec::new(),
+        });
+    }
+
+    let content = fs::read_to_string(&state_path)
+        .with_context(|| format!("Failed to read {}", state_path.display()))?;
+    let mut state: YamlValue = serde_yaml::from_str(&content)
+        .with_context(|| format!("Invalid YAML in {}", state_path.display()))?;
+
+    let active: Vec<String> = state
+        .get("tasks")
+        .and_then(|t| t.get("active"))
+        .and_then(|a| a.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(serde_yaml::Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut archived = Vec::new();
+    let mut remaining = Vec::new();
+
+    for task_id in &active {
+        if let Some(target) = target_task_id {
+            if task_id != target {
+                remaining.push(task_id.clone());
+                continue;
+            }
+        }
+
+        let task_yaml_path = project_root
+            .join(".vibehub/tasks")
+            .join(task_id)
+            .join("task.yaml");
+        if !task_yaml_path.is_file() {
+            remaining.push(task_id.clone());
+            continue;
+        }
+
+        let is_terminal = match fs::read_to_string(&task_yaml_path) {
+            Ok(content) => match serde_yaml::from_str::<YamlValue>(&content) {
+                Ok(value) => is_archivable_task_status(&value),
+                Err(_) => false,
+            },
+            Err(_) => false,
+        };
+
+        if is_terminal {
+            archived.push(task_id.clone());
+        } else {
+            remaining.push(task_id.clone());
+        }
+    }
+
+    let active_value = YamlValue::Sequence(
+        remaining
+            .iter()
+            .map(|id| YamlValue::String(id.clone()))
+            .collect(),
+    );
+    if let Some(tasks) = state.get_mut("tasks") {
+        if let Some(mapping) = tasks.as_mapping_mut() {
+            mapping.insert(YamlValue::String("active".to_string()), active_value);
+        }
+    }
+
+    let current_task_id = state
+        .get("current")
+        .and_then(|c| c.get("task_id"))
+        .and_then(YamlValue::as_str)
+        .map(ToString::to_string);
+    let was_current_archived = current_task_id
+        .as_ref()
+        .map(|id| archived.contains(id))
+        .unwrap_or(false);
+
+    if was_current_archived || active.is_empty() {
+        if let Some(next) = remaining.first() {
+            set_current_task_state(&project_root, &mut state, next)?;
+        } else {
+            clear_current_state(&project_root, &mut state, current_task_id.as_deref());
+        }
+    }
+
+    for task_id in &archived {
+        let _ = fs::remove_file(
+            project_root
+                .join(".vibehub/tasks")
+                .join(task_id)
+                .join("runs")
+                .join("current"),
+        );
+    }
+
+    let content = serde_yaml::to_string(&state).context("Failed to serialize state.yaml")?;
+    fs::write(&state_path, content)
+        .with_context(|| format!("Failed to write {}", state_path.display()))?;
+
+    let _ = agent_view::generate_agent_view(&project_root);
+
+    Ok(ArchiveTaskResult {
+        archived_count: archived.len(),
+        archived_task_ids: archived,
+        remaining_active: remaining,
+    })
+}
+
+fn is_archivable_task_status(task_yaml: &YamlValue) -> bool {
+    let status = task_yaml
+        .get("status")
+        .and_then(YamlValue::as_str)
+        .or_else(|| task_yaml.get("phase_status").and_then(YamlValue::as_str))
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    matches!(
+        status.as_str(),
+        "completed" | "complete" | "done" | "cancelled" | "canceled"
+    )
+}
+
+fn set_current_task_state(project_root: &Path, state: &mut YamlValue, task_id: &str) -> Result<()> {
+    let selection = select_current_run(project_root, task_id)?;
+    current::write_current_task_pointer(project_root, task_id)?;
+    current::write_current_run_pointer(project_root, task_id, &selection.run_id)?;
+
+    let run_path = normalize_path(&relative_to_project(project_root, &selection.run_path)?);
+    let _ = start_task::ensure_context_spec(
+        project_root,
+        task_id,
+        &selection.run_id,
+        &selection.phase,
+    )?;
+    let pack =
+        context::build_context_pack(project_root, task_id, &selection.run_id, &selection.phase)
+            .with_context(|| {
+                format!("Failed to build context pack for remaining active task {task_id}")
+            })?;
+
+    set_yaml_string(state, &["current", "mode"], &selection.mode);
+    set_yaml_string(state, &["current", "task_id"], task_id);
+    set_yaml_string(state, &["current", "run_id"], &selection.run_id);
+    set_yaml_string(state, &["current", "phase"], &selection.phase);
+    set_yaml_string(state, &["current", "phase_status"], &selection.phase_status);
+    set_yaml_null(state, &["current", "session_id"]);
+    set_yaml_string(
+        state,
+        &["current", "event_log_path"],
+        &format!("{run_path}/events.jsonl"),
+    );
+    set_yaml_string(
+        state,
+        &["pointers", "task_pointer"],
+        ".vibehub/tasks/current",
+    );
+    set_yaml_string(
+        state,
+        &["pointers", "run_pointer"],
+        &format!(".vibehub/tasks/{task_id}/runs/current"),
+    );
+    set_yaml_string(state, &["context", "current_pack"], &pack.pack_path);
+    set_yaml_string(state, &["context", "current_manifest"], &pack.manifest_path);
+    set_yaml_bool(state, &["context", "stale"], false);
+    set_yaml_string(state, &["context", "generated_by"], "vibehub_backend");
+    let (research_required, research_status) = if selection.mode == "evidence_drive" {
+        (true, "required")
+    } else {
+        (false, "skipped")
+    };
+    set_yaml_bool(state, &["research", "required"], research_required);
+    set_yaml_string(state, &["research", "status"], research_status);
+    set_yaml_string(
+        state,
+        &["last_updated"],
+        &Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+    );
+    set_yaml_string(state, &["resume_hint"], ".vibehub/agent-view/current.md");
+
+    Ok(())
+}
+
+fn select_current_run(project_root: &Path, task_id: &str) -> Result<CurrentRunSelection> {
+    let run_id = current::resolve_current_run(project_root, task_id)
+        .map(|pointer| pointer.run_id)
+        .or_else(|_| infer_first_run_id(project_root, task_id))?;
+    let run_path = project_root
+        .join(".vibehub/tasks")
+        .join(task_id)
+        .join("runs")
+        .join(&run_id);
+    let run_yaml = read_yaml_value(&run_path.join("run.yaml"))?;
+    Ok(CurrentRunSelection {
+        run_id,
+        run_path,
+        mode: yaml_string(&run_yaml, &["mode"]).unwrap_or_else(|| "guided_drive".to_string()),
+        phase: yaml_string(&run_yaml, &["phase"]).unwrap_or_else(|| "align".to_string()),
+        phase_status: yaml_string(&run_yaml, &["phase_status"])
+            .unwrap_or_else(|| "active".to_string()),
+    })
+}
+
+fn infer_first_run_id(project_root: &Path, task_id: &str) -> Result<String> {
+    let runs_dir = project_root
+        .join(".vibehub/tasks")
+        .join(task_id)
+        .join("runs");
+    let mut run_ids = fs::read_dir(&runs_dir)
+        .with_context(|| format!("Failed to read {}", runs_dir.display()))?
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.is_dir() && path.join("run.yaml").is_file() {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(ToString::to_string)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    run_ids.sort();
+    run_ids.into_iter().next().with_context(|| {
+        format!("Cannot select current run for remaining active task {task_id}: no run.yaml found")
+    })
+}
+
+fn clear_current_state(project_root: &Path, state: &mut YamlValue, current_task_id: Option<&str>) {
+    remove_yaml_path(state, &["current", "mode"]);
+    remove_yaml_path(state, &["current", "task_id"]);
+    remove_yaml_path(state, &["current", "run_id"]);
+    remove_yaml_path(state, &["current", "phase"]);
+    remove_yaml_path(state, &["current", "phase_status"]);
+    remove_yaml_path(state, &["current", "session_id"]);
+    remove_yaml_path(state, &["current", "event_log_path"]);
+    remove_yaml_path(state, &["pointers", "task_pointer"]);
+    remove_yaml_path(state, &["pointers", "run_pointer"]);
+    remove_yaml_path(state, &["context", "current_pack"]);
+    remove_yaml_path(state, &["context", "current_manifest"]);
+    set_yaml_bool(state, &["context", "stale"], true);
+    set_yaml_string(
+        state,
+        &["last_updated"],
+        &Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+    );
+    let _ = fs::remove_file(project_root.join(".vibehub/tasks/current"));
+    if let Some(task_id) = current_task_id {
+        let _ = fs::remove_file(
+            project_root
+                .join(".vibehub/tasks")
+                .join(task_id)
+                .join("runs")
+                .join("current"),
+        );
+    }
+}
+
+fn set_yaml_string(value: &mut YamlValue, path: &[&str], next: &str) {
+    set_yaml_value(value, path, YamlValue::String(next.to_string()));
+}
+
+fn set_yaml_bool(value: &mut YamlValue, path: &[&str], next: bool) {
+    set_yaml_value(value, path, YamlValue::Bool(next));
+}
+
+fn set_yaml_null(value: &mut YamlValue, path: &[&str]) {
+    set_yaml_value(value, path, YamlValue::Null);
+}
+
+fn set_yaml_value(value: &mut YamlValue, path: &[&str], next: YamlValue) {
+    if path.is_empty() {
+        *value = next;
+        return;
+    }
+    if !matches!(value, YamlValue::Mapping(_)) {
+        *value = YamlValue::Mapping(Default::default());
+    }
+    let mut current = value;
+    for key in &path[..path.len() - 1] {
+        let mapping = current.as_mapping_mut().expect("mapping value");
+        current = mapping
+            .entry(YamlValue::String((*key).to_string()))
+            .or_insert_with(|| YamlValue::Mapping(Default::default()));
+        if !matches!(current, YamlValue::Mapping(_)) {
+            *current = YamlValue::Mapping(Default::default());
+        }
+    }
+    let mapping = current.as_mapping_mut().expect("mapping value");
+    mapping.insert(YamlValue::String(path[path.len() - 1].to_string()), next);
+}
+
+fn remove_yaml_path(value: &mut YamlValue, path: &[&str]) {
+    if path.is_empty() {
+        return;
+    }
+    let mut current = value;
+    for key in &path[..path.len() - 1] {
+        let Some(next) = current.get_mut(*key) else {
+            return;
+        };
+        current = next;
+    }
+    if let Some(mapping) = current.as_mapping_mut() {
+        mapping.remove(YamlValue::String(path[path.len() - 1].to_string()));
     }
 }
