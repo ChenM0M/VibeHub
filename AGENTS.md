@@ -30,5 +30,12 @@ VibeHub owns project state. Agent output is reported state only.
 
 ## Command Namespace
 
-Use generated `vibehub-*` commands where supported. They describe VibeHub-specific work without replacing built-in agent commands.
+Each VibeHub workflow step has a corresponding `vibehub-*` command (e.g., `vibehub-start`, `vibehub-sync`, `vibehub-continue`, `vibehub-finish`). When the user's request matches a VibeHub workflow step, prefer the matching `vibehub-*` command; it handles VibeHub-specific work without replacing built-in agent commands.
+
+## Key Rules for VibeHub Commands
+
+- **vibehub-start**: Always invoke via CLI (`vibehub start <project> <mode> <title>`). Never manually create `.vibehub/tasks/` directories or edit `state.yaml`.
+- **vibehub-sync**: Treat plain-language requests like "sync", "sycn", "同步", "继续", or "refresh status" as this command.
+- **vibehub-continue**: Check `.vibehub/workflow.yaml` for phase-specific required outputs before starting work.
+- **Output contract**: All commands must write output.md following `.vibehub/adapters/protocol.md` before ending.
 <!-- VIBEHUB:AGENT-INTEGRATION:END -->

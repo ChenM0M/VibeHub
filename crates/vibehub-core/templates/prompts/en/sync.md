@@ -6,4 +6,13 @@ Current run: `{{run_id}}`
 Current phase: `{{phase}}` (`{{phase_status}}`)
 Changed files visible to cockpit: {{changed_files_count}}
 
-Please run VibeHub sync for this project. Inspect hard evidence first, report workspace drift, open questions, validation status, and recommended next action. Do not silently advance canonical state.
+Please run VibeHub sync for this project.
+
+## Steps
+1. Inspect hard evidence: Git status/diff, current task/run/phase pointers, context pack state, latest output.md, handoff.
+2. Check for workspace drift: Git HEAD vs VibeHub recorded HEAD, stale context, dirty files not owned by current task.
+3. Ask the user only for missing intent/progress/future-plan details that cannot be inferred from evidence.
+4. If the user does not answer, record questions as unresolved risks.
+
+## Stop
+Generate sync report at `.vibehub/agent-view/sync.md`. Do not silently advance canonical state. If state is broken, recommend `vibehub-recover`.
