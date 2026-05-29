@@ -30,14 +30,8 @@ sha2 = "0.10"
 async-stream = "0.3"
 futures = "0.3"
 bytes = "1"
+vibehub-core = { path = "../crates/vibehub-core" }
 
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-
-[profile.release]
-panic = "abort"
-codegen-units = 1
-lto = true
-opt-level = "z"
-strip = true

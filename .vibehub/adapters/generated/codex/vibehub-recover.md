@@ -1,14 +1,14 @@
 ---
 name: vibehub-recover
-description: "Build a recovery report after drift, HEAD changes, or interruption. Use for VibeHub workflow step: vibehub-recover."
+description: "Re-align after interruption or inconsistent state. Use for VibeHub workflow step: vibehub-recover."
 ---
 
 # vibehub-recover
 
 中文: 在漂移、HEAD 变化或中断后生成恢复报告。
-English: Build a recovery report after drift, HEAD changes, or interruption.
+English: Re-align after interruption or inconsistent state.
 
-Invocation input: [symptom]
+Invocation input: <project_root> [reason]
 
 Read first:
 - `.vibehub/agent-view/current.md`
@@ -38,3 +38,10 @@ Constraints:
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
 
+Registry contract:
+- name: `vibehub-recover`
+- args: `<project_root> [reason]`
+- returns: `skill_response_schema_v1`
+- callable_by: main-agent
+- side_effects: writes_events, rebuilds_context
+- idempotent: true
