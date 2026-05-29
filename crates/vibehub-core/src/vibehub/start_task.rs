@@ -2,7 +2,7 @@ use crate::vibehub::util::{
     canonical_project_root, normalize_path, relative_to_project, yaml_string,
 };
 use crate::vibehub::{
-    agent_view, context, current, events, init, projection, research, state_migration,
+    agent_view, archive, context, current, events, init, projection, research, state_migration,
 };
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
@@ -124,6 +124,8 @@ pub fn start_task(
     ensure_initialized(&project_root)?;
 
     let _ = research::archive_current_research(&project_root);
+    archive::archive_completed_tasks(&project_root, None)
+        .context("Failed to auto-archive completed tasks before starting a new task")?;
 
     let mode = validate_id("mode", mode.as_deref().unwrap_or(DEFAULT_MODE))?.to_string();
     let phase = phase
@@ -1350,6 +1352,55 @@ mod tests {
         )
         .expect("rebuild context");
         assert_eq!(pack.missing_count, 0);
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn start_task_auto_archives_completed_active_tasks() {
+        let project = temp_project();
+        let first = start_task(&project, Some("Completed task".to_string()), None, None)
+            .expect("first task");
+        fs::write(
+            project.join(&first.task_path).join("task.yaml"),
+            format!(
+                "task_id: {}\ntitle: Completed task\nmode: {}\nphase: review\nphase_status: completed\n",
+                first.task_id, first.mode
+            ),
+        )
+        .expect("complete task yaml");
+        fs::write(
+            project.join(&first.run_path).join("run.yaml"),
+            format!(
+                "task_id: {}\nrun_id: {}\nmode: {}\nphase: review\nphase_status: completed\n",
+                first.task_id, first.run_id, first.mode
+            ),
+        )
+        .expect("complete run yaml");
+
+        let second =
+            start_task(&project, Some("Fresh task".to_string()), None, None).expect("second task");
+
+        let state_content =
+            fs::read_to_string(project.join(".vibehub/state.yaml")).expect("read state");
+        let state: Value = serde_yaml::from_str(&state_content).expect("parse state");
+        assert_eq!(
+            active_task_ids_from_value(&state),
+            vec![second.task_id.clone()]
+        );
+        assert_eq!(
+            state
+                .get("current")
+                .and_then(|current| current.get("task_id"))
+                .and_then(Value::as_str),
+            Some(second.task_id.as_str())
+        );
+        assert!(!project
+            .join(&first.run_path)
+            .parent()
+            .unwrap()
+            .join("current")
+            .exists());
 
         fs::remove_dir_all(project).expect("cleanup");
     }

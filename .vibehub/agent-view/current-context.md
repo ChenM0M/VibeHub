@@ -2,11 +2,11 @@
 
 ## Context Pack
 
-- Path: .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/review.md
+- Path: .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/review.md
 
 ## Manifest
 
-- Path: .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/review.manifest.yaml
+- Path: .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/review.manifest.yaml
 - Status: available
 
 ## Important Project Files
