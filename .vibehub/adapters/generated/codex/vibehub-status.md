@@ -1,14 +1,14 @@
 ---
 name: vibehub-status
-description: "Read current task, phase, context, Git, and handoff status. Use for VibeHub workflow step: vibehub-status."
+description: "Read projected task, run, and capability status. Use for VibeHub workflow step: vibehub-status."
 ---
 
 # vibehub-status
 
 中文: 读取当前任务、阶段、上下文、Git 和 handoff 状态。
-English: Read current task, phase, context, Git, and handoff status.
+English: Read projected task, run, and capability status.
 
-Invocation input: 
+Invocation input: <project_root>
 
 Read first:
 - `.vibehub/agent-view/current.md`
@@ -38,3 +38,10 @@ Constraints:
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
 
+Registry contract:
+- name: `vibehub-status`
+- args: `<project_root>`
+- returns: `skill_response_schema_v1`
+- callable_by: main-agent
+- side_effects: none
+- idempotent: true

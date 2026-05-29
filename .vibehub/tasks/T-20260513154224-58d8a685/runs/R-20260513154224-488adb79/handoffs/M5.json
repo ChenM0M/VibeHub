@@ -1,0 +1,145 @@
+{
+  "step_id": "M5",
+  "status": "done",
+  "completed_at": "2026-05-28T06:15:07Z",
+  "task_id": "T-20260513154224-58d8a685",
+  "run_id": "R-20260513154224-488adb79",
+  "source_step": "M4b",
+  "source_handoff": ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M4b.json",
+  "code_paths": [
+    "src-tauri/src/vibehub/schema_check.rs",
+    "src-tauri/src/vibehub/fitness.rs",
+    "src-tauri/src/vibehub/policy.rs",
+    "src-tauri/src/vibehub/events.rs",
+    "src-tauri/src/vibehub/capability.rs",
+    "src-tauri/src/vibehub/projection.rs",
+    "src-tauri/src/vibehub/state_migration.rs",
+    "src-tauri/src/vibehub/init.rs",
+    "src-tauri/src/commands.rs",
+    "src-tauri/src/main.rs"
+  ],
+  "doc_paths": [
+    ".vibehub/policy.yaml",
+    "docs/vibehub-capability-implementation-steps-2026-05-27.md"
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "M5-AC-1",
+      "description": "Eight v1 capability output schemas reject missing required fields and return structured errors with hints.",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked vibehub::schema_check passed; rejects_missing_required_fields_for_all_v1_capabilities covers all v1 capabilities and returns schema.required.missing.",
+      "status": "pass"
+    },
+    {
+      "id": "M5-AC-2",
+      "description": "Invalid capability writes emit SchemaValidationFailed and use three-part schema error codes.",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked vibehub::schema_check passed; invalid_write_appends_schema_failure_event asserts SchemaValidationFailed is written.",
+      "status": "pass"
+    },
+    {
+      "id": "M5-AC-3",
+      "description": "policy.yaml is present and consumed by WIP/open-risk gates, pack oversize events, schema strict mode, loop detection, and subagent timeout metrics.",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked vibehub::policy and cargo test --locked passed; capability.rs reads policy for WIP/open-risk and pack thresholds, schema_check.rs reads schema.strict, events.rs reads loop threshold, fitness.rs tracks subagent timeouts.",
+      "status": "pass"
+    },
+    {
+      "id": "M5-AC-4",
+      "description": "state.yaml.metrics projection contains the nine baseline metric fields.",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked vibehub::fitness passed; computes_all_m5_metric_buckets covers tasks, capabilities, sync, pack, schema, events, and subagent buckets.",
+      "status": "pass"
+    },
+    {
+      "id": "M5-AC-5",
+      "description": "events.jsonl corruption is recovered by truncating to the last complete event and writing EventLogCorrupted.",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked vibehub::events passed; corrupted_event_log_truncates_and_writes_recovery_event asserts invalid JSON is removed and EventLogCorrupted is appended.",
+      "status": "pass"
+    },
+    {
+      "id": "M5-AC-6",
+      "description": "Event-frequency loop detection emits LoopWarning for rapid claim/release cycles.",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked vibehub::events passed; rapid_claim_release_cycle_appends_loop_warning asserts LoopWarning event output.",
+      "status": "pass"
+    }
+  ],
+  "validation": [
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked vibehub::schema_check",
+      "result": "4 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked vibehub::fitness",
+      "result": "1 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked vibehub::events",
+      "result": "13 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked vibehub::policy",
+      "result": "3 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked vibehub::state_migration",
+      "result": "4 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo fmt --all -- --check",
+      "result": "passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked",
+      "result": "166 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "npm run build",
+      "result": "passed"
+    }
+  ],
+  "notes": [
+    {
+      "evidence_label": "agent_reported",
+      "summary": "Schema validation is enforced through the new capability output write entrypoint; markdown handoff/output files remain governed by the existing protocol section checks."
+    },
+    {
+      "evidence_label": "agent_reported",
+      "summary": "Event log recovery truncates malformed suffixes and appends EventLogCorrupted to the canonical events.jsonl rather than writing a pending stub."
+    },
+    {
+      "evidence_label": "agent_reported",
+      "summary": "state.yaml schema version is bumped to 5 for metrics, but this agent session did not directly migrate the live .vibehub/state.yaml."
+    }
+  ],
+  "risks": [
+    {
+      "evidence_label": "hard_observed",
+      "summary": ".vibehub/agent-view/handoff.md remains stale relative to active output because the generator was not run in this pass."
+    },
+    {
+      "evidence_label": "hard_observed",
+      "summary": "Worktree contains many pre-existing dirty files outside the M5 scope, including canonical .vibehub/state.yaml and deleted task.md."
+    },
+    {
+      "evidence_label": "hard_observed",
+      "summary": "cargo test still emits existing gateway dead-code warnings; npm build emits existing browserslist/baseline staleness and chunk-size warnings."
+    }
+  ],
+  "next_step": "M6a",
+  "next_session_should": [
+    "Run VibeHub sync or backend agent-view generation before relying on .vibehub/agent-view/handoff.md.",
+    "Start M6a multi-task state model and task switching only after the M5 output is validated by VibeHub.",
+    "Consider whether old phase-output markdown should later get a schema adapter or remain protocol-section validated."
+  ]
+}

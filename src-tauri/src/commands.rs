@@ -16,21 +16,36 @@ use crate::{
         AgentAdapterSyncResult, AgentTool,
     },
     vibehub::agent_view::{self, AgentViewGenerateResult},
+    vibehub::capability::{self, CapabilityClaimResult, CapabilityGateReport},
     vibehub::cockpit::{self, VibehubFileReadResult},
     vibehub::context::{self, ContextPackBuildResult},
+    vibehub::debug_dump::{self, DebugDumpOptions, DebugDumpResult},
     vibehub::drift::{self, WorkspaceDriftReport},
+    vibehub::events::{self, PendingReplayResult},
     vibehub::handoff::{self, HandoffBuildResult},
     vibehub::init::{self, VibehubInitOptions, VibehubInitResult},
     vibehub::journal::{self, JournalAppendResult},
     vibehub::knowledge::{self, KnowledgeAppendResult},
+    vibehub::neighbors::{self, TaskNeighborReport},
     vibehub::notes::{self, ProjectDigest},
     vibehub::overview::{self, CockpitOverview},
+    vibehub::ownership::{
+        self, FileOwnershipClassificationReport, FileOwnershipRecordRequest,
+        FileOwnershipRecordResult,
+    },
     vibehub::phase::{self, PhaseAdvanceResult, PhaseSetResult, PhaseValidationResult},
+    vibehub::project_structure,
+    vibehub::prompts::{self, PromptRenderResult, PromptTemplateOption},
     vibehub::research::{self, ResearchPackArchiveResult, ResearchPackBuildResult},
     vibehub::review::{self, ReviewEvidenceGenerateResult},
-    vibehub::start_task::{self, VibehubStartTaskResult},
+    vibehub::schema_check::{self, CapabilityOutputWriteResult, CapabilityValidationReport},
+    vibehub::start_task::{
+        self, VibehubStartTaskIntakeRequest, VibehubStartTaskIntakeResult, VibehubStartTaskResult,
+    },
     vibehub::state_migration::{self, StateMigrationReport},
     vibehub::sync::{self, SyncReport},
+    vibehub::task_switch::{self, TaskSwitchResult},
+    vibehub::workflow::{self, WorkflowExplainResult},
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -38,10 +53,40 @@ use std::fs;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::process::Command;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Emitter, State};
 
 pub struct AppState {
     pub storage: Mutex<Storage>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VibehubStatusChangedEvent {
+    project_path: String,
+    source: String,
+}
+
+fn emit_vibehub_status_changed(app: &tauri::AppHandle, project_path: &str, source: &str) {
+    let _ = app.emit(
+        "vibehub://status-changed",
+        VibehubStatusChangedEvent {
+            project_path: project_path.to_string(),
+            source: source.to_string(),
+        },
+    );
+}
+
+fn emit_on_success<T>(
+    app: &tauri::AppHandle,
+    project_path: &str,
+    source: &str,
+    result: anyhow::Result<T>,
+) -> Result<T, String> {
+    result
+        .map(|value| {
+            emit_vibehub_status_changed(app, project_path, source);
+            value
+        })
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -962,20 +1007,46 @@ pub async fn check_for_updates() -> Result<updater::UpdateCheckResult, String> {
 
 #[tauri::command]
 pub async fn vibehub_init(
+    app: tauri::AppHandle,
     project_path: String,
     options: Option<VibehubInitOptions>,
 ) -> Result<VibehubInitResult, String> {
-    init::init_project_with_options(project_path, options).map_err(|e| e.to_string())
+    emit_on_success(
+        &app,
+        &project_path,
+        "vibehub_init",
+        init::init_project_with_options(project_path.clone(), options),
+    )
 }
 
 #[tauri::command]
 pub async fn vibehub_start_task(
+    app: tauri::AppHandle,
     project_path: String,
     title: Option<String>,
     mode: Option<String>,
     phase: Option<String>,
 ) -> Result<VibehubStartTaskResult, String> {
-    start_task::start_task(project_path, title, mode, phase).map_err(|e| e.to_string())
+    emit_on_success(
+        &app,
+        &project_path,
+        "vibehub_start_task",
+        start_task::start_task(project_path.clone(), title, mode, phase),
+    )
+}
+
+#[tauri::command]
+pub async fn vibehub_start_task_intake(
+    app: tauri::AppHandle,
+    project_path: String,
+    request: VibehubStartTaskIntakeRequest,
+) -> Result<VibehubStartTaskIntakeResult, String> {
+    emit_on_success(
+        &app,
+        &project_path,
+        "vibehub_start_task_intake",
+        start_task::start_task_intake(project_path.clone(), request),
+    )
 }
 
 #[tauri::command]
@@ -1028,12 +1099,18 @@ pub async fn vibehub_update_agent_adapter_config(
 
 #[tauri::command]
 pub async fn vibehub_sync_agent_adapters(
+    app: tauri::AppHandle,
     project_path: String,
     tools: Option<Vec<AgentTool>>,
     dry_run: Option<bool>,
 ) -> Result<AgentAdapterSyncResult, String> {
-    agent_adapter::sync_agent_adapters(project_path, tools, dry_run.unwrap_or(false))
-        .map_err(|e| e.to_string())
+    let dry_run = dry_run.unwrap_or(false);
+    let result = agent_adapter::sync_agent_adapters(project_path.clone(), tools, dry_run)
+        .map_err(|e| e.to_string());
+    if result.is_ok() && !dry_run {
+        emit_vibehub_status_changed(&app, &project_path, "vibehub_sync_agent_adapters");
+    }
+    result
 }
 
 // ─── Workspace drift / sync ───────────────────────────────────────────────
@@ -1066,6 +1143,102 @@ pub async fn vibehub_sync_workspace(
     locale: Option<String>,
 ) -> Result<SyncReport, String> {
     sync::sync_workspace_with_locale(project_path, locale.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_workflow_explain(
+    project_path: String,
+) -> Result<WorkflowExplainResult, String> {
+    workflow::explain_workflow(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_switch_task(
+    project_path: String,
+    task_id: String,
+) -> Result<TaskSwitchResult, String> {
+    task_switch::switch_task(project_path, task_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_classify_file_ownership(
+    project_path: String,
+    changed_files: Option<Vec<String>>,
+) -> Result<FileOwnershipClassificationReport, String> {
+    ownership::classify_workspace_ownership(project_path, changed_files).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_record_file_ownership(
+    project_path: String,
+    request: FileOwnershipRecordRequest,
+) -> Result<FileOwnershipRecordResult, String> {
+    ownership::record_file_ownership(project_path, request).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_query_task_neighbors(
+    project_path: String,
+) -> Result<TaskNeighborReport, String> {
+    neighbors::query_current_task_neighbors(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_claim_capability(
+    project_path: String,
+    capability: String,
+) -> Result<CapabilityClaimResult, String> {
+    capability::claim_capability(project_path, capability).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_evaluate_capability_gates(
+    project_path: String,
+    requested_capability: Option<String>,
+) -> Result<CapabilityGateReport, String> {
+    capability::evaluate_capability_gates(project_path, requested_capability.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_validate_capability_output(
+    project_path: String,
+    capability: String,
+    output: serde_json::Value,
+) -> Result<CapabilityValidationReport, String> {
+    schema_check::validate_capability_output_for_project(project_path, capability, &output)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_write_capability_output(
+    project_path: String,
+    capability: String,
+    output: serde_json::Value,
+) -> Result<CapabilityOutputWriteResult, String> {
+    schema_check::write_current_capability_output(project_path, capability, output)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_replay_pending_events(
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<PendingReplayResult, String> {
+    emit_on_success(
+        &app,
+        &project_path,
+        "vibehub_replay_pending_events",
+        events::replay_pending_events(project_path.clone()),
+    )
+}
+
+#[tauri::command]
+pub async fn vibehub_debug_dump(
+    project_path: String,
+    options: Option<DebugDumpOptions>,
+) -> Result<DebugDumpResult, String> {
+    debug_dump::create_debug_dump(project_path, options).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1102,6 +1275,19 @@ pub async fn vibehub_read_overview(project_path: String) -> Result<CockpitOvervi
 #[tauri::command]
 pub async fn vibehub_read_project_digest(project_path: String) -> Result<ProjectDigest, String> {
     notes::read_project_digest(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_list_prompt_templates() -> Result<Vec<PromptTemplateOption>, String> {
+    Ok(prompts::list_prompt_templates())
+}
+
+#[tauri::command]
+pub async fn vibehub_render_prompt(
+    project_path: String,
+    template_id: String,
+) -> Result<PromptRenderResult, String> {
+    prompts::render_prompt(project_path, &template_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1184,6 +1370,52 @@ pub async fn vibehub_read_vibehub_file(
     cockpit::read_vibehub_file(project_path, relative_path).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn vibehub_reveal_vibehub_file(
+    project_path: String,
+    relative_path: String,
+) -> Result<(), String> {
+    let (_, path, _) = cockpit::resolve_vibehub_file_path(project_path, relative_path)
+        .map_err(|e| e.to_string())?;
+    let target = path.parent().unwrap_or(&path).to_string_lossy().to_string();
+    open_in_explorer(target).await
+}
+
+#[tauri::command]
+pub async fn vibehub_open_vibehub_file(
+    project_path: String,
+    relative_path: String,
+) -> Result<(), String> {
+    let (_, path, _) = cockpit::resolve_vibehub_file_path(project_path, relative_path)
+        .map_err(|e| e.to_string())?;
+    open_in_explorer(path.to_string_lossy().to_string()).await
+}
+
+#[tauri::command]
+pub async fn vibehub_reveal_project_file(
+    project_path: String,
+    relative_path: String,
+) -> Result<(), String> {
+    let (_, path, _) = project_structure::resolve_project_file_path(project_path, relative_path)
+        .map_err(|e| e.to_string())?;
+    let target = if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(&path).to_path_buf()
+    };
+    open_in_explorer(target.to_string_lossy().to_string()).await
+}
+
+#[tauri::command]
+pub async fn vibehub_open_project_file(
+    project_path: String,
+    relative_path: String,
+) -> Result<(), String> {
+    let (_, path, _) = project_structure::resolve_project_file_path(project_path, relative_path)
+        .map_err(|e| e.to_string())?;
+    open_in_explorer(path.to_string_lossy().to_string()).await
+}
+
 // ─── State schema migration ───────────────────────────────────────────────
 //
 // `vibehub_dry_run_state_migration` reports what fields would be added or
@@ -1204,11 +1436,13 @@ pub async fn vibehub_migrate_state(project_path: String) -> Result<StateMigratio
 
 #[tauri::command]
 pub async fn vibehub_set_project_locale(
+    app: tauri::AppHandle,
     project_path: String,
     locale: String,
 ) -> Result<String, String> {
     crate::vibehub::locale::persist_project_locale(std::path::Path::new(&project_path), &locale)
         .map_err(|e| e.to_string())?;
+    emit_vibehub_status_changed(&app, &project_path, "vibehub_set_project_locale");
     Ok(locale)
 }
 

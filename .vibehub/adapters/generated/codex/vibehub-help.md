@@ -8,7 +8,7 @@ description: "Show VibeHub command index. Use for VibeHub workflow step: vibehub
 中文: 显示 VibeHub 命令索引。
 English: Show VibeHub command index.
 
-Invocation input: 
+Invocation input:
 
 Read first:
 - `.vibehub/agent-view/current.md`
@@ -37,4 +37,3 @@ Constraints:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
-

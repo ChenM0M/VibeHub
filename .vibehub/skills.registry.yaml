@@ -1,0 +1,207 @@
+schema_version: "1.0"
+return_schema: skill_response_schema_v1
+skills:
+  - name: vibehub-init
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: mode, type: "enum[yolo_drive,guided_drive,evidence_drive]", required: false }
+      - { name: agents, type: "array[string]", required: false }
+      - { name: output_language, type: string, required: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_vibehub_state, may_write_adapter_files]
+    callable_by: [main-agent]
+    idempotent: true
+    description: "Initialize VibeHub for a git project."
+
+  - name: vibehub-status
+    args:
+      - { name: project_root, type: string, required: true }
+    returns: skill_response_schema_v1
+    side_effects: []
+    callable_by: [main-agent]
+    idempotent: true
+    description: "Read projected task, run, and capability status."
+
+  - name: vibehub-sync
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: mode, type: "enum[auto,quick,deep,rebuild]", required: false, default: auto }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, rebuilds_context, may_write_adapter_files]
+    callable_by: [main-agent, sub-agent]
+    idempotent: true
+    description: "Reconcile external workspace state with VibeHub."
+
+  - name: vibehub-start
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: title, type: string, required: false }
+      - { name: intent, type: string, required: false }
+      - { name: mode, type: "enum[yolo_drive,guided_drive,evidence_drive]", required: false }
+      - { name: intake, type: "array[task_draft]", required: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, writes_task_state, builds_context_pack]
+    callable_by: [main-agent]
+    idempotent: false
+    description: "Create one or more VibeHub tasks; split multi-intent user requests into separate task drafts when requirements are independently deliverable."
+
+  - name: vibehub-claim
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: capability, type: string, required: true }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, builds_context_pack]
+    callable_by: [main-agent]
+    idempotent: false
+    description: "Enter a capability if gates allow it."
+
+  - name: vibehub-record
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: capability, type: string, required: true }
+      - { name: output, type: object, required: true }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, writes_output]
+    callable_by: [main-agent]
+    idempotent: false
+    description: "Persist schema-checked capability output."
+
+  - name: vibehub-release
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: capability, type: string, required: true }
+      - { name: outcome, type: "enum[completed,paused,failed,cancelled]", required: true }
+      - { name: task_pack_dirty, type: boolean, required: false, default: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, writes_handoff, may_rebuild_task_pack]
+    callable_by: [main-agent]
+    idempotent: false
+    description: "Release an active capability and produce handoff state."
+
+  - name: vibehub-handoff
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: capability, type: string, required: false }
+      - { name: summary, type: string, required: true }
+      - { name: next_steps, type: "array[string]", required: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, writes_handoff]
+    callable_by: [main-agent, sub-agent]
+    idempotent: false
+    description: "Write a durable handoff."
+
+  - name: vibehub-checkpoint
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: note, type: string, required: false }
+      - { name: changed_files, type: "array[string]", required: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, writes_output]
+    callable_by: [main-agent]
+    idempotent: false
+    description: "Record progress, commands, risks, and next actions."
+
+  - name: vibehub-journal
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: decision, type: string, required: true }
+      - { name: rationale, type: string, required: false }
+      - { name: refs, type: "array[string]", required: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, writes_notes]
+    callable_by: [main-agent, sub-agent]
+    idempotent: false
+    description: "Record durable decisions and rationale."
+
+  - name: vibehub-finish
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: task_id, type: string, required: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, updates_projection]
+    callable_by: [main-agent]
+    idempotent: false
+    description: "Close a task after task_finishable gate passes."
+
+  - name: vibehub-recover
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: reason, type: string, required: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, rebuilds_context]
+    callable_by: [main-agent]
+    idempotent: true
+    description: "Re-align after interruption or inconsistent state."
+
+  - name: vibehub-cancel
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: task_id, type: string, required: true }
+      - { name: reason, type: string, required: true }
+    returns: skill_response_schema_v1
+    side_effects: [writes_events, updates_projection]
+    callable_by: [main-agent]
+    idempotent: false
+    description: "Cancel a task while preserving history."
+
+  - name: vibehub-events
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: run_id, type: string, required: false }
+      - { name: since, type: string, required: false }
+    returns: skill_response_schema_v1
+    side_effects: []
+    callable_by: [sub-agent]
+    idempotent: true
+    description: "Read event stream slices."
+
+  - name: vibehub-build-pack
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: kind, type: "enum[task,capability]", required: true }
+      - { name: capability, type: string, required: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_context_pack, writes_events]
+    callable_by: [sub-agent]
+    idempotent: true
+    description: "Build task or capability Context Pack."
+
+  - name: vibehub-validate-schema
+    args:
+      - { name: schema_ref, type: string, required: true }
+      - { name: project_root, type: string, required: false }
+      - { name: capability, type: string, required: false }
+      - { name: payload, type: object, required: true }
+    returns: skill_response_schema_v1
+    side_effects: []
+    callable_by: [sub-agent]
+    idempotent: true
+    description: "Validate a payload against a built-in or project custom capability schema."
+
+  - name: vibehub-configure-custom-capability
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: capability, type: string, required: true }
+      - { name: required_fields, type: "array[string]", required: true }
+      - { name: optional_fields, type: "array[string]", required: false, default: [] }
+      - { name: produces, type: "array[string]", required: false, default: [] }
+      - { name: consumes, type: "array[string]", required: false, default: [] }
+      - { name: gates, type: "array[string]", required: false, default: [] }
+      - { name: parallel_safe, type: boolean, required: false, default: false }
+    returns: skill_response_schema_v1
+    side_effects: [writes_workflow, validates_schema]
+    callable_by: [main-agent]
+    idempotent: false
+    description: "Add or update a project custom_capabilities workflow entry and validate that it does not conflict with built-ins."
+
+  - name: vibehub-debug-dump
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: include_events, type: boolean, required: false, default: true }
+      - { name: include_packs, type: boolean, required: false, default: true }
+      - { name: redact_secrets, type: boolean, required: false, default: true }
+    returns: skill_response_schema_v1
+    side_effects: [writes_debug_artifact]
+    callable_by: [main-agent]
+    idempotent: false
+    description: "Export a redacted diagnostic bundle for cross-tool and cross-machine debugging."
