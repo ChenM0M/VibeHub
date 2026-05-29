@@ -145,10 +145,10 @@ jobs:
           set -euo pipefail
 
           VERSION="${RELEASE_TAG#v}"
-          APP_PATH="$(find src-tauri/target -path '*/release/bundle/macos/VibeHub.app' -type d | head -n 1)"
+          APP_PATH="$(find target src-tauri/target -path '*/release/bundle/macos/VibeHub.app' -type d 2>/dev/null | head -n 1)"
           if [ -z "$APP_PATH" ]; then
-            echo "VibeHub.app was not found under src-tauri/target."
-            find src-tauri/target -path '*/release/bundle/macos' -type d -print
+            echo "VibeHub.app was not found under target/ or src-tauri/target/."
+            find target src-tauri/target -path '*/release/bundle/macos' -type d -print 2>/dev/null || true
             exit 1
           fi
 
@@ -171,7 +171,11 @@ jobs:
       - name: Prepare portable executable (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
-          Copy-Item "src-tauri\target\release\vibehub.exe" "VibeHub-Portable-Windows.exe"
+          if (Test-Path "target\release\vibehub.exe") {
+            Copy-Item "target\release\vibehub.exe" "VibeHub-Portable-Windows.exe"
+          } else {
+            Copy-Item "src-tauri\target\release\vibehub.exe" "VibeHub-Portable-Windows.exe"
+          }
         shell: pwsh
 
       - name: Attach portable executable (Windows)
@@ -187,7 +191,11 @@ jobs:
       - name: Prepare portable executable (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
-          cp src-tauri/target/release/vibehub VibeHub-Portable-Linux
+          if [ -f "target/release/vibehub" ]; then
+            cp target/release/vibehub VibeHub-Portable-Linux
+          else
+            cp src-tauri/target/release/vibehub VibeHub-Portable-Linux
+          fi
           chmod +x VibeHub-Portable-Linux
           tar -czvf VibeHub-Portable-Linux.tar.gz VibeHub-Portable-Linux
 
