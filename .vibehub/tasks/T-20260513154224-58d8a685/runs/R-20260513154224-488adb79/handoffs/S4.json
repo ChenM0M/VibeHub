@@ -1,0 +1,44 @@
+{
+  "step_id": "S4",
+  "status": "done",
+  "completed_at": "2026-05-28T01:13:28Z",
+  "task_id": "T-20260513154224-58d8a685",
+  "run_id": "R-20260513154224-488adb79",
+  "algorithm_doc_path": "docs/vibehub-sync-condition-algorithm.md",
+  "acceptance_criteria": [
+    {
+      "id": "S4-AC-1",
+      "description": "Delta t、Delta head、Delta overlap 三个信号公式严格无歧义。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-sync-condition-algorithm.md:35",
+      "status": "pass"
+    },
+    {
+      "id": "S4-AC-2",
+      "description": "决策树覆盖 8 个场景且互不冲突。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-sync-condition-algorithm.md:148 and :162",
+      "status": "pass"
+    },
+    {
+      "id": "S4-AC-3",
+      "description": "阈值默认值与可配置项分离，并标明 policy.yaml 字段。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-sync-condition-algorithm.md:82",
+      "status": "pass"
+    },
+    {
+      "id": "S4-AC-4",
+      "description": "与基线 §6.3 的完整快照不变量一致。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-sync-condition-algorithm.md:15 and :176",
+      "status": "pass"
+    }
+  ],
+  "next_step": "S5",
+  "next_session_should": [
+    "读取 S4 handoff 和基线 §4 旅程 C、§8、§26。",
+    "创建 docs/vibehub-file-ownership.md。",
+    "设计 task ↔ files 多对多时间窗、自动归属算法、冲突处理和 agent 询问模板。"
+  ]
+}

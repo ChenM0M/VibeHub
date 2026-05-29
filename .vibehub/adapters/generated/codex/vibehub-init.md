@@ -1,14 +1,14 @@
 ---
 name: vibehub-init
-description: "Check whether this project is connected to VibeHub. Use for VibeHub workflow step: vibehub-init."
+description: "Initialize VibeHub for a git project. Use for VibeHub workflow step: vibehub-init."
 ---
 
 # vibehub-init
 
 中文: 检查项目是否已连接 VibeHub。
-English: Check whether this project is connected to VibeHub.
+English: Initialize VibeHub for a git project.
 
-Invocation input: 
+Invocation input: <project_root> [mode] [agents] [output_language]
 
 Read first:
 - `.vibehub/agent-view/current.md`
@@ -38,3 +38,10 @@ Constraints:
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
 
+Registry contract:
+- name: `vibehub-init`
+- args: `<project_root> [mode] [agents] [output_language]`
+- returns: `skill_response_schema_v1`
+- callable_by: main-agent
+- side_effects: writes_vibehub_state, may_write_adapter_files
+- idempotent: true

@@ -1,0 +1,47 @@
+{
+  "step": "M8a",
+  "title": "Custom capability declarations, schema registration, and workflow extension",
+  "generated_at": "2026-05-29T04:24:19Z",
+  "evidence_level": "mixed",
+  "completed": [
+    "user_confirmed: User asked to continue M8a.",
+    "hard_observed: Added workflow.yaml custom_capabilities parsing to src-tauri/src/vibehub/workflow.rs.",
+    "hard_observed: Workflow explain summaries now include custom capability definitions and mark them with custom=true.",
+    "hard_observed: Workflow validation rejects custom capability names that conflict with built-in capability names or existing capability definitions.",
+    "hard_observed: Capability gate evaluation, claim flow, and completed-capability artifact projection now resolve definitions from both built-in capabilities and custom_capabilities.",
+    "hard_observed: Project-scoped schema validation reads workflow.yaml and validates custom capability required_fields and optional_fields.",
+    "hard_observed: Custom required fields ending in [] are validated as non-empty arrays.",
+    "hard_observed: Tauri validate-capability-output command now uses the supplied project_path instead of ignoring it, so custom schemas are available.",
+    "hard_observed: Context packs now include a Capability Output Schema section derived from workflow definitions, including custom capabilities.",
+    "hard_observed: Updated docs/vibehub-capability-implementation-steps-2026-05-27.md to Draft v3.2, marked M8a complete, checked M8a DoD, and recorded M8 as partially complete.",
+    "hard_observed: Added regression tests for custom workflow parsing/explain output, conflict validation, custom schema validation, custom gate/claim/context pack flow, and unchanged built-in behavior."
+  ],
+  "files_changed": [
+    "src-tauri/src/vibehub/workflow.rs",
+    "src-tauri/src/vibehub/capability.rs",
+    "src-tauri/src/vibehub/schema_check.rs",
+    "src-tauri/src/vibehub/context.rs",
+    "src-tauri/src/commands.rs",
+    "docs/vibehub-capability-implementation-steps-2026-05-27.md",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M8a.json",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/outputs/output.md"
+  ],
+  "tests_run": [
+    "hard_observed: cargo fmt passed.",
+    "hard_observed: cargo test --locked vibehub::workflow passed: 14 passed.",
+    "hard_observed: cargo test --locked vibehub::schema_check passed: 5 passed.",
+    "hard_observed: cargo test --locked vibehub::capability passed: 7 passed.",
+    "hard_observed: cargo test --locked vibehub::context passed: 7 passed.",
+    "hard_observed: cargo test --locked vibehub:: passed: 184 passed.",
+    "hard_observed: git diff --check passed for M8a-touched files.",
+    "hard_observed: cargo run -- handoff /Users/chenm0m/LocalRepo/VibeHub passed with complete=true and no missing required sections.",
+    "hard_observed: cargo run -- validate /Users/chenm0m/LocalRepo/VibeHub passed with phase research, status completed, and no missing outputs."
+  ],
+  "risks": [
+    "hard_observed: Workspace still contains broad pre-existing dirty/untracked state from earlier VibeHub steps, including .vibehub/state.yaml; this session did not directly edit canonical state.",
+    "hard_observed: .vibehub/agent-view/current-context.md still reports the research pack as required and absent at .vibehub/research/current/research-pack.md.",
+    "agent_reported: M8a validates custom fields generically by presence/non-null and [] non-empty-array shape; richer per-field JSON Schema types remain M8b documentation/end-to-end scope.",
+    "agent_reported: The YAML array marker form should be written as a quoted field name such as \"findings[]\" inside flow-style YAML lists."
+  ],
+  "next_step": "Run VibeHub validation for M8a, then continue M8b for end-to-end custom capability docs and scenario testing."
+}

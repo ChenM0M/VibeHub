@@ -1,0 +1,42 @@
+id: plan-context-R-20260513154224-488adb79-v1
+schema_version: 1
+phase: plan
+task_id: T-20260513154224-58d8a685
+run_id: R-20260513154224-488adb79
+generated_at: 2026-05-29T09:01:25Z
+source_commit: 678a5e4
+budget:
+  max_file_size_bytes: 262144
+  max_tokens: 12000
+  estimated_tokens: 406
+included:
+- path: .vibehub/tasks/T-20260513154224-58d8a685/task.yaml
+  reason: active task metadata and goal
+  required: true
+  confidence: high
+  bytes: 223
+  estimated_tokens: 56
+- path: .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/run.yaml
+  reason: active run metadata
+  required: true
+  confidence: high
+  bytes: 241
+  estimated_tokens: 61
+- path: .vibehub/rules/hard-rules.md
+  reason: protocol hard rules
+  required: true
+  confidence: high
+  bytes: 1605
+  estimated_tokens: 289
+missing: []
+excluded: []
+quality:
+  has_goal: true
+  has_plan: false
+  has_relevant_code: false
+  has_test_hint: false
+  stale_sources: []
+  flags: []
+observation:
+  generated_by: vibehub_backend
+  evidence_grade: hard_observed

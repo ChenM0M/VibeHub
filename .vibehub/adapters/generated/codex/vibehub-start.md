@@ -1,14 +1,14 @@
 ---
 name: vibehub-start
-description: "Draft a VibeHub task from the user request. Use for VibeHub workflow step: vibehub-start."
+description: "Create one or more VibeHub tasks; split multi-intent user requests into separate task drafts when requirements are independently deliverable. Use for VibeHub workflow step: vibehub-start."
 ---
 
 # vibehub-start
 
 中文: 根据用户请求草拟 VibeHub 任务。
-English: Draft a VibeHub task from the user request.
+English: Create one or more VibeHub tasks; split multi-intent user requests into separate task drafts when requirements are independently deliverable.
 
-Invocation input: <request>
+Invocation input: <project_root> [title] [intent] [mode] [intake]
 
 Read first:
 - `.vibehub/agent-view/current.md`
@@ -38,3 +38,10 @@ Constraints:
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
 
+Registry contract:
+- name: `vibehub-start`
+- args: `<project_root> [title] [intent] [mode] [intake]`
+- returns: `skill_response_schema_v1`
+- callable_by: main-agent
+- side_effects: writes_events, writes_task_state, builds_context_pack
+- idempotent: false

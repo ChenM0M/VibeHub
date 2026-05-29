@@ -1,0 +1,40 @@
+{
+  "step": "M6d",
+  "title": "Multi-intent task intake implementation",
+  "generated_at": "2026-05-28T13:32:03Z",
+  "evidence_level": "mixed",
+  "completed": [
+    "user_confirmed: User asked to start from M6d and continue through M7a.",
+    "hard_observed: Added structured multi-intent intake request/result types and a `start_task_intake` backend API.",
+    "hard_observed: High-confidence intake creates multiple tasks, writes task metadata, appends TaskIntakePlanned, preserves active task order, and sets current task to the first execution item.",
+    "hard_observed: Medium-confidence intake returns confirmation_required without writing tasks.",
+    "hard_observed: Low-confidence intake creates one task and records not_split_reason.",
+    "hard_observed: status exposes active_tasks and agent-view/current.md renders Intake Queue.",
+    "hard_observed: Implementation steps documentation was updated to Draft v2.7 and now marks M6d complete."
+  ],
+  "files_changed": [
+    "src-tauri/src/vibehub/start_task.rs",
+    "src-tauri/src/vibehub/events.rs",
+    "src-tauri/src/vibehub/status.rs",
+    "src-tauri/src/vibehub/agent_view.rs",
+    "src-tauri/src/commands.rs",
+    "src-tauri/src/main.rs",
+    "src/types/index.ts",
+    "src/services/tauri.ts",
+    "docs/vibehub-capability-implementation-steps-2026-05-27.md",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M6d.json",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/outputs/output.md"
+  ],
+  "tests_run": [
+    "hard_observed: cargo test --locked start_task -- --nocapture passed, including 2-task/3-task/medium/low intake scenarios.",
+    "hard_observed: cargo test --locked passed: 182 passed, 0 failed."
+  ],
+  "not_yet_done": [
+    "agent_reported: Semantic interpretation of arbitrary natural-language intent remains an agent responsibility; backend persists the split transaction once drafts are supplied."
+  ],
+  "risks": [
+    "hard_observed: Workspace has substantial pre-existing dirty state.",
+    "agent_reported: Future adapter generator work should keep generated command docs aligned with the new intake API."
+  ],
+  "next_step": "Proceed to VibeHub validation or continue with M7b after M7a is accepted."
+}

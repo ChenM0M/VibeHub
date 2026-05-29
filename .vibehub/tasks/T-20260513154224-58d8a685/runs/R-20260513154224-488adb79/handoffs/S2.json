@@ -1,0 +1,67 @@
+{
+  "step_id": "S2",
+  "status": "done",
+  "completed_at": "2026-05-28T01:09:16Z",
+  "task_id": "T-20260513154224-58d8a685",
+  "run_id": "R-20260513154224-488adb79",
+  "schema_doc_path": "docs/vibehub-capability-schema-v1.md",
+  "capabilities": {
+    "align_lite": { "fields": 3, "section": "docs/vibehub-capability-schema-v1.md:138" },
+    "align": { "fields": 6, "section": "docs/vibehub-capability-schema-v1.md:189" },
+    "research": { "fields": 6, "section": "docs/vibehub-capability-schema-v1.md:249" },
+    "plan": { "fields": 5, "section": "docs/vibehub-capability-schema-v1.md:333" },
+    "implement": { "fields": 4, "section": "docs/vibehub-capability-schema-v1.md:409" },
+    "validate": { "fields": 5, "section": "docs/vibehub-capability-schema-v1.md:475" },
+    "review_lite": { "fields": 3, "section": "docs/vibehub-capability-schema-v1.md:555" },
+    "review": { "fields": 6, "section": "docs/vibehub-capability-schema-v1.md:618" }
+  },
+  "acceptance_criteria": [
+    {
+      "id": "S2-AC-1",
+      "description": "每个 capability 都有字段表、JSON Schema、Rust struct、合规样例、违规样例。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "rg sections in docs/vibehub-capability-schema-v1.md returned all 8 capability sections with required subsections",
+      "status": "pass"
+    },
+    {
+      "id": "S2-AC-2",
+      "description": "错误码使用基线 §25.1 的三段式体系。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-capability-schema-v1.md:698",
+      "status": "pass"
+    },
+    {
+      "id": "S2-AC-3",
+      "description": "占位符常量集中定义，无重复 / 无冲突。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-capability-schema-v1.md:84",
+      "status": "pass"
+    },
+    {
+      "id": "S2-AC-4",
+      "description": "schema_version 与 migration 策略明确，破坏性变更必须升 major。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-capability-schema-v1.md:98",
+      "status": "pass"
+    },
+    {
+      "id": "S2-AC-5",
+      "description": "与基线 §17.5 required_output_schema 字段对齐。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "docs/vibehub-capability-schema-v1.md:21",
+      "status": "pass"
+    }
+  ],
+  "open_items": [
+    {
+      "evidence_label": "agent_reported",
+      "summary": "JSON Schema snippets are implementation-ready drafts but not yet compiled into Rust validator code; that belongs to M5."
+    }
+  ],
+  "next_step": "S3",
+  "next_session_should": [
+    "读取 S2 handoff 和基线 §10、§22、§27。",
+    "创建 docs/vibehub-skills-registry-v1.md。",
+    "生成 .vibehub/skills.registry.yaml 样板，并用 YAML parser 验证。"
+  ]
+}
