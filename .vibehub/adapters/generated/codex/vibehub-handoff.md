@@ -1,14 +1,14 @@
 ---
 name: vibehub-handoff
-description: "Build session handoff notes. Use for VibeHub workflow step: vibehub-handoff."
+description: "Write a durable handoff. Use for VibeHub workflow step: vibehub-handoff."
 ---
 
 # vibehub-handoff
 
 中文: 生成 session handoff notes。
-English: Build session handoff notes.
+English: Write a durable handoff.
 
-Invocation input: [note]
+Invocation input: <project_root> [capability] <summary> [next_steps]
 
 Read first:
 - `.vibehub/agent-view/current.md`
@@ -38,3 +38,10 @@ Constraints:
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
 
+Registry contract:
+- name: `vibehub-handoff`
+- args: `<project_root> [capability] <summary> [next_steps]`
+- returns: `skill_response_schema_v1`
+- callable_by: main-agent, sub-agent
+- side_effects: writes_events, writes_handoff
+- idempotent: false

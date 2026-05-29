@@ -7,9 +7,12 @@ import {
     AgentTool,
     AppConfig,
     ContextPackBuildResult,
+    DebugDumpOptions,
+    DebugDumpResult,
     PhaseAdvanceResult,
     PhaseSetResult,
     PhaseValidationResult,
+    PendingReplayResult,
     ResearchPackArchiveResult,
     ResearchPackBuildResult,
     Project,
@@ -18,9 +21,14 @@ import {
     Tag,
     VibehubCockpitOverview,
     VibehubFileReadResult,
+    VibehubPromptRenderResult,
+    VibehubPromptTemplateId,
+    VibehubPromptTemplateOption,
     VibehubProjectDigest,
     VibehubJournalAppendResult,
     VibehubKnowledgeAppendResult,
+    VibehubStartTaskIntakeRequest,
+    VibehubStartTaskIntakeResult,
     VibehubStartTaskResult,
     VibehubStateMigrationReport,
     VibehubSyncReport,
@@ -176,6 +184,13 @@ export const tauriApi = {
         return await invoke('vibehub_start_task', { projectPath, title, mode, phase });
     },
 
+    vibehubStartTaskIntake: async (
+        projectPath: string,
+        request: VibehubStartTaskIntakeRequest
+    ): Promise<VibehubStartTaskIntakeResult> => {
+        return await invoke('vibehub_start_task_intake', { projectPath, request });
+    },
+
     vibehubGenerateAgentView: async (projectPath: string): Promise<{
         current_path: string;
         current_context_path: string;
@@ -263,6 +278,17 @@ export const tauriApi = {
         return await invoke('vibehub_build_handoff', { projectPath });
     },
 
+    vibehubReplayPendingEvents: async (projectPath: string): Promise<PendingReplayResult> => {
+        return await invoke('vibehub_replay_pending_events', { projectPath });
+    },
+
+    vibehubDebugDump: async (
+        projectPath: string,
+        options?: DebugDumpOptions
+    ): Promise<DebugDumpResult> => {
+        return await invoke('vibehub_debug_dump', { projectPath, options: options || null });
+    },
+
     vibehubGenerateReviewEvidence: async (projectPath: string): Promise<{
         task_id: string;
         run_id: string;
@@ -291,6 +317,17 @@ export const tauriApi = {
     // overview pull.
     vibehubReadProjectDigest: async (projectPath: string): Promise<VibehubProjectDigest> => {
         return await invoke('vibehub_read_project_digest', { projectPath });
+    },
+
+    vibehubListPromptTemplates: async (): Promise<VibehubPromptTemplateOption[]> => {
+        return await invoke('vibehub_list_prompt_templates');
+    },
+
+    vibehubRenderPrompt: async (
+        projectPath: string,
+        templateId: VibehubPromptTemplateId
+    ): Promise<VibehubPromptRenderResult> => {
+        return await invoke('vibehub_render_prompt', { projectPath, templateId });
     },
 
     vibehubAppendJournalEntry: async (
@@ -350,6 +387,34 @@ export const tauriApi = {
         relativePath: string,
     ): Promise<VibehubFileReadResult> => {
         return await invoke('vibehub_read_vibehub_file', { projectPath, relativePath });
+    },
+
+    vibehubRevealVibehubFile: async (
+        projectPath: string,
+        relativePath: string,
+    ): Promise<void> => {
+        return await invoke('vibehub_reveal_vibehub_file', { projectPath, relativePath });
+    },
+
+    vibehubOpenVibehubFile: async (
+        projectPath: string,
+        relativePath: string,
+    ): Promise<void> => {
+        return await invoke('vibehub_open_vibehub_file', { projectPath, relativePath });
+    },
+
+    vibehubRevealProjectFile: async (
+        projectPath: string,
+        relativePath: string,
+    ): Promise<void> => {
+        return await invoke('vibehub_reveal_project_file', { projectPath, relativePath });
+    },
+
+    vibehubOpenProjectFile: async (
+        projectPath: string,
+        relativePath: string,
+    ): Promise<void> => {
+        return await invoke('vibehub_open_project_file', { projectPath, relativePath });
     },
 
     // Schema-version migration. `dryRun` reports the diff WITHOUT writing.

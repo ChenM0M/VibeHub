@@ -37,4 +37,3 @@ Constraints:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
-

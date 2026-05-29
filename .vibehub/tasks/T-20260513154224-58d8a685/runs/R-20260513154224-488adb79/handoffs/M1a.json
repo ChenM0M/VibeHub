@@ -1,0 +1,77 @@
+{
+  "step_id": "M1a",
+  "status": "done",
+  "completed_at": "2026-05-28T01:20:30Z",
+  "task_id": "T-20260513154224-58d8a685",
+  "run_id": "R-20260513154224-488adb79",
+  "module_path": "src-tauri/src/vibehub/events.rs",
+  "tests_added": 8,
+  "acceptance_criteria": [
+    {
+      "id": "M1a-AC-1",
+      "description": "cargo test 全绿；新增测试至少 8 个。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "cargo test --locked => 122 passed; events targeted test => 8 passed",
+      "status": "pass"
+    },
+    {
+      "id": "M1a-AC-2",
+      "description": "不引入依赖 Tauri runtime 的代码。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "rg -n \"tauri::|tauri\\b\" src-tauri/src/vibehub/events.rs => no matches",
+      "status": "pass"
+    },
+    {
+      "id": "M1a-AC-3",
+      "description": "写入路径单写者由 Mutex 保证。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "src-tauri/src/vibehub/events.rs:162",
+      "status": "pass"
+    },
+    {
+      "id": "M1a-AC-4",
+      "description": "writer 在 .vibehub/.pending/ 兜底路径有 stub。",
+      "evidence_label": "hard_observed",
+      "evidence_ref": "src-tauri/src/vibehub/events.rs:386 and corrupted_event_log_writes_pending_stub_and_leaves_original test",
+      "status": "pass"
+    }
+  ],
+  "validation": [
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo fmt --all -- --check",
+      "result": "passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked vibehub::events",
+      "result": "8 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "cargo test --locked",
+      "result": "122 passed"
+    },
+    {
+      "evidence_label": "hard_observed",
+      "command": "npm run build",
+      "result": "passed with existing bundle-size/browser-data warnings"
+    }
+  ],
+  "notes": [
+    {
+      "evidence_label": "agent_reported",
+      "summary": "Existing append_run_event and append_current_run_event APIs were preserved by writing Legacy events through the new EventWriter."
+    },
+    {
+      "evidence_label": "agent_reported",
+      "summary": "Added PhaseProjected and SyncReport compatibility events because implementation steps and baseline §6 mention them for M1b, while baseline §20.2 does not list them explicitly."
+    }
+  ],
+  "next_step": "M1b",
+  "next_session_should": [
+    "Inspect phase.rs, handoff.rs, sync.rs, start_task.rs, drift.rs, review.rs call sites that still call append_run_event with Legacy payloads.",
+    "Replace or augment relevant call sites with structured CapabilityClaimed, CapabilityReleased, PhaseProjected, HandoffWritten, SyncStarted, SyncCompleted, EvidenceAdded, DiffObserved events.",
+    "Create docs/vibehub-m1-dual-write-coverage.md and add ensure_consistency() warning-only self-check."
+  ]
+}
