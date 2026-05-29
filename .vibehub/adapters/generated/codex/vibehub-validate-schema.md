@@ -10,7 +10,7 @@ English: Validate a payload against a built-in or project custom capability sche
 
 Invocation input: <schema_ref> [project_root] [capability] <payload>
 
-Read first:
+Read first / 先读:
 - `.vibehub/agent-view/current.md`
 - `.vibehub/agent-view/current-context.md`
 - `.vibehub/agent-view/handoff.md`
@@ -31,21 +31,13 @@ Arguments:
 - `capability`: optional, type=string
 - `payload`: required, type=object
 
-Task:
+Task / 任务:
 Use the VibeHub CLI or app command surface for `vibehub-validate-schema` when available. Keep changes scoped to the active task and follow the shared output contract.
 
-Output requirements:
-- write the active run phase output before ending work:
-  `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`
-- changed files, if any
-- files read
-- commands run
-- tests run, or reason not run
-- evidence labels: `hard_observed`, `agent_reported`, `inferred`, `user_confirmed`
-- unresolved risks
-- handoff notes or recommended VibeHub action
+Output / 输出:
+Write the phase output following the contract in `.vibehub/adapters/protocol.md`. Required sections (bilingual): Completed / 已完成, Not Yet Done / 未完成, Key Decisions Made / 关键决策, Files Changed / 变更文件, Files Reportedly Read / 已读文件, Commands Run / 执行命令, Tests Run / 测试, Context Still Needed / 仍需上下文, Warnings / 警告, Next Session Should / 后续应做。Use evidence labels. **Output in Chinese (中文) unless user requests otherwise.**
 
-Constraints:
-- Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.
+Constraints / 约束:
+- Do not edit `.vibehub/state.yaml`. / 不要编辑。
 - Do not claim runtime observation unless a runtime adapter captured it.
-- Adapter writes are the only INV-6 UI-write exception and are limited to generated adapter configuration files.
+- Adapter writes are the only INV-6 UI-write exception.
