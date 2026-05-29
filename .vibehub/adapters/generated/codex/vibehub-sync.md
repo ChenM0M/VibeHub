@@ -1,14 +1,14 @@
 ---
 name: vibehub-sync
-description: "Reconcile external workspace changes with VibeHub state. Use for VibeHub workflow step: vibehub-sync."
+description: "Reconcile external workspace state with VibeHub. Use for VibeHub workflow step: vibehub-sync."
 ---
 
 # vibehub-sync
 
 中文: 将外部工作区变更与 VibeHub 状态对齐。
-English: Reconcile external workspace changes with VibeHub state.
+English: Reconcile external workspace state with VibeHub.
 
-Invocation input: [scope]
+Invocation input: <project_root> [mode]
 
 Read first:
 - `.vibehub/agent-view/current.md`
@@ -44,3 +44,10 @@ Constraints:
 - Do not claim runtime observation unless a runtime adapter captured it.
 - If state is stale or drifted, report it and recommend VibeHub sync/recover instead of silently advancing state.
 
+Registry contract:
+- name: `vibehub-sync`
+- args: `<project_root> [mode]`
+- returns: `skill_response_schema_v1`
+- callable_by: main-agent, sub-agent
+- side_effects: writes_events, rebuilds_context, may_write_adapter_files
+- idempotent: true

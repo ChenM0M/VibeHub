@@ -1,0 +1,17 @@
+[package]
+name = "vibehub-cli"
+version = "2.0.0-pre.13"
+description = "Command line interface for VibeHub Core"
+authors = ["VibeHub"]
+license = "Apache-2.0"
+edition = "2021"
+
+[[bin]]
+name = "vibehub"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+vibehub-core = { path = "../vibehub-core" }

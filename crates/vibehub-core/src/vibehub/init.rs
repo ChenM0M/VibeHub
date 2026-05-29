@@ -1,0 +1,858 @@
+use crate::vibehub::agent_adapter::{self, AgentTool};
+use crate::vibehub::util::{canonical_project_root, normalize_path, yaml_string};
+use anyhow::{anyhow, Context, Result};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct VibehubInitResult {
+    pub project_root: String,
+    pub vibehub_root: String,
+    pub created_files: Vec<String>,
+    pub skipped_existing_files: Vec<String>,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct VibehubInitOptions {
+    #[serde(default)]
+    pub agent_tools: Option<Vec<AgentTool>>,
+    /// Per spec §18.5 (manual_by_default): adapter sync should NOT run on every
+    /// init/start_task. Set this to `Some(true)` only when the user explicitly
+    /// opts in (e.g. first-run prompt or "Sync Adapters" button).
+    #[serde(default)]
+    pub sync_adapters: Option<bool>,
+}
+
+struct InitFile {
+    path: &'static str,
+    content: String,
+}
+
+pub fn init_project(project_path: impl AsRef<Path>) -> Result<VibehubInitResult> {
+    init_project_with_options(project_path, None)
+}
+
+pub fn init_project_with_options(
+    project_path: impl AsRef<Path>,
+    options: Option<VibehubInitOptions>,
+) -> Result<VibehubInitResult> {
+    let project_root = canonical_project_root(project_path.as_ref())?;
+
+    let project_name = project_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("project");
+    let vibehub_root = project_root.join(".vibehub");
+
+    if vibehub_root.exists() && !vibehub_root.is_dir() {
+        return Err(anyhow!(
+            ".vibehub exists but is not a directory: {}",
+            vibehub_root.display()
+        ));
+    }
+
+    fs::create_dir_all(&vibehub_root)
+        .with_context(|| "Failed to create .vibehub directory".to_string())?;
+
+    for dir in init_dirs() {
+        fs::create_dir_all(vibehub_root.join(dir))
+            .with_context(|| format!("Failed to create .vibehub directory: {}", dir))?;
+    }
+
+    let mut created_files = Vec::new();
+    let mut skipped_existing_files = Vec::new();
+
+    for file in init_files(project_name) {
+        let target = vibehub_root.join(file.path);
+        let relative = format_vibehub_path(&project_root, &target);
+
+        if target.exists() {
+            skipped_existing_files.push(relative);
+            continue;
+        }
+
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create parent directory for {}", relative))?;
+        }
+
+        fs::write(&target, file.content)
+            .with_context(|| format!("Failed to write {}", relative))?;
+        created_files.push(relative);
+    }
+
+    let config_path = vibehub_root.join("adapters/config.yaml");
+    let config_relative = format_vibehub_path(&project_root, &config_path);
+    let config_existed = config_path.exists();
+    let opts = options.unwrap_or_default();
+    let agent_tools = opts
+        .agent_tools
+        .clone()
+        .unwrap_or_else(agent_adapter::default_tools);
+    agent_adapter::ensure_adapter_config(&project_root, agent_tools.clone())?;
+    if config_existed {
+        skipped_existing_files.push(config_relative);
+    } else {
+        created_files.push(config_relative);
+    }
+
+    // Spec §18.5 manual_by_default: only run the adapter sync when the caller
+    // explicitly asks for it (first-run prompt, AI Instructions panel button,
+    // or `vibehub_sync_agent_adapters` command). Plain init/start_task must
+    // NOT silently rewrite AGENTS.md / CLAUDE.md / opencode.json.
+    let mut errors: Vec<String> = Vec::new();
+    if opts.sync_adapters.unwrap_or(false) {
+        let adapter_sync =
+            agent_adapter::sync_agent_adapters(&project_root, Some(agent_tools), false)?;
+        created_files.extend(adapter_sync.created_files);
+        created_files.extend(adapter_sync.updated_files);
+        skipped_existing_files.extend(adapter_sync.skipped_files);
+        errors.extend(
+            adapter_sync
+                .conflict_files
+                .into_iter()
+                .map(|conflict| format!("{}: {}", conflict.path, conflict.reason)),
+        );
+    }
+
+    Ok(VibehubInitResult {
+        project_root: normalize_path(&project_root),
+        vibehub_root: normalize_path(&vibehub_root),
+        created_files,
+        skipped_existing_files,
+        errors,
+    })
+}
+
+fn init_dirs() -> &'static [&'static str] {
+    &[
+        "agent-view",
+        "rules",
+        "tasks",
+        "research/current",
+        "research/archive",
+        "journal",
+        "notes",
+        "adapters/templates",
+        "adapters/generated",
+    ]
+}
+
+fn init_files(project_name: &str) -> Vec<InitFile> {
+    vec![
+        InitFile {
+            path: "project.yaml",
+            content: project_yaml(project_name),
+        },
+        InitFile {
+            path: "state.yaml",
+            content: state_yaml(project_name),
+        },
+        InitFile {
+            path: "workflow.yaml",
+            content: WORKFLOW_YAML.to_string(),
+        },
+        InitFile {
+            path: "policy.yaml",
+            content: crate::vibehub::policy::default_policy_yaml().to_string(),
+        },
+        InitFile {
+            path: "housekeeping.yaml",
+            content: HOUSEKEEPING_YAML.to_string(),
+        },
+        InitFile {
+            path: "agent-view/current.md",
+            content: AGENT_CURRENT_MD.to_string(),
+        },
+        InitFile {
+            path: "agent-view/current-context.md",
+            content: AGENT_CURRENT_CONTEXT_MD.to_string(),
+        },
+        InitFile {
+            path: "agent-view/handoff.md",
+            content: AGENT_HANDOFF_MD.to_string(),
+        },
+        InitFile {
+            path: "rules/phase-rules.yaml",
+            content: PHASE_RULES_YAML.to_string(),
+        },
+        InitFile {
+            path: "rules/research-triggers.yaml",
+            content: RESEARCH_TRIGGERS_YAML.to_string(),
+        },
+        InitFile {
+            path: "rules/autonomy.yaml",
+            content: AUTONOMY_YAML.to_string(),
+        },
+        InitFile {
+            path: "rules/review.yaml",
+            content: REVIEW_YAML.to_string(),
+        },
+        InitFile {
+            path: "rules/loop-detection.yaml",
+            content: LOOP_DETECTION_YAML.to_string(),
+        },
+        InitFile {
+            path: "rules/hard-rules.md",
+            content: HARD_RULES_MD.to_string(),
+        },
+        InitFile {
+            path: "rules/preferences.yaml",
+            content: PREFERENCES_YAML.to_string(),
+        },
+        InitFile {
+            path: "journal/index.md",
+            content: JOURNAL_INDEX_MD.to_string(),
+        },
+        InitFile {
+            path: "notes/summary.md",
+            content: NOTES_SUMMARY_MD.to_string(),
+        },
+        InitFile {
+            path: "notes/status.md",
+            content: NOTES_STATUS_MD.to_string(),
+        },
+        InitFile {
+            path: "adapters/sync-state.yaml",
+            content: ADAPTER_SYNC_STATE_YAML.to_string(),
+        },
+    ]
+}
+
+fn project_yaml(project_name: &str) -> String {
+    let project_name = yaml_string(project_name);
+    format!(
+        r#"schema_version: {schema}
+kind: vibehub_project
+name: {project_name}
+root: "."
+protocol_version: "2.0-r10"
+initialized_by: vibehub
+"#,
+        schema = crate::vibehub::state_migration::CURRENT_SCHEMA_VERSION
+    )
+}
+
+fn state_yaml(project_name: &str) -> String {
+    let project_name = yaml_string(project_name);
+    format!(
+        r#"schema_version: {schema}
+
+project:
+  id: {project_name}
+  name: {project_name}
+  root: "."
+
+current:
+  mode: guided_drive
+  task_id: null
+  run_id: null
+  session_id: null
+  event_log_path: null
+  phase: null
+  phase_status: idle
+
+pointers:
+  task_pointer: ".vibehub/tasks/current"
+  run_pointer: null
+
+tasks:
+  active: []
+
+flow:
+  align_lite: pending
+  align: pending
+  research: pending
+  plan: pending
+  implement: pending
+  review_lite: pending
+  review: pending
+
+derived:
+  current:
+    phase: true
+    phase_status: true
+  flow: true
+  trace_path: ".vibehub/derivation_trace.yaml"
+
+observability:
+  level: best_effort
+  runtime_adapter: none
+  current_observation_sources:
+    - vibehub_generated
+
+autonomy:
+  level: high
+
+research:
+  required: false
+  status: not_started
+  scope: active_task
+  skipped_reason: null
+
+context:
+  current_pack: null
+  current_manifest: null
+  stale: false
+  generated_by: vibehub_backend
+
+agent_report:
+  status: not_started
+  validation_status: pending
+
+handoff:
+  current: ".vibehub/agent-view/handoff.md"
+  status: empty
+
+git:
+  baseline_commit: null
+  last_seen_head: null
+  dirty: null
+  changed_files_count: 0
+
+loop_detection:
+  status: normal
+  warnings: []
+
+metrics:
+  tasks:
+    active_count: 0
+  capabilities:
+    active_count: 0
+  sync:
+    avg_duration_ms: 0.0
+    last_mode: null
+  pack:
+    avg_size_tokens: 0.0
+    oversize_count: 0
+  schema:
+    validation_failure_rate: 0.0
+  events:
+    write_per_minute: 0.0
+  subagent:
+    timeout_count: 0
+
+last_updated: null
+resume_hint: "No active task. Create or select a task before starting a run."
+"#,
+        schema = crate::vibehub::state_migration::CURRENT_SCHEMA_VERSION
+    )
+}
+
+const WORKFLOW_YAML: &str = r#"schema_version: 2
+name: vibehub-default-4plus1
+philosophy: observable_yolo
+
+modes:
+  yolo_drive:
+    phases:
+      - align_lite
+      - implement
+      - review_lite
+    capabilities:
+      - align_lite
+      - implement
+      - review_lite
+
+  guided_drive:
+    phases:
+      - align
+      - plan
+      - implement
+      - review
+    capabilities:
+      - align
+      - plan
+      - implement
+      - review
+
+  evidence_drive:
+    phases:
+      - align
+      - research
+      - plan
+      - implement
+      - review
+    capabilities:
+      - align
+      - research
+      - plan
+      - implement
+      - review
+
+default_mode: guided_drive
+
+phase_order:
+  - align_lite
+  - align
+  - research
+  - plan
+  - implement
+  - review_lite
+  - review
+
+capabilities:
+  align_lite:
+    required_fields: [intent, scope]
+    optional_fields: [references]
+    produces: [alignment_summary]
+    consumes: []
+    parallel_safe: false
+  align:
+    required_fields: [intent, scope, success_criteria, non_goals]
+    optional_fields: [stakeholders, references]
+    produces: [alignment_summary]
+    consumes: []
+    parallel_safe: false
+  research:
+    required_fields: [sources, risks, open_questions]
+    optional_fields: [hypothesis, references]
+    produces: [research_output]
+    consumes: []
+    parallel_safe: true
+  plan:
+    required_fields: [steps, validation_plan, affected_files]
+    optional_fields: [risks, references]
+    produces: [implementation_plan]
+    consumes: [alignment_summary, research_output]
+    gates: [plan_ready]
+    parallel_safe: true
+  implement:
+    required_fields: [diff_summary, changed_files, commands_run]
+    optional_fields: [rollback_plan, references]
+    produces: [diff]
+    consumes: [implementation_plan]
+    gates: [implement_ready]
+    parallel_safe: false
+  validate:
+    required_fields: [test_results, lint_results, status]
+    optional_fields: [coverage, perf_notes]
+    produces: [validation_result]
+    consumes: [diff]
+    gates: [validate_ready]
+    parallel_safe: true
+  review_lite:
+    required_fields: [summary, concerns, gate_pass]
+    optional_fields: [references]
+    produces: [review_summary]
+    consumes: [diff]
+    gates: [review_ready]
+    parallel_safe: true
+  review:
+    required_fields: [summary, concerns, gate_pass, risk_review]
+    optional_fields: [references, related_threads]
+    produces: [review_summary]
+    consumes: [diff, validation_result]
+    gates: [review_ready]
+    parallel_safe: true
+
+gates:
+  plan_ready:
+    any:
+      - has_artifact: alignment_summary
+      - explicit_request: plan
+  implement_ready:
+    all:
+      - any:
+          - has_artifact: implementation_plan
+          - explicit_request: implement
+      - not:
+          open_risk: blocking
+  validate_ready:
+    all:
+      - has_artifact: diff
+      - not:
+          unsynced_handoff: true
+  review_ready:
+    any:
+      - has_artifact: diff
+      - all:
+          - explicit_request: review
+          - not:
+              any:
+                - open_risk: blocking
+                - unsynced_handoff: true
+"#;
+
+const HOUSEKEEPING_YAML: &str = r#"retention:
+  max_active_tasks: 1
+  max_runs_kept_per_task: 5
+  max_sessions_kept_per_run: 10
+  max_context_pack_versions_per_phase: 3
+  max_research_archives_kept: 10
+
+archive:
+  strategy: compress_and_gitignore
+  archive_dir: ".vibehub/archive"
+  compress_after_days: 30
+  archive_completed_runs_after_days: 14
+  archive_old_sessions_after_days: 14
+
+agent_visible_state:
+  include:
+    - ".vibehub/agent-view/"
+    - ".vibehub/state.yaml"
+    - ".vibehub/workflow.yaml"
+    - ".vibehub/rules/hard-rules.md"
+    - ".vibehub/research/current/research-pack.md"
+  exclude:
+    - ".vibehub/archive/"
+    - ".vibehub/tasks/*/runs/*/sessions/*/transcript.md"
+    - ".vibehub/tasks/*/runs/*/events.jsonl"
+    - ".vibehub/adapters/generated/"
+"#;
+
+const PHASE_RULES_YAML: &str = r#"align_lite:
+  required_outputs:
+    - intent
+  optional_outputs:
+    - acceptance_criteria
+    - affected_area
+    - autonomy_level
+
+align:
+  required_outputs:
+    - intent
+    - acceptance_criteria
+    - autonomy_level
+  optional_outputs:
+    - non_goals
+    - research_decision
+    - risk_level
+
+research:
+  optional: true
+  required_outputs:
+    - source_log
+    - findings
+    - research_pack
+
+plan:
+  required_outputs:
+    - implementation_plan
+    - validation_plan
+    - context_plan
+
+implement:
+  required_outputs:
+    - changed_files
+    - implementation_summary
+    - unresolved_questions
+  optional_outputs:
+    - files_reportedly_read
+    - commands_reportedly_run
+    - handoff_notes
+
+review_lite:
+  required_outputs:
+    - diff_summary
+    - verdict
+  optional_outputs:
+    - test_results_or_reason
+    - changed_files
+    - risk_note
+
+review:
+  required_outputs:
+    - diff_summary
+    - test_results_or_reason
+    - verdict
+    - risks
+    - evidence_grades
+"#;
+
+const RESEARCH_TRIGGERS_YAML: &str = r#"strong:
+  - external_framework_or_plugin
+  - unfamiliar_sdk_or_api
+  - migration
+  - security_sensitive
+  - performance_sensitive
+  - architecture_refactor
+  - compatibility_work
+  - repeated_failure
+  - user_requests_research
+
+recommended:
+  - ambiguous_requirement
+  - unknown_best_practice
+  - mature_reference_available
+  - model_context_confidence_low
+
+skip_by_default:
+  - typo
+  - simple_copy_change
+  - small_css_change
+  - mechanical_rename
+  - obvious_local_fix
+"#;
+
+const AUTONOMY_YAML: &str = r#"default_level: high
+
+agent_may:
+  - inspect_relevant_source_files
+  - propose_plan
+  - implement_within_task_scope
+  - self_review
+  - request_more_context
+  - suggest_state_changes
+
+agent_must_not:
+  - update_canonical_state_directly
+  - mark_state_yaml_completed
+  - claim_runtime_observation_without_adapter
+  - bypass_review_evidence
+
+vibehub_owns:
+  - canonical_state_transitions
+  - validation
+  - context_pack_generation
+  - handoff_generation
+"#;
+
+const REVIEW_YAML: &str = r#"evidence_grades:
+  - hard_observed
+  - agent_reported
+  - inferred
+  - user_confirmed
+
+required_sections:
+  - diff_summary
+  - test_results_or_reason
+  - verdict
+  - risks
+  - evidence_grades
+
+review_lite:
+  required_sections:
+    - diff_summary
+    - verdict
+    - test_results_or_reason
+"#;
+
+const LOOP_DETECTION_YAML: &str = r#"status: enabled
+
+signals:
+  repeated_file_edits:
+    threshold: 8
+    evidence_grade: inferred
+  repeated_review_failures:
+    threshold: 2
+    evidence_grade: inferred
+  diff_scope_growth:
+    ratio_threshold: 2.0
+    evidence_grade: inferred
+
+actions:
+  - warn_user
+  - recommend_review
+  - recommend_rebuild_context
+"#;
+
+const PREFERENCES_YAML: &str = r#"schema_version: 1
+preferences: {}
+"#;
+
+const ADAPTER_SYNC_STATE_YAML: &str = r#"schema_version: 1
+status: placeholder
+generated:
+  files: []
+conflicts: []
+last_sync: null
+"#;
+
+const AGENT_CURRENT_MD: &str = r#"# VibeHub Current State
+
+No active task has been created yet.
+
+## Observability Note
+P0/P1 observability is best-effort.
+Report files read, commands run, decisions made, and unresolved risks.
+
+## What you should read
+1. .vibehub/agent-view/current-context.md
+2. .vibehub/agent-view/handoff.md
+3. .vibehub/rules/hard-rules.md
+
+## Stop condition
+Do not mark state.yaml completed.
+Return to VibeHub for validation.
+"#;
+
+const AGENT_CURRENT_CONTEXT_MD: &str = r#"# Current Context
+
+## Context Pack
+Not generated yet.
+
+## Manifest
+Not generated yet.
+
+## Important Project Files
+No task-specific files selected yet.
+
+## Research Pack
+Not required yet.
+
+## Known Missing Context
+No active task has been created yet.
+"#;
+
+const AGENT_HANDOFF_MD: &str = r#"# Handoff
+
+## Completed
+No active session yet.
+
+## Not Yet Done
+- Create or select a task.
+- Build a context pack for the first active phase.
+
+## Key Decisions
+None yet.
+
+## Context Still Needed
+Task-specific context has not been selected yet.
+
+## Warnings
+P0/P1 observability is best-effort and does not include runtime interception.
+
+## Next Session Should
+Start from .vibehub/agent-view/current.md after VibeHub creates an active task.
+"#;
+
+const HARD_RULES_MD: &str = r#"# VibeHub Hard Rules
+
+- Agent output is reported state only.
+- Only VibeHub code updates canonical state transitions.
+- Do not mark state.yaml completed from agent output.
+- Distinguish hard_observed, agent_reported, inferred, and user_confirmed evidence.
+- P0/P1 observability is best-effort and must not claim full runtime observation.
+- Agents should read agent-view files and the current context pack, not the whole .vibehub directory.
+- Keep changes scoped to the active task.
+"#;
+
+const JOURNAL_INDEX_MD: &str = r#"# VibeHub Journal
+
+No journal entries yet.
+"#;
+
+/// Agent-writable, project-level one-sentence summary surfaced in the cockpit
+/// dashboard header. VibeHub seeds this template at init and NEVER overwrites
+/// it afterwards. Agents update it (typically via `vibehub-checkpoint` /
+/// `vibehub-finish`) when project scope shifts.
+const NOTES_SUMMARY_MD: &str = r#"# Project Summary
+
+<!-- One sentence describing what this project is and its current focus.
+     Agents (not VibeHub) update this line when project scope shifts. -->
+
+_No project summary yet. Run `vibehub-finish` (or have an agent write here) to
+fill in one sentence about the project goal._
+"#;
+
+/// Agent-writable, project-level one-sentence status surfaced in the cockpit
+/// dashboard. VibeHub seeds this template at init and NEVER overwrites it
+/// afterwards. Agents update it at the end of each session.
+const NOTES_STATUS_MD: &str = r#"# Project Status
+
+<!-- One sentence describing where the project stands right now: what is in
+     progress, what is blocked, and what the next concrete step is.
+     Agents (not VibeHub) update this line at the end of each session. -->
+
+_No project status yet. Run `vibehub-checkpoint` (or have an agent write here)
+to record where the project currently stands._
+"#;
+
+fn format_vibehub_path(project_root: &Path, target: &Path) -> String {
+    target
+        .strip_prefix(project_root)
+        .map(normalize_path)
+        .unwrap_or_else(|_| normalize_path(target))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    fn temp_project() -> PathBuf {
+        let path = std::env::temp_dir().join(format!("vibehub-init-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&path).expect("create temp project");
+        path
+    }
+
+    #[test]
+    fn creates_minimal_vibehub_structure() {
+        let project = temp_project();
+        let result = init_project(&project).expect("init project");
+
+        assert!(project.join(".vibehub/project.yaml").exists());
+        assert!(project.join(".vibehub/state.yaml").exists());
+        assert!(project.join(".vibehub/workflow.yaml").exists());
+        assert!(project.join(".vibehub/housekeeping.yaml").exists());
+        assert!(project.join(".vibehub/agent-view/current.md").exists());
+        assert!(project.join(".vibehub/rules/hard-rules.md").exists());
+        assert!(project.join(".vibehub/tasks").is_dir());
+        assert!(project.join(".vibehub/research/current").is_dir());
+        assert!(project.join(".vibehub/research/archive").is_dir());
+        assert!(project.join(".vibehub/journal/index.md").exists());
+        assert!(project.join(".vibehub/adapters/sync-state.yaml").exists());
+        assert!(project.join(".vibehub/adapters/templates").is_dir());
+        assert!(project.join(".vibehub/adapters/generated").is_dir());
+        assert!(result.errors.is_empty());
+        assert!(result
+            .created_files
+            .contains(&".vibehub/project.yaml".to_string()));
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn skips_existing_files_without_overwriting() {
+        let project = temp_project();
+        let vibehub = project.join(".vibehub");
+        fs::create_dir_all(&vibehub).expect("create .vibehub");
+        fs::write(vibehub.join("state.yaml"), "custom: true\n").expect("write custom state");
+
+        let result = init_project(&project).expect("init project");
+        let state = fs::read_to_string(vibehub.join("state.yaml")).expect("read state");
+
+        assert_eq!(state, "custom: true\n");
+        assert!(result
+            .skipped_existing_files
+            .contains(&".vibehub/state.yaml".to_string()));
+        assert!(!result
+            .created_files
+            .contains(&".vibehub/state.yaml".to_string()));
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn second_run_is_idempotent() {
+        let project = temp_project();
+        let first = init_project(&project).expect("first init");
+        let second = init_project(&project).expect("second init");
+
+        assert!(!first.created_files.is_empty());
+        assert!(second.created_files.is_empty());
+        assert_eq!(
+            second.skipped_existing_files.len(),
+            first.created_files.len()
+        );
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn rejects_file_project_path() {
+        let project = temp_project();
+        let file = project.join("not-a-directory.txt");
+        fs::write(&file, "x").expect("write file");
+
+        let err = init_project(&file).expect_err("file path should fail");
+        assert!(err.to_string().contains("not a directory"));
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+}

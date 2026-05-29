@@ -2,10 +2,10 @@
 
 ## Task
 
-- Task ID: T-20260513154224-58d8a685
-- Task path: .vibehub/tasks/T-20260513154224-58d8a685
-- Run ID: R-20260513154224-488adb79
-- Run path: .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79
+- Task ID: T-20260529090147-9df98d71
+- Task path: .vibehub/tasks/T-20260529090147-9df98d71
+- Run ID: R-20260529090147-65de009c
+- Run path: .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c
 
 ## Mode
 
@@ -13,8 +13,24 @@
 
 ## Current Phase
 
-- Phase: align
-- Status: active
+- Phase: review
+- Status: completed
+
+## Active Tasks
+
+- T-20260529090147-9df98d71 (current)
+
+## Intake Queue
+
+- None observed.
+
+## Active Capabilities
+
+- None observed.
+
+## Neighbor Tasks
+
+- None observed.
 
 ## Observability Note
 
@@ -30,11 +46,11 @@
 - .vibehub/agent-view/current-context.md
 - .vibehub/agent-view/handoff.md
 - .vibehub/rules/hard-rules.md
-- .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/context-packs/align.md
+- .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/context-packs/review.md
 
 ## What To Write
 
-- Suggested phase output under .vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/outputs/ if needed.
+- Suggested phase output under .vibehub/tasks/T-20260529090147-9df98d71/runs/R-20260529090147-65de009c/outputs/ if needed.
 - Changed files only within the active task scope.
 - Final response or agent output must include changed files, commands run, tests run or reason not run, unresolved risks, and handoff notes.
 

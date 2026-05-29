@@ -1,0 +1,52 @@
+{
+  "step": "M6d-multi-intent-intake",
+  "title": "Add multi-intent intake so one user message can become multiple VibeHub tasks",
+  "generated_at": "2026-05-28T13:06:13Z",
+  "evidence_level": "mixed",
+  "user_requirement_zh": [
+    "用户希望只开一个聊天窗口时，一次提出两到三个需求也能被 agent 精准识别。",
+    "这些独立需求应被自动拆成两到三个 Task，并在同一聊天窗口逐一完成。",
+    "跨聊天窗口时也应能继续剩余 Task。",
+    "不应要求用户每次显式说“创建 Task”；VibeHub 暴露给 agent 的工具说明应明确什么时候该自动创建、什么时候不需要。"
+  ],
+  "current_assessment_zh": [
+    "现有 M6a-M6c 已支持多个 active task、task 切换、文件 ownership、邻居 task 感知。",
+    "但在本次更新前，vibehub-start 的说明仍偏向单 task 创建，没有把多意图 intake 写成明确 agent 规则。",
+    "因此当前系统不能可靠保证“一条用户消息里的多个独立需求会自动拆成多个 Task”已经端到端成立。"
+  ],
+  "documents_updated": [
+    "docs/vibehub-capability-implementation-steps-2026-05-27.md",
+    "docs/vibehub-capability-redesign-2026-05-27.md",
+    "docs/vibehub-skills-registry-v1.md",
+    ".vibehub/skills.registry.yaml",
+    ".agents/skills/vibehub-start/SKILL.md",
+    ".vibehub/adapters/generated/codex/vibehub-start.md",
+    ".claude/commands/vibehub-start.md",
+    ".opencode/commands/vibehub-start.md"
+  ],
+  "key_changes_zh": [
+    "新增 M6d：多需求意图拆分 + 自动多 task intake。",
+    "基线文档新增“旅程 E：单次多需求输入”。",
+    "vibehub-start 改为“一个或多个 task”的入口，并写入拆分/不拆分/询问的判断规则。",
+    "M6 覆盖状态从“已完成”调整为“M6a-M6c 已完成，M6d 待完成”。"
+  ],
+  "recommended_next_order_zh": [
+    "先做 M6d，把多意图 intake 的代码/API/测试补齐。",
+    "再回到 M7a，做 Kanban-first 项目详情主视图替换旧 Dashboard。",
+    "原因：M7a 的活跃任务主视图会直接展示多个 Task，如果 agent 入口不会自动拆分，多 Task UI 的真实体验会断一截。"
+  ],
+  "m6d_done_when_zh": [
+    "高置信多需求输入会创建多个 task，而不是塞进一个 task。",
+    "中置信输入会先用一句话确认拆分方案。",
+    "低置信或不拆分时，会记录未拆分原因。",
+    "status / handoff / agent-view 能保留同一用户消息拆出的 task 队列和执行顺序。",
+    "跨聊天窗口续跑时，剩余 task 不丢失。",
+    "测试覆盖单 task、2 task、3 task、模糊输入。"
+  ],
+  "risks": [
+    "agent_reported: 本次主要更新文档和 agent 指令，未实现批量 task 创建 API。",
+    "agent_reported: .vibehub/adapters/generated/* 已手动同步；后续 X2 adapter generator 仍应保证这些文件可由 registry 重新生成。",
+    "hard_observed: 工作区存在大量既有 dirty state，本次没有回退任何既有改动。"
+  ],
+  "next_step": "Implement M6d before M7a, unless user explicitly wants to defer multi-intent intake and continue frontend first."
+}

@@ -1,0 +1,50 @@
+{
+  "step": "M7d",
+  "title": "Archive region and completed/cancelled task detail",
+  "generated_at": "2026-05-28T16:48:21Z",
+  "evidence_level": "mixed",
+  "completed": [
+    "user_confirmed: User asked to complete M7d.",
+    "hard_observed: Added read-only archive backend model in src-tauri/src/vibehub/archive.rs.",
+    "hard_observed: Archive read-model scans .vibehub/tasks/* task metadata, runs, events.jsonl, handoffs, outputs, and phase outputs for completed/cancelled tasks.",
+    "hard_observed: Archive read-model excludes non-terminal active tasks and detects cancellation from TaskCancelled/cancel events.",
+    "hard_observed: Cockpit overview now returns an archive field alongside status/context/review/handoff/diff/research/activity data.",
+    "hard_observed: Frontend archive region in src/components/VibehubCockpitDialog.tsx now supports expand/collapse, count badge, completed/cancelled cards, short labels, requirement summaries, and status icons.",
+    "hard_observed: Cancelled cards render with muted/gray styling and preserve events/artifacts in detail.",
+    "hard_observed: Archive detail drawer shows title/summary/status, task/run/mode/phase metadata, process/capability status rows, handoff/output/event artifacts, and an event timeline.",
+    "hard_observed: Archive artifact and event rows jump to the existing preview/JSON renderer path instead of adding workflow mutation actions.",
+    "hard_observed: Added TypeScript archive types and localized archive labels/statuses for English, Simplified Chinese, and Traditional Chinese.",
+    "hard_observed: Updated docs/vibehub-capability-implementation-steps-2026-05-27.md to mark M7d DoD complete and coverage current."
+  ],
+  "files_changed": [
+    "src-tauri/src/vibehub/archive.rs",
+    "src-tauri/src/vibehub/mod.rs",
+    "src-tauri/src/vibehub/overview.rs",
+    "src/types/index.ts",
+    "src/components/VibehubCockpitDialog.tsx",
+    "src/locales/en.json",
+    "src/locales/zh.json",
+    "src/locales/zh-TW.json",
+    "docs/vibehub-capability-implementation-steps-2026-05-27.md",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/handoffs/M7d.json",
+    ".vibehub/tasks/T-20260513154224-58d8a685/runs/R-20260513154224-488adb79/outputs/output.md"
+  ],
+  "tests_run": [
+    "hard_observed: cargo fmt --all passed.",
+    "hard_observed: cargo test --locked archive passed: 4 passed, including the new archive test and existing research archive tests.",
+    "hard_observed: npm run build passed with existing baseline-browser-mapping, browserslist, and chunk-size warnings.",
+    "hard_observed: cargo test --locked passed: 186 passed, 0 failed.",
+    "hard_observed: node JSON.parse passed for src/locales/en.json, src/locales/zh.json, and src/locales/zh-TW.json.",
+    "hard_observed: git diff --check passed for M7d-touched files.",
+    "hard_observed: npm run dev failed in sandbox with EPERM, then ran with user-approved escalation on http://127.0.0.1:1420/.",
+    "hard_observed: Browser smoke opened http://127.0.0.1:1420/ and confirmed the Vite app shell rendered; no persisted workspace/project data was available in the in-app browser, so real cockpit archive click-through was not captured.",
+    "hard_observed: lsof confirmed port 1420 was clear after stopping the escalated dev server."
+  ],
+  "risks": [
+    "hard_observed: Workspace still contains substantial pre-existing dirty/untracked state from prior VibeHub steps, including .vibehub/state.yaml; this session did not directly edit canonical state.",
+    "hard_observed: Current browser smoke could not exercise a real archive panel because no workspace/project is present in the in-app browser data.",
+    "agent_reported: Current repository only has one active VibeHub task, so real completed/cancelled project data was validated through backend unit fixtures rather than live project cards.",
+    "agent_reported: Archive process rows infer capability/process state from available event summaries and run metadata; richer future event payloads can make this more precise."
+  ],
+  "next_step": "Validate M7d output, then continue with M7e project structure explorer or run VibeHub sync/recover if the broad dirty state needs reconciliation."
+}
