@@ -145,12 +145,24 @@ jobs:
           set -euo pipefail
 
           VERSION="${RELEASE_TAG#v}"
-          APP_PATH="$(find target src-tauri/target -path '*/release/bundle/macos/VibeHub.app' -type d 2>/dev/null | head -n 1)"
+          APP_PATH=""
+          for dir in target src-tauri/target; do
+            for subdir in "$dir"/*/release/bundle/macos/VibeHub.app "$dir"/release/bundle/macos/VibeHub.app; do
+              if [ -d "$subdir" ]; then
+                APP_PATH="$subdir"
+                break 2
+              fi
+            done
+          done
           if [ -z "$APP_PATH" ]; then
             echo "VibeHub.app was not found under target/ or src-tauri/target/."
-            find target src-tauri/target -path '*/release/bundle/macos' -type d -print 2>/dev/null || true
+            echo "=== Listing bundle dirs ==="
+            find . -path '*/release/bundle/macos' -type d -print 2>/dev/null || true
+            echo "=== Listing target dirs ==="
+            ls -d target/*/release 2>/dev/null || echo "No target/*/release found"
             exit 1
           fi
+          echo "Found app at: $APP_PATH"
 
           mkdir -p release-assets
           DMG_PATH="release-assets/VibeHub_${VERSION}_${DMG_ARCH}.dmg"
