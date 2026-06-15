@@ -1,6 +1,6 @@
 [package]
 name = "vibehub-core"
-version = "2.0.0-pre.15"
+version = "2.0.0-pre.16"
 description = "Core VibeHub workflow engine"
 authors = ["VibeHub"]
 license = "Apache-2.0"
