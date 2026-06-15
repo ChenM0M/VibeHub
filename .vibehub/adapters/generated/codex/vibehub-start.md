@@ -1,12 +1,12 @@
 ---
 name: vibehub-start
-description: "Create one or more VibeHub tasks; split multi-intent user requests into separate task drafts when requirements are independently deliverable. Use for VibeHub workflow step: vibehub-start."
+description: "Create one or more VibeHub tasks; split multi-intent or independently deliverable requests before starting work. Use for VibeHub workflow step: vibehub-start."
 ---
 
 # vibehub-start
 
-中文: 根据用户请求草拟 VibeHub 任务。
-English: Create one or more VibeHub tasks; split multi-intent user requests into separate task drafts when requirements are independently deliverable.
+中文: 根据用户请求创建任务；复杂需求先拆成独立 Task。
+English: Create one or more VibeHub tasks; split multi-intent or independently deliverable requests before starting work.
 
 Invocation input: <project_root> [title] [intent] [mode] [intake]
 
@@ -18,16 +18,16 @@ Read first / 先读:
 - `.vibehub/adapters/protocol.md`
 
 CLI:
-  vibehub start <project_path> <mode> <title>
+  vibehub-cli start <project_path> <mode> <title>
   Returns: {task_id, run_id, mode, phase, phase_status, task_path, run_path}
-  After: task is auto-registered as active; proceed to vibehub-continue or vibehub-sync.
+  After: task is auto-registered as active; proceed to vibehub-continue or vibehub-sync. For multi-intent requests, use vibehub-start-intake first.
 
 Pre-flight / 前置检查:
-  1. Run `vibehub --help` to verify CLI is available. If not, build with `cargo build -p vibehub-cli`.
-  2. Check for existing active task: `vibehub status <project>`. If one exists, consider vibehub-sync first.
+  1. Run `vibehub-cli --help` to verify CLI is available. If not, build with `cargo build -p vibehub-cli`.
+  2. Check for existing active task: `vibehub-cli status <project>`. If one exists, consider vibehub-sync first.
   3. NEVER manually create `.vibehub/tasks/` directories or edit `state.yaml` directly.
 
-Task / 任务:Create one or more VibeHub tasks. Split multi-intent requests into separate task drafts when requirements are independently deliverable.
+Task / 任务:Create one or more VibeHub tasks. Split multi-intent requests into separate task drafts when requirements are independently deliverable; use vibehub-start-intake first when the request contains multiple deliverables.
 
 Modes: yolo_drive (align_lite → implement → review_lite), guided_drive (align → plan → implement → review), evidence_drive (align → research → plan → implement → review).
 
@@ -35,7 +35,7 @@ After creation, the task is auto-registered as active. Proceed to vibehub-contin
 
 Stop when:
   1. CLI returns task_id and run_id successfully.
-  2. Task appears in `vibehub status` output as active.
+  2. Task appears in `vibehub-cli status` output as active.
   3. Context pack is available for the first phase (usually align).
 
 Output / 输出:
@@ -46,7 +46,7 @@ Write output to `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md` follo
 Constraints / 约束:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly. / 不要直接编辑。
 - Never manually create `.vibehub/tasks/` directories. / 不要手动创建目录，使用 CLI。
-- NEVER run `vibehub finish` or `vibehub advance` without user confirmation. / 未经确认绝不运行 finish/advance。
+- NEVER run `vibehub-cli finish` or `vibehub-cli advance` without user confirmation. / 未经确认绝不运行 finish/advance。
 - If CLI unavailable, ask user to run command. / 如 CLI 不可用请用户执行。
 - Run vibehub-sync first if state is stale or drifted. / 先运行 vibehub-sync。
 
