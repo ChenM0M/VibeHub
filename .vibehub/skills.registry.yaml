@@ -22,6 +22,26 @@ skills:
     idempotent: true
     description: "Read projected task, run, and capability status."
 
+  - name: vibehub-next-action
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: intent, type: string, required: false }
+    returns: skill_response_schema_v1
+    side_effects: []
+    callable_by: [main-agent, sub-agent]
+    idempotent: true
+    description: "Recommend the next agent action, skill, and CLI command from current VibeHub state."
+
+  - name: vibehub-output-lint
+    args:
+      - { name: project_root, type: string, required: true }
+      - { name: task_id, type: string, required: false }
+    returns: skill_response_schema_v1
+    side_effects: []
+    callable_by: [main-agent, sub-agent]
+    idempotent: true
+    description: "Lint VibeHub output.md for missing sections, stale contradictions, and evidence-label hygiene."
+
   - name: vibehub-sync
     args:
       - { name: project_root, type: string, required: true }
@@ -30,7 +50,7 @@ skills:
     side_effects: [writes_events, rebuilds_context, may_write_adapter_files]
     callable_by: [main-agent, sub-agent]
     idempotent: true
-    description: "Reconcile external workspace state with VibeHub."
+    description: "Reconcile external workspace state with VibeHub; use for continue/refresh/sync requests before edits."
 
   - name: vibehub-start
     args:
@@ -43,7 +63,7 @@ skills:
     side_effects: [writes_events, writes_task_state, builds_context_pack]
     callable_by: [main-agent]
     idempotent: false
-    description: "Create one or more VibeHub tasks; split multi-intent user requests into separate task drafts when requirements are independently deliverable."
+    description: "Create one or more VibeHub tasks; split multi-intent or independently deliverable requests before starting work."
 
   - name: vibehub-claim
     args:

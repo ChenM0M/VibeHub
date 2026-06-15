@@ -1,0 +1,7 @@
+schema_version: 1
+kind: current_run_pointer
+task_id: T-20260609092907-7c439d16
+run_id: R-20260609092907-c9e04b56
+path: .vibehub/tasks/T-20260609092907-7c439d16/runs/R-20260609092907-c9e04b56
+updated_at: 2026-06-09T09:44:50Z
+updated_by: vibehub

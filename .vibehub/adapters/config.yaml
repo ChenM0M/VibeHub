@@ -1,155 +1,163 @@
 schema_version: 1
 template_version: 2.0.0-pre.3
 registry_schema_version: '1.0'
-registry_hash: 1967960beeaed214a18e19023716c8377e653ea7a30f5a8cbd5c74f3256a73fd
+registry_hash: 65fd01ffa849fb8e56256f3ee8f008e43de10ce9f1318f846c6ccfddd04f4493
 enabled_tools:
 - codex
 - claude_code
 - opencode
 command_overrides: {}
 generated_hashes:
-  .agents/skills/vibehub-advance/SKILL.md: 01c3145dac711c7c8ceb92b62a14bebff6de424e2f0435139e8287cd214f5984
-  .agents/skills/vibehub-archive/SKILL.md: f44692aa6de74e716250e32c223f4fb6779c2e10db6ed087820ae83dea6f3606
+  .agents/skills/vibehub-advance/SKILL.md: 3b940c3111b0603c3422b233532c6c132c1f3d54346905a3adea3929bc0be5df
+  .agents/skills/vibehub-archive/SKILL.md: 311fc3b9b789461cd79535a5931fe701d42c6afa6baa8aec8cff09baded88e67
   .agents/skills/vibehub-build-pack/SKILL.md: 2cd26e30eb3d25525116bd3906708c5037ff868389f4050195fb6427053f4756
   .agents/skills/vibehub-cancel/SKILL.md: c1516993600db33000fa24c7d953abda87a2b5afad3c1c00c6a090af11a0a916
-  .agents/skills/vibehub-checkpoint/SKILL.md: 96a7e02fa6b2bcae84f07c74950fb8b583fc7e7d9ee62a85d034d7d938dfc944
-  .agents/skills/vibehub-claim/SKILL.md: 5a8feadd1544557bf04557ceaa468f28abcf33ec4dad4fd97f8f8aa2d22ab0e9
+  .agents/skills/vibehub-checkpoint/SKILL.md: 584ff288818463d03c2dc4dc0dac099a7169fb91f084760291690c00f7c332af
+  .agents/skills/vibehub-claim/SKILL.md: 3efb5c6f3e9100c105c8a8610ca280c38abc5081da493ca45f3662be18086049
   .agents/skills/vibehub-configure-custom-capability/SKILL.md: eaf26494da21b0c39cc1a1fdcb0d26ab2ebb7d1f7d1d51cc01ae67dbbc2354ac
-  .agents/skills/vibehub-context/SKILL.md: 521ff16edd766b29d394f2a0360673494fbc7bb2d20b4b955d4edbf922397f83
-  .agents/skills/vibehub-continue/SKILL.md: febf6cf0780c0db76504170baf66fc11edacfb16f2210f2248f8fdf8ca2a5d84
-  .agents/skills/vibehub-debug-dump/SKILL.md: 3e5a81e1b22243a2d4974934ccf424c2f255a1051559f388174bb36bbc7dc599
-  .agents/skills/vibehub-diff/SKILL.md: 01f9f6cbba2121193eff3e6b1e0e5cbfc62c3e3f68dcf74806e971e542070d9a
+  .agents/skills/vibehub-context/SKILL.md: 57582b49f50d75fa038959dee2fdc08b389ba46037c8102e23f25d48d76865d2
+  .agents/skills/vibehub-continue/SKILL.md: f9413ba87154aa9f4f1bd2552925a3f63a7956242bfdc605b55d0df24acde2b3
+  .agents/skills/vibehub-debug-dump/SKILL.md: 4c2b316c642abc75f775aec5904739d7d1878f3ce3e3da1e07a46458a2167249
+  .agents/skills/vibehub-diff/SKILL.md: a70a3b4c238dee8dba1d532f485ff39864f311169702d3931e38da9f2c64b5ae
   .agents/skills/vibehub-events/SKILL.md: 4b0a5f0e09042785a0faf3cb49c2ac18376bda09063dc26d4fff8f7a5bd6091a
-  .agents/skills/vibehub-finish/SKILL.md: f33b1a745793e5221d7ee93dfd4cc55454c0815cfef078d48dcd1aae9f946fc2
-  .agents/skills/vibehub-gates/SKILL.md: 5e7feccd74712354641b30db3dc1b690ee28dd9105ab85fef14b42645c73189e
-  .agents/skills/vibehub-handoff/SKILL.md: e8e39874420f8814aea0997450d95bcc852d8ea3469eacc0405cbf725f1d08ba
-  .agents/skills/vibehub-help/SKILL.md: 1e9bff65e8503a7809915e89d8ff610b73e06c4fbebf495e0fd3f370a587ff04
-  .agents/skills/vibehub-init/SKILL.md: e0d72951c61157b14878175de01e4e148cbcf3e4843109b888d44b637a06b7b3
-  .agents/skills/vibehub-journal/SKILL.md: 2c114ec849f9bf15695cd7f831e042d512e49207acda8f231e8a2167d3969bd9
-  .agents/skills/vibehub-knowledge/SKILL.md: d50e028012c03df5b7ee64f3775c413703c401ebd61cf9c1f3fed7ce926665a5
-  .agents/skills/vibehub-pause/SKILL.md: 0336842a5541b37a3622a82b1c379e8cfa5d43e7bf1c0efe03b5210d31ee9e10
-  .agents/skills/vibehub-plan/SKILL.md: f6e59fc7355abb29d807ed5e258f7c9c06e2f1e617348fa7fe231919b47cf5c3
+  .agents/skills/vibehub-finish/SKILL.md: c2779090c17ec9c9790cc8b3b556fd947b5959575cdfa0e0bbed15c59a90d337
+  .agents/skills/vibehub-gates/SKILL.md: f0df49512a852ee38cbd16fdb5e2437abc45fbe5c615774ed936d2418078d909
+  .agents/skills/vibehub-handoff/SKILL.md: e403f8f916a85fe825d6969c285a0731f408addca3bcc8dc4155b2954491417f
+  .agents/skills/vibehub-help/SKILL.md: 05d7deadd96183d0d1b4c36388b8813478153da6774c83f22a4d420ac4aa74de
+  .agents/skills/vibehub-init/SKILL.md: fb98c1d93e611853b99e37cdfcb68db7a6518b1283955470f09b72efa9094ca3
+  .agents/skills/vibehub-journal/SKILL.md: 5eee28de7c39a41f79b462a9908e067111bbd09f539cd2c9a44cfd320e9c4b7c
+  .agents/skills/vibehub-knowledge/SKILL.md: b19c891a5c44e249a6fd57bd4eceeb4c77686f353581ad1351b03181aeca4772
+  .agents/skills/vibehub-next-action/SKILL.md: 96868bd9dc4f33a251084e080603d2fe9216557ccd722f1a8c330433064dc192
+  .agents/skills/vibehub-output-lint/SKILL.md: 31c5cb4ea3dff91b611c1d7ab3dd40f3298a447c6e57db7410f4e3df2292b5a2
+  .agents/skills/vibehub-pause/SKILL.md: c111dba4dd0b045577c12b3551193a7f1ae1374d75483b415303cebd23164b7f
+  .agents/skills/vibehub-plan/SKILL.md: 48e1c4f42fb282b968773e64403866efcd19e35d7c5e029e2181c3a9c347302f
   .agents/skills/vibehub-record/SKILL.md: 608759cf7d1aaeb76db15d569bcde0c0a45c20d9d9b54684aec8d442e21d9287
-  .agents/skills/vibehub-recover/SKILL.md: 1d0d6d4ccc4adad676e7ca0e59b872855c5912d9b8683b98c0c7aa2cf5f2dbb9
+  .agents/skills/vibehub-recover/SKILL.md: 6172e5ce6aaa95911ccbef87aff1a640d98f8667d65cae1703e36f2f1abc9d29
   .agents/skills/vibehub-release/SKILL.md: fc0ead78213defe0c477e4b8552e10b345df3c13f0e2a368dcc1ced733fd7dab
-  .agents/skills/vibehub-research/SKILL.md: 0a1a159a9c004f4f0c32a99365e71636920d967d4d15019aa518cc1c315a6cbc
-  .agents/skills/vibehub-review/SKILL.md: 03742a8f749102e077ebc5a383c8f92cc8b90bcda0c851903f81f47e27f0450c
-  .agents/skills/vibehub-start-intake/SKILL.md: cec45fd7b1ed9797a9ffa5fb5d747b0408d5d1e86d29837efd8553bea001797a
-  .agents/skills/vibehub-start/SKILL.md: a5591863c4b35ae16cb7c4da9d9c3b881437c67c12282de0d49e3505d548844c
-  .agents/skills/vibehub-status/SKILL.md: 8592f53590cae791786ca0cc2e25603b7aaaa899d31a8f34a3a3c988ac049447
-  .agents/skills/vibehub-switch/SKILL.md: ad4d778a2e7a7dc967cb11f5a8d7f3092d4f64332c4ac720a6ab21a855d75a0d
-  .agents/skills/vibehub-sync/SKILL.md: f630b9b420370fe97729fde57038c8343cc916ba483a86b5a4703760b3f79b31
+  .agents/skills/vibehub-research/SKILL.md: b93d7adde596ca6cef05e206a105b102d38e0b5c371888c190033f99af7da3df
+  .agents/skills/vibehub-review/SKILL.md: ad5f2463d332c52b4c2b6d41aed65aa98918298ab49466abc8eb2af1d5a0d7ef
+  .agents/skills/vibehub-start-intake/SKILL.md: 8a11aa4c2da08f1fa2248bceb9c2d23c8fc927e9d14253026305d8f9823f4b92
+  .agents/skills/vibehub-start/SKILL.md: dc507f9c9fca50f5ec938acb893ddb4fdb6a1b7156e86da477eddd3d5b0f18ba
+  .agents/skills/vibehub-status/SKILL.md: 38fe3168c25f3b4750de4a4f98066b6924a8dd30f29673fcce767154b82ddea2
+  .agents/skills/vibehub-switch/SKILL.md: fc76c9c6e5b62bec1c319b5ddb317546ee03c44f8d58bbf41ab9f9d4627e30ce
+  .agents/skills/vibehub-sync/SKILL.md: 9bfd1f6912ca0a6facf00bd49864191340bb5b3c8e558963bd9f810a32c458bd
   .agents/skills/vibehub-validate-schema/SKILL.md: 3ed88cd430ed7a784894433c9f3217b12ad90e3b3e1111e55e092a2d0f7476f6
-  .agents/skills/vibehub-validate/SKILL.md: 253ad47990281dca0326705fade365785685cfeb7caf0bfc205fcc2bcf86f3a3
-  .claude/commands/vibehub-advance.md: e7c4613f67c1430af4271e9b85a05f7c8d820a3b7c8825a7b1151a8fafaad45e
-  .claude/commands/vibehub-archive.md: a67be8d2c796bf38cbcfc5faaa71cfc2523c78fe0cb2d12047c898e38a1ecf27
+  .agents/skills/vibehub-validate/SKILL.md: e2bd5d780138c60cdb35d3131de83e9db0ec490793259fe5aca37f42b38c9f59
+  .claude/commands/vibehub-advance.md: 53fe1da301b0adf6fb85bf65245e6efa5bfde210a5465c9a1b0b457cd8511fc9
+  .claude/commands/vibehub-archive.md: b0720ca72a043e4cbea6fc8496de2d05db8c573d7898dbb237e742667ae097dd
   .claude/commands/vibehub-build-pack.md: da6221f0607d347533efa23f2534f7a6a83dd304e9ec5219965669c32c610226
   .claude/commands/vibehub-cancel.md: 88d5ccde9b3997a7af7707132b28cb1dfddcc44958611bd8ba2d46619626f75e
-  .claude/commands/vibehub-checkpoint.md: 4fc48dbc6357ee9d8a15c16b84c7adebe1148632838bba30064deb4d4efcdd33
-  .claude/commands/vibehub-claim.md: 2c19b07e0f9a9dc616f59a61db42c5344480612b81fcb47b9dc99edba03a21e9
+  .claude/commands/vibehub-checkpoint.md: 348d7593a8bfaa5bc1981c1506b6755418d36791cceb875bf190f6915a589db7
+  .claude/commands/vibehub-claim.md: 0ff077592c6eb288f5a53e9450c3d61f3ed8c90b0c707dc00afc154f4875640e
   .claude/commands/vibehub-configure-custom-capability.md: 9c8931980fc60bcf42575708592776c9bd1a1e305f5c39e6098c696b03540489
-  .claude/commands/vibehub-context.md: 0253d39ada16fe4d0bfaf9b80fab1f41e1f9b4c7f41d64a965576947027c506a
-  .claude/commands/vibehub-continue.md: 1dae82366d31b4df4707fa2a69bc8d9b002c9a857d67489e5002f4d7b7f47123
-  .claude/commands/vibehub-debug-dump.md: 513e7e992805ab9b2d93c96c20db360c2c171f1ccf1bb9e6e3ba4e565037cd29
-  .claude/commands/vibehub-diff.md: 5415f4f2a0282fd5981de1ad683b25b630209a70c9fb9cb8bf65bf3bcf36c668
+  .claude/commands/vibehub-context.md: 7bb0870cf68e45bfdc016ec500b55be3c9c0ae2f2ce26cbd27c3b745abdffca4
+  .claude/commands/vibehub-continue.md: 390a0a901af56387c1fe81a45adc611830823bcec4bb113a70f46f598b38c5a3
+  .claude/commands/vibehub-debug-dump.md: 269c6dd2dfdd86bc88ca23435d10e27b21c98e62bb91a5a943c8d4e9313aa925
+  .claude/commands/vibehub-diff.md: 36f106c011e9714276b942bf1ecb73c4435d3adae1a0fa1612c634c592b03db0
   .claude/commands/vibehub-events.md: 40455973189e92aa6c41e3e3ac24432e94fd4ccb951d3df75da12406a3a54e68
-  .claude/commands/vibehub-finish.md: 192d9c3b7070dcd1cd4d097c32922a3392744f1a08203737465300ba4a8178e1
-  .claude/commands/vibehub-gates.md: d95c8d68dbf84e6f304018f5031a70b74fba6c9c46fa27d26a4cb98bbf78fc82
-  .claude/commands/vibehub-handoff.md: 8fe26b0ea7c541a1588b21415d7369879fadf21b1a87611b4f27bec10b7025d6
-  .claude/commands/vibehub-help.md: 9ca14fed3ef5746039713f3a6e34df7130e4c18303af973115a3cf11f1bfefac
-  .claude/commands/vibehub-init.md: 2127de885ed43e4f4e052b1e6c43e90d0e48cff449a07313b85b841457b95190
-  .claude/commands/vibehub-journal.md: 71b7c3773eccf7911af39e10206484096dee985144bf142b5fbc2a54c50c2109
-  .claude/commands/vibehub-knowledge.md: 3bc692924051eb89c45aa0ce53622f75d22133e75cc84dbe0f94aea27a688314
-  .claude/commands/vibehub-pause.md: 9f1b1bba57da77d84ee996fa1238c04c5db9ebef7c0a4ea1626eaf172ad1908a
-  .claude/commands/vibehub-plan.md: 3e9d5ae75154e7501963ee6566ffebb3582ee02c46b9c2a6e473e385c1dececf
+  .claude/commands/vibehub-finish.md: 6ed77831d2c4d270e72c8c01880ed8f8aa87a2c4c39550a89cffc431e0856c79
+  .claude/commands/vibehub-gates.md: b6b878a30a8f529fca2469f35ddbf79cf01b74f0b6dc86d4502bf376d6ce9e78
+  .claude/commands/vibehub-handoff.md: ea0494c0a728ef641ae341727ac14d0cb15d5cae8c449a55812e0e84f2d45247
+  .claude/commands/vibehub-help.md: 2f5b2908cc42582ede33e75139ab5b921944d2603147c953a1189b9345e1cc21
+  .claude/commands/vibehub-init.md: 45b296ec72c0ed10ce1a2df4ccde2c5dd5f54022bc2c011bd98ef12e176dadcb
+  .claude/commands/vibehub-journal.md: ec1163c331692cd9d348944a112196a26d613976abffca795b62b3b5102e9947
+  .claude/commands/vibehub-knowledge.md: 17ae80cdd4463d79391e06a0c9062dfc095867018526684b3e5c56617b499982
+  .claude/commands/vibehub-next-action.md: 8da4f5859f5cb0ac5272fc653aaa1722ddc835b8a4a55857ee5300b4bc4e9929
+  .claude/commands/vibehub-output-lint.md: e015278fee8fc4348be638b291054057ab09185059e45904604a78547296e90c
+  .claude/commands/vibehub-pause.md: 93c80effd652ad8ffa1b388bf03168e6f5db93dd210f0a86f75e07b399871fda
+  .claude/commands/vibehub-plan.md: 41a1117d0ad02ff2ca098b1866f2dc2dd2ee7c5a105c1034c22790550a3869c6
   .claude/commands/vibehub-record.md: 55507b6ba4a41824d449b2a13cf1515ad4fb2b7f8d2297daff4133fa265975aa
-  .claude/commands/vibehub-recover.md: ab54082ffe0daf26324688ce5eef1fed70c01d36a826db37966c78584727d349
+  .claude/commands/vibehub-recover.md: c554b9ce0d19db387c991874d4eb82c1a00557fe2f9f71ecc2de3bbdc7874726
   .claude/commands/vibehub-release.md: 632642450e867f4cb7936ef1f57cebf269a028e783477747400ac99e77ad8595
-  .claude/commands/vibehub-research.md: 1b40417ef962392f0c194859df83035f1d8303b0598c265fdc4984d64f39229c
-  .claude/commands/vibehub-review.md: 1f7c71cb1013907153926b20f50f290cd5e9e34ab4fc9d36bf3ca4b000b89592
-  .claude/commands/vibehub-start-intake.md: 5359494b74d910843052fad44cc02c61692fde8be6ede30c0c68ceb38e7e1774
-  .claude/commands/vibehub-start.md: c8033d48e15b5c46974bfd8205c8e237f28877e8284c8792b244c83854c63d16
-  .claude/commands/vibehub-status.md: 1c5dd42996eb2c95e82991a448f26aaa02da0f0a616b62ca391818cdedbb7a01
-  .claude/commands/vibehub-switch.md: 6d45a8a775123ce3e8e51bb373dd59d9f47881c9b05beb256cdba094d3537927
-  .claude/commands/vibehub-sync.md: 7b1ed32abf814254f00ef615c1d3dd07647d2422f2562afe5ebfc799423f29c1
+  .claude/commands/vibehub-research.md: 73e2ce4ef89b86178bb426547022eb986dddbca160d9268e8aeac977b15d94c8
+  .claude/commands/vibehub-review.md: 8a6cb0f7786dd2646fc20ccd008c884b864a8a38bf71ca6996bc760b441d261c
+  .claude/commands/vibehub-start-intake.md: b0c62c0f714e8b862290dbe5f76286088dca6c5fc49e37b1ad0bdedcdf2b6d9d
+  .claude/commands/vibehub-start.md: 00bffce94c1c080cbfb9086825594b6558296a688223be33cb04a6b8c1cd5350
+  .claude/commands/vibehub-status.md: 1182019e650f6e4b8a6286a80413fce83be19155057f921d06e5758b277ab576
+  .claude/commands/vibehub-switch.md: e8ebd5dec922e6d3646ee14a73a51cc6a33802865abf1db9f23e01f7af3165bf
+  .claude/commands/vibehub-sync.md: 811dc6898e9e762943276332cd7279d7f2f305ae3171eca4c5d119d8f8b27ffd
   .claude/commands/vibehub-validate-schema.md: f5a7cc0d7473e898592ea7b872b8c1d05c2d60781b6525e1969087c6aed5dda8
-  .claude/commands/vibehub-validate.md: 121f8476dca39f3485f2b2447d9e25a8c6d2347695a2f1cb5fd8fdcef7baf989
+  .claude/commands/vibehub-validate.md: be535365a0cef70fe430ce84e501ac735ed32d03237c79725908ea52cb3c256e
   .claude/settings.json: 1d02cc097dc36e3feb191e2afcc7a4534a2f5f1680ae9a80d092f02fc8c39777
-  .claude/vibehub/command-index.md: 5c14538abe68c8cd484e0d9ab67ddadd02f473fca76183281314a1efa47beed7
-  .claude/vibehub/constraints.md: 466c73d2b17db5bb870a76c8179bd5f33af8c77baf5711fb257e7d12032c3a7c
-  .codex/vibehub/command-index.md: 8071ca05ca1363f6dbdf3e84182527b4bcef1372df78a4f39d58849ad3e5fcd3
-  .codex/vibehub/constraints.md: c6da4cc19347c2fe72fec5aa121c15db2736c00f6f9a5f4507ceaf999c1f2d7a
+  .claude/vibehub/command-index.md: 6eea541550a47fd052fc59e6f2541975c6dc0ce5b89c9b0f0b3eca494cb39cda
+  .claude/vibehub/constraints.md: ed9eaef3515808844859cefe56c0f068e9ffad4a8601dc2512d493b07bbb33ba
+  .codex/vibehub/command-index.md: 5687f98985b282dd04976623adcd3668f431d526ec7882754cafbe168bdd420b
+  .codex/vibehub/constraints.md: 03d8d3c97881a8c6aafcae6939e43ef4ffdcc18f961f322c8997550d911cb27b
   .codex/vibehub/stop-hook-config.md: ab61c3a9fe9f3e0ed777e79ad149e967f5cd94c01726450bb8105c9de3c5512f
-  .opencode/commands/vibehub-advance.md: 685120faa45417fa7b3ddb5fe56cdefb3fce049b101434d7ae0877e58943da0a
-  .opencode/commands/vibehub-archive.md: 4d4a5124e5a712890aae4e60edf641b77de36193bae61e17ba327cf65deddddd
+  .opencode/commands/vibehub-advance.md: 3e3de94c156064be7bb8b965ae41a739fc0c6958a89bfb461d8ee91e8275784c
+  .opencode/commands/vibehub-archive.md: 6b3ac050e586f90fe875a42ab63a876e84c5a8aaea24f462e81eecb7f6b96133
   .opencode/commands/vibehub-build-pack.md: 0c07d9d694f6effe609606b9827f73c85587897ff38e6a2b319b54f2010498aa
   .opencode/commands/vibehub-cancel.md: f3179545c34002dedf8eecce86301f6d99a827b059d99130227611dc38e4532a
-  .opencode/commands/vibehub-checkpoint.md: 2759c5700d14ca6f7f64a55fc18223d166eeecb3a7e0dc3aca5e9e76811c52d5
-  .opencode/commands/vibehub-claim.md: c4e549df111bb7fae8a22f787f1c34e3704e6c6a490d7fb8ad20a2332acd0fce
+  .opencode/commands/vibehub-checkpoint.md: ffb4af1ce27a9d824d3d014c3de668cd4c61cdbb73903f57b6907430a30232a9
+  .opencode/commands/vibehub-claim.md: ce71ad922a7aee5a15520f6d71acdfa7151a3adfe21b05052969254addc39f83
   .opencode/commands/vibehub-configure-custom-capability.md: 5e330d1b21077781d9585eb9feaaf686a6bdb657f7472ddca171799f65fdcd68
-  .opencode/commands/vibehub-context.md: 61a0299f6b279f935dc7a736e213eaaf8b66a1f7607a24e620e8c7fe94a7f9ad
-  .opencode/commands/vibehub-continue.md: 69d199564304ed225d2f80e2cd8fba8f3489e796650aa5e326392f2df11b3a51
-  .opencode/commands/vibehub-debug-dump.md: 4f053ed4d6c96ef97b23db1d042aa9713b98a5b5a6406eb922af12e6e89dc15b
-  .opencode/commands/vibehub-diff.md: 3e0772c65ba552f516330a3b25e1cda0f0a624a15d13ad212474552eff35df94
+  .opencode/commands/vibehub-context.md: f3932ba39043f36217574c079fa0e2b4b06e8e4edd2750e074b17a3a17c77b88
+  .opencode/commands/vibehub-continue.md: df163aa3538d86a49446d61bdc62399a4f82fc05271ced2477a1d5bd66f7c624
+  .opencode/commands/vibehub-debug-dump.md: 8c3a12fbca85633532a09b5f3f8e6b34e6c7c518ef169f636ad88bae470a2693
+  .opencode/commands/vibehub-diff.md: cfe32ad17c4d6229cdfb08dae8cd33ed1d38bd4441693ee3f88f93b65dd679e2
   .opencode/commands/vibehub-events.md: ab4abe77dc07bc7313c7cf1665d1b80331a7ccb7027a7b574caf7fbccc199417
-  .opencode/commands/vibehub-finish.md: c8fb48105dcbabdf6d657ceb31abeeac65a854afbac25a6cb38b21da8de9d3cd
-  .opencode/commands/vibehub-gates.md: e17b081e96ba7bd6e60437ef989bc10f5bd8352ee19aa62a20ecfab66bae1d19
-  .opencode/commands/vibehub-handoff.md: 178d6477b4bbc5d0e1058fcd545854688ba924365005f60e50d15ef9337c8726
-  .opencode/commands/vibehub-help.md: 39b45a7a2d53bfcac46ee222559d9389b02a3cf487f73108d53ba98b88dc6368
-  .opencode/commands/vibehub-init.md: eb48bebcf4ca565d22e79f231a15f257962355fda7efd7b9339c85da97b0059b
-  .opencode/commands/vibehub-journal.md: f2efa18902cd1f80b36cad5c6c39a3b1e7ec9e44a3d59a83e4d2c9dea545c3b5
-  .opencode/commands/vibehub-knowledge.md: 6215ac2b8ded2fadaeaf31cc6b563f291291f65dd0dc6ddeb8c29bd36138cfc2
-  .opencode/commands/vibehub-pause.md: caa390d5ef3189b33a1fdd1dae4b21bf1d127c93252768f263d3a4f27a1f87fb
-  .opencode/commands/vibehub-plan.md: ac9725c04d55cbc53e95bd3d35212b9261b674ae6f54d7e2df5bfb089bdda8b8
+  .opencode/commands/vibehub-finish.md: a2a90cb2ed537f718f42cbfba0e78b22cca389de6e7bd22414ab221c93924c6f
+  .opencode/commands/vibehub-gates.md: cd3501df258dd1e83fd69fc99ac49853e3086ef27d3af900540ed89f7a806487
+  .opencode/commands/vibehub-handoff.md: dcb991bc591f8c2dac48ba95dccdf95a5b8c5c93aaa5631d28a70092c2b35f5d
+  .opencode/commands/vibehub-help.md: 25381bd5190bb848af56db5dd2ecefdf9a0c52ed6f70cade5fc1e79ac189b035
+  .opencode/commands/vibehub-init.md: 23347913a894fbfb4bc20188c48dcacd20be29b12f13afbbeb31018efd628881
+  .opencode/commands/vibehub-journal.md: 9a4a85facebacfcb157434fb0aa33795c75c4bd5744c2e15c78a9f539a4d27c8
+  .opencode/commands/vibehub-knowledge.md: 8bbb783e75ba96a39053796769c57a14819db9a9242c42370deb1664ce0788f9
+  .opencode/commands/vibehub-next-action.md: b10d6345abf5463e7ceb4a8dafc88935fa53d2a287b0c0555b2dc1650a5ba3dc
+  .opencode/commands/vibehub-output-lint.md: 9042b496a44906371c201c67c5a1bc5c94891c38d57708e2ae43edfca1f4f656
+  .opencode/commands/vibehub-pause.md: 00683626961ca3f00caaf8e370e35d43481c286c2d641bb3322fe37310a0d6ef
+  .opencode/commands/vibehub-plan.md: 00a79455dac876d6a959741c9f2d11a583ff85a59fdf4564ff51acd0bf89e0fb
   .opencode/commands/vibehub-record.md: 8e72ca1929aef4646049a2477b68738cf1f23295e676f2a353d6fd7f0b013785
-  .opencode/commands/vibehub-recover.md: 0df655d23b5cd673ea7af9228defe5833ad41285e937511b2148e6ab1c863289
+  .opencode/commands/vibehub-recover.md: 8d1ce1ab0950096d3b626723b333058986964359c996e4f438c62948b8feacb8
   .opencode/commands/vibehub-release.md: d96e30796f2ed38c8c4e679fa327a6a619867ed18888837b087ad744e38249f8
-  .opencode/commands/vibehub-research.md: 565a05390583ba24ddc51eb586c20eb21510c0616dc2e79999905237d3881a60
-  .opencode/commands/vibehub-review.md: 327971c48dd977cbc7142a988fdc3fa1ec3a665a11a8b793d72d146a22de907b
-  .opencode/commands/vibehub-start-intake.md: be7d06fd45b04025e4999f1d03c47e56b7a5f2ca36c66fb50f47f16c8af30ffd
-  .opencode/commands/vibehub-start.md: fa9929b8bb506d2d27e3b0cec73a24cff8f5a22a2484bf151ac38a6dd0777b88
-  .opencode/commands/vibehub-status.md: d2e89b95c7a59ca4a11075003db8cc69f3fc207140d7ca7367c297adf10f2c92
-  .opencode/commands/vibehub-switch.md: 035c0237e035c9a3ecf8f0ce9c810744e83c8660dd67d3474273f4c881fbc64a
-  .opencode/commands/vibehub-sync.md: eb674d092ad66290546e24091a82398dc14e496d5f43cb8df53e133f1122368a
+  .opencode/commands/vibehub-research.md: 6a694bf2a08e545aa612d9a9559f731df7a4b9216171bc947ec736c4656a2c0e
+  .opencode/commands/vibehub-review.md: f5426fda7200168b6d97101bf26f58cd947143cf2344b1b5eabe18b4589620b8
+  .opencode/commands/vibehub-start-intake.md: 1ccbf487c10d04c84c56cc90c5df06afe9aa1b825fcc8da7f800deae38d4410c
+  .opencode/commands/vibehub-start.md: 0049e94bfa80ad81e67cc096c79c99253682806c2d3273d60f64ca5c95e8b487
+  .opencode/commands/vibehub-status.md: 92916329a29f7121f2a9735752bd46b233a91231c7c5bc04854594dd079dfd26
+  .opencode/commands/vibehub-switch.md: 6ed5eea2a972b602b32b4de4a3a89353daf3826885ef70fdbfb5f59b3ac331ee
+  .opencode/commands/vibehub-sync.md: fd1d677fe8aca9a803ef8d3337e0c6044d2cde6d76b356ca24ce8dae94f30c6a
   .opencode/commands/vibehub-validate-schema.md: e71c253dbc3ffe5aa03d0ea00ebb0f468bc73283d6eabad4342444c100104848
-  .opencode/commands/vibehub-validate.md: 382bb6dbb47054d8bcc8260a0a488a5deddad27bfa8bd118f42654ca797e19ad
-  .opencode/vibehub/command-index.md: 901fcb8204e3d05f5aa8a118c9e5c87f7d4f98fb97a64b45f02048be563c7722
-  .opencode/vibehub/constraints.md: e6b12adda54d48e637497f055057dfc3cd1ca8e6771be88b494ec6ce3fc11ed7
-  .vibehub/adapters/generated/codex/vibehub-advance.md: 01c3145dac711c7c8ceb92b62a14bebff6de424e2f0435139e8287cd214f5984
-  .vibehub/adapters/generated/codex/vibehub-archive.md: f44692aa6de74e716250e32c223f4fb6779c2e10db6ed087820ae83dea6f3606
+  .opencode/commands/vibehub-validate.md: 4cd2081a52be74ac79f2f40debea68d99752f930ec5b3ec15fa0b85a8b397309
+  .opencode/vibehub/command-index.md: ebec535a282f27cd5261ac85ee851090f366b5880948e1eac8b2fe0dc8c3f98f
+  .opencode/vibehub/constraints.md: ce5783055193bc33769eea8d34ff4884a6eb514f81e28b83ddc916de36759bfe
+  .vibehub/adapters/generated/codex/vibehub-advance.md: 3b940c3111b0603c3422b233532c6c132c1f3d54346905a3adea3929bc0be5df
+  .vibehub/adapters/generated/codex/vibehub-archive.md: 311fc3b9b789461cd79535a5931fe701d42c6afa6baa8aec8cff09baded88e67
   .vibehub/adapters/generated/codex/vibehub-build-pack.md: 2cd26e30eb3d25525116bd3906708c5037ff868389f4050195fb6427053f4756
   .vibehub/adapters/generated/codex/vibehub-cancel.md: c1516993600db33000fa24c7d953abda87a2b5afad3c1c00c6a090af11a0a916
-  .vibehub/adapters/generated/codex/vibehub-checkpoint.md: 96a7e02fa6b2bcae84f07c74950fb8b583fc7e7d9ee62a85d034d7d938dfc944
-  .vibehub/adapters/generated/codex/vibehub-claim.md: 5a8feadd1544557bf04557ceaa468f28abcf33ec4dad4fd97f8f8aa2d22ab0e9
+  .vibehub/adapters/generated/codex/vibehub-checkpoint.md: 584ff288818463d03c2dc4dc0dac099a7169fb91f084760291690c00f7c332af
+  .vibehub/adapters/generated/codex/vibehub-claim.md: 3efb5c6f3e9100c105c8a8610ca280c38abc5081da493ca45f3662be18086049
   .vibehub/adapters/generated/codex/vibehub-configure-custom-capability.md: eaf26494da21b0c39cc1a1fdcb0d26ab2ebb7d1f7d1d51cc01ae67dbbc2354ac
-  .vibehub/adapters/generated/codex/vibehub-context.md: 521ff16edd766b29d394f2a0360673494fbc7bb2d20b4b955d4edbf922397f83
-  .vibehub/adapters/generated/codex/vibehub-continue.md: febf6cf0780c0db76504170baf66fc11edacfb16f2210f2248f8fdf8ca2a5d84
-  .vibehub/adapters/generated/codex/vibehub-debug-dump.md: 3e5a81e1b22243a2d4974934ccf424c2f255a1051559f388174bb36bbc7dc599
-  .vibehub/adapters/generated/codex/vibehub-diff.md: 01f9f6cbba2121193eff3e6b1e0e5cbfc62c3e3f68dcf74806e971e542070d9a
+  .vibehub/adapters/generated/codex/vibehub-context.md: 57582b49f50d75fa038959dee2fdc08b389ba46037c8102e23f25d48d76865d2
+  .vibehub/adapters/generated/codex/vibehub-continue.md: f9413ba87154aa9f4f1bd2552925a3f63a7956242bfdc605b55d0df24acde2b3
+  .vibehub/adapters/generated/codex/vibehub-debug-dump.md: 4c2b316c642abc75f775aec5904739d7d1878f3ce3e3da1e07a46458a2167249
+  .vibehub/adapters/generated/codex/vibehub-diff.md: a70a3b4c238dee8dba1d532f485ff39864f311169702d3931e38da9f2c64b5ae
   .vibehub/adapters/generated/codex/vibehub-events.md: 4b0a5f0e09042785a0faf3cb49c2ac18376bda09063dc26d4fff8f7a5bd6091a
-  .vibehub/adapters/generated/codex/vibehub-finish.md: f33b1a745793e5221d7ee93dfd4cc55454c0815cfef078d48dcd1aae9f946fc2
-  .vibehub/adapters/generated/codex/vibehub-gates.md: 5e7feccd74712354641b30db3dc1b690ee28dd9105ab85fef14b42645c73189e
-  .vibehub/adapters/generated/codex/vibehub-handoff.md: e8e39874420f8814aea0997450d95bcc852d8ea3469eacc0405cbf725f1d08ba
-  .vibehub/adapters/generated/codex/vibehub-help.md: 467a40568c0527696f15f22ef8583dba10ec6812046835f1d7032bf36c3e2951
-  .vibehub/adapters/generated/codex/vibehub-init.md: e0d72951c61157b14878175de01e4e148cbcf3e4843109b888d44b637a06b7b3
-  .vibehub/adapters/generated/codex/vibehub-journal.md: 2c114ec849f9bf15695cd7f831e042d512e49207acda8f231e8a2167d3969bd9
-  .vibehub/adapters/generated/codex/vibehub-knowledge.md: d50e028012c03df5b7ee64f3775c413703c401ebd61cf9c1f3fed7ce926665a5
-  .vibehub/adapters/generated/codex/vibehub-pause.md: 0336842a5541b37a3622a82b1c379e8cfa5d43e7bf1c0efe03b5210d31ee9e10
-  .vibehub/adapters/generated/codex/vibehub-plan.md: f6e59fc7355abb29d807ed5e258f7c9c06e2f1e617348fa7fe231919b47cf5c3
+  .vibehub/adapters/generated/codex/vibehub-finish.md: c2779090c17ec9c9790cc8b3b556fd947b5959575cdfa0e0bbed15c59a90d337
+  .vibehub/adapters/generated/codex/vibehub-gates.md: f0df49512a852ee38cbd16fdb5e2437abc45fbe5c615774ed936d2418078d909
+  .vibehub/adapters/generated/codex/vibehub-handoff.md: e403f8f916a85fe825d6969c285a0731f408addca3bcc8dc4155b2954491417f
+  .vibehub/adapters/generated/codex/vibehub-help.md: 05d7deadd96183d0d1b4c36388b8813478153da6774c83f22a4d420ac4aa74de
+  .vibehub/adapters/generated/codex/vibehub-init.md: fb98c1d93e611853b99e37cdfcb68db7a6518b1283955470f09b72efa9094ca3
+  .vibehub/adapters/generated/codex/vibehub-journal.md: 5eee28de7c39a41f79b462a9908e067111bbd09f539cd2c9a44cfd320e9c4b7c
+  .vibehub/adapters/generated/codex/vibehub-knowledge.md: b19c891a5c44e249a6fd57bd4eceeb4c77686f353581ad1351b03181aeca4772
+  .vibehub/adapters/generated/codex/vibehub-next-action.md: 96868bd9dc4f33a251084e080603d2fe9216557ccd722f1a8c330433064dc192
+  .vibehub/adapters/generated/codex/vibehub-output-lint.md: 31c5cb4ea3dff91b611c1d7ab3dd40f3298a447c6e57db7410f4e3df2292b5a2
+  .vibehub/adapters/generated/codex/vibehub-pause.md: c111dba4dd0b045577c12b3551193a7f1ae1374d75483b415303cebd23164b7f
+  .vibehub/adapters/generated/codex/vibehub-plan.md: 48e1c4f42fb282b968773e64403866efcd19e35d7c5e029e2181c3a9c347302f
   .vibehub/adapters/generated/codex/vibehub-record.md: 608759cf7d1aaeb76db15d569bcde0c0a45c20d9d9b54684aec8d442e21d9287
-  .vibehub/adapters/generated/codex/vibehub-recover.md: 1d0d6d4ccc4adad676e7ca0e59b872855c5912d9b8683b98c0c7aa2cf5f2dbb9
+  .vibehub/adapters/generated/codex/vibehub-recover.md: 6172e5ce6aaa95911ccbef87aff1a640d98f8667d65cae1703e36f2f1abc9d29
   .vibehub/adapters/generated/codex/vibehub-release.md: fc0ead78213defe0c477e4b8552e10b345df3c13f0e2a368dcc1ced733fd7dab
-  .vibehub/adapters/generated/codex/vibehub-research.md: 0a1a159a9c004f4f0c32a99365e71636920d967d4d15019aa518cc1c315a6cbc
-  .vibehub/adapters/generated/codex/vibehub-review.md: 03742a8f749102e077ebc5a383c8f92cc8b90bcda0c851903f81f47e27f0450c
-  .vibehub/adapters/generated/codex/vibehub-start-intake.md: cec45fd7b1ed9797a9ffa5fb5d747b0408d5d1e86d29837efd8553bea001797a
-  .vibehub/adapters/generated/codex/vibehub-start.md: a5591863c4b35ae16cb7c4da9d9c3b881437c67c12282de0d49e3505d548844c
-  .vibehub/adapters/generated/codex/vibehub-status.md: 8592f53590cae791786ca0cc2e25603b7aaaa899d31a8f34a3a3c988ac049447
-  .vibehub/adapters/generated/codex/vibehub-switch.md: ad4d778a2e7a7dc967cb11f5a8d7f3092d4f64332c4ac720a6ab21a855d75a0d
-  .vibehub/adapters/generated/codex/vibehub-sync.md: f630b9b420370fe97729fde57038c8343cc916ba483a86b5a4703760b3f79b31
+  .vibehub/adapters/generated/codex/vibehub-research.md: b93d7adde596ca6cef05e206a105b102d38e0b5c371888c190033f99af7da3df
+  .vibehub/adapters/generated/codex/vibehub-review.md: ad5f2463d332c52b4c2b6d41aed65aa98918298ab49466abc8eb2af1d5a0d7ef
+  .vibehub/adapters/generated/codex/vibehub-start-intake.md: 8a11aa4c2da08f1fa2248bceb9c2d23c8fc927e9d14253026305d8f9823f4b92
+  .vibehub/adapters/generated/codex/vibehub-start.md: dc507f9c9fca50f5ec938acb893ddb4fdb6a1b7156e86da477eddd3d5b0f18ba
+  .vibehub/adapters/generated/codex/vibehub-status.md: 38fe3168c25f3b4750de4a4f98066b6924a8dd30f29673fcce767154b82ddea2
+  .vibehub/adapters/generated/codex/vibehub-switch.md: fc76c9c6e5b62bec1c319b5ddb317546ee03c44f8d58bbf41ab9f9d4627e30ce
+  .vibehub/adapters/generated/codex/vibehub-sync.md: 9bfd1f6912ca0a6facf00bd49864191340bb5b3c8e558963bd9f810a32c458bd
   .vibehub/adapters/generated/codex/vibehub-validate-schema.md: 3ed88cd430ed7a784894433c9f3217b12ad90e3b3e1111e55e092a2d0f7476f6
-  .vibehub/adapters/generated/codex/vibehub-validate.md: 253ad47990281dca0326705fade365785685cfeb7caf0bfc205fcc2bcf86f3a3
+  .vibehub/adapters/generated/codex/vibehub-validate.md: e2bd5d780138c60cdb35d3131de83e9db0ec490793259fe5aca37f42b38c9f59
   .vibehub/adapters/hooks/vibehub-stop-check.mjs: 74eac8b73a314a2a70f908e031eb079e07d3014dca3423a321f815095d1e3182
-  .vibehub/adapters/protocol.md: e1b08a52a817bf1352695541aae638b9be83c79d6aded735f2defc55533adfe2
-  AGENTS.md: bdddc63ab0c543301276f0c8a0441bab4f253f121d876ae1deacc3ee5dcc6000
-  CLAUDE.md: d55c083ddacfc576fdc00952936642f678983dce761613c87d800acfa5bfe1b9
+  .vibehub/adapters/protocol.md: eadc58727d18ba19c62ee5fb2572e25adaa9beec213e035a737dca5c162893df
+  AGENTS.md: 895fd48fbbe5b75deae60aaa2f673ba9de1074aa85aa60a977fb044ec6dc1550
+  CLAUDE.md: 6c2ae47b37a6377d303055069c3d4831a42082065928e77530959495205f87cf
   opencode.json: 75230b121eabdc99ba0155f96915794b1776d12f0a227c3807792a649db4850e

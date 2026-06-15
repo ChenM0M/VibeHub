@@ -1,0 +1,9 @@
+schema_version: 1
+kind: vibehub_task
+task_id: T-20260531155016-81ab5ec4
+title: Refine VibeHub agent operating loop and tool orchestration
+mode: guided_drive
+phase: review
+phase_status: completed
+created_at: 2026-05-31T15:50:16Z
+created_by: vibehub

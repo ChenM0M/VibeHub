@@ -7,6 +7,10 @@
 
 ## 1. Contract
 
+VibeHub is the project memory, task router, and workflow gatekeeper for coding agents. Agents do the engineering work; VibeHub tracks state, context, gates, output, and handoff.
+
+Agent-facing command examples use the headless CLI binary `vibehub-cli`. The desktop application may also be named VibeHub, so docs and generated adapter instructions should avoid bare `vibehub ...` command examples.
+
 Every skill returns the baseline §22.1 shape:
 
 ```json
@@ -31,6 +35,8 @@ On failure, `status` is `"error"`, `data` is empty, and `error.code` uses the ba
 |---|---:|---:|---|
 | `vibehub-init` | yes | no | Project bootstrap |
 | `vibehub-status` | yes | no | Human-facing summary |
+| `vibehub-next-action` | yes | yes | Intent-aware router for start/sync/continue/validate/lint/transition/recover |
+| `vibehub-output-lint` | yes | yes | Output quality, evidence-label, and stale-contradiction lint |
 | `vibehub-sync` | yes | yes | Sub-agent candidate for deep sync |
 | `vibehub-start` | yes | no | Task creation; multi-intent intake and task splitting |
 | `vibehub-claim` | yes | no | Capability entry |
@@ -49,6 +55,8 @@ On failure, `status` is `"error"`, `data` is empty, and `error.code` uses the ba
 
 Sub-agent candidates align with baseline §10.2: deep sync, pack building, schema assistance, journal, and handoff work.
 
+In multi-active-task workspaces, agents should run `vibehub-cli status` and either switch with `vibehub-cli switch <project> <task_id>` or use task-scoped validation such as `vibehub-cli validate-task <project> <task_id>` before relying on validation results.
+
 ## 3. Skill Details
 
 ### `vibehub-init`
@@ -65,16 +73,30 @@ Sub-agent candidates align with baseline §10.2: deep sync, pack building, schem
 - Error example: `{ "code": "pack.build.failed", "message": "Agent view is missing", "hint": "Run vibehub-sync or vibehub-recover" }`.
 - Call example: `vibehub-status { project_root: "/repo" }`.
 
+### `vibehub-next-action`
+
+- Fields: `name=vibehub-next-action`; `args=[project_root, intent?]`; `returns=skill_response_schema_v1`; `side_effects=[]`; `callable_by=[main-agent, sub-agent]`; `idempotent=true`; `description=Recommend the next agent action, skill, and CLI command from current VibeHub state`.
+- Main use case: ask VibeHub for a machine-readable route before choosing whether to start, split, sync, continue, validate, lint output, advance, archive, or recover. The optional `intent` lets an agent pass the user's latest wording for lightweight routing without loading more prompt text.
+- Error example: `{ "code": "state.read.failed", "message": "Cannot inspect current VibeHub state", "hint": "Run vibehub-recover" }`.
+- Call example: `vibehub-next-action { project_root: "/repo", intent: "同步当前状态" }`.
+
+### `vibehub-output-lint`
+
+- Fields: `name=vibehub-output-lint`; `args=[project_root, task_id?]`; `returns=skill_response_schema_v1`; `side_effects=[]`; `callable_by=[main-agent, sub-agent]`; `idempotent=true`; `description=Lint VibeHub output.md for missing sections, stale contradictions, and evidence-label hygiene`.
+- Main use case: run before finish/advance or final user reporting to catch output that technically has sections but is stale, contradictory, or missing evidence labels.
+- Error example: `{ "code": "output.missing", "message": "No output.md was found", "hint": "Write run-level output.md before advancing" }`.
+- Call example: `vibehub-output-lint { project_root: "/repo", task_id: "T-123" }`.
+
 ### `vibehub-sync`
 
-- Fields: `name=vibehub-sync`; `args=[project_root, mode?]`; `returns=skill_response_schema_v1`; `side_effects=[writes_events, rebuilds_context, may_write_adapter_files]`; `callable_by=[main-agent, sub-agent]`; `idempotent=true`; `description=Reconcile external workspace state with VibeHub`.
+- Fields: `name=vibehub-sync`; `args=[project_root, mode?]`; `returns=skill_response_schema_v1`; `side_effects=[writes_events, rebuilds_context, may_write_adapter_files]`; `callable_by=[main-agent, sub-agent]`; `idempotent=true`; `description=Reconcile external workspace state with VibeHub; use for continue/refresh/sync requests before edits`.
 - Main use case: run when git head, dirty files, adapter instructions, or agent context freshness has drifted; deep mode is a sub-agent candidate.
 - Error example: `{ "code": "sync.git.head_unreachable", "message": "Cannot read git HEAD", "hint": "Check repository availability and permissions" }`.
 - Call example: `vibehub-sync { project_root: "/repo", mode: "auto" }`.
 
 ### `vibehub-start`
 
-- Fields: `name=vibehub-start`; `args=[project_root, title?, intent?, mode?, intake?]`; `returns=skill_response_schema_v1`; `side_effects=[writes_events, writes_task_state, builds_context_pack]`; `callable_by=[main-agent]`; `idempotent=false`; `description=Create one or more VibeHub tasks from a user request`.
+- Fields: `name=vibehub-start`; `args=[project_root, title?, intent?, mode?, intake?]`; `returns=skill_response_schema_v1`; `side_effects=[writes_events, writes_task_state, builds_context_pack]`; `callable_by=[main-agent]`; `idempotent=false`; `description=Create one or more VibeHub tasks; split multi-intent or independently deliverable requests before starting work`.
 - Main use case: convert a new user request or externally discovered drift into tracked task metadata and context. If one user message contains multiple independent requirements, the main agent should split them into multiple task drafts or task creation calls instead of forcing everything into one task.
 - Multi-intent intake rule: split when requirements have independent deliverables, acceptance criteria, pause/cancel semantics, or file/module scope. Keep one task when items are merely implementation steps of the same user goal. Ask one concise confirmation question only when the split is genuinely ambiguous.
 - Error example: `{ "code": "schema.required.missing", "message": "Task intent is missing", "hint": "Provide a short goal statement" }`.
