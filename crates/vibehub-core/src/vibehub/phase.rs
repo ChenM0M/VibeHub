@@ -343,14 +343,41 @@ pub fn validate_phase(project_root: impl AsRef<Path>) -> Result<PhaseValidationR
     let run_id =
         get_current_run_id(&state).ok_or_else(|| anyhow!("No current run_id in state.yaml"))?;
 
-    let phase_rules = read_phase_rules(&project_root)?;
+    validate_phase_parts(&project_root, &task_id, &run_id, &phase)
+}
+
+pub fn validate_phase_for_task(
+    project_root: impl AsRef<Path>,
+    task_id: &str,
+) -> Result<PhaseValidationResult> {
+    let project_root = canonical_initialized_project_root(project_root.as_ref())?;
+    let task_id = validate_id("task_id", task_id)?;
+    let task_dir = project_root.join(".vibehub/tasks").join(task_id);
+    let task_yaml = read_yaml_file(&task_dir.join("task.yaml"))?;
+    let run_id = read_task_current_run_id(&task_dir)?.or_else(|| latest_run_id(&task_dir));
+    let run_id = run_id.ok_or_else(|| anyhow!("No run found for task '{}'", task_id))?;
+    let run_yaml = read_yaml_file(&task_dir.join("runs").join(&run_id).join("run.yaml"))?;
+    let phase = yaml_string(&run_yaml, &["phase"])
+        .or_else(|| yaml_string(&task_yaml, &["phase"]))
+        .ok_or_else(|| anyhow!("No phase found for task '{}'", task_id))?;
+
+    validate_phase_parts(&project_root, task_id, &run_id, &phase)
+}
+
+fn validate_phase_parts(
+    project_root: &Path,
+    task_id: &str,
+    run_id: &str,
+    phase: &str,
+) -> Result<PhaseValidationResult> {
+    let phase_rules = read_phase_rules(project_root)?;
     let required_outputs = phase_rules
         .phases
-        .get(&phase)
+        .get(phase)
         .and_then(|entry| entry.required_outputs.clone())
         .unwrap_or_default();
 
-    let output_path = find_latest_output(&project_root, &task_id, &run_id);
+    let output_path = find_latest_output(project_root, task_id, run_id);
     let sections = match &output_path {
         Some(path) => parse_output_sections(path).unwrap_or_default(),
         None => BTreeMap::new(),
@@ -378,11 +405,11 @@ pub fn validate_phase(project_root: impl AsRef<Path>) -> Result<PhaseValidationR
 
     let source_output_path = output_path
         .as_ref()
-        .and_then(|p| relative_to_project(&project_root, p).ok())
+        .and_then(|p| relative_to_project(project_root, p).ok())
         .map(|p| normalize_path(&p));
 
     Ok(PhaseValidationResult {
-        phase,
+        phase: phase.to_string(),
         status,
         required_outputs,
         found_outputs,
@@ -809,7 +836,6 @@ pub fn advance_phase_with_force(
                 update_task_run_phase(&project_root, &task_id, &run_id, &phase, STATUS_COMPLETED)?;
             }
 
-            let _ = agent_view::generate_agent_view(&project_root);
             if let (Some(task_id), Some(run_id)) =
                 (get_current_task_id(&state), get_current_run_id(&state))
             {
@@ -838,6 +864,7 @@ pub fn advance_phase_with_force(
                     legacy_event,
                 );
                 let _ = projection::project_current_run_state(&project_root);
+                let _ = agent_view::generate_agent_view(&project_root);
                 if force && !handoff_gate.complete {
                     let _ = events::append_run_event(
                         &project_root,
@@ -913,7 +940,6 @@ pub fn advance_phase_with_force(
 
     update_task_run_phase(&project_root, &task_id, &run_id, &next_phase, STATUS_ACTIVE)?;
     write_state(&state_path, &state)?;
-    let _ = agent_view::generate_agent_view(&project_root);
     let legacy_event = events::append_run_event(
         &project_root,
         &task_id,
@@ -942,6 +968,7 @@ pub fn advance_phase_with_force(
         legacy_event,
     );
     let _ = projection::project_current_run_state(&project_root);
+    let _ = agent_view::generate_agent_view(&project_root);
     if force && !handoff_gate.complete {
         let _ = events::append_run_event(
             &project_root,
@@ -1053,6 +1080,45 @@ fn update_yaml_phase(path: &Path, phase: &str, status: &str) -> Result<()> {
     set_yaml_string(&mut value, &["phase_status"], status);
     let content = serde_yaml::to_string(&value).context("Failed to serialize phase metadata")?;
     fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))
+}
+
+fn read_yaml_file(path: &Path) -> Result<Value> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+    serde_yaml::from_str::<Value>(&content)
+        .with_context(|| format!("Invalid YAML in {}", path.display()))
+}
+
+fn read_task_current_run_id(task_dir: &Path) -> Result<Option<String>> {
+    let pointer_path = task_dir.join("runs").join("current");
+    if !pointer_path.is_file() {
+        return Ok(None);
+    }
+    let value = read_yaml_file(&pointer_path)?;
+    Ok(yaml_string(&value, &["run_id"]))
+}
+
+fn latest_run_id(task_dir: &Path) -> Option<String> {
+    let runs_dir = task_dir.join("runs");
+    let entries = fs::read_dir(runs_dir).ok()?;
+    let mut candidates: Vec<(String, std::time::SystemTime)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() {
+                return None;
+            }
+            let run_id = path.file_name()?.to_str()?.to_string();
+            let modified = path
+                .join("run.yaml")
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            Some((run_id, modified))
+        })
+        .collect();
+    candidates.sort_by_key(|(_, modified)| *modified);
+    candidates.pop().map(|(run_id, _)| run_id)
 }
 
 fn validate_id<'a>(name: &str, value: &'a str) -> Result<&'a str> {
@@ -1285,6 +1351,42 @@ mod tests {
         assert!(result.missing_outputs.is_empty());
         assert_eq!(result.found_outputs.len(), result.required_outputs.len());
         assert!(result.source_output_path.is_some());
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn validate_task_scoped_output_without_switching_current_pointer() {
+        let project = temp_project();
+        let first = setup_guided_drive(&project);
+        write_output_with_sections(
+            &project,
+            &first.task_id,
+            &first.run_id,
+            &[
+                ("Files Changed", "- src/main.rs"),
+                ("Completed", "- Implemented phase system"),
+                ("Not Yet Done", "- No unresolved questions"),
+            ],
+        );
+        let second = start_task::start_task(
+            &project,
+            Some("Second task".to_string()),
+            Some("guided_drive".to_string()),
+            None,
+        )
+        .expect("second");
+
+        let result = validate_phase_for_task(&project, &first.task_id).expect("validate task");
+
+        assert_eq!(result.phase, "implement");
+        assert_eq!(result.status, STATUS_COMPLETED);
+        assert!(result
+            .source_output_path
+            .as_deref()
+            .unwrap_or_default()
+            .contains(&first.task_id));
+        assert_ne!(first.task_id, second.task_id);
 
         fs::remove_dir_all(project).expect("cleanup");
     }
@@ -1662,6 +1764,31 @@ mod tests {
             .and_then(|c| c.get("stale"))
             .and_then(|s| s.as_bool());
         assert_eq!(state_stale, Some(false));
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn agent_view_current_matches_advanced_phase() {
+        let project = temp_project();
+        let started = setup_yolo_drive(&project);
+
+        write_output_with_sections(
+            &project,
+            &started.task_id,
+            &started.run_id,
+            &[
+                ("Completed", "- Intent defined"),
+                ("Key Decisions Made", "- High autonomy"),
+            ],
+        );
+
+        advance_phase(&project).expect("advance");
+
+        let current = fs::read_to_string(project.join(".vibehub/agent-view/current.md"))
+            .expect("read current agent view");
+        assert!(current.contains("- Phase: implement"));
+        assert!(current.contains("- Status: active"));
 
         fs::remove_dir_all(project).expect("cleanup");
     }

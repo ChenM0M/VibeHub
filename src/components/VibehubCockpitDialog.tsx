@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { AlertCircle, Archive, Bot, Boxes, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, Code2, Copy, ExternalLink, Eye, FileText, FolderOpen, GitBranch, History, Layers3, Lightbulb, RefreshCw, Settings, ShieldCheck, Wrench, X, XCircle } from 'lucide-react';
+import { AlertCircle, Archive, Bot, Boxes, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, Code2, Copy, ExternalLink, Eye, FileText, FolderOpen, GitBranch, History, Layers3, Lightbulb, Network, RefreshCw, Settings, ShieldCheck, Wrench, X, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AgentAdapterStatus, AgentTool, PhaseValidationResult, Project, ResearchStatus, VibehubArchivedTaskCard, VibehubArchiveViewData, VibehubActiveTask, VibehubCockpitStatus, VibehubContextViewData, VibehubDiffViewData, VibehubEventTimelineItem, VibehubFileReadResult, VibehubFlowDetail, VibehubGitBranchesView, VibehubHandoffViewData, VibehubProjectDigest, VibehubProjectStructureGraphNode, VibehubProjectStructureTreeNode, VibehubProjectStructureViewData, VibehubPromptRenderResult, VibehubPromptTemplateId, VibehubPromptTemplateOption, VibehubReviewViewData, WorkspaceDriftReport } from '@/types';
 import { tauriApi } from '@/services/tauri';
+import { ProjectDetailBoard } from './ProjectDetailBoard';
+import { ProjectStructureExplorer } from './ProjectStructureExplorer';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -28,7 +30,7 @@ type ActionState = {
     error: boolean;
 };
 
-type RecommendedReadOnlyAction = {
+export type RecommendedReadOnlyAction = {
     command: string;
     title: string;
     description: string;
@@ -37,9 +39,16 @@ type RecommendedReadOnlyAction = {
 
 type PreviewCandidate = { path: string; label: string; exists: boolean };
 type VibehubStatusChangedEvent = { project_path: string; source: string };
-type DashboardDetail = 'task' | 'phase' | 'git' | 'activity' | 'context' | 'output' | 'handoff' | 'review' | 'research' | 'evidence' | 'preview' | 'adapters' | 'settings' | 'structure' | 'archive';
-type FocusTarget = { taskId?: string | null; capability?: string | null; eventId?: string | null };
+export type DashboardDetail = 'task' | 'phase' | 'git' | 'activity' | 'context' | 'output' | 'handoff' | 'review' | 'research' | 'evidence' | 'preview' | 'adapters' | 'settings' | 'structure' | 'archive';
+export type FocusTarget = { taskId?: string | null; capability?: string | null; eventId?: string | null };
+export type DetailOpenTarget = { taskId?: string | null; phase?: string | null };
 type StructureNodeLike = VibehubProjectStructureGraphNode | VibehubProjectStructureTreeNode;
+type LifecycleNode = ProcessStep & {
+    index: number;
+    stage: FlowStage;
+    detail: VibehubFlowDetail | null;
+    events: VibehubEventTimelineItem[];
+};
 
 const AGENT_TOOL_OPTIONS: Array<{ id: AgentTool; label: string }> = [
     { id: 'amp_code', label: 'Amp Code' },
@@ -108,6 +117,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
     const [firstTaskMode, setFirstTaskMode] = useState<string>('evidence_drive');
     const [isStartingFirstTask, setIsStartingFirstTask] = useState(false);
     const [detailPanel, setDetailPanel] = useState<DashboardDetail | null>(null);
+    const [selectedDetailTaskId, setSelectedDetailTaskId] = useState<string | null>(null);
     const [contextView, setContextView] = useState<VibehubContextViewData | null>(null);
     const [reviewView, setReviewView] = useState<VibehubReviewViewData | null>(null);
     const [handoffView, setHandoffView] = useState<VibehubHandoffViewData | null>(null);
@@ -246,6 +256,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
             setSelectedPhase(null);
             setFocusedTarget(null);
             setDetailPanel(null);
+            setSelectedDetailTaskId(null);
             setPreviewPath('');
             setPreviewFile(null);
             setPreviewError(null);
@@ -430,6 +441,18 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
         }
     };
 
+    const openDetail = (detail: DashboardDetail, target?: DetailOpenTarget) => {
+        if (target?.taskId !== undefined) {
+            setSelectedDetailTaskId(target.taskId || null);
+        } else if (detail !== 'phase') {
+            setSelectedDetailTaskId((current) => current || status?.current_task_id || null);
+        }
+        if (target?.phase !== undefined) {
+            setSelectedPhase(target.phase || null);
+        }
+        setDetailPanel(detail);
+    };
+
     return (
         <div className="relative space-y-5">
             {!showOverview && (
@@ -560,7 +583,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                         </div>
                     )}
 
-                    <VibehubProjectDetailShell
+                    <ProjectDetailBoard
                         status={status}
                         phaseValidation={phaseValidation}
                         project={project}
@@ -578,10 +601,9 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                         t={t}
                         onRefresh={() => loadDashboard()}
                         onOpenPrompt={renderPrompt}
-                        onOpenDetail={(detail) => setDetailPanel(detail)}
-                        onOpenPhase={(phase) => {
-                            setSelectedPhase(phase);
-                            setDetailPanel('phase');
+                        onOpenDetail={openDetail}
+                        onOpenPhase={(phase, target) => {
+                            openDetail('phase', { taskId: target?.taskId, phase });
                         }}
                     />
 
@@ -606,6 +628,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                     diffView={diffView}
                     driftReport={driftReport}
                     phaseValidation={phaseValidation}
+                    selectedTaskId={selectedDetailTaskId}
                     selectedPhase={selectedPhase}
                     flowDetails={flowDetails}
                     gitBranches={gitBranches}
@@ -630,7 +653,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                     onSyncAgentAdapters={runSyncAgentAdapters}
                     onSaveLocale={runSaveLocale}
                     onOpenPrompt={renderPrompt}
-                    onOpenDetail={(detail) => setDetailPanel(detail)}
+                    onOpenDetail={openDetail}
                     onFocusTarget={(target) => {
                         setFocusedTarget(target);
                         setDetailPanel(null);
@@ -669,6 +692,7 @@ function DetailDrawer({
     diffView,
     driftReport,
     phaseValidation,
+    selectedTaskId,
     selectedPhase,
     flowDetails,
     gitBranches,
@@ -707,6 +731,7 @@ function DetailDrawer({
     diffView: VibehubDiffViewData | null;
     driftReport: WorkspaceDriftReport | null;
     phaseValidation: PhaseValidationResult | null;
+    selectedTaskId: string | null;
     selectedPhase: string | null;
     flowDetails: VibehubFlowDetail[];
     gitBranches: VibehubGitBranchesView | null;
@@ -735,6 +760,7 @@ function DetailDrawer({
     onFocusTarget: (target: FocusTarget) => void;
 }) {
     const title = getDetailTitle(detail, t);
+    const drawerWidthClass = getDetailDrawerWidthClass(detail);
 
     return (
         <div
@@ -742,7 +768,7 @@ function DetailDrawer({
             onMouseDown={onClose}
         >
             <div
-                className={`flex h-full w-full flex-col border-l bg-background shadow-xl ${detail === 'structure' ? 'max-w-5xl' : 'max-w-xl'}`}
+                className={`flex h-full w-full flex-col border-l bg-background shadow-xl ${drawerWidthClass}`}
                 onMouseDown={(event) => event.stopPropagation()}
             >
                 <div className="flex flex-none items-start justify-between gap-3 border-b px-5 py-4">
@@ -755,16 +781,26 @@ function DetailDrawer({
                     </Button>
                 </div>
 
-                <div className="flex-1 space-y-4 overflow-y-auto p-5">
-                    {detail === 'task' && <TaskDetailContent status={status} t={t} />}
+                <div className="flex-1 overflow-y-auto px-5 py-4">
+                    {detail === 'task' && (
+                        <TaskDetailContent
+                            status={status}
+                            selectedTaskId={selectedTaskId}
+                            selectedPhase={selectedPhase}
+                            flowDetails={flowDetails}
+                            phaseValidation={phaseValidation}
+                            events={eventTimeline}
+                            t={t}
+                        />
+                    )}
                     {detail === 'phase' && (
                         <StatusTabContent
                             status={status}
                             phaseValidation={phaseValidation}
+                            selectedTaskId={selectedTaskId}
                             selectedPhase={selectedPhase}
                             flowDetails={flowDetails}
-                            readOnlyActions={readOnlyActions}
-                            onOpenPrompt={onOpenPrompt}
+                            events={eventTimeline}
                             t={t}
                         />
                     )}
@@ -773,13 +809,6 @@ function DetailDrawer({
                             status={status}
                             phaseValidation={phaseValidation}
                             events={eventTimeline}
-                            previewCandidates={previewCandidates}
-                            previewPath={previewPath}
-                            setPreviewPath={setPreviewPath}
-                            previewFile={previewFile}
-                            isPreviewLoading={isPreviewLoading}
-                            previewError={previewError}
-                            projectPath={status.project_root}
                             onFocusTarget={onFocusTarget}
                             t={t}
                         />
@@ -876,7 +905,7 @@ function DetailDrawer({
                         />
                     )}
                     {detail === 'structure' && (
-                        <StructureDetailContent
+                        <ProjectStructureExplorer
                             projectStructure={projectStructure}
                             projectPath={status.project_root}
                             t={t}
@@ -893,11 +922,11 @@ function DetailDrawer({
                         />
                     )}
 
-                    {readOnlyActions.length > 0 && detail !== 'phase' && (
+                    {detail === 'settings' && readOnlyActions.length > 0 && (
                         <div className="rounded-md border bg-muted/10 p-3">
                             <div className="text-sm font-medium">{t('vibehub.dashboard.recommendedCommands')}</div>
                             <div className="mt-2 space-y-2">
-                                {readOnlyActions.map((action) => (
+                                {readOnlyActions.slice(0, 3).map((action) => (
                                     <RecommendedCommand
                                         key={`${action.command}-${action.title}`}
                                         command={action.command}
@@ -910,14 +939,16 @@ function DetailDrawer({
                             </div>
                         </div>
                     )}
-                    <PromptActionGrid templates={promptTemplates} onOpenPrompt={onOpenPrompt} t={t} />
+                    {detail === 'settings' && (
+                        <PromptActionGrid templates={promptTemplates} onOpenPrompt={onOpenPrompt} t={t} />
+                    )}
                 </div>
             </div>
         </div>
     );
 }
 
-type ProjectTaskCardState = {
+export type ProjectTaskCardState = {
     task_id: string;
     title?: string | null;
     run_id?: string | null;
@@ -931,7 +962,7 @@ type ProjectTaskCardState = {
     shared_files: string[];
 };
 
-function VibehubProjectDetailShell({
+export function VibehubProjectDetailShell({
     status,
     phaseValidation,
     project,
@@ -1334,7 +1365,7 @@ type ProcessStep = {
     status: string;
 };
 
-function ProcessPill({
+export function ProcessPill({
     step,
     focused,
     onOpenPhase,
@@ -1365,33 +1396,40 @@ function ProcessPill({
 
 function TaskDetailContent({
     status,
+    selectedTaskId,
+    selectedPhase,
+    flowDetails,
+    phaseValidation,
+    events,
     t,
 }: {
     status: VibehubCockpitStatus;
+    selectedTaskId: string | null;
+    selectedPhase: string | null;
+    flowDetails: VibehubFlowDetail[];
+    phaseValidation: PhaseValidationResult | null;
+    events: VibehubEventTimelineItem[];
     t: (key: string, options?: Record<string, unknown>) => string;
 }) {
     const tasks = getProjectTaskCards(status);
+    if (!tasks.length) {
+        return (
+            <div className="py-2">
+                <Notice error={false} message={labelOrFallback(t, 'vibehub.projectMap.emptyTasksHint', 'Ask an agent to run vibehub-start so VibeHub can create one or more tasks from the current request.')} />
+            </div>
+        );
+    }
+
     return (
-        <div className="space-y-3">
-            <div className="text-sm font-medium">{labelOrFallback(t, 'vibehub.projectMap.taskDetail', 'Task detail')}</div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-                <ViewField label={t('vibehub.status.currentTaskRun')} value={status.current_task_id || t('common.none')} />
-                <ViewField label={t('vibehub.status.run')} value={status.current_run_id || t('common.none')} />
-                <ViewField label={t('vibehub.status.mode')} value={formatMode(status.current_mode, t)} />
-                <ViewField label={t('vibehub.status.phase')} value={status.current_phase || t('common.none')} />
-            </div>
-            <div className="space-y-2">
-                {tasks.map((task) => (
-                    <div key={task.task_id} className="rounded-md border bg-muted/10 p-3 text-xs">
-                        <div className="flex items-center justify-between gap-2">
-                            <span className="truncate font-medium">{task.title || task.task_id}</span>
-                            <Badge variant={task.current ? 'default' : 'outline'}>{task.current ? labelOrFallback(t, 'vibehub.kanban.current', 'Current') : formatStatusValue(task.phase_status, t)}</Badge>
-                        </div>
-                        <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{task.task_id}{task.run_id ? ` / ${task.run_id}` : ''}</div>
-                    </div>
-                ))}
-            </div>
-        </div>
+        <TaskLifecycleCanvas
+            status={status}
+            selectedTaskId={selectedTaskId}
+            selectedPhase={selectedPhase}
+            flowDetails={flowDetails}
+            phaseValidation={phaseValidation}
+            events={events}
+            t={t}
+        />
     );
 }
 
@@ -1399,26 +1437,12 @@ function ActivityDetailContent({
     status,
     phaseValidation,
     events,
-    previewCandidates,
-    previewPath,
-    setPreviewPath,
-    previewFile,
-    isPreviewLoading,
-    previewError,
-    projectPath,
     onFocusTarget,
     t,
 }: {
     status: VibehubCockpitStatus;
     phaseValidation: PhaseValidationResult | null;
     events: VibehubEventTimelineItem[];
-    previewCandidates: PreviewCandidate[];
-    previewPath: string;
-    setPreviewPath: (path: string) => void;
-    previewFile: VibehubFileReadResult | null;
-    isPreviewLoading: boolean;
-    previewError: string | null;
-    projectPath: string;
     onFocusTarget: (target: FocusTarget) => void;
     t: (key: string, options?: Record<string, unknown>) => string;
 }) {
@@ -1438,110 +1462,128 @@ function ActivityDetailContent({
     const selectedEvent = filteredEvents.find((event) => event.event_id === selectedEventId) || filteredEvents[0] || null;
 
     return (
-        <div className="space-y-3">
-            <div className="text-sm font-medium">{labelOrFallback(t, 'vibehub.projectMap.activityDetail', 'Recent activity')}</div>
-            <div className="rounded-md border bg-muted/10 p-3">
-                <div className="text-sm font-medium">{activity.title}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{activity.detail}</div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-                <TimelineFilterSelect
-                    label={labelOrFallback(t, 'vibehub.activity.taskFilter', 'Task')}
-                    value={taskFilter}
-                    options={taskOptions}
-                    allLabel={labelOrFallback(t, 'vibehub.activity.allTasks', 'All tasks')}
-                    onChange={setTaskFilter}
-                />
-                <TimelineFilterSelect
-                    label={labelOrFallback(t, 'vibehub.activity.capabilityFilter', 'Capability')}
-                    value={capabilityFilter}
-                    options={capabilityOptions}
-                    allLabel={labelOrFallback(t, 'vibehub.activity.allCapabilities', 'All capabilities')}
-                    onChange={setCapabilityFilter}
-                    format={(value) => formatCapabilityLabel(value, t)}
-                />
-                <TimelineFilterSelect
-                    label={labelOrFallback(t, 'vibehub.activity.typeFilter', 'Event type')}
-                    value={typeFilter}
-                    options={typeOptions}
-                    allLabel={labelOrFallback(t, 'vibehub.activity.allTypes', 'All types')}
-                    onChange={setTypeFilter}
-                />
-            </div>
+        <div className="grid min-h-0 gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
+            <div className="space-y-4 border-r pr-4">
+                <div className="border-b pb-3">
+                    <SectionEyebrow>{labelOrFallback(t, 'vibehub.projectMap.recentActivity', 'Recent activity')}</SectionEyebrow>
+                    <div className="mt-2 text-sm font-semibold leading-snug">{activity.title}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{activity.detail}</div>
+                </div>
 
-            <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs font-medium text-muted-foreground">
-                        {labelOrFallback(t, 'vibehub.activity.timeline', 'Timeline')} ({filteredEvents.length})
+                <div className="grid gap-2">
+                    <TimelineFilterSelect
+                        label={labelOrFallback(t, 'vibehub.activity.taskFilter', 'Task')}
+                        value={taskFilter}
+                        options={taskOptions}
+                        allLabel={labelOrFallback(t, 'vibehub.activity.allTasks', 'All tasks')}
+                        onChange={setTaskFilter}
+                    />
+                    <TimelineFilterSelect
+                        label={labelOrFallback(t, 'vibehub.activity.capabilityFilter', 'Capability')}
+                        value={capabilityFilter}
+                        options={capabilityOptions}
+                        allLabel={labelOrFallback(t, 'vibehub.activity.allCapabilities', 'All capabilities')}
+                        onChange={setCapabilityFilter}
+                        format={(value) => formatCapabilityLabel(value, t)}
+                    />
+                    <TimelineFilterSelect
+                        label={labelOrFallback(t, 'vibehub.activity.typeFilter', 'Event type')}
+                        value={typeFilter}
+                        options={typeOptions}
+                        allLabel={labelOrFallback(t, 'vibehub.activity.allTypes', 'All types')}
+                        onChange={setTypeFilter}
+                    />
+                </div>
+
+                <div>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                        <SectionEyebrow>{labelOrFallback(t, 'vibehub.activity.timeline', 'Timeline')}</SectionEyebrow>
+                        <Badge variant="outline">{filteredEvents.length}</Badge>
                     </div>
-                    {selectedEvent && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onFocusTarget({
-                                taskId: selectedEvent.task_id,
-                                capability: selectedEvent.capability,
-                                eventId: selectedEvent.event_id,
+                    {filteredEvents.length === 0 ? (
+                        <Notice error={false} message={labelOrFallback(t, 'vibehub.activity.noEvents', 'No events match the current filters.')} />
+                    ) : (
+                        <div className="max-h-[calc(100vh-22rem)] overflow-auto pr-1">
+                            {filteredEvents.map((event) => {
+                                const selected = selectedEvent?.event_id === event.event_id;
+                                return (
+                                    <button
+                                        key={event.event_id}
+                                        type="button"
+                                        onClick={() => setSelectedEventId(event.event_id)}
+                                        className={`w-full border-l-2 px-3 py-2 text-left transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? 'border-primary bg-primary/5' : 'border-transparent'}`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span className="h-2 w-2 shrink-0 rounded-full bg-primary/70" />
+                                            <span className="min-w-0 flex-1 truncate text-xs font-medium">{event.summary || event.event_type}</span>
+                                            <span className="shrink-0 text-[11px] text-muted-foreground">{formatCompactDate(event.timestamp)}</span>
+                                        </div>
+                                        <div className="mt-1 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] text-muted-foreground">
+                                            <span className="truncate">{event.event_type}</span>
+                                            {event.capability && <span>· {formatCapabilityLabel(event.capability, t)}</span>}
+                                        </div>
+                                    </button>
+                                );
                             })}
-                        >
-                            <Eye className="mr-2 h-4 w-4" />
-                            {labelOrFallback(t, 'vibehub.activity.focusBoard', 'Focus board')}
-                        </Button>
+                        </div>
                     )}
                 </div>
-                {filteredEvents.length === 0 ? (
-                    <Notice error={false} message={labelOrFallback(t, 'vibehub.activity.noEvents', 'No events match the current filters.')} />
-                ) : (
-                    <div className="max-h-72 space-y-2 overflow-auto pr-1">
-                        {filteredEvents.map((event) => (
-                            <button
-                                key={event.event_id}
-                                type="button"
-                                onClick={() => setSelectedEventId(event.event_id)}
-                                className={`w-full rounded-md border p-3 text-left transition hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selectedEvent?.event_id === event.event_id ? 'border-primary bg-primary/5' : 'bg-background'}`}
-                            >
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant="outline">{event.event_type}</Badge>
-                                    {event.capability && <Badge variant="secondary">{formatCapabilityLabel(event.capability, t)}</Badge>}
-                                    <span className="ml-auto text-[11px] text-muted-foreground">{formatTimelineTime(event.timestamp)}</span>
-                                </div>
-                                <div className="mt-2 text-sm font-medium">{event.summary || event.event_type}</div>
-                                <div className="mt-1 break-all text-[11px] text-muted-foreground">
-                                    {(event.task_title || event.task_id) || t('common.unknown')} · {event.run_id}
-                                </div>
-                            </button>
-                        ))}
-                    </div>
-                )}
             </div>
 
-            {selectedEvent && (
-                <div className="space-y-2 rounded-md border bg-muted/10 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs font-medium text-muted-foreground">
-                            {labelOrFallback(t, 'vibehub.activity.eventPayload', 'Event payload')}
+            <div className="min-w-0">
+                {selectedEvent ? (
+                    <div className="space-y-5">
+                        <div className="border-b pb-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline">{selectedEvent.event_type}</Badge>
+                                {selectedEvent.capability && <Badge variant="secondary">{formatCapabilityLabel(selectedEvent.capability, t)}</Badge>}
+                                <Badge variant="outline">{formatTimelineTime(selectedEvent.timestamp)}</Badge>
+                            </div>
+                            <h3 className="mt-3 text-base font-semibold leading-snug">{selectedEvent.summary || selectedEvent.event_type}</h3>
+                            <div className="mt-2 break-all font-mono text-xs text-muted-foreground">{selectedEvent.event_id}</div>
                         </div>
-                        <Badge variant="outline">{selectedEvent.event_id}</Badge>
-                    </div>
-                    <StructuredValueView value={selectedEvent.raw} />
-                </div>
-            )}
 
-            <PackageRendererContent
-                candidates={previewCandidates}
-                selectedPath={previewPath}
-                onSelectedPathChange={setPreviewPath}
-                file={previewFile}
-                loading={isPreviewLoading}
-                error={previewError}
-                projectPath={projectPath}
-                t={t}
-            />
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onFocusTarget({
+                                    taskId: selectedEvent.task_id,
+                                    capability: selectedEvent.capability,
+                                    eventId: selectedEvent.event_id,
+                                })}
+                            >
+                                <Eye className="mr-2 h-4 w-4" />
+                                {labelOrFallback(t, 'vibehub.activity.focusBoard', 'Focus board')}
+                            </Button>
+                        </div>
+
+                        <DetailSection title={labelOrFallback(t, 'vibehub.activity.eventTarget', 'Event target')}>
+                            <KeyValueRows
+                                rows={[
+                                    [t('vibehub.status.task'), selectedEvent.task_title || selectedEvent.task_id || t('common.unknown')],
+                                    [t('vibehub.status.run'), selectedEvent.run_id || t('common.unknown')],
+                                    [t('vibehub.status.phase'), selectedEvent.capability ? formatCapabilityLabel(selectedEvent.capability, t) : t('common.none')],
+                                    [labelOrFallback(t, 'vibehub.activity.eventLog', 'Event log'), selectedEvent.event_log_path],
+                                ]}
+                            />
+                        </DetailSection>
+
+                        <DetailSection title={labelOrFallback(t, 'vibehub.activity.eventPayload', 'Event payload')}>
+                            <div className="max-h-[calc(100vh-28rem)] overflow-auto border bg-muted/10 p-3">
+                                <StructuredValueView value={selectedEvent.raw} />
+                            </div>
+                        </DetailSection>
+                    </div>
+                ) : (
+                    <Notice error={false} message={labelOrFallback(t, 'vibehub.activity.noEvents', 'No events match the current filters.')} />
+                )}
+            </div>
         </div>
     );
 }
 
-function StructureDetailContent({
+export function StructureDetailContent({
     projectStructure,
     projectPath,
     t,
@@ -1833,31 +1875,26 @@ function ArchiveDetailContent({
 
     return (
         <div className="space-y-4">
-            <div>
-                <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-medium">{labelOrFallback(t, 'vibehub.projectMap.archive', 'Archive')}</div>
-                    <Badge variant="outline">{cards.length}</Badge>
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                    {labelOrFallback(t, 'vibehub.projectMap.archiveHint', 'Completed and cancelled task history stays inspectable here.')}
-                </div>
-            </div>
-
-            {archiveView?.warnings.length ? (
-                <div className="space-y-1">
-                    {archiveView.warnings.map((warning) => (
-                        <Notice key={warning} error message={warning} />
-                    ))}
-                </div>
-            ) : null}
-
             {cards.length === 0 ? (
-                <div className="rounded-md border bg-muted/10 p-4 text-sm text-muted-foreground">
-                    {labelOrFallback(t, 'vibehub.projectMap.archiveEmpty', 'No completed or cancelled tasks yet.')}
-                </div>
+                <Notice error={false} message={labelOrFallback(t, 'vibehub.projectMap.archiveEmpty', 'No completed or cancelled tasks yet.')} />
             ) : (
-                <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
-                    <div className="space-y-2">
+                <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+                    <div className="border-r pr-4">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                            <SectionEyebrow>{labelOrFallback(t, 'vibehub.projectMap.archive', 'Archive')}</SectionEyebrow>
+                            <Badge variant="outline">{cards.length}</Badge>
+                        </div>
+                        <div className="mb-3 text-xs text-muted-foreground">
+                            {labelOrFallback(t, 'vibehub.projectMap.archiveHint', 'Completed and cancelled task history stays inspectable here.')}
+                        </div>
+                        {archiveView?.warnings.length ? (
+                            <div className="mb-3 space-y-2">
+                                {archiveView.warnings.map((warning) => (
+                                    <Notice key={warning} error message={warning} />
+                                ))}
+                            </div>
+                        ) : null}
+                        <div className="space-y-1">
                         {cards.map((card) => (
                             <ArchiveCardButton
                                 key={card.task_id}
@@ -1867,37 +1904,44 @@ function ArchiveDetailContent({
                                 t={t}
                             />
                         ))}
+                        </div>
                     </div>
                     {selected && (
-                        <div className="space-y-4 rounded-md border bg-muted/10 p-3">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2 text-sm font-semibold">
-                                        <ArchiveStatusIcon status={selected.status} />
-                                        <span className="truncate">{selected.title || selected.task_id}</span>
-                                    </div>
-                                    <div className="mt-1 break-words text-xs text-muted-foreground">{selected.summary}</div>
+                        <div className="min-w-0 space-y-5">
+                            <div className="border-b pb-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <ArchiveStatusIcon status={selected.status} />
+                                    <Badge variant={selected.status === 'cancelled' ? 'secondary' : 'outline'}>
+                                        {formatArchiveStatus(selected.status, t)}
+                                    </Badge>
+                                    {selected.phase && <Badge variant="secondary">{formatPhaseName(selected.phase, t)}</Badge>}
+                                    {selected.updated_at && <Badge variant="outline">{formatCompactDate(selected.updated_at)}</Badge>}
                                 </div>
-                                <Badge variant={selected.status === 'cancelled' ? 'secondary' : 'outline'}>
-                                    {formatArchiveStatus(selected.status, t)}
-                                </Badge>
+                                <h3 className="mt-3 text-base font-semibold leading-snug">{selected.title || selected.task_id}</h3>
+                                <div className="mt-2 break-words text-sm text-muted-foreground">{selected.summary}</div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                                <ViewField label={t('vibehub.status.task')} value={selected.task_id} />
-                                <ViewField label={t('vibehub.status.run')} value={selected.run_id || t('common.unknown')} />
-                                <ViewField label={t('vibehub.status.mode')} value={selected.mode ? formatMode(selected.mode, t) : t('common.unknown')} />
-                                <ViewField label={t('vibehub.status.phase')} value={selected.phase || t('common.unknown')} />
-                            </div>
+                            <DetailSection title={labelOrFallback(t, 'vibehub.projectMap.taskMetadata', 'Task/run metadata')}>
+                                <KeyValueRows
+                                    rows={[
+                                        [t('vibehub.status.task'), selected.task_id],
+                                        [t('vibehub.status.run'), selected.run_id || t('common.unknown')],
+                                        [t('vibehub.status.mode'), selected.mode ? formatMode(selected.mode, t) : t('common.unknown')],
+                                        [t('vibehub.status.phase'), selected.phase || t('common.unknown')],
+                                        [t('vibehub.status.phaseStatus'), formatStatusValue(selected.phase_status, t)],
+                                        [labelOrFallback(t, 'vibehub.projectMap.archiveEventTotal', 'Events'), String(selected.event_count)],
+                                    ]}
+                                />
+                            </DetailSection>
 
                             {selected.status_reason && (
                                 <Notice error={selected.status === 'cancelled'} message={selected.status_reason} />
                             )}
 
-                            <ArchiveSection title={labelOrFallback(t, 'vibehub.projectMap.archiveProcess', 'Process')}>
-                                <div className="space-y-2">
+                            <DetailSection title={labelOrFallback(t, 'vibehub.projectMap.archiveProcess', 'Process')}>
+                                <div className="divide-y border-y">
                                     {selected.process.length ? selected.process.map((step) => (
-                                        <div key={`${step.name}-${step.status}`} className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-xs">
+                                        <div key={`${step.name}-${step.status}`} className="flex items-center justify-between gap-3 py-2 text-xs">
                                             <div className="min-w-0">
                                                 <div className="truncate font-medium">{formatPhaseName(step.name, t)}</div>
                                                 <div className="text-muted-foreground">{labelOrFallback(t, 'vibehub.projectMap.archiveEventCount', '{{count}} event(s)', { count: step.event_count })}</div>
@@ -1905,14 +1949,14 @@ function ArchiveDetailContent({
                                             <Badge variant="outline">{formatStatusValue(step.status, t)}</Badge>
                                         </div>
                                     )) : (
-                                        <div className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
+                                        <div className="py-2 text-xs text-muted-foreground">
                                             {labelOrFallback(t, 'vibehub.projectMap.archiveNoProcess', 'No process events recorded.')}
                                         </div>
                                     )}
                                 </div>
-                            </ArchiveSection>
+                            </DetailSection>
 
-                            <ArchiveSection title={labelOrFallback(t, 'vibehub.projectMap.archiveArtifacts', 'Artifacts')}>
+                            <DetailSection title={labelOrFallback(t, 'vibehub.projectMap.archiveArtifacts', 'Artifacts')}>
                                 <ArchiveArtifactButtons
                                     title={labelOrFallback(t, 'vibehub.projectMap.archiveHandoffs', 'Handoffs')}
                                     artifacts={selected.handoff_artifacts}
@@ -1931,16 +1975,16 @@ function ArchiveDetailContent({
                                     onOpenArtifact={onOpenArtifact}
                                     t={t}
                                 />
-                            </ArchiveSection>
+                            </DetailSection>
 
-                            <ArchiveSection title={labelOrFallback(t, 'vibehub.projectMap.archiveTimeline', 'Timeline')}>
-                                <div className="space-y-2">
+                            <DetailSection title={labelOrFallback(t, 'vibehub.projectMap.archiveTimeline', 'Timeline')}>
+                                <div className="divide-y border-y">
                                     {selected.events.length ? selected.events.slice(0, 24).map((event, index) => (
                                         <button
                                             key={`${event.event_id || index}-${event.event_type}`}
                                             type="button"
                                             onClick={() => onOpenArtifact(event.artifact_path)}
-                                            className="w-full rounded-md border bg-background px-3 py-2 text-left text-xs transition hover:border-primary/50"
+                                            className="w-full px-1 py-2 text-left text-xs transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                         >
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="truncate font-medium">{event.event_type}</span>
@@ -1949,12 +1993,12 @@ function ArchiveDetailContent({
                                             <div className="mt-1 break-words text-muted-foreground">{event.summary}</div>
                                         </button>
                                     )) : (
-                                        <div className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
+                                        <div className="py-2 text-xs text-muted-foreground">
                                             {labelOrFallback(t, 'vibehub.projectMap.archiveNoEvents', 'No event log entries recorded.')}
                                         </div>
                                     )}
                                 </div>
-                            </ArchiveSection>
+                            </DetailSection>
                         </div>
                     )}
                 </div>
@@ -1963,7 +2007,7 @@ function ArchiveDetailContent({
     );
 }
 
-function ArchiveCardButton({
+export function ArchiveCardButton({
     card,
     compact = false,
     selected = false,
@@ -2013,15 +2057,6 @@ function ArchiveStatusIcon({ status }: { status: string }) {
         : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />;
 }
 
-function ArchiveSection({ title, children }: { title: string; children: ReactNode }) {
-    return (
-        <div>
-            <div className="mb-2 text-xs font-semibold text-muted-foreground">{title}</div>
-            {children}
-        </div>
-    );
-}
-
 function ArchiveArtifactButtons({
     title,
     artifacts,
@@ -2037,22 +2072,25 @@ function ArchiveArtifactButtons({
         <div className="mb-3 last:mb-0">
             <div className="mb-1 text-xs text-muted-foreground">{title}</div>
             {artifacts.length ? (
-                <div className="space-y-1">
+                <div className="divide-y border-y">
                     {artifacts.map((artifact) => (
                         <button
                             key={artifact.path}
                             type="button"
                             onClick={() => onOpenArtifact(artifact.path)}
-                            className="flex w-full items-center gap-2 rounded-md border bg-background px-3 py-2 text-left text-xs transition hover:border-primary/50"
+                            className="flex w-full items-center gap-2 px-1 py-2 text-left text-xs transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                             <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             <span className="min-w-0 flex-1 truncate">{artifact.label}</span>
+                            {!artifact.exists && (
+                                <Badge variant="outline">{t('vibehub.stateValues.missing')}</Badge>
+                            )}
                             <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         </button>
                     ))}
                 </div>
             ) : (
-                <div className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
+                <div className="border-y py-2 text-xs text-muted-foreground">
                     {labelOrFallback(t, 'vibehub.projectMap.archiveNoArtifacts', 'No artifacts found.')}
                 </div>
             )}
@@ -2157,7 +2195,7 @@ function AdapterDetailContent({
     );
 }
 
-function RecommendedCommand({
+export function RecommendedCommand({
     command,
     text,
     promptTemplateId,
@@ -2186,7 +2224,7 @@ function RecommendedCommand({
     );
 }
 
-function PromptActionGrid({
+export function PromptActionGrid({
     templates,
     onOpenPrompt,
     t,
@@ -2330,24 +2368,381 @@ function PromptGeneratorModal({
 
 // Tab content components.
 
-function FlowDetailPanel({
-    detail,
+function TaskLifecycleCanvas({
+    status,
+    selectedTaskId,
+    selectedPhase,
+    flowDetails,
+    phaseValidation,
+    events,
     t,
 }: {
-    detail: VibehubFlowDetail;
+    status: VibehubCockpitStatus;
+    selectedTaskId: string | null;
+    selectedPhase: string | null;
+    flowDetails: VibehubFlowDetail[];
+    phaseValidation: PhaseValidationResult | null;
+    events: VibehubEventTimelineItem[];
     t: (key: string, options?: Record<string, unknown>) => string;
 }) {
+    const tasks = getProjectTaskCards(status);
+    const selectedTask = tasks.find((task) => task.task_id === selectedTaskId)
+        || tasks.find((task) => task.current)
+        || tasks[0]
+        || null;
+    const nodes = selectedTask ? getTaskLifecycleNodes(selectedTask, status, flowDetails, events) : [];
+    const preferredPhase = selectedPhase
+        || nodes.find((node) => node.status === 'active' || node.status === 'running')?.phase
+        || selectedTask?.phase
+        || nodes.find((node) => node.kind === 'phase')?.phase
+        || null;
+    const [inspectedPhase, setInspectedPhase] = useState<string | null>(preferredPhase);
+
+    useEffect(() => {
+        setInspectedPhase(preferredPhase);
+    }, [preferredPhase, selectedTask?.task_id]);
+
+    if (!selectedTask) {
+        return <Notice error={false} message={labelOrFallback(t, 'vibehub.projectMap.emptyTasksHint', 'Ask an agent to run vibehub-start so VibeHub can create one or more tasks from the current request.')} />;
+    }
+
+    const inspectedNode = nodes.find((node) => node.phase === inspectedPhase)
+        || nodes.find((node) => node.status === 'active' || node.status === 'running')
+        || nodes[0]
+        || null;
+    const totalEvents = nodes.reduce((count, node) => count + node.events.length, 0);
+    const artifactCount = nodes.reduce((count, node) => count + (node.detail?.read_inputs.length || 0) + (node.detail?.written_outputs.length || 0), 0);
+    const hasWarnings = status.warnings.length > 0 && selectedTask.current;
+
     return (
-        <div className="rounded-md border bg-muted/10 p-3">
-            <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-medium">{t(`vibehub.flowPhases.${detail.phase}`)}</div>
-                <Badge variant={phaseBadgeVariant(detail.status)}>{formatPhaseStatus(detail.status, t)}</Badge>
+        <div className="grid min-h-0 gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
+            <div className="min-w-0 space-y-5">
+                <div className="border-b pb-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={selectedTask.current ? 'default' : 'outline'}>
+                            {selectedTask.current ? labelOrFallback(t, 'vibehub.kanban.current', 'Current') : formatStatusValue(selectedTask.phase_status, t)}
+                        </Badge>
+                        {selectedTask.phase && <Badge variant="secondary">{formatCapabilityLabel(selectedTask.phase, t)}</Badge>}
+                        {selectedTask.mode && <Badge variant="outline">{formatMode(selectedTask.mode, t)}</Badge>}
+                    </div>
+                    <div className="mt-3 flex items-start gap-3">
+                        <div className="flex h-11 w-14 shrink-0 items-center justify-center border bg-muted/20 text-xs font-semibold">
+                            {getTaskShortLabel(selectedTask, t)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <h3 className="text-base font-semibold leading-snug">{selectedTask.title || selectedTask.task_id}</h3>
+                            <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                                {selectedTask.task_id}{selectedTask.run_id ? ` / ${selectedTask.run_id}` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                    <LifecycleMetric label={labelOrFallback(t, 'vibehub.lifecycle.phases', 'Phases')} value={String(nodes.filter((node) => node.phase).length)} />
+                    <LifecycleMetric label={labelOrFallback(t, 'vibehub.lifecycle.artifacts', 'Artifacts')} value={String(artifactCount)} />
+                    <LifecycleMetric label={labelOrFallback(t, 'vibehub.lifecycle.events', 'Events')} value={String(totalEvents)} tone={hasWarnings ? 'warn' : 'normal'} />
+                </div>
+
+                <section className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <Network className="h-4 w-4 text-muted-foreground" />
+                            <SectionEyebrow>{labelOrFallback(t, 'vibehub.lifecycle.canvas', 'Lifecycle canvas')}</SectionEyebrow>
+                        </div>
+                        <Badge variant="outline">{labelOrFallback(t, 'vibehub.dashboard.readOnlyBadge', 'Read-only')}</Badge>
+                    </div>
+
+                    <div className="relative overflow-x-auto border bg-muted/10 p-4">
+                        <svg className="pointer-events-none absolute left-0 top-0 h-full min-h-[19rem] w-full" aria-hidden="true">
+                            {nodes.slice(0, -1).map((node, index) => {
+                                const x1 = 12 + (index + 0.5) * (76 / Math.max(nodes.length, 1));
+                                const x2 = 12 + (index + 1.5) * (76 / Math.max(nodes.length, 1));
+                                return (
+                                    <line
+                                        key={`${node.phase || node.stage}-line`}
+                                        x1={`${x1}%`}
+                                        y1="42%"
+                                        x2={`${x2}%`}
+                                        y2="42%"
+                                        stroke="currentColor"
+                                        strokeWidth="1.5"
+                                        strokeDasharray={node.status === 'skipped' ? '4 5' : undefined}
+                                        className="text-border"
+                                    />
+                                );
+                            })}
+                        </svg>
+                        <div className="relative grid min-w-[760px] gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(nodes.length, 1)}, minmax(8.5rem, 1fr))` }}>
+                            {nodes.map((node) => (
+                                <LifecycleNodeButton
+                                    key={`${node.stage}:${node.phase || 'skipped'}`}
+                                    node={node}
+                                    selected={inspectedNode?.phase === node.phase}
+                                    onSelect={() => setInspectedPhase(node.phase)}
+                                    t={t}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                <LifecycleEventRail nodes={nodes} t={t} />
             </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <ArtifactList title={t('vibehub.dashboard.readInputs')} artifacts={detail.read_inputs} t={t} />
-                <ArtifactList title={t('vibehub.dashboard.writtenOutputs')} artifacts={detail.written_outputs} t={t} />
-            </div>
+
+            <LifecycleInspector
+                task={selectedTask}
+                node={inspectedNode}
+                status={status}
+                phaseValidation={phaseValidation}
+                t={t}
+            />
         </div>
+    );
+}
+
+function LifecycleMetric({ label, value, tone = 'normal' }: { label: string; value: string; tone?: 'normal' | 'warn' }) {
+    return (
+        <div className="border px-3 py-2">
+            <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
+            <div className={`mt-1 text-lg font-semibold ${tone === 'warn' ? 'text-amber-700 dark:text-amber-300' : ''}`}>{value}</div>
+        </div>
+    );
+}
+
+function LifecycleNodeButton({
+    node,
+    selected,
+    onSelect,
+    t,
+}: {
+    node: LifecycleNode;
+    selected: boolean;
+    onSelect: () => void;
+    t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+    const inputCount = node.detail?.read_inputs.length || 0;
+    const outputCount = node.detail?.written_outputs.length || 0;
+    const statusClass = node.status === 'skipped'
+        ? 'border-dashed bg-background/70 text-muted-foreground'
+        : selected
+            ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/25'
+            : flowStatusClass(node.status);
+
+    return (
+        <button
+            type="button"
+            onClick={onSelect}
+            disabled={!node.phase}
+            className={`group flex min-h-[16rem] flex-col justify-between border p-3 text-left transition hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:border-border ${statusClass}`}
+        >
+            <div className="space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                        <div className="text-[10px] font-medium uppercase text-muted-foreground">{node.stage}</div>
+                        <div className="mt-1 truncate text-sm font-semibold">
+                            {node.phase ? formatCapabilityLabel(node.phase, t) : labelOrFallback(t, 'vibehub.lifecycle.skipped', 'Skipped')}
+                        </div>
+                    </div>
+                    <Badge variant={phaseBadgeVariant(node.status)} className="shrink-0 text-[10px]">
+                        {formatStatusValue(node.status, t)}
+                    </Badge>
+                </div>
+
+                <div className="space-y-1.5 text-[11px] text-muted-foreground">
+                    <LifecycleNodeStat label={t('vibehub.dashboard.readInputs')} value={String(inputCount)} />
+                    <LifecycleNodeStat label={t('vibehub.dashboard.writtenOutputs')} value={String(outputCount)} />
+                    <LifecycleNodeStat label={labelOrFallback(t, 'vibehub.lifecycle.events', 'Events')} value={String(node.events.length)} />
+                </div>
+            </div>
+
+            <div className="mt-4 space-y-1 text-[11px]">
+                {node.detail?.context_pack_path ? (
+                    <div className="truncate font-mono text-muted-foreground">{node.detail.context_pack_path}</div>
+                ) : (
+                    <div className="text-muted-foreground">{labelOrFallback(t, 'vibehub.lifecycle.noPackage', 'No package recorded')}</div>
+                )}
+                <div className="h-1.5 w-full bg-border">
+                    <div className={`h-1.5 ${node.status === 'completed' ? 'w-full bg-emerald-500' : node.status === 'active' || node.status === 'running' ? 'w-2/3 bg-primary' : node.status === 'skipped' ? 'w-0' : 'w-1/4 bg-muted-foreground/40'}`} />
+                </div>
+            </div>
+        </button>
+    );
+}
+
+function LifecycleNodeStat({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="flex items-center justify-between gap-2">
+            <span className="truncate">{label}</span>
+            <span className="font-mono font-semibold">{value}</span>
+        </div>
+    );
+}
+
+function LifecycleEventRail({ nodes, t }: { nodes: LifecycleNode[]; t: (key: string, options?: Record<string, unknown>) => string }) {
+    const events = nodes.flatMap((node) => node.events.map((event) => ({ event, phase: node.phase }))).slice(0, 6);
+    if (!events.length) {
+        return (
+            <DetailSection title={labelOrFallback(t, 'vibehub.lifecycle.history', 'History')}>
+                <Notice error={false} message={labelOrFallback(t, 'vibehub.lifecycle.noEvents', 'No timeline events are recorded for this task yet.')} />
+            </DetailSection>
+        );
+    }
+
+    return (
+        <DetailSection title={labelOrFallback(t, 'vibehub.lifecycle.history', 'History')}>
+            <div className="divide-y border-y">
+                {events.map(({ event, phase }) => (
+                    <div key={event.event_id} className="grid gap-2 py-2 text-xs sm:grid-cols-[7rem_minmax(0,1fr)_auto]">
+                        <div className="font-mono text-[11px] text-muted-foreground">{formatCompactDate(event.timestamp)}</div>
+                        <div className="min-w-0">
+                            <div className="truncate font-medium">{event.summary || event.event_type}</div>
+                            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{event.event_type}</div>
+                        </div>
+                        {phase && <Badge variant="outline" className="justify-self-start text-[10px]">{formatCapabilityLabel(phase, t)}</Badge>}
+                    </div>
+                ))}
+            </div>
+        </DetailSection>
+    );
+}
+
+function LifecycleInspector({
+    task,
+    node,
+    status,
+    phaseValidation,
+    t,
+}: {
+    task: ProjectTaskCardState;
+    node: LifecycleNode | null;
+    status: VibehubCockpitStatus;
+    phaseValidation: PhaseValidationResult | null;
+    t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+    const detail = node?.detail || null;
+    const matchingValidation = node?.phase && phaseValidation?.phase === node.phase ? phaseValidation : null;
+
+    return (
+        <aside className="min-w-0 space-y-5 border-l pl-5">
+            <div className="border-b pb-4">
+                <SectionEyebrow>{labelOrFallback(t, 'vibehub.lifecycle.inspector', 'Inspector')}</SectionEyebrow>
+                <h3 className="mt-2 text-base font-semibold leading-snug">
+                    {node?.phase ? formatCapabilityLabel(node.phase, t) : labelOrFallback(t, 'vibehub.lifecycle.noPhaseSelected', 'No phase selected')}
+                </h3>
+                <div className="mt-2 flex flex-wrap gap-2">
+                    {node && <Badge variant={phaseBadgeVariant(node.status)}>{formatStatusValue(node.status, t)}</Badge>}
+                    {node?.phase && <Badge variant="outline">{node.phase}</Badge>}
+                </div>
+            </div>
+
+            <DetailSection title={labelOrFallback(t, 'vibehub.projectMap.taskMetadata', 'Task/run metadata')}>
+                <KeyValueRows
+                    rows={[
+                        [t('vibehub.status.task'), task.task_id],
+                        [t('vibehub.status.run'), task.run_id || t('common.none')],
+                        [t('vibehub.status.mode'), task.mode ? formatMode(task.mode, t) : t('common.unknown')],
+                        [t('vibehub.status.phaseStatus'), formatStatusValue(task.phase_status, t)],
+                    ]}
+                />
+            </DetailSection>
+
+            {detail ? (
+                <>
+                    <DetailSection title={labelOrFallback(t, 'vibehub.projectMap.selectedPhaseTransfer', 'Selected phase transfer')}>
+                        <div className="space-y-4">
+                            <ArtifactList title={t('vibehub.dashboard.readInputs')} artifacts={detail.read_inputs} t={t} />
+                            <ArtifactList title={t('vibehub.dashboard.writtenOutputs')} artifacts={detail.written_outputs} t={t} />
+                        </div>
+                    </DetailSection>
+
+                    <DetailSection title={labelOrFallback(t, 'vibehub.projectMap.phaseFiles', 'Phase files')}>
+                        <KeyValueRows
+                            rows={[
+                                [labelOrFallback(t, 'vibehub.tabs.contextPackPath', 'Context pack'), detail.context_pack_path],
+                                [labelOrFallback(t, 'vibehub.tabs.manifestPath', 'Manifest'), detail.manifest_path],
+                                [labelOrFallback(t, 'vibehub.phase.sourceOutput', 'Source output'), detail.phase_output_path],
+                                [labelOrFallback(t, 'vibehub.status.reviewEvidence', 'Review evidence'), detail.review_path || t('vibehub.tabs.notAvailable')],
+                            ]}
+                        />
+                    </DetailSection>
+                </>
+            ) : (
+                <Notice error={false} message={labelOrFallback(t, 'vibehub.lifecycle.noTransfer', 'This phase does not have recorded transfer artifacts yet.')} />
+            )}
+
+            {matchingValidation && (
+                <DetailSection title={t('vibehub.phase.title')}>
+                    <KeyValueRows
+                        rows={[
+                            [t('vibehub.phase.validationStatus'), formatStatusValue(matchingValidation.status, t)],
+                            [t('vibehub.phase.requiredOutputs'), String(matchingValidation.required_outputs.length)],
+                            [t('vibehub.phase.missingOutputs'), String(matchingValidation.missing_outputs.length)],
+                            [t('vibehub.phase.sourceOutput'), matchingValidation.source_output_path || t('common.none')],
+                        ]}
+                    />
+                    {matchingValidation.missing_outputs.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                            {matchingValidation.missing_outputs.map((item) => (
+                                <Badge key={item} variant="destructive">{item}</Badge>
+                            ))}
+                        </div>
+                    )}
+                </DetailSection>
+            )}
+
+            {node?.events.length ? (
+                <DetailSection title={labelOrFallback(t, 'vibehub.lifecycle.nodeEvents', 'Node events')}>
+                    <div className="max-h-48 overflow-auto border-y">
+                        {node.events.slice(0, 8).map((event) => (
+                            <div key={event.event_id} className="border-b py-2 text-xs last:border-b-0">
+                                <div className="truncate font-medium">{event.summary || event.event_type}</div>
+                                <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                                    <span className="truncate">{event.event_type}</span>
+                                    <span className="shrink-0">{formatTimelineTime(event.timestamp)}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </DetailSection>
+            ) : null}
+
+            {(task.active_capabilities.length > 0 || task.shared_files.length > 0 || task.dependencies.length > 0) && (
+                <DetailSection title={labelOrFallback(t, 'vibehub.projectMap.taskRelations', 'Relations')}>
+                    <div className="space-y-3">
+                        {task.active_capabilities.length > 0 && (
+                            <InlineTokenRow
+                                label={labelOrFallback(t, 'vibehub.projectMap.activeCapabilities', 'Active capabilities')}
+                                values={task.active_capabilities.map((item) => formatCapabilityLabel(item, t))}
+                            />
+                        )}
+                        {task.dependencies.length > 0 && (
+                            <InlineTokenRow
+                                label={labelOrFallback(t, 'vibehub.projectMap.dependencies', 'Dependencies')}
+                                values={task.dependencies}
+                            />
+                        )}
+                        {task.shared_files.length > 0 && (
+                            <InlineTokenRow
+                                label={labelOrFallback(t, 'vibehub.projectMap.sharedFiles', 'Shared files')}
+                                values={task.shared_files}
+                                mono
+                            />
+                        )}
+                    </div>
+                </DetailSection>
+            )}
+
+            {status.warnings.length > 0 && task.current && (
+                <DetailSection title={t('vibehub.tabs.warnings')}>
+                    <div className="space-y-2">
+                        {status.warnings.map((warning) => (
+                            <Notice key={warning} error message={warning} />
+                        ))}
+                    </div>
+                </DetailSection>
+            )}
+        </aside>
     );
 }
 
@@ -2363,18 +2758,18 @@ function ArtifactList({
     return (
         <div>
             <div className="text-xs font-medium text-muted-foreground">{title}</div>
-            <div className="mt-2 space-y-2">
-                {artifacts.map((artifact) => (
-                    <div key={`${artifact.label}:${artifact.path}`} className="rounded border bg-background px-2 py-1.5 text-xs">
-                        <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium">{artifact.label}</span>
-                            <Badge variant={artifact.exists ? 'secondary' : 'outline'}>
-                                {artifact.exists ? t('vibehub.stateValues.exists') : t('vibehub.stateValues.missing')}
-                            </Badge>
-                        </div>
-                        <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{artifact.path}</div>
+            <div className="mt-2 divide-y border-y">
+                {artifacts.length ? artifacts.map((artifact) => (
+                    <div key={`${artifact.label}:${artifact.path}`} className="grid gap-2 py-2 text-xs sm:grid-cols-[110px_minmax(0,1fr)_auto]">
+                        <span className="font-medium">{artifact.label}</span>
+                        <span className="min-w-0 break-all font-mono text-[11px] text-muted-foreground">{artifact.path}</span>
+                        <Badge variant={artifact.exists ? 'secondary' : 'outline'}>
+                            {artifact.exists ? t('vibehub.stateValues.exists') : t('vibehub.stateValues.missing')}
+                        </Badge>
                     </div>
-                ))}
+                )) : (
+                    <div className="py-2 text-xs text-muted-foreground">{t('common.none')}</div>
+                )}
             </div>
         </div>
     );
@@ -2410,103 +2805,34 @@ function GitBranchesContent({
 function StatusTabContent({
     status,
     phaseValidation,
+    selectedTaskId,
     selectedPhase,
     flowDetails,
-    readOnlyActions,
-    onOpenPrompt,
+    events,
     t,
 }: {
     status: VibehubCockpitStatus | null;
     phaseValidation: PhaseValidationResult | null;
+    selectedTaskId: string | null;
     selectedPhase: string | null;
     flowDetails: VibehubFlowDetail[];
-    readOnlyActions: RecommendedReadOnlyAction[];
-    onOpenPrompt: (templateId: VibehubPromptTemplateId) => void;
+    events: VibehubEventTimelineItem[];
     t: (key: string, options?: Record<string, unknown>) => string;
 }) {
     if (!status) return null;
-    const selectedDetail = flowDetails.find((detail) => detail.phase === selectedPhase)
-        || flowDetails.find((detail) => detail.phase === status.current_phase)
-        || null;
 
     return (
-        <div className="space-y-3 pt-1">
-            <div className="text-sm font-medium">{t('vibehub.tabs.statusDetail')}</div>
-
-            {selectedDetail && (
-                <FlowDetailPanel detail={selectedDetail} t={t} />
-            )}
-
-            <div className="grid grid-cols-2 gap-2 text-xs">
-                <ViewField label={t('vibehub.status.mode')} value={formatMode(status.current_mode, t)} />
-                <ViewField label={t('vibehub.status.phase')} value={status.current_phase || t('common.none')} />
-                <ViewField label={t('vibehub.status.phaseStatus')} value={formatStatusValue(status.phase_status, t)} />
-                <ViewField label={t('vibehub.status.observability')} value={formatStatusValue(status.observability_level || 'best_effort', t)} />
-                <ViewField label={t('vibehub.drift.dirty')} value={status.git_dirty ? t('common.yes') : t('common.no')} />
-                <ViewField label={t('vibehub.tabs.contextPackStatus')} value={formatStatusValue(status.context_pack_status.status, t)} />
-                <ViewField label={t('vibehub.tabs.agentOutputStatus')} value={formatStatusValue(status.agent_output_status.status, t)} />
-                <ViewField label={t('vibehub.tabs.handoffStatus')} value={formatStatusValue(status.handoff_status.status, t)} />
-            </div>
-
-            {status.warnings.length > 0 && (
-                <div className="space-y-1">
-                    <div className="text-xs font-medium text-muted-foreground">{t('vibehub.tabs.warnings')}</div>
-                    {status.warnings.map((w) => (
-                        <div key={w} className="rounded border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">{w}</div>
-                    ))}
-                </div>
-            )}
-
-            <div className="rounded-md border bg-muted/10 p-3">
-                <div className="text-xs font-medium">{t('vibehub.phase.title')}</div>
-                {phaseValidation ? (
-                    <div className="mt-2 space-y-2 text-xs">
-                        <div className="grid grid-cols-2 gap-2">
-                            <ViewField label={t('vibehub.phase.phase')} value={phaseValidation.phase} />
-                            <ViewField label={t('vibehub.phase.validationStatus')} value={formatStatusValue(phaseValidation.status, t)} />
-                            <ViewField label={t('vibehub.phase.requiredOutputs')} value={String(phaseValidation.required_outputs.length)} />
-                            <ViewField label={t('vibehub.phase.missingOutputs')} value={String(phaseValidation.missing_outputs.length)} />
-                        </div>
-                        {phaseValidation.source_output_path && (
-                            <ViewField label={t('vibehub.phase.sourceOutput')} value={phaseValidation.source_output_path} />
-                        )}
-                        {phaseValidation.missing_outputs.length > 0 && (
-                            <div>
-                                <div className="text-xs font-medium text-destructive">{t('vibehub.phase.missingOutputs')}</div>
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                    {phaseValidation.missing_outputs.map((item) => (
-                                        <Badge key={item} variant="destructive">{item}</Badge>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="mt-1 text-xs text-muted-foreground">{t('vibehub.phase.notValidated')}</div>
-                )}
-            </div>
-
-            {readOnlyActions.length > 0 && (
-                <div className="rounded-md border bg-muted/10 p-3">
-                    <div className="text-xs font-medium">{t('vibehub.dashboard.recommendedCommands')}</div>
-                    <div className="mt-2 space-y-2">
-                        {readOnlyActions.map((action) => (
-                            <RecommendedCommand
-                                key={`${action.command}-${action.title}`}
-                                command={action.command}
-                                text={action.description}
-                                promptTemplateId={action.promptTemplateId}
-                                onOpenPrompt={onOpenPrompt}
-                                t={t}
-                            />
-                        ))}
-                    </div>
-                </div>
-            )}
-        </div>
+        <TaskLifecycleCanvas
+            status={status}
+            selectedTaskId={selectedTaskId}
+            selectedPhase={selectedPhase}
+            flowDetails={flowDetails}
+            phaseValidation={phaseValidation}
+            events={events}
+            t={t}
+        />
     );
 }
-
 function ContextTabContent({
     contextView,
     t,
@@ -2623,24 +2949,22 @@ function EvidenceTabContent({
     ];
 
     return (
-        <div className="space-y-3 pt-1">
-            <div className="flex items-center gap-2 text-sm font-medium">
+        <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b pb-3 text-sm font-medium">
                 <ShieldCheck className="h-4 w-4" />
                 {labelOrFallback(t, 'vibehub.tabs.evidenceDetail', 'Evidence map')}
             </div>
-            <div className="grid gap-2 md:grid-cols-2">
+            <div className="divide-y border-y">
                 {rows.map((row) => (
-                    <div key={`${row.grade}-${row.title}`} className="rounded-md border bg-muted/10 p-3">
-                        <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 text-xs font-medium">
-                                {row.icon}
-                                <span>{row.title}</span>
-                            </div>
-                            <Badge variant={row.grade === 'hard_observed' ? 'default' : 'secondary'} className="text-[10px]">
-                                {row.grade}
-                            </Badge>
+                    <div key={`${row.grade}-${row.title}`} className="grid gap-2 py-3 text-xs md:grid-cols-[190px_minmax(0,1fr)_auto]">
+                        <div className="flex items-center gap-2 font-medium">
+                            {row.icon}
+                            <span>{row.title}</span>
                         </div>
-                        <div className="mt-2 break-all text-xs text-muted-foreground">{row.value}</div>
+                        <div className="min-w-0 break-all text-muted-foreground">{row.value}</div>
+                        <Badge variant={row.grade === 'hard_observed' ? 'default' : 'secondary'} className="justify-self-start text-[10px]">
+                            {row.grade}
+                        </Badge>
                     </div>
                 ))}
             </div>
@@ -3166,7 +3490,7 @@ function MarkdownPreview({ content }: { content: string }) {
 
 // Shared sub-components.
 
-function Notice({ message, error }: { message: string; error: boolean }) {
+export function Notice({ message, error }: { message: string; error: boolean }) {
     return (
         <div className={`flex items-start gap-2 rounded-md border p-3 text-sm ${error ? 'border-destructive/40 text-destructive' : 'border-border text-muted-foreground'}`}>
             <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
@@ -3175,9 +3499,54 @@ function Notice({ message, error }: { message: string; error: boolean }) {
     );
 }
 
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+    return (
+        <section className="space-y-2">
+            <SectionEyebrow>{title}</SectionEyebrow>
+            {children}
+        </section>
+    );
+}
+
+function SectionEyebrow({ children }: { children: ReactNode }) {
+    return (
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {children}
+        </div>
+    );
+}
+
+function KeyValueRows({ rows }: { rows: Array<[string, string]> }) {
+    return (
+        <div className="divide-y border-y">
+            {rows.map(([label, value]) => (
+                <div key={`${label}:${value}`} className="grid gap-2 py-2 text-xs sm:grid-cols-[150px_minmax(0,1fr)]">
+                    <div className="text-muted-foreground">{label}</div>
+                    <div className="min-w-0 break-all font-medium">{value}</div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function InlineTokenRow({ label, values, mono = false }: { label: string; values: string[]; mono?: boolean }) {
+    return (
+        <div>
+            <div className="mb-1 text-xs text-muted-foreground">{label}</div>
+            <div className="flex flex-wrap gap-1.5">
+                {values.map((value) => (
+                    <Badge key={value} variant="secondary" className={mono ? 'font-mono' : undefined}>
+                        {value}
+                    </Badge>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function ViewField({ label, value }: { label: string; value: string }) {
     return (
-        <div className="rounded-md border bg-muted/20 px-2 py-1.5">
+        <div className="border-y px-1 py-1.5">
             <div className="text-[10px] text-muted-foreground">{label}</div>
             <div className="truncate text-xs font-medium">{value}</div>
         </div>
@@ -3223,6 +3592,15 @@ function getDetailTitle(detail: DashboardDetail, t: (key: string, options?: Reco
     return titles[detail];
 }
 
+function getDetailDrawerWidthClass(detail: DashboardDetail) {
+    if (detail === 'structure') return 'max-w-5xl';
+    if (detail === 'task' || detail === 'phase') return 'max-w-5xl';
+    if (detail === 'activity' || detail === 'archive' || detail === 'git') {
+        return 'max-w-4xl';
+    }
+    return 'max-w-xl';
+}
+
 function phaseBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
     if (status === 'active') return 'default';
     if (status === 'completed') return 'secondary';
@@ -3230,7 +3608,7 @@ function phaseBadgeVariant(status: string): 'default' | 'secondary' | 'destructi
     return 'outline';
 }
 
-function getProjectTaskCards(status: VibehubCockpitStatus): ProjectTaskCardState[] {
+export function getProjectTaskCards(status: VibehubCockpitStatus): ProjectTaskCardState[] {
     if (status.active_tasks.length > 0) {
         return status.active_tasks.map((task) => ({
             ...task,
@@ -3267,7 +3645,7 @@ function getProjectTaskCards(status: VibehubCockpitStatus): ProjectTaskCardState
     return [current, ...neighbors];
 }
 
-function getRecentCommitSummary(
+export function getRecentCommitSummary(
     gitBranches: VibehubGitBranchesView | null,
     project: Project | null,
     t: (key: string, options?: Record<string, unknown>) => string
@@ -3285,7 +3663,7 @@ function getRecentCommitSummary(
     };
 }
 
-function getRecentActivitySummary(
+export function getRecentActivitySummary(
     status: VibehubCockpitStatus,
     phaseValidation: PhaseValidationResult | null,
     events: VibehubEventTimelineItem[],
@@ -3316,7 +3694,7 @@ function getRecentActivitySummary(
     };
 }
 
-function getTaskProcessSteps(
+export function getTaskProcessSteps(
     task: ProjectTaskCardState,
     status: VibehubCockpitStatus,
     currentFlow: ReturnType<typeof getModeFlow>
@@ -3342,6 +3720,37 @@ function getTaskProcessSteps(
     return steps;
 }
 
+function getTaskLifecycleNodes(
+    task: ProjectTaskCardState,
+    status: VibehubCockpitStatus,
+    flowDetails: VibehubFlowDetail[],
+    events: VibehubEventTimelineItem[]
+): LifecycleNode[] {
+    const base = task.current
+        ? getModeFlow(status, status.current_mode || task.mode || 'guided_drive')
+        : flowForTaskMode(task.mode || status.current_mode || 'guided_drive', task.phase, task.phase_status);
+    return base.map((item, index) => {
+        const detail = item.phase
+            ? flowDetails.find((candidate) => candidate.phase === item.phase) || null
+            : null;
+        const nodeEvents = item.phase
+            ? events.filter((event) => (
+                (!task.task_id || event.task_id === task.task_id)
+                && (event.capability === item.phase || event.event_type.includes(item.phase || ''))
+            ))
+            : [];
+        return {
+            kind: 'phase',
+            index,
+            stage: item.stage,
+            phase: item.phase,
+            status: item.status,
+            detail,
+            events: nodeEvents,
+        };
+    });
+}
+
 function flowForTaskMode(mode: string, activePhase?: string | null, activeStatus?: string | null) {
     const phases = MODE_STAGE_PHASES[mode] || MODE_STAGE_PHASES.guided_drive;
     return FLOW_STAGES.map((stage) => {
@@ -3358,7 +3767,7 @@ function flowForTaskMode(mode: string, activePhase?: string | null, activeStatus
     });
 }
 
-function getTaskShortLabel(task: VibehubActiveTask | ProjectTaskCardState, t: (key: string, options?: Record<string, unknown>) => string) {
+export function getTaskShortLabel(task: VibehubActiveTask | ProjectTaskCardState, t: (key: string, options?: Record<string, unknown>) => string) {
     const text = `${task.title || ''} ${task.task_id}`.toLowerCase();
     if (/fix|bug|修|錯|错/.test(text)) return labelOrFallback(t, 'vibehub.taskLabels.fix', 'Fix');
     if (/doc|文档|文件|說明|说明/.test(text)) return labelOrFallback(t, 'vibehub.taskLabels.docs', 'Docs');
@@ -3369,7 +3778,7 @@ function getTaskShortLabel(task: VibehubActiveTask | ProjectTaskCardState, t: (k
     return source.slice(0, Math.min(source.length, 6)) || labelOrFallback(t, 'vibehub.taskLabels.task', 'Task');
 }
 
-function getModeFlow(status: VibehubCockpitStatus | null, fallbackMode: string) {
+export function getModeFlow(status: VibehubCockpitStatus | null, fallbackMode: string) {
     const mode = status?.current_mode || fallbackMode;
     const phases = MODE_STAGE_PHASES[mode] || MODE_STAGE_PHASES.guided_drive;
     const statuses = new Map((status?.flow || []).map((item) => [item.phase, item.status]));
@@ -3392,10 +3801,6 @@ function flowStatusClass(status: string) {
     if (status === 'needs_action' || status === 'blocked' || status === 'failed') return 'border-destructive/40 bg-destructive/5 text-destructive';
     if (status === 'skipped') return 'bg-muted/30 text-muted-foreground';
     return 'bg-background';
-}
-
-function formatPhaseStatus(status: string, t: (key: string, options?: Record<string, unknown>) => string) {
-    return formatStatusValue(status, t);
 }
 
 function formatMode(mode: string | null | undefined, t: (key: string, options?: Record<string, unknown>) => string) {
@@ -3505,7 +3910,7 @@ function getPreviewCandidates(
     return candidates;
 }
 
-function flattenStructureTree(nodes: VibehubProjectStructureTreeNode[]): string[] {
+export function flattenStructureTree(nodes: VibehubProjectStructureTreeNode[]): string[] {
     return flattenStructureNodes(nodes)
         .filter((node) => node.kind === 'file' || node.kind === 'directory')
         .map((node) => node.path);
@@ -3549,7 +3954,7 @@ function addPreviewCandidate(candidates: PreviewCandidate[], path: string | null
     candidates.push({ path, label, exists });
 }
 
-function labelOrFallback(t: (key: string, options?: Record<string, unknown>) => string, key: string, fallback: string, options?: Record<string, unknown>) {
+export function labelOrFallback(t: (key: string, options?: Record<string, unknown>) => string, key: string, fallback: string, options?: Record<string, unknown>) {
     const value = t(key, options);
     return value === key ? fallback : value;
 }

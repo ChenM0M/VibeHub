@@ -21,48 +21,51 @@ fn main() {
 
 fn print_help() {
     eprintln!(
-        r#"vibehub <action> <project_path> [args...]
+        r#"vibehub-cli <action> <project_path> [args...]
 
 === Task Lifecycle ===
-  start                  Create a new task: vibehub start <project> <mode> <title>
-  start-intake           Create multiple tasks from JSON: vibehub start-intake <project> <json_path|--stdin|->
-  switch                 Switch active task: vibehub switch <project> <task_id>
-  finish                 Complete current phase: vibehub finish <project>
-  advance                Advance to next phase: vibehub advance <project> [--force]
-  validate               Validate current phase outputs: vibehub validate <project>
-  pause                  Pause current phase: vibehub pause <project>
-  archive                Archive completed tasks: vibehub archive <project> [task_id]
+  start                  Create a new task: vibehub-cli start <project> <mode> <title>
+  start-intake           Create multiple tasks from JSON: vibehub-cli start-intake <project> <json_path|--stdin|->
+  switch                 Switch active task: vibehub-cli switch <project> <task_id>
+  finish                 Complete current phase: vibehub-cli finish <project> --confirmed-by-user
+  advance                Advance to next phase: vibehub-cli advance <project> --confirmed-by-user [--force]
+  validate               Validate current phase outputs: vibehub-cli validate <project>
+  validate-task          Validate a task without switching: vibehub-cli validate-task <project> <task_id>
+  output-lint            Lint current output quality: vibehub-cli output-lint <project> [task_id]
+  pause                  Pause current phase: vibehub-cli pause <project>
+  archive                Archive completed tasks: vibehub-cli archive <project> --confirmed-by-user [task_id]
 
 === Workspace Sync ===
-  sync / sycn            Sync workspace state: vibehub sync <project>
-  recover                Check workspace drift: vibehub recover <project>
-  status                 Show cockpit status: vibehub status <project>
+  sync / sycn            Sync workspace state: vibehub-cli sync <project>
+  recover                Check workspace drift: vibehub-cli recover <project>
+  status                 Show cockpit status: vibehub-cli status <project>
+  next-action            Recommend next agent action: vibehub-cli next-action <project> [intent...]
 
 === Capability & Gates ===
-  claim                  Claim a capability: vibehub claim <project> <capability>
-  gates                  Evaluate capability gates: vibehub gates <project> [capability]
+  claim                  Claim a capability: vibehub-cli claim <project> <capability>
+  gates                  Evaluate capability gates: vibehub-cli gates <project> [capability]
 
 === Context & Evidence ===
-  review                 Generate review evidence: vibehub review <project>
-  handoff                Build handoff: vibehub handoff <project>
-  ownership              Classify file ownership: vibehub ownership <project> [files...]
-  record                 Record file ownership: vibehub record <project> <files...>
-  schema-check           Validate capability output: vibehub schema-check <project> <capability> <json_path>
-  neighbors              Query neighbor tasks: vibehub neighbors <project>
-  workflow-explain       Explain workflow: vibehub workflow-explain <project>
+  review                 Generate review evidence: vibehub-cli review <project>
+  handoff                Build handoff: vibehub-cli handoff <project>
+  ownership              Classify file ownership: vibehub-cli ownership <project> [files...]
+  record                 Record file ownership: vibehub-cli record <project> <files...>
+  schema-check           Validate capability output: vibehub-cli schema-check <project> <capability> <json_path>
+  neighbors              Query neighbor tasks: vibehub-cli neighbors <project>
+  workflow-explain       Explain workflow: vibehub-cli workflow-explain <project>
 
 === Adapter Management ===
-  sync-adapters          Sync adapter files: vibehub sync-adapters <project> [tools...] [--dry-run]
-  adapter-status         Show adapter file status: vibehub adapter-status <project>
+  sync-adapters          Sync adapter files: vibehub-cli sync-adapters <project> [tools...] [--dry-run]
+  adapter-status         Show adapter file status: vibehub-cli adapter-status <project>
 
 === Maintenance ===
-  migrate                Migrate state schema: vibehub migrate <project> [--dry-run]
-  replay-pending         Replay pending events: vibehub replay-pending <project>
-  debug-dump             Create debug dump: vibehub debug-dump <project>
-  locale                 Set project locale: vibehub locale <project> <en|zh-CN|zh-TW>
+  migrate                Migrate state schema: vibehub-cli migrate <project> [--dry-run]
+  replay-pending         Replay pending events: vibehub-cli replay-pending <project>
+  debug-dump             Create debug dump: vibehub-cli debug-dump <project>
+  locale                 Set project locale: vibehub-cli locale <project> <en|zh-CN|zh-TW>
 
 All commands output JSON to stdout. Errors go to stderr.
-Use `vibehub --help` to see this message again.
+Use `vibehub-cli --help` to see this message again.
 "#
     );
 }
@@ -111,16 +114,25 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
         }
         "continue" | "sync" | "sycn" => print_json(vibehub::sync::sync_workspace(project_path)),
         "status" => print_json(vibehub::status::read_cockpit_status(project_path)),
+        "next-action" | "next_action" | "route" => {
+            let intent = (!args[1..].is_empty()).then(|| args[1..].join(" "));
+            print_json(vibehub::next_action::recommend_next_action_with_intent(
+                project_path,
+                intent.as_deref(),
+            ))
+        }
         "adapter-status" | "adapters-status" => print_json(
             vibehub::agent_adapter::get_agent_adapter_status(project_path),
         ),
         "replay-pending" | "pending-replay" => {
             print_json(vibehub::events::replay_pending_events(project_path))
         }
-        "debug-dump" | "vibehub-debug-dump" => print_json(vibehub::debug_dump::create_debug_dump(
-            project_path,
-            Some(parse_debug_dump_options(&args[1..])),
-        )),
+        "debug-dump" | "vibehub-debug-dump" | "vibehub-cli-debug-dump" => {
+            print_json(vibehub::debug_dump::create_debug_dump(
+                project_path,
+                Some(parse_debug_dump_options(&args[1..])),
+            ))
+        }
         "sync-adapters" | "adapter-sync" => {
             let dry_run = args.iter().any(|a| a == "--dry-run");
             let tools = parse_agent_tools(&args[1..]);
@@ -158,14 +170,35 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
             print_json(Ok::<_, anyhow::Error>(report));
         }
         "validate" => print_json(vibehub::phase::validate_phase(project_path)),
+        "validate-task" | "validate_task" => {
+            let Some(task_id) = args.get(1) else {
+                eprintln!("Missing task_id for VibeHub validate-task action");
+                std::process::exit(2);
+            };
+            print_json(vibehub::phase::validate_phase_for_task(
+                project_path,
+                task_id,
+            ));
+        }
+        "output-lint" | "output_lint" | "lint-output" | "lint_output" => {
+            let task_id = args.get(1).map(String::as_str);
+            print_json(vibehub::output_lint::lint_output_for_task(
+                project_path,
+                task_id,
+            ));
+        }
         "advance" => {
+            require_user_confirmation("advance", &args);
             let force = args.iter().any(|a| a == "--force");
             print_json(vibehub::phase::advance_phase_with_force(
                 project_path,
                 force,
             ));
         }
-        "finish" => print_json(vibehub::phase::complete_phase(project_path)),
+        "finish" => {
+            require_user_confirmation("finish", &args);
+            print_json(vibehub::phase::complete_phase(project_path));
+        }
         "workflow-explain" | "workflow_explain" => {
             print_json(vibehub::workflow::explain_workflow(project_path))
         }
@@ -206,7 +239,12 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
             project_path,
         )),
         "archive" => {
-            let target_task_id = args.get(1).map(String::as_str);
+            require_user_confirmation("archive", &args);
+            let target_task_id = args
+                .iter()
+                .skip(1)
+                .find(|arg| !is_confirmation_flag(arg) && arg.as_str() != "--force")
+                .map(String::as_str);
             print_json(vibehub::archive::archive_completed_tasks(
                 project_path,
                 target_task_id,
@@ -311,6 +349,20 @@ where
 
 fn short_error(error: &anyhow::Error) -> String {
     error.to_string()
+}
+
+fn require_user_confirmation(action: &str, args: &[String]) {
+    if args.iter().any(|arg| is_confirmation_flag(arg)) {
+        return;
+    }
+    eprintln!(
+        "Refusing to run state-changing VibeHub action '{action}' without explicit confirmation. Re-run with --confirmed-by-user after the user has confirmed."
+    );
+    std::process::exit(2);
+}
+
+fn is_confirmation_flag(arg: &str) -> bool {
+    matches!(arg, "--confirmed-by-user" | "--user-confirmed" | "--yes")
 }
 
 fn parse_agent_tools(args: &[String]) -> Option<Vec<vibehub::agent_adapter::AgentTool>> {

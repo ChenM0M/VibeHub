@@ -2,24 +2,24 @@
 
 ## Task
 
-- Task ID: T-20260529145443-52bb4f48
-- Task path: .vibehub/tasks/T-20260529145443-52bb4f48
-- Run ID: R-20260529145443-224267fe
-- Run path: .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe
+- Task ID: T-20260531153015-3a283c0b
+- Task path: .vibehub/tasks/T-20260531153015-3a283c0b
+- Run ID: R-20260531153015-bd42f253
+- Run path: .vibehub/tasks/T-20260531153015-3a283c0b/runs/R-20260531153015-bd42f253
 
 ## Mode
 
-- Mode: evidence_drive
+- Mode: guided_drive
 
 ## Current Phase
 
 - Phase: implement
-- Status: completed
+- Status: active
 
 ## Active Tasks
 
-- T-20260529090147-9df98d71
-- T-20260529145443-52bb4f48 (current)
+- T-20260531153015-3a283c0b (current)
+- T-20260609092907-7c439d16
 
 ## Intake Queue
 
@@ -27,11 +27,11 @@
 
 ## Active Capabilities
 
-- None observed.
+- implement
 
 ## Neighbor Tasks
 
-- T-20260529090147-9df98d71 (收口 v2.0 发布前状态并归档旧 VibeHub 结构): active_capabilities=[], shared_files=[]
+- T-20260609092907-7c439d16 (Harden VibeHub agent protocol and CLI routing): active_capabilities=[implement], shared_files=[]
 
 
 ## Observability Note
@@ -48,11 +48,11 @@
 - .vibehub/agent-view/current-context.md
 - .vibehub/agent-view/handoff.md
 - .vibehub/rules/hard-rules.md
-- .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/context-packs/review.md
+- .vibehub/tasks/T-20260531153015-3a283c0b/runs/R-20260531153015-bd42f253/context-packs/implement.md
 
 ## What To Write
 
-- Suggested phase output under .vibehub/tasks/T-20260529145443-52bb4f48/runs/R-20260529145443-224267fe/outputs/ if needed.
+- Suggested phase output under .vibehub/tasks/T-20260531153015-3a283c0b/runs/R-20260531153015-bd42f253/outputs/ if needed.
 - Changed files only within the active task scope.
 - Final response or agent output must include changed files, commands run, tests run or reason not run, unresolved risks, and handoff notes.
 
