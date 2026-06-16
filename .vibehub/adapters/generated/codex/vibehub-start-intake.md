@@ -18,8 +18,8 @@ Read first / 先读:
 - `.vibehub/adapters/protocol.md`
 
 CLI:
-  Prepare JSON request following the intake schema, then: vibehub-cli start-intake <project_path> --stdin
-  Alternative: vibehub-cli start-intake <project_path> <json_path>
+  Prepare JSON request following the intake schema, then: vibehub start-intake <project_path> --stdin
+  Alternative: vibehub start-intake <project_path> <json_path>
   JSON schema: {title, intent, source_message, split_confidence, split_reason, intake: [{title, intent, acceptance_criteria, dependencies, suggested_order}]}
   Returns: {created_tasks, proposed_tasks, active_tasks, current_task_id}
 
@@ -27,11 +27,11 @@ Pre-flight / 前置检查:
   1. Identify independently deliverable units in the user request.
   2. For each unit, draft: title, intent, acceptance_criteria.
   3. Determine split_confidence: high if clearly independent, medium if user should confirm.
-  4. Pipe the JSON to `vibehub-cli start-intake <project> --stdin` (or use a temp JSON file if stdin is unavailable).
+  4. Pipe the JSON to `vibehub start-intake <project> --stdin` (or use a temp JSON file if stdin is unavailable).
 
 Task / 任务:Analyze a complex user request and split it into independent, deliverable tasks. Use when the user asks for multiple things in one message.
 
-Process: (1) Identify independently deliverable units. (2) Draft each as a task with title, intent, acceptance_criteria. (3) Assign suggested_order and dependencies. (4) Run `vibehub-cli start-intake <project> --stdin` with the JSON request, or pass a JSON file path when stdin is unavailable.
+Process: (1) Identify independently deliverable units. (2) Draft each as a task with title, intent, acceptance_criteria. (3) Assign suggested_order and dependencies. (4) Run `vibehub start-intake <project> --stdin` with the JSON request, or pass a JSON file path when stdin is unavailable.
 
 Split confidence: high=clearly independent, medium=user should confirm, low=collapse into one task.
 
@@ -43,6 +43,6 @@ Write output to `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md` follo
 Constraints / 约束:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly. / 不要直接编辑。
 - Never manually create `.vibehub/tasks/` directories. / 不要手动创建目录，使用 CLI。
-- NEVER run `vibehub-cli finish` or `vibehub-cli advance` without user confirmation. / 未经确认绝不运行 finish/advance。
+- NEVER run `vibehub finish` or `vibehub advance` without user confirmation. / 未经确认绝不运行 finish/advance。
 - If CLI unavailable, ask user to run command. / 如 CLI 不可用请用户执行。
 - Run vibehub-sync first if state is stale or drifted. / 先运行 vibehub-sync。

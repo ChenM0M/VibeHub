@@ -13,9 +13,16 @@ mod updater;
 mod vibehub;
 
 use commands::AppState;
-use std::{fs, sync::Mutex};
+use std::{
+    fs,
+    io::{self, Read},
+    sync::Mutex,
+};
 use storage::Storage;
 use tauri::Manager;
+
+/// Compiled-in version, used by the headless `--version` / `--help` output.
+const VER: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     if run_vibehub_cli_if_requested() {
@@ -143,19 +150,23 @@ fn run_vibehub_cli_if_requested() -> bool {
     };
 
     match command.as_str() {
-        "vibehub" => {
+        "vibehub" | "vibehub-cli" => {
             let Some(action) = args.next() else {
-                eprintln!("Missing VibeHub action. Expected start, continue, switch, ownership, record, neighbors, claim, gates, sync, status, replay-pending, debug-dump, review, recover, handoff, pause, validate, advance, finish, workflow-explain, schema-check, migrate, or locale.");
+                eprintln!("Missing VibeHub action. Expected start, start-intake, continue, switch, ownership, record, neighbors, claim, gates, sync, status, next-action, output-lint, replay-pending, debug-dump, review, recover, handoff, pause, validate, validate-task, advance, finish, archive, workflow-explain, schema-check, sync-adapters, adapter-status, migrate, or locale.");
                 std::process::exit(2);
             };
             run_vibehub_action(&action, args.collect());
             true
         }
-        "start" | "continue" | "sync" | "sycn" | "status" | "replay-pending" | "pending-replay"
+        "start" | "start-task" | "start_task" | "start-intake" | "start_intake" | "continue"
+        | "sync" | "sycn" | "status" | "next-action" | "next_action" | "route" | "output-lint"
+        | "output_lint" | "lint-output" | "lint_output" | "replay-pending" | "pending-replay"
         | "debug-dump" | "vibehub-debug-dump" | "review" | "recover" | "handoff" | "validate"
-        | "advance" | "finish" | "pause" | "switch" | "ownership" | "record" | "neighbors"
-        | "claim" | "gates" | "workflow-explain" | "workflow_explain" | "schema-check"
-        | "schema_check" | "locale" | "migrate" => {
+        | "validate-task" | "validate_task" | "advance" | "finish" | "pause" | "switch"
+        | "ownership" | "record" | "neighbors" | "claim" | "gates" | "archive"
+        | "workflow-explain" | "workflow_explain" | "schema-check" | "schema_check"
+        | "sync-adapters" | "adapter-sync" | "adapter-status" | "adapters-status" | "locale"
+        | "migrate" => {
             run_vibehub_action(&command, args.collect());
             true
         }
@@ -166,6 +177,37 @@ fn run_vibehub_cli_if_requested() -> bool {
             };
             print_json(vibehub::sync::sync_workspace(&project_path));
             true
+        }
+        // CLI discovery flags: agents and users probe with --help/-h/--version.
+        // Never fall through to the GUI for these, or repeated probing spawns
+        // many windows.
+        "--help" | "-h" | "help" => {
+            eprintln!(
+                "VibeHub {VER}\n\n\
+                 This binary is both a desktop app (no args) and a headless CLI.\n\
+                 Headless usage: vibehub <command> <project_path> [args...]\n\n\
+                 Common commands: status, sync, next-action, start, validate,\n\
+                 finish, advance, recover, handoff, claim, gates, archive.\n\n\
+                 Run `vibehub help` or consult the repo SKILL docs for the full list."
+            );
+            true
+        }
+        "--version" | "-V" => {
+            println!("{VER}");
+            true
+        }
+        // Any other leading token. If it looks like a CLI invocation (starts
+        // with '-'), treat it as CLI and error out instead of silently
+        // launching the GUI window. This stops agents from spawning windows
+        // when they mistype a command or pass an unknown flag.
+        other if other.starts_with('-') => {
+            eprintln!(
+                "Unknown VibeHub command or flag: '{other}'\n\
+                 Headless usage: vibehub <command> <project_path> [args...]\n\
+                 Run `vibehub help` for the command list. \
+                 (The GUI launches only with no arguments.)"
+            );
+            std::process::exit(2);
         }
         _ => false,
     }
@@ -178,7 +220,7 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
     };
 
     match action {
-        "start" => {
+        "start" | "start-task" | "start_task" => {
             let mode = args.get(1).cloned();
             let title = if args.len() > 2 {
                 Some(args[2..].join(" "))
@@ -192,25 +234,19 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
                 None,
             ));
         }
-        "start-intake" => {
+        "start-intake" | "start_intake" => {
             let Some(request_path) = args.get(1) else {
-                eprintln!("Missing JSON request path for VibeHub action 'start-intake'");
+                eprintln!("Missing JSON request path for VibeHub action 'start-intake' (use --stdin or - to read from stdin)");
                 std::process::exit(2);
             };
-            let content = match fs::read_to_string(request_path) {
-                Ok(content) => content,
-                Err(error) => {
-                    eprintln!("Failed to read intake request '{}': {error}", request_path);
-                    std::process::exit(2);
-                }
-            };
+            let (content, request_label) = read_intake_request_content(request_path);
             let request = match serde_json::from_str::<
                 vibehub::start_task::VibehubStartTaskIntakeRequest,
             >(&content)
             {
                 Ok(request) => request,
                 Err(error) => {
-                    eprintln!("Invalid intake request JSON '{}': {error}", request_path);
+                    eprintln!("Invalid intake request JSON '{}': {error}", request_label);
                     std::process::exit(2);
                 }
             };
@@ -221,6 +257,25 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
         }
         "continue" | "sync" | "sycn" => print_json(vibehub::sync::sync_workspace(project_path)),
         "status" => print_json(vibehub::status::read_cockpit_status(project_path)),
+        "next-action" | "next_action" | "route" => {
+            let intent = (!args[1..].is_empty()).then(|| args[1..].join(" "));
+            print_json(vibehub::next_action::recommend_next_action_with_intent(
+                project_path,
+                intent.as_deref(),
+            ))
+        }
+        "adapter-status" | "adapters-status" => print_json(
+            vibehub::agent_adapter::get_agent_adapter_status(project_path),
+        ),
+        "sync-adapters" | "adapter-sync" => {
+            let dry_run = args.iter().any(|arg| arg == "--dry-run");
+            let tools = parse_agent_tools(&args[1..]);
+            print_json(vibehub::agent_adapter::sync_agent_adapters(
+                project_path,
+                tools,
+                dry_run,
+            ));
+        }
         "replay-pending" | "pending-replay" => {
             print_json(vibehub::events::replay_pending_events(project_path))
         }
@@ -259,14 +314,35 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
             print_json(Ok::<_, anyhow::Error>(report));
         }
         "validate" => print_json(vibehub::phase::validate_phase(project_path)),
+        "validate-task" | "validate_task" => {
+            let Some(task_id) = args.get(1) else {
+                eprintln!("Missing task_id for VibeHub validate-task action");
+                std::process::exit(2);
+            };
+            print_json(vibehub::phase::validate_phase_for_task(
+                project_path,
+                task_id,
+            ));
+        }
+        "output-lint" | "output_lint" | "lint-output" | "lint_output" => {
+            let task_id = args.get(1).map(String::as_str);
+            print_json(vibehub::output_lint::lint_output_for_task(
+                project_path,
+                task_id,
+            ));
+        }
         "advance" => {
+            require_user_confirmation("advance", &args);
             let force = args.iter().any(|a| a == "--force");
             print_json(vibehub::phase::advance_phase_with_force(
                 project_path,
                 force,
             ));
         }
-        "finish" => print_json(vibehub::phase::complete_phase(project_path)),
+        "finish" => {
+            require_user_confirmation("finish", &args);
+            print_json(vibehub::phase::complete_phase(project_path));
+        }
         "workflow-explain" | "workflow_explain" => {
             print_json(vibehub::workflow::explain_workflow(project_path))
         }
@@ -323,6 +399,18 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
                 requested_capability,
             ));
         }
+        "archive" => {
+            require_user_confirmation("archive", &args);
+            let target_task_id = args
+                .iter()
+                .skip(1)
+                .find(|arg| !is_confirmation_flag(arg) && arg.as_str() != "--force")
+                .map(String::as_str);
+            print_json(vibehub::archive::archive_completed_tasks(
+                project_path,
+                target_task_id,
+            ));
+        }
         "schema-check" | "schema_check" => {
             let Some(capability) = args.get(1) else {
                 eprintln!("Missing capability for VibeHub schema-check action");
@@ -371,6 +459,25 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
     }
 }
 
+fn read_intake_request_content(request_path: &str) -> (String, String) {
+    if matches!(request_path, "--stdin" | "-") {
+        let mut content = String::new();
+        if let Err(error) = io::stdin().read_to_string(&mut content) {
+            eprintln!("Failed to read intake request from stdin: {error}");
+            std::process::exit(2);
+        }
+        return (content, "stdin".to_string());
+    }
+
+    match fs::read_to_string(request_path) {
+        Ok(content) => (content, request_path.to_string()),
+        Err(error) => {
+            eprintln!("Failed to read intake request '{}': {error}", request_path);
+            std::process::exit(2);
+        }
+    }
+}
+
 fn print_json<T>(result: anyhow::Result<T>)
 where
     T: serde::Serialize,
@@ -394,6 +501,48 @@ where
 /// want to dump into stderr — see the print_json doc above).
 fn short_error(error: &anyhow::Error) -> String {
     error.to_string()
+}
+
+fn require_user_confirmation(action: &str, args: &[String]) {
+    if args.iter().any(|arg| is_confirmation_flag(arg)) {
+        return;
+    }
+    eprintln!(
+        "Refusing to run state-changing VibeHub action '{action}' without explicit confirmation. Re-run with --confirmed-by-user after the user has confirmed."
+    );
+    std::process::exit(2);
+}
+
+fn is_confirmation_flag(arg: &str) -> bool {
+    matches!(arg, "--confirmed-by-user" | "--user-confirmed" | "--yes")
+}
+
+fn parse_agent_tools(args: &[String]) -> Option<Vec<vibehub::agent_adapter::AgentTool>> {
+    let tools = args
+        .iter()
+        .filter(|arg| arg.as_str() != "--dry-run")
+        .filter_map(|arg| match arg.as_str() {
+            "amp" | "amp-code" | "amp_code" => Some(vibehub::agent_adapter::AgentTool::AmpCode),
+            "codex" => Some(vibehub::agent_adapter::AgentTool::Codex),
+            "claude" | "claude-code" | "claude_code" => {
+                Some(vibehub::agent_adapter::AgentTool::ClaudeCode)
+            }
+            "opencode" | "open-code" | "open_code" => {
+                Some(vibehub::agent_adapter::AgentTool::Opencode)
+            }
+            "cursor" => Some(vibehub::agent_adapter::AgentTool::Cursor),
+            "antigravity" => Some(vibehub::agent_adapter::AgentTool::Antigravity),
+            unknown => {
+                eprintln!("Unknown adapter tool '{unknown}'");
+                std::process::exit(2);
+            }
+        })
+        .collect::<Vec<_>>();
+    if tools.is_empty() {
+        None
+    } else {
+        Some(tools)
+    }
 }
 
 fn parse_debug_dump_options(args: &[String]) -> vibehub::debug_dump::DebugDumpOptions {
