@@ -9,7 +9,7 @@
 
 VibeHub is the project memory, task router, and workflow gatekeeper for coding agents. Agents do the engineering work; VibeHub tracks state, context, gates, output, and handoff.
 
-Agent-facing command examples use the headless CLI binary `vibehub-cli`. The desktop application may also be named VibeHub, so docs and generated adapter instructions should avoid bare `vibehub ...` command examples.
+Agent-facing command examples use the headless CLI command `vibehub`. The desktop application binary also runs the same headless command surface when invoked with CLI arguments, and the legacy `vibehub-cli` binary remains a compatibility alias.
 
 Every skill returns the baseline §22.1 shape:
 
@@ -55,7 +55,7 @@ On failure, `status` is `"error"`, `data` is empty, and `error.code` uses the ba
 
 Sub-agent candidates align with baseline §10.2: deep sync, pack building, schema assistance, journal, and handoff work.
 
-In multi-active-task workspaces, agents should run `vibehub-cli status` and either switch with `vibehub-cli switch <project> <task_id>` or use task-scoped validation such as `vibehub-cli validate-task <project> <task_id>` before relying on validation results.
+In multi-active-task workspaces, agents should run `vibehub status` and either switch with `vibehub switch <project> <task_id>` or use task-scoped validation such as `vibehub validate-task <project> <task_id>` before relying on validation results.
 
 ## 3. Skill Details
 
