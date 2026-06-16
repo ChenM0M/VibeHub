@@ -8,9 +8,9 @@ Current mode: `{{mode}}`
 Please create VibeHub task state from the request below.
 
 ## How
-If the request contains multiple independently deliverable goals, run `vibehub-cli start-intake {{project_root}} --stdin` with task drafts first. For a single deliverable, run:
+If the request contains multiple independently deliverable goals, run `vibehub start-intake {{project_root}} --stdin` with task drafts first. For a single deliverable, run:
 ```
-vibehub-cli start {{project_root}} {{mode}} "<title>"
+vibehub start {{project_root}} {{mode}} "<title>"
 ```
 Or use the cockpit "Start Task" button. Do NOT manually create `.vibehub/tasks/` files — the CLI sets up pointers, state, and context automatically.
 

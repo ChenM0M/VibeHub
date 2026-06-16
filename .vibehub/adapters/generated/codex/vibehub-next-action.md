@@ -18,11 +18,11 @@ Read first / 先读:
 - `.vibehub/adapters/protocol.md`
 
 CLI:
-  vibehub-cli next-action <project_path> [intent...]
+  vibehub next-action <project_path> [intent...]
   Returns: {action, skill, cli, reason, confidence, matched_intent, operating_loop, routing_table, warnings}
 
 Pre-flight / 前置检查:
-  1. Run `vibehub-cli next-action <project> [intent...]` before choosing a workflow command when state or intent is unclear.
+  1. Run `vibehub next-action <project> [intent...]` before choosing a workflow command when state or intent is unclear.
   2. Follow the returned `skill` and `cli` unless the user explicitly overrides it.
 
 Task / 任务:Ask VibeHub to recommend the next agent action. Returns a machine-readable action, skill name, CLI command, reason, confidence, matched intent, operating loop, routing table, and warnings. Use this when the agent is unsure whether to start, split, sync, continue, validate, lint output, advance, archive, or recover.
@@ -35,7 +35,7 @@ Write output to `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md` follo
 Constraints / 约束:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly. / 不要直接编辑。
 - Never manually create `.vibehub/tasks/` directories. / 不要手动创建目录，使用 CLI。
-- NEVER run `vibehub-cli finish` or `vibehub-cli advance` without user confirmation. / 未经确认绝不运行 finish/advance。
+- NEVER run `vibehub finish` or `vibehub advance` without user confirmation. / 未经确认绝不运行 finish/advance。
 - If CLI unavailable, ask user to run command. / 如 CLI 不可用请用户执行。
 - Run vibehub-sync first if state is stale or drifted. / 先运行 vibehub-sync。
 
