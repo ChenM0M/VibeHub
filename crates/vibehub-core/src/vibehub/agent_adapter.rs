@@ -680,14 +680,14 @@ VibeHub is the project memory, task router, and workflow gatekeeper for coding a
 ## Rules
 
 - Treat `.vibehub/agent-view/current.md` as the dynamic entry point.
-- Run `vibehub-cli next-action <project> [intent...]` when the next VibeHub move is unclear; it returns a machine-readable action, skill, CLI command, operating loop, and routing table.
+- Run `vibehub next-action <project> [intent...]` when the next VibeHub move is unclear; it returns a machine-readable action, skill, CLI command, operating loop, and routing table.
 - Also read `.vibehub/adapters/protocol.md` when present; it is the shared output contract.
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.
 - Before ending work on an active VibeHub task, write phase output to the active run output path described in `.vibehub/agent-view/current.md`.
 - Report changed files, files read, commands run, tests run or reason not run, risks, and handoff notes.
 - Use evidence labels: `hard_observed`, `agent_reported`, `inferred`, `user_confirmed`.
 - If workspace state changed outside VibeHub, run the `vibehub-sync` instruction and return a sync report instead of silently advancing state.
-- If more than one active task exists, confirm the intended task with `vibehub-cli status`; use `vibehub-cli switch <project> <task_id>` or task-scoped commands like `vibehub-cli validate-task <project> <task_id>` before validation.
+- If more than one active task exists, confirm the intended task with `vibehub status`; use `vibehub switch <project> <task_id>` or task-scoped commands like `vibehub validate-task <project> <task_id>` before validation.
 - Treat plain-language requests like "sync", "sycn", "同步", "update VibeHub", "继续", or "refresh status" as `vibehub-sync` unless the user clearly asks for a different command.
 - During sync, autonomously inspect hard evidence first; ask concise follow-up questions only for missing user intent, current progress, ownership of dirty changes, validation status, or future plan.
 - If the user does not provide the requested details, record the open questions as unresolved risks in the VibeHub output instead of dropping them.
@@ -712,15 +712,15 @@ Each VibeHub workflow step has a corresponding `vibehub-*` command (e.g., `vibeh
 
 - Multi-intent or independently deliverable user request → `vibehub-start-intake`, then `vibehub-start` for created tasks.
 - New single deliverable with no active task → `vibehub-start`.
-- Multi-active-task workspace → `vibehub-cli status`, then `vibehub-cli switch <project> <task_id>` or task-scoped validation.
+- Multi-active-task workspace → `vibehub status`, then `vibehub switch <project> <task_id>` or task-scoped validation.
 - "continue", "sync", "refresh status", "继续", "同步", or visible drift → `vibehub-sync` before edits.
 - Active phase work → `vibehub-continue`; write output.md before stopping.
-- Output ready → `vibehub-cli validate <project>` then `vibehub-cli output-lint <project>`.
-- Unsure what to do → `vibehub-cli next-action <project> [intent...]`.
+- Output ready → `vibehub validate <project>` then `vibehub output-lint <project>`.
+- Unsure what to do → `vibehub next-action <project> [intent...]`.
 
 ## Key Rules for VibeHub Commands
 
-- **vibehub-start**: Always invoke via CLI (`vibehub-cli start <project> <mode> <title>`). Never manually create `.vibehub/tasks/` directories or edit `state.yaml`.
+- **vibehub-start**: Always invoke via CLI (`vibehub start <project> <mode> <title>`). Never manually create `.vibehub/tasks/` directories or edit `state.yaml`.
 - **vibehub-sync**: Treat plain-language requests like "sync", "sycn", "同步", "继续", or "refresh status" as this command.
 - **vibehub-continue**: Check `.vibehub/workflow.yaml` for phase-specific required outputs before starting work.
 - **vibehub-finish / vibehub-advance / vibehub-archive**: CLI requires `--confirmed-by-user`; do not add it unless the user explicitly confirmed.
@@ -777,7 +777,7 @@ If `.vibehub/agent-view/current.md` names a context pack, read it when it exists
 8. Validate and lint output before asking to finish or advance.
 9. Report risks and next actions instead of hiding uncertainty.
 
-When the next move is unclear, run `vibehub-cli next-action <project> [intent...]`. It returns JSON with `action`, `skill`, `cli`, `reason`, `confidence`, `matched_intent`, `operating_loop`, and `routing_table`.
+When the next move is unclear, run `vibehub next-action <project> [intent...]`. It returns JSON with `action`, `skill`, `cli`, `reason`, `confidence`, `matched_intent`, `operating_loop`, and `routing_table`.
 
 ## Phase Output Contract
 
@@ -821,44 +821,44 @@ evidence_drive:  align → research → plan → implement → review
 For each phase:
 1. **Start**: Phase is `active`. Read the context pack and produce the work.
 2. **Work**: Produce output.md with all sections. Check `.vibehub/workflow.yaml` capabilities.<phase>.required_fields for expected content.
-3. **Finish**: Run `vibehub-cli finish <project> --confirmed-by-user` ONLY after user confirms the phase is complete. This validates required outputs.
-4. **Advance**: Run `vibehub-cli advance <project> --confirmed-by-user` ONLY after user explicitly asks to move forward. This builds context for the next phase.
+3. **Finish**: Run `vibehub finish <project> --confirmed-by-user` ONLY after user confirms the phase is complete. This validates required outputs.
+4. **Advance**: Run `vibehub advance <project> --confirmed-by-user` ONLY after user explicitly asks to move forward. This builds context for the next phase.
 
 ### Task Lifecycle
 
 ```
-vibehub-cli start → align phase → finish → advance → next phase → ... → last phase → finish
+vibehub start → align phase → finish → advance → next phase → ... → last phase → finish
 ```
 
 Key interactions:
-- `vibehub-cli start <project> <mode> <title>` — creates and registers task
-- `vibehub-cli status <project>` — read current state at any time
-- `vibehub-cli sync <project>` — align workspace state before starting work
-- `vibehub-cli validate <project>` — check if required outputs are complete
-- `vibehub-cli validate-task <project> <task_id>` — validate a task without switching current pointer
-- `vibehub-cli output-lint <project> [task_id]` — check output quality, evidence labels, and stale contradictions
-- `vibehub-cli finish <project> --confirmed-by-user` — complete current phase (user must confirm)
-- `vibehub-cli advance <project> --confirmed-by-user [--force]` — move to next phase (user must confirm)
-- `vibehub-cli claim <project> <capability>` — activate parallel capability
-- `vibehub-cli handoff <project>` — build session handoff
-- `vibehub-cli recover <project>` — diagnose state drift
+- `vibehub start <project> <mode> <title>` — creates and registers task
+- `vibehub status <project>` — read current state at any time
+- `vibehub sync <project>` — align workspace state before starting work
+- `vibehub validate <project>` — check if required outputs are complete
+- `vibehub validate-task <project> <task_id>` — validate a task without switching current pointer
+- `vibehub output-lint <project> [task_id]` — check output quality, evidence labels, and stale contradictions
+- `vibehub finish <project> --confirmed-by-user` — complete current phase (user must confirm)
+- `vibehub advance <project> --confirmed-by-user [--force]` — move to next phase (user must confirm)
+- `vibehub claim <project> <capability>` — activate parallel capability
+- `vibehub handoff <project>` — build session handoff
+- `vibehub recover <project>` — diagnose state drift
 
 ### Routing Shortcuts
 
 - Multi-intent or independently deliverable user request → `vibehub-start-intake`, then start created tasks.
 - New single deliverable with no active task → `vibehub-start`.
-- Multi-active-task workspace → `vibehub-cli status`, then `vibehub-cli switch <project> <task_id>` or task-scoped validation.
+- Multi-active-task workspace → `vibehub status`, then `vibehub switch <project> <task_id>` or task-scoped validation.
 - "continue", "sync", "refresh status", "继续", "同步", or visible drift → `vibehub-sync` before edits.
 - Active phase work → `vibehub-continue`; write output.md before stopping.
-- Output ready → `vibehub-cli validate <project>` then `vibehub-cli output-lint <project>`.
-- Unsure what to do → `vibehub-cli next-action <project> [intent...]`.
+- Output ready → `vibehub validate <project>` then `vibehub output-lint <project>`.
+- Unsure what to do → `vibehub next-action <project> [intent...]`.
 
 ### Hard Constraints — Never Do These
 
-- **NEVER run `vibehub-cli finish`, `vibehub-cli advance`, or `vibehub-cli archive` without explicit user confirmation.** The CLI requires `--confirmed-by-user` for these state-changing operations.
+- **NEVER run `vibehub finish`, `vibehub advance`, or `vibehub archive` without explicit user confirmation.** The CLI requires `--confirmed-by-user` for these state-changing operations.
 - **NEVER manually create `.vibehub/tasks/` directories or edit `state.yaml`.** Only the CLI creates canonical state.
-- **NEVER assume the current pointer is the task you intend in multi-active workspaces.** Check `vibehub-cli status`; use `validate-task` for task-scoped validation.
-- **NEVER skip syncing before starting work.** Run `vibehub-cli sync` if the workspace has changed since the last session.
+- **NEVER assume the current pointer is the task you intend in multi-active workspaces.** Check `vibehub status`; use `validate-task` for task-scoped validation.
+- **NEVER skip syncing before starting work.** Run `vibehub sync` if the workspace has changed since the last session.
 - **If CLI is unavailable, STOP and tell the user.** Do not attempt to simulate CLI behavior by editing files.
 
 ## Stop Condition
@@ -881,7 +881,7 @@ Plain-language sync requests, including misspellings such as `sycn` and Chinese 
 
 Adapter file writes are the only INV-6 UI-write exception. They may update generated adapter configuration files after user confirmation, but must not write VibeHub canonical task, run, phase, or event state from the UI.
 
-Agent sessions must not autonomously run `vibehub-cli finish` or `vibehub-cli advance`. These are user-level decisions. Output completion evidence and ask before transitioning state.
+Agent sessions must not autonomously run `vibehub finish` or `vibehub advance`. These are user-level decisions. Output completion evidence and ask before transitioning state.
 "#
     )
 }
@@ -948,8 +948,8 @@ Read these files before VibeHub-scoped work:
 
 Use `{command_location}` for VibeHub operations.
 Use `{static_entry}` as the automatic static protocol entry.
-Use `vibehub-cli next-action <project> [intent...]` when command choice is unclear.
-Use `vibehub-cli output-lint <project> [task_id]` before finish/advance/final reporting.
+Use `vibehub next-action <project> [intent...]` when command choice is unclear.
+Use `vibehub output-lint <project> [task_id]` before finish/advance/final reporting.
 
 Before ending work on an active VibeHub task, write the phase output file required by `.vibehub/adapters/protocol.md`.
 
@@ -1488,9 +1488,9 @@ fn default_command_body(name: &str, locale: &str) -> String {
         "Output:\nWrite output to `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md` following `.vibehub/adapters/protocol.md`. Required sections: Completed, Not Yet Done, Key Decisions Made, Files Changed, Files Reportedly Read, Commands Run, Tests Run, Context Still Needed, Warnings, Next Session Should. Use evidence labels."
     };
     let constraints_text = if zh {
-        "Constraints / 约束:\n- Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly. / 不要直接编辑。\n- Never manually create `.vibehub/tasks/` directories. / 不要手动创建目录，使用 CLI。\n- NEVER run `vibehub-cli finish` or `vibehub-cli advance` without user confirmation. / 未经确认绝不运行 finish/advance。\n- If CLI unavailable, ask user to run command. / 如 CLI 不可用请用户执行。\n- Run vibehub-sync first if state is stale or drifted. / 先运行 vibehub-sync。"
+        "Constraints / 约束:\n- Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly. / 不要直接编辑。\n- Never manually create `.vibehub/tasks/` directories. / 不要手动创建目录，使用 CLI。\n- NEVER run `vibehub finish` or `vibehub advance` without user confirmation. / 未经确认绝不运行 finish/advance。\n- If CLI unavailable, ask user to run command. / 如 CLI 不可用请用户执行。\n- Run vibehub-sync first if state is stale or drifted. / 先运行 vibehub-sync。"
     } else {
-        "Constraints:\n- Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.\n- Never manually create `.vibehub/tasks/` directories. Use the CLI instead.\n- NEVER run `vibehub-cli finish` or `vibehub-cli advance` without explicit user confirmation. Ask first.\n- If CLI is unavailable, ask the user to run the command or use the cockpit UI.\n- If state is stale or drifted, run vibehub-sync first before making changes."
+        "Constraints:\n- Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly.\n- Never manually create `.vibehub/tasks/` directories. Use the CLI instead.\n- NEVER run `vibehub finish` or `vibehub advance` without explicit user confirmation. Ask first.\n- If CLI is unavailable, ask the user to run the command or use the cockpit UI.\n- If state is stale or drifted, run vibehub-sync first before making changes."
     };
 
     format!(
@@ -1516,33 +1516,33 @@ fn default_command_body(name: &str, locale: &str) -> String {
 
 fn cli_hint(name: &str) -> &'static str {
     match name {
-        "vibehub-start" => "\n  vibehub-cli start <project_path> <mode> <title>\n  Returns: {task_id, run_id, mode, phase, phase_status, task_path, run_path}\n  After: task is auto-registered as active; proceed to vibehub-continue or vibehub-sync. For multi-intent requests, use vibehub-start-intake first.",
-        "vibehub-sync" => "\n  vibehub-cli sync <project_path>   (accepts `sycn` typo)\n  Returns: {status, sync_level, task_id, run_id, phase, drift_warnings, changed_files, questions_for_user, recommended_actions}\n  After: sync report at .vibehub/agent-view/sync.md; follow recommended_actions.",
-        "vibehub-status" => "\n  vibehub-cli status <project_path>\n  Returns: {current_task_id, current_task_title, current_phase, phase_status, active_tasks, active_capabilities, flow, gate_statuses, warnings}",
-        "vibehub-next-action" => "\n  vibehub-cli next-action <project_path> [intent...]\n  Returns: {action, skill, cli, reason, confidence, matched_intent, operating_loop, routing_table, warnings}",
-        "vibehub-output-lint" => "\n  vibehub-cli output-lint <project_path> [task_id]\n  Returns: {status, issue_count, issues, phase_validation}",
-        "vibehub-finish" => "\n  vibehub-cli finish <project_path> --confirmed-by-user\n  Returns: {previous_phase, previous_status, current_phase, current_status, next_phase, validation}\n  After: phase validated (required outputs checked); next run `vibehub-cli advance --confirmed-by-user`.",
-        "vibehub-advance" => "\n  vibehub-cli advance <project_path> --confirmed-by-user [--force]\n  Returns: {previous_phase, current_phase, next_phase, validation, handoff_complete}\n  After: new phase context pack auto-built; resume with vibehub-continue.",
-        "vibehub-validate" => "\n  vibehub-cli validate <project_path>\n  vibehub-cli validate-task <project_path> <task_id>\n  Returns: {phase, status, required_outputs, found_outputs, missing_outputs}",
-        "vibehub-claim" => "\n  vibehub-cli claim <project_path> <capability>\n  vibehub-cli gates <project_path> [capability]  (check gates first)\n  Returns: {capability, claimable, context_pack_path}",
-        "vibehub-gates" => "\n  vibehub-cli gates <project_path> [capability]\n  Returns: [{capability, claimable, gates: [{gate, result, reasons}]}]",
-        "vibehub-review" => "\n  vibehub-cli review <project_path>\n  Returns: {review_path, changed_files_count, baseline_ref}",
-        "vibehub-recover" => "\n  vibehub-cli recover <project_path>\n  Returns: {project_root, drift_warnings, changed_files, recommended_actions}",
-        "vibehub-handoff" => "\n  vibehub-cli handoff <project_path>\n  Returns: {handoff_path, complete, missing_required_sections}",
-        "vibehub-diff" => "\n  vibehub-cli sync <project_path>  (diff info is in sync report)\n  Or: git diff --stat",
-        "vibehub-pause" => "\n  vibehub-cli pause <project_path>\n  Returns: {phase, status, current_phase, current_phase_status}",
-        "vibehub-switch" => "\n  vibehub-cli switch <project_path> <task_id>\n  Returns: {from_task_id, to_task_id, active_tasks}",
-        "vibehub-continue" => "\n  * No direct CLI action. Read vibehub-cli status for current state. Run vibehub-cli sync first if needed.\n  * Use vibehub-cli validate to check outputs, vibehub-cli finish to complete phase, vibehub-cli advance to move forward.",
-        "vibehub-debug-dump" => "\n  vibehub-cli debug-dump <project_path>\n  Returns: {dump_path, files_included, redacted}",
-        "vibehub-start-intake" => "\n  Prepare JSON request following the intake schema, then: vibehub-cli start-intake <project_path> --stdin\n  Alternative: vibehub-cli start-intake <project_path> <json_path>\n  JSON schema: {title, intent, source_message, split_confidence, split_reason, intake: [{title, intent, acceptance_criteria, dependencies, suggested_order}]}\n  Returns: {created_tasks, proposed_tasks, active_tasks, current_task_id}",
-        "vibehub-archive" => "\n  vibehub-cli archive <project_path> --confirmed-by-user [task_id]\n  Moves completed tasks out of the active list so they appear in archive.",
+        "vibehub-start" => "\n  vibehub start <project_path> <mode> <title>\n  Returns: {task_id, run_id, mode, phase, phase_status, task_path, run_path}\n  After: task is auto-registered as active; proceed to vibehub-continue or vibehub-sync. For multi-intent requests, use vibehub-start-intake first.",
+        "vibehub-sync" => "\n  vibehub sync <project_path>   (accepts `sycn` typo)\n  Returns: {status, sync_level, task_id, run_id, phase, drift_warnings, changed_files, questions_for_user, recommended_actions}\n  After: sync report at .vibehub/agent-view/sync.md; follow recommended_actions.",
+        "vibehub-status" => "\n  vibehub status <project_path>\n  Returns: {current_task_id, current_task_title, current_phase, phase_status, active_tasks, active_capabilities, flow, gate_statuses, warnings}",
+        "vibehub-next-action" => "\n  vibehub next-action <project_path> [intent...]\n  Returns: {action, skill, cli, reason, confidence, matched_intent, operating_loop, routing_table, warnings}",
+        "vibehub-output-lint" => "\n  vibehub output-lint <project_path> [task_id]\n  Returns: {status, issue_count, issues, phase_validation}",
+        "vibehub-finish" => "\n  vibehub finish <project_path> --confirmed-by-user\n  Returns: {previous_phase, previous_status, current_phase, current_status, next_phase, validation}\n  After: phase validated (required outputs checked); next run `vibehub advance --confirmed-by-user`.",
+        "vibehub-advance" => "\n  vibehub advance <project_path> --confirmed-by-user [--force]\n  Returns: {previous_phase, current_phase, next_phase, validation, handoff_complete}\n  After: new phase context pack auto-built; resume with vibehub-continue.",
+        "vibehub-validate" => "\n  vibehub validate <project_path>\n  vibehub validate-task <project_path> <task_id>\n  Returns: {phase, status, required_outputs, found_outputs, missing_outputs}",
+        "vibehub-claim" => "\n  vibehub claim <project_path> <capability>\n  vibehub gates <project_path> [capability]  (check gates first)\n  Returns: {capability, claimable, context_pack_path}",
+        "vibehub-gates" => "\n  vibehub gates <project_path> [capability]\n  Returns: [{capability, claimable, gates: [{gate, result, reasons}]}]",
+        "vibehub-review" => "\n  vibehub review <project_path>\n  Returns: {review_path, changed_files_count, baseline_ref}",
+        "vibehub-recover" => "\n  vibehub recover <project_path>\n  Returns: {project_root, drift_warnings, changed_files, recommended_actions}",
+        "vibehub-handoff" => "\n  vibehub handoff <project_path>\n  Returns: {handoff_path, complete, missing_required_sections}",
+        "vibehub-diff" => "\n  vibehub sync <project_path>  (diff info is in sync report)\n  Or: git diff --stat",
+        "vibehub-pause" => "\n  vibehub pause <project_path>\n  Returns: {phase, status, current_phase, current_phase_status}",
+        "vibehub-switch" => "\n  vibehub switch <project_path> <task_id>\n  Returns: {from_task_id, to_task_id, active_tasks}",
+        "vibehub-continue" => "\n  * No direct CLI action. Read vibehub status for current state. Run vibehub sync first if needed.\n  * Use vibehub validate to check outputs, vibehub finish to complete phase, vibehub advance to move forward.",
+        "vibehub-debug-dump" => "\n  vibehub debug-dump <project_path>\n  Returns: {dump_path, files_included, redacted}",
+        "vibehub-start-intake" => "\n  Prepare JSON request following the intake schema, then: vibehub start-intake <project_path> --stdin\n  Alternative: vibehub start-intake <project_path> <json_path>\n  JSON schema: {title, intent, source_message, split_confidence, split_reason, intake: [{title, intent, acceptance_criteria, dependencies, suggested_order}]}\n  Returns: {created_tasks, proposed_tasks, active_tasks, current_task_id}",
+        "vibehub-archive" => "\n  vibehub archive <project_path> --confirmed-by-user [task_id]\n  Moves completed tasks out of the active list so they appear in archive.",
         "vibehub-context" => "\n  * No direct CLI action; read `.vibehub/agent-view/current-context.md` and `.vibehub/tasks/<id>/runs/<id>/context-packs/<phase>.manifest.yaml`.",
         "vibehub-journal" => "\n  * No CLI action; append to `.vibehub/journal/` files directly following the journal schema.",
         "vibehub-knowledge" => "\n  * No CLI action; append to `.vibehub/knowledge/` files directly following the knowledge schema.",
         "vibehub-plan" => "\n  * No CLI action; write the plan to output.md following the plan capability required_fields in workflow.yaml.",
         "vibehub-research" => "\n  * No CLI action; run research, cite sources, write to output.md following the research capability required_fields.",
         "vibehub-checkpoint" => "\n  * No CLI action; write output.md with current progress snapshot and evidence labels.",
-        "vibehub-help" => "\n  vibehub-cli --help",
+        "vibehub-help" => "\n  vibehub --help",
         "vibehub-init" => "\n  * No CLI action; check `.vibehub/` exists. If not, ask user to init from cockpit.",
         _ => "",
     }
@@ -1550,44 +1550,44 @@ fn cli_hint(name: &str) -> &'static str {
 
 fn preflight_check(name: &str) -> &'static str {
     match name {
-        "vibehub-start" => "\n  1. Run `vibehub-cli --help` to verify CLI is available. If not, build with `cargo build -p vibehub-cli`.\n  2. Check for existing active task: `vibehub-cli status <project>`. If one exists, consider vibehub-sync first.\n  3. NEVER manually create `.vibehub/tasks/` directories or edit `state.yaml` directly.",
+        "vibehub-start" => "\n  1. The VibeHub CLI is the same `vibehub` binary as the desktop app. Verify it runs headless with `vibehub status <project>` (it prints JSON and exits; it does not open a window). If the binary is missing, the user must install VibeHub; do not fall back to editing `.vibehub/` files by hand.\n  2. Check for existing active task: `vibehub status <project>`. If one exists, consider vibehub-sync first.\n  3. NEVER manually create `.vibehub/tasks/` directories or edit `state.yaml` directly.",
         "vibehub-sync" => "\n  1. Check Git is available: `git status --porcelain`\n  2. Read `.vibehub/agent-view/current.md` to find current task/run.\n  3. Collect hard evidence BEFORE asking user questions.",
-        "vibehub-next-action" => "\n  1. Run `vibehub-cli next-action <project> [intent...]` before choosing a workflow command when state or intent is unclear.\n  2. Follow the returned `skill` and `cli` unless the user explicitly overrides it.",
+        "vibehub-next-action" => "\n  1. Run `vibehub next-action <project> [intent...]` before choosing a workflow command when state or intent is unclear.\n  2. Follow the returned `skill` and `cli` unless the user explicitly overrides it.",
         "vibehub-output-lint" => "\n  1. Run after writing output.md and before finish/advance/final report.\n  2. Treat severity=error as a blocker; treat warnings as cleanup unless user explicitly accepts the risk.",
-        "vibehub-continue" => "\n  1. Run `vibehub-cli sync <project>` first to align workspace state.\n  2. Read `.vibehub/agent-view/current.md` for current phase.\n  3. Check `.vibehub/workflow.yaml` capabilities.<phase>.required_fields for expected outputs.\n  4. Read the context pack at the path in current-context.md.",
-        "vibehub-finish" => "\n  1. Verify output.md exists at `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`.\n  2. Run `vibehub-cli validate <project>` and `vibehub-cli output-lint <project>` before finishing.\n  3. Run `vibehub-cli finish <project> --confirmed-by-user` only after the user has confirmed.",
-        "vibehub-claim" => "\n  1. Run `vibehub-cli gates <project>` first to see which capabilities are claimable.\n  2. Only claim if gate evaluation returns claimable=true.",
+        "vibehub-continue" => "\n  1. Run `vibehub sync <project>` first to align workspace state.\n  2. Read `.vibehub/agent-view/current.md` for current phase.\n  3. Check `.vibehub/workflow.yaml` capabilities.<phase>.required_fields for expected outputs.\n  4. Read the context pack at the path in current-context.md.",
+        "vibehub-finish" => "\n  1. Verify output.md exists at `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`.\n  2. Run `vibehub validate <project>` and `vibehub output-lint <project>` before finishing.\n  3. Run `vibehub finish <project> --confirmed-by-user` only after the user has confirmed.",
+        "vibehub-claim" => "\n  1. Run `vibehub gates <project>` first to see which capabilities are claimable.\n  2. Only claim if gate evaluation returns claimable=true.",
         "vibehub-recover" => "\n  1. Check if VibeHub state.yaml exists and has valid schema_version.\n  2. Check Git HEAD matches VibeHub recorded HEAD.\n  3. Verify task/run pointer files (`.vibehub/tasks/current`, `.vibehub/tasks/<id>/runs/current`) are valid.",
-        "vibehub-advance" => "\n  1. Run `vibehub-cli validate <project>` and `vibehub-cli output-lint <project>`.\n  2. Run `vibehub-cli handoff <project>` to check handoff is complete.\n  3. Run `vibehub-cli advance <project> --confirmed-by-user`; use --force only with user confirmation.",
-        "vibehub-start-intake" => "\n  1. Identify independently deliverable units in the user request.\n  2. For each unit, draft: title, intent, acceptance_criteria.\n  3. Determine split_confidence: high if clearly independent, medium if user should confirm.\n  4. Pipe the JSON to `vibehub-cli start-intake <project> --stdin` (or use a temp JSON file if stdin is unavailable).",
-        "vibehub-archive" => "\n  1. Run `vibehub-cli status <project>` to see all active tasks and their phase_status.\n  2. Identify tasks with phase_status=completed or cancelled.\n  3. Run `vibehub-cli archive <project> --confirmed-by-user` only after the user has confirmed.",
+        "vibehub-advance" => "\n  1. Run `vibehub validate <project>` and `vibehub output-lint <project>`.\n  2. Run `vibehub handoff <project>` to check handoff is complete.\n  3. Run `vibehub advance <project> --confirmed-by-user`; use --force only with user confirmation.",
+        "vibehub-start-intake" => "\n  1. Identify independently deliverable units in the user request.\n  2. For each unit, draft: title, intent, acceptance_criteria.\n  3. Determine split_confidence: high if clearly independent, medium if user should confirm.\n  4. Pipe the JSON to `vibehub start-intake <project> --stdin` (or use a temp JSON file if stdin is unavailable).",
+        "vibehub-archive" => "\n  1. Run `vibehub status <project>` to see all active tasks and their phase_status.\n  2. Identify tasks with phase_status=completed or cancelled.\n  3. Run `vibehub archive <project> --confirmed-by-user` only after the user has confirmed.",
         _ => "\n  (none)",
     }
 }
 
 fn task_desc(name: &str) -> String {
     let desc = match name {
-        "vibehub-help" => "Show available VibeHub CLI commands. Run `vibehub-cli --help`. List available commands and explain when to use each one.",
+        "vibehub-help" => "Show available VibeHub CLI commands. Run `vibehub --help`. List available commands and explain when to use each one.",
         "vibehub-init" => "Check whether `.vibehub/` exists. If missing, ask the user to initialize from the VibeHub app; do not create canonical state yourself.",
-        "vibehub-status" => "Read current state from `vibehub-cli status <project>`. Summarize: active task/run/phase, flow (all phases and their statuses), context pack availability, handoff, Git status, active capabilities, claimable capabilities, gate statuses, and warnings.",
+        "vibehub-status" => "Read current state from `vibehub status <project>`. Summarize: active task/run/phase, flow (all phases and their statuses), context pack availability, handoff, Git status, active capabilities, claimable capabilities, gate statuses, and warnings.",
         "vibehub-next-action" => "Ask VibeHub to recommend the next agent action. Returns a machine-readable action, skill name, CLI command, reason, confidence, matched intent, operating loop, routing table, and warnings. Use this when the agent is unsure whether to start, split, sync, continue, validate, lint output, advance, archive, or recover.",
         "vibehub-output-lint" => "Lint the current or task-scoped output.md for missing required sections, stale contradictions, and evidence-label hygiene. Run it before final reporting and before finish/advance.",
-        "vibehub-sync" => "Run a best-effort sync via `vibehub-cli sync <project>`. Inspect Git diff/status, VibeHub pointers, current context, latest output, and handoff. Accept `sycn` as typo alias.\n\nSync behavior:\n- Treat \"sync\", \"sycn\", \"同步\", \"刷新状态\", \"update VibeHub\", or plain requests to continue from current engineering reality as this command.\n- Autonomously collect hard evidence first: Git status/diff, current task/run/phase, context pack state, latest output, handoff, visible warnings.\n- Ask user only for missing intent/progress/future-plan details not inferrable from hard evidence.\n- If user does not answer, record questions as unresolved risks; continue from hard_observed evidence.",
+        "vibehub-sync" => "Run a best-effort sync via `vibehub sync <project>`. Inspect Git diff/status, VibeHub pointers, current context, latest output, and handoff. Accept `sycn` as typo alias.\n\nSync behavior:\n- Treat \"sync\", \"sycn\", \"同步\", \"刷新状态\", \"update VibeHub\", or plain requests to continue from current engineering reality as this command.\n- Autonomously collect hard evidence first: Git status/diff, current task/run/phase, context pack state, latest output, handoff, visible warnings.\n- Ask user only for missing intent/progress/future-plan details not inferrable from hard evidence.\n- If user does not answer, record questions as unresolved risks; continue from hard_observed evidence.",
         "vibehub-start" => "Create one or more VibeHub tasks. Split multi-intent requests into separate task drafts when requirements are independently deliverable; use vibehub-start-intake first when the request contains multiple deliverables.\n\nModes: yolo_drive (align_lite → implement → review_lite), guided_drive (align → plan → implement → review), evidence_drive (align → research → plan → implement → review).\n\nAfter creation, the task is auto-registered as active. Proceed to vibehub-continue to start work on the align phase.",
-        "vibehub-continue" => "Continue the active phase from VibeHub state, not memory. Run `vibehub-cli status` if phase/status is unclear; run vibehub-sync first when the user says continue/继续/refresh or when drift is visible. Check workflow.yaml required outputs, read the context pack, keep changes scoped, and write output.md before stopping.",
-        "vibehub-finish" => "Complete the current phase after explicit user confirmation. The CLI validates required outputs against the phase contract. On success, the phase is marked completed; next step is `vibehub-cli advance --confirmed-by-user` to move to the next phase.",
+        "vibehub-continue" => "Continue the active phase from VibeHub state, not memory. Run `vibehub status` if phase/status is unclear; run vibehub-sync first when the user says continue/继续/refresh or when drift is visible. Check workflow.yaml required outputs, read the context pack, keep changes scoped, and write output.md before stopping.",
+        "vibehub-finish" => "Complete the current phase after explicit user confirmation. The CLI validates required outputs against the phase contract. On success, the phase is marked completed; next step is `vibehub advance --confirmed-by-user` to move to the next phase.",
         "vibehub-advance" => "Advance to the next phase in the workflow after explicit user confirmation. Requires all current phase outputs to be valid. If handoff is incomplete, advance is blocked unless --force is used.",
-        "vibehub-validate" => "Check whether the current phase has all required outputs present. Use `vibehub-cli validate-task <project> <task_id>` in multi-task workspaces to avoid validating the wrong active pointer.",
-        "vibehub-claim" => "Claim a named capability only after VibeHub gates allow it. Use `vibehub-cli gates <project>` first to evaluate which capabilities are currently claimable. After claiming, read the rebuilt capability context pack and continue the work.",
+        "vibehub-validate" => "Check whether the current phase has all required outputs present. Use `vibehub validate-task <project> <task_id>` in multi-task workspaces to avoid validating the wrong active pointer.",
+        "vibehub-claim" => "Claim a named capability only after VibeHub gates allow it. Use `vibehub gates <project>` first to evaluate which capabilities are currently claimable. After claiming, read the rebuilt capability context pack and continue the work.",
         "vibehub-gates" => "Evaluate capability gates for all or a specific capability. This is a read-only check that tells you which capabilities are currently claimable and why.",
         "vibehub-review" => "Generate review evidence including diff summary and changed files list. Review the current diff against context, plan, research, tests, and VibeHub hard rules. Check required outputs per protocol.md.",
         "vibehub-recover" => "Analyze interrupted or drifted work. Check: (1) Git HEAD vs VibeHub pointers, (2) task/run pointer files integrity, (3) state.yaml vs event log consistency, (4) context pack freshness. Recommend vibehub-sync for minor drift or vibehub-start for broken pointers.",
         "vibehub-handoff" => "Build a session handoff that lets the next session resume without chat history. Reads the latest output.md and summarizes what was done, what remains, and next steps.",
         "vibehub-pause" => "Mark the current phase as blocked/paused. Writes handoff before pausing so state is preserved.",
-        "vibehub-diff" => "Summarize changed files and scope drift against the current task and context pack. Use `vibehub-cli sync` or `git diff --stat`.",
+        "vibehub-diff" => "Summarize changed files and scope drift against the current task and context pack. Use `vibehub sync` or `git diff --stat`.",
         "vibehub-context" => "Inspect current context quality. Read the context manifest to check for missing required files or stale context. Propose rebuilds if needed.",
         "vibehub-switch" => "Switch the active task pointer to a different task. The old task remains in the active tasks list.",
-        "vibehub-start-intake" => "Analyze a complex user request and split it into independent, deliverable tasks. Use when the user asks for multiple things in one message.\n\nProcess: (1) Identify independently deliverable units. (2) Draft each as a task with title, intent, acceptance_criteria. (3) Assign suggested_order and dependencies. (4) Run `vibehub-cli start-intake <project> --stdin` with the JSON request, or pass a JSON file path when stdin is unavailable.\n\nSplit confidence: high=clearly independent, medium=user should confirm, low=collapse into one task.",
+        "vibehub-start-intake" => "Analyze a complex user request and split it into independent, deliverable tasks. Use when the user asks for multiple things in one message.\n\nProcess: (1) Identify independently deliverable units. (2) Draft each as a task with title, intent, acceptance_criteria. (3) Assign suggested_order and dependencies. (4) Run `vibehub start-intake <project> --stdin` with the JSON request, or pass a JSON file path when stdin is unavailable.\n\nSplit confidence: high=clearly independent, medium=user should confirm, low=collapse into one task.",
         "vibehub-archive" => "Archive completed or cancelled tasks to clean up the active task list after explicit user confirmation. Without a task_id, archives all tasks that are in completed or cancelled status.",
         "vibehub-research" => "Run evidence-backed research, cite sources when external facts are used, and write research notes for VibeHub review.",
         "vibehub-plan" => "Create or repair the implementation plan, validation plan, risk list, and context plan.",
@@ -1595,7 +1595,7 @@ fn task_desc(name: &str) -> String {
         "vibehub-journal" => "Draft durable session notes suitable for VibeHub journal promotion.",
         "vibehub-knowledge" => "Promote repeated lessons into reusable rules, preferences, or knowledge notes.",
         "vibehub-debug-dump" => "Export a redacted VibeHub debug bundle for diagnostics.",
-        _ => "Follow the VibeHub agent protocol. Use `vibehub-cli --help` to discover available CLI commands.",
+        _ => "Follow the VibeHub agent protocol. Use `vibehub --help` to discover available CLI commands.",
     };
     desc.to_string()
 }
@@ -1604,8 +1604,8 @@ fn stop_cond(name: &str) -> &'static str {
     match name {
         "vibehub-continue" => "\n\nStop when:\n  1. All phase required outputs are written to output.md (check workflow.yaml).\n  2. Phase acceptance criteria are met.\n  3. If blocked, report the blocker; write partial output with what's done.",
         "vibehub-sync" => "\n\nStop when:\n  1. Sync report at `.vibehub/agent-view/sync.md` is generated.\n  2. All hard-evidence questions answered or recorded as unresolved risks.\n  3. If state is broken, recommend vibehub-recover instead of silently advancing.",
-        "vibehub-start" => "\n\nStop when:\n  1. CLI returns task_id and run_id successfully.\n  2. Task appears in `vibehub-cli status` output as active.\n  3. Context pack is available for the first phase (usually align).",
-        "vibehub-finish" => "\n\nStop when:\n  1. `vibehub-cli validate` returns status=completed with no missing_outputs.\n  2. `vibehub-cli output-lint` has no severity=error issues.\n  3. Handoff is complete or missing handoff context is documented in output.md.",
+        "vibehub-start" => "\n\nStop when:\n  1. CLI returns task_id and run_id successfully.\n  2. Task appears in `vibehub status` output as active.\n  3. Context pack is available for the first phase (usually align).",
+        "vibehub-finish" => "\n\nStop when:\n  1. `vibehub validate` returns status=completed with no missing_outputs.\n  2. `vibehub output-lint` has no severity=error issues.\n  3. Handoff is complete or missing handoff context is documented in output.md.",
         "vibehub-recover" => "\n\nStop when:\n  1. Drift analysis is complete.\n  2. Recommended actions are clear (sync, recover, or start new task).\n  3. If pointers are broken, do NOT manually fix — recommend vibehub-start.",
         _ => "",
     }
@@ -1816,6 +1816,7 @@ fn decide_target(
             .get(&target.path)
             .map(|hash| hash == &existing_hash)
             .unwrap_or(false)
+            || looks_like_legacy_generated_target(target, &existing)
         {
             Ok(SyncDecision::Update(target.content.clone()))
         } else {
@@ -1827,6 +1828,49 @@ fn decide_target(
     } else {
         Ok(SyncDecision::Create(target.content.clone()))
     }
+}
+
+fn looks_like_legacy_generated_target(target: &RenderedTarget, existing: &str) -> bool {
+    if !is_generated_adapter_path(&target.path) {
+        return false;
+    }
+    let has_vibehub_signature = existing.contains("VibeHub")
+        || existing.contains("vibehub-cli")
+        || existing.contains("vibehub-")
+        || existing.contains(".vibehub/");
+    let has_generated_shape = existing.contains("Adapter template:")
+        || existing.contains("VibeHub Agent Protocol")
+        || existing.contains("VibeHub Command Index")
+        || existing.contains("VibeHub Constraints")
+        || existing.contains("Use for VibeHub workflow step")
+        || existing.contains("Invocation input:")
+        || existing.contains("vibehub-stop-check.mjs")
+        || existing.contains(".vibehub/adapters/protocol.md")
+        || existing.contains("vibehub-cli");
+
+    has_vibehub_signature && has_generated_shape
+}
+
+fn is_generated_adapter_path(path: &str) -> bool {
+    path == ".vibehub/adapters/protocol.md"
+        || path == ".vibehub/adapters/hooks/vibehub-stop-check.mjs"
+        || path == ".codex/vibehub/constraints.md"
+        || path == ".codex/vibehub/command-index.md"
+        || path == ".codex/vibehub/stop-hook-config.md"
+        || path == ".claude/settings.json"
+        || path == ".claude/vibehub/constraints.md"
+        || path == ".claude/vibehub/command-index.md"
+        || path == "opencode.json"
+        || path == ".opencode/vibehub/constraints.md"
+        || path == ".opencode/vibehub/command-index.md"
+        || path == ".cursor/rules/vibehub.mdc"
+        || path == ".cursor/rules/vibehub-command-index.mdc"
+        || path == ".antigravity/vibehub-instructions.md"
+        || path == ".antigravity/vibehub-command-index.md"
+        || path.starts_with(".agents/skills/vibehub-")
+        || path.starts_with(".vibehub/adapters/generated/")
+        || path.starts_with(".claude/commands/vibehub-")
+        || path.starts_with(".opencode/commands/vibehub-")
 }
 
 fn decide_managed_update(existing: &str, managed_section: &str) -> Result<SyncDecision> {
@@ -2192,6 +2236,38 @@ mod tests {
             result.conflict_files[0].path,
             ".opencode/commands/vibehub-sync.md"
         );
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn updates_legacy_generated_skill_even_without_recorded_hash() {
+        let project = temp_project();
+        ensure_adapter_config(&project, vec![AgentTool::Codex]).expect("config");
+        fs::create_dir_all(project.join(".agents/skills/vibehub-sync")).expect("create skill dir");
+        fs::write(
+            project.join(".agents/skills/vibehub-sync/SKILL.md"),
+            r#"---
+name: vibehub-sync
+description: "Legacy VibeHub skill. Use for VibeHub workflow step: vibehub-sync."
+---
+
+# vibehub-sync
+
+Run `vibehub-cli sync <project_path>` when the user asks to update VibeHub.
+"#,
+        )
+        .expect("write legacy skill");
+
+        let result = sync_agent_adapters(&project, None, false).expect("sync");
+        let content = fs::read_to_string(project.join(".agents/skills/vibehub-sync/SKILL.md"))
+            .expect("read skill");
+
+        assert!(result
+            .updated_files
+            .contains(&".agents/skills/vibehub-sync/SKILL.md".to_string()));
+        assert!(content.contains("vibehub sync <project_path>"));
+        assert!(!content.contains("vibehub-cli sync"));
 
         fs::remove_dir_all(project).expect("cleanup");
     }

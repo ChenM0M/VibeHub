@@ -8,9 +8,9 @@
 请根据以下需求创建 VibeHub 任务状态。
 
 ## 如何操作
-如果需求包含多个可独立交付目标，先用 `vibehub-cli start-intake {{project_root}} --stdin` 拆分任务草稿。单一交付目标则运行：
+如果需求包含多个可独立交付目标，先用 `vibehub start-intake {{project_root}} --stdin` 拆分任务草稿。单一交付目标则运行：
 ```
-vibehub-cli start {{project_root}} {{mode}} "<标题>"
+vibehub start {{project_root}} {{mode}} "<标题>"
 ```
 或使用 cockpit "Start Task" 按钮。**不要**手动创建 `.vibehub/tasks/` 文件 — CLI 会自动设置指针、状态和上下文。
 

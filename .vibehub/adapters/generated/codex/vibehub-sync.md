@@ -18,7 +18,7 @@ Read first / 先读:
 - `.vibehub/adapters/protocol.md`
 
 CLI:
-  vibehub-cli sync <project_path>   (accepts `sycn` typo)
+  vibehub sync <project_path>   (accepts `sycn` typo)
   Returns: {status, sync_level, task_id, run_id, phase, drift_warnings, changed_files, questions_for_user, recommended_actions}
   After: sync report at .vibehub/agent-view/sync.md; follow recommended_actions.
 
@@ -27,7 +27,7 @@ Pre-flight / 前置检查:
   2. Read `.vibehub/agent-view/current.md` to find current task/run.
   3. Collect hard evidence BEFORE asking user questions.
 
-Task / 任务:Run a best-effort sync via `vibehub-cli sync <project>`. Inspect Git diff/status, VibeHub pointers, current context, latest output, and handoff. Accept `sycn` as typo alias.
+Task / 任务:Run a best-effort sync via `vibehub sync <project>`. Inspect Git diff/status, VibeHub pointers, current context, latest output, and handoff. Accept `sycn` as typo alias.
 
 Sync behavior:
 - Treat "sync", "sycn", "同步", "刷新状态", "update VibeHub", or plain requests to continue from current engineering reality as this command.
@@ -48,7 +48,7 @@ Write output to `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md` follo
 Constraints / 约束:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly. / 不要直接编辑。
 - Never manually create `.vibehub/tasks/` directories. / 不要手动创建目录，使用 CLI。
-- NEVER run `vibehub-cli finish` or `vibehub-cli advance` without user confirmation. / 未经确认绝不运行 finish/advance。
+- NEVER run `vibehub finish` or `vibehub advance` without user confirmation. / 未经确认绝不运行 finish/advance。
 - If CLI unavailable, ask user to run command. / 如 CLI 不可用请用户执行。
 - Run vibehub-sync first if state is stale or drifted. / 先运行 vibehub-sync。
 
