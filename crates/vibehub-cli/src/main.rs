@@ -15,57 +15,67 @@ fn main() {
         return;
     }
 
+    if action == "vibehub" {
+        let Some(action) = args.next() else {
+            eprintln!("Missing VibeHub action. Expected start, start-intake, sync, status, next-action, output-lint, validate, sync-adapters, adapter-status, or another VibeHub command.");
+            std::process::exit(2);
+        };
+        run_vibehub_action(&action, args.collect());
+        return;
+    }
+
     let rest: Vec<String> = args.collect();
     run_vibehub_action(&action, rest);
 }
 
 fn print_help() {
     eprintln!(
-        r#"vibehub-cli <action> <project_path> [args...]
+        r#"vibehub <action> <project_path> [args...]
+vibehub-cli <action> <project_path> [args...]   (legacy alias)
 
 === Task Lifecycle ===
-  start                  Create a new task: vibehub-cli start <project> <mode> <title>
-  start-intake           Create multiple tasks from JSON: vibehub-cli start-intake <project> <json_path|--stdin|->
-  switch                 Switch active task: vibehub-cli switch <project> <task_id>
-  finish                 Complete current phase: vibehub-cli finish <project> --confirmed-by-user
-  advance                Advance to next phase: vibehub-cli advance <project> --confirmed-by-user [--force]
-  validate               Validate current phase outputs: vibehub-cli validate <project>
-  validate-task          Validate a task without switching: vibehub-cli validate-task <project> <task_id>
-  output-lint            Lint current output quality: vibehub-cli output-lint <project> [task_id]
-  pause                  Pause current phase: vibehub-cli pause <project>
-  archive                Archive completed tasks: vibehub-cli archive <project> --confirmed-by-user [task_id]
+  start                  Create a new task: vibehub start <project> <mode> <title>
+  start-intake           Create multiple tasks from JSON: vibehub start-intake <project> <json_path|--stdin|->
+  switch                 Switch active task: vibehub switch <project> <task_id>
+  finish                 Complete current phase: vibehub finish <project> --confirmed-by-user
+  advance                Advance to next phase: vibehub advance <project> --confirmed-by-user [--force]
+  validate               Validate current phase outputs: vibehub validate <project>
+  validate-task          Validate a task without switching: vibehub validate-task <project> <task_id>
+  output-lint            Lint current output quality: vibehub output-lint <project> [task_id]
+  pause                  Pause current phase: vibehub pause <project>
+  archive                Archive completed tasks: vibehub archive <project> --confirmed-by-user [task_id]
 
 === Workspace Sync ===
-  sync / sycn            Sync workspace state: vibehub-cli sync <project>
-  recover                Check workspace drift: vibehub-cli recover <project>
-  status                 Show cockpit status: vibehub-cli status <project>
-  next-action            Recommend next agent action: vibehub-cli next-action <project> [intent...]
+  sync / sycn            Sync workspace state: vibehub sync <project>
+  recover                Check workspace drift: vibehub recover <project>
+  status                 Show cockpit status: vibehub status <project>
+  next-action            Recommend next agent action: vibehub next-action <project> [intent...]
 
 === Capability & Gates ===
-  claim                  Claim a capability: vibehub-cli claim <project> <capability>
-  gates                  Evaluate capability gates: vibehub-cli gates <project> [capability]
+  claim                  Claim a capability: vibehub claim <project> <capability>
+  gates                  Evaluate capability gates: vibehub gates <project> [capability]
 
 === Context & Evidence ===
-  review                 Generate review evidence: vibehub-cli review <project>
-  handoff                Build handoff: vibehub-cli handoff <project>
-  ownership              Classify file ownership: vibehub-cli ownership <project> [files...]
-  record                 Record file ownership: vibehub-cli record <project> <files...>
-  schema-check           Validate capability output: vibehub-cli schema-check <project> <capability> <json_path>
-  neighbors              Query neighbor tasks: vibehub-cli neighbors <project>
-  workflow-explain       Explain workflow: vibehub-cli workflow-explain <project>
+  review                 Generate review evidence: vibehub review <project>
+  handoff                Build handoff: vibehub handoff <project>
+  ownership              Classify file ownership: vibehub ownership <project> [files...]
+  record                 Record file ownership: vibehub record <project> <files...>
+  schema-check           Validate capability output: vibehub schema-check <project> <capability> <json_path>
+  neighbors              Query neighbor tasks: vibehub neighbors <project>
+  workflow-explain       Explain workflow: vibehub workflow-explain <project>
 
 === Adapter Management ===
-  sync-adapters          Sync adapter files: vibehub-cli sync-adapters <project> [tools...] [--dry-run]
-  adapter-status         Show adapter file status: vibehub-cli adapter-status <project>
+  sync-adapters          Sync adapter files: vibehub sync-adapters <project> [tools...] [--dry-run]
+  adapter-status         Show adapter file status: vibehub adapter-status <project>
 
 === Maintenance ===
-  migrate                Migrate state schema: vibehub-cli migrate <project> [--dry-run]
-  replay-pending         Replay pending events: vibehub-cli replay-pending <project>
-  debug-dump             Create debug dump: vibehub-cli debug-dump <project>
-  locale                 Set project locale: vibehub-cli locale <project> <en|zh-CN|zh-TW>
+  migrate                Migrate state schema: vibehub migrate <project> [--dry-run]
+  replay-pending         Replay pending events: vibehub replay-pending <project>
+  debug-dump             Create debug dump: vibehub debug-dump <project>
+  locale                 Set project locale: vibehub locale <project> <en|zh-CN|zh-TW>
 
 All commands output JSON to stdout. Errors go to stderr.
-Use `vibehub-cli --help` to see this message again.
+Use `vibehub --help` or `vibehub-cli --help` to see this message again.
 "#
     );
 }

@@ -44,7 +44,7 @@ If `.vibehub/agent-view/current.md` names a context pack, read it when it exists
 8. Validate and lint output before asking to finish or advance.
 9. Report risks and next actions instead of hiding uncertainty.
 
-When the next move is unclear, run `vibehub-cli next-action <project> [intent...]`. It returns JSON with `action`, `skill`, `cli`, `reason`, `confidence`, `matched_intent`, `operating_loop`, and `routing_table`.
+When the next move is unclear, run `vibehub next-action <project> [intent...]`. It returns JSON with `action`, `skill`, `cli`, `reason`, `confidence`, `matched_intent`, `operating_loop`, and `routing_table`.
 
 ## Phase Output Contract
 
@@ -88,44 +88,44 @@ evidence_drive:  align → research → plan → implement → review
 For each phase:
 1. **Start**: Phase is `active`. Read the context pack and produce the work.
 2. **Work**: Produce output.md with all sections. Check `.vibehub/workflow.yaml` capabilities.<phase>.required_fields for expected content.
-3. **Finish**: Run `vibehub-cli finish <project> --confirmed-by-user` ONLY after user confirms the phase is complete. This validates required outputs.
-4. **Advance**: Run `vibehub-cli advance <project> --confirmed-by-user` ONLY after user explicitly asks to move forward. This builds context for the next phase.
+3. **Finish**: Run `vibehub finish <project> --confirmed-by-user` ONLY after user confirms the phase is complete. This validates required outputs.
+4. **Advance**: Run `vibehub advance <project> --confirmed-by-user` ONLY after user explicitly asks to move forward. This builds context for the next phase.
 
 ### Task Lifecycle
 
 ```
-vibehub-cli start → align phase → finish → advance → next phase → ... → last phase → finish
+vibehub start → align phase → finish → advance → next phase → ... → last phase → finish
 ```
 
 Key interactions:
-- `vibehub-cli start <project> <mode> <title>` — creates and registers task
-- `vibehub-cli status <project>` — read current state at any time
-- `vibehub-cli sync <project>` — align workspace state before starting work
-- `vibehub-cli validate <project>` — check if required outputs are complete
-- `vibehub-cli validate-task <project> <task_id>` — validate a task without switching current pointer
-- `vibehub-cli output-lint <project> [task_id]` — check output quality, evidence labels, and stale contradictions
-- `vibehub-cli finish <project> --confirmed-by-user` — complete current phase (user must confirm)
-- `vibehub-cli advance <project> --confirmed-by-user [--force]` — move to next phase (user must confirm)
-- `vibehub-cli claim <project> <capability>` — activate parallel capability
-- `vibehub-cli handoff <project>` — build session handoff
-- `vibehub-cli recover <project>` — diagnose state drift
+- `vibehub start <project> <mode> <title>` — creates and registers task
+- `vibehub status <project>` — read current state at any time
+- `vibehub sync <project>` — align workspace state before starting work
+- `vibehub validate <project>` — check if required outputs are complete
+- `vibehub validate-task <project> <task_id>` — validate a task without switching current pointer
+- `vibehub output-lint <project> [task_id]` — check output quality, evidence labels, and stale contradictions
+- `vibehub finish <project> --confirmed-by-user` — complete current phase (user must confirm)
+- `vibehub advance <project> --confirmed-by-user [--force]` — move to next phase (user must confirm)
+- `vibehub claim <project> <capability>` — activate parallel capability
+- `vibehub handoff <project>` — build session handoff
+- `vibehub recover <project>` — diagnose state drift
 
 ### Routing Shortcuts
 
 - Multi-intent or independently deliverable user request → `vibehub-start-intake`, then start created tasks.
 - New single deliverable with no active task → `vibehub-start`.
-- Multi-active-task workspace → `vibehub-cli status`, then `vibehub-cli switch <project> <task_id>` or task-scoped validation.
+- Multi-active-task workspace → `vibehub status`, then `vibehub switch <project> <task_id>` or task-scoped validation.
 - "continue", "sync", "refresh status", "继续", "同步", or visible drift → `vibehub-sync` before edits.
 - Active phase work → `vibehub-continue`; write output.md before stopping.
-- Output ready → `vibehub-cli validate <project>` then `vibehub-cli output-lint <project>`.
-- Unsure what to do → `vibehub-cli next-action <project> [intent...]`.
+- Output ready → `vibehub validate <project>` then `vibehub output-lint <project>`.
+- Unsure what to do → `vibehub next-action <project> [intent...]`.
 
 ### Hard Constraints — Never Do These
 
-- **NEVER run `vibehub-cli finish`, `vibehub-cli advance`, or `vibehub-cli archive` without explicit user confirmation.** The CLI requires `--confirmed-by-user` for these state-changing operations.
+- **NEVER run `vibehub finish`, `vibehub advance`, or `vibehub archive` without explicit user confirmation.** The CLI requires `--confirmed-by-user` for these state-changing operations.
 - **NEVER manually create `.vibehub/tasks/` directories or edit `state.yaml`.** Only the CLI creates canonical state.
-- **NEVER assume the current pointer is the task you intend in multi-active workspaces.** Check `vibehub-cli status`; use `validate-task` for task-scoped validation.
-- **NEVER skip syncing before starting work.** Run `vibehub-cli sync` if the workspace has changed since the last session.
+- **NEVER assume the current pointer is the task you intend in multi-active workspaces.** Check `vibehub status`; use `validate-task` for task-scoped validation.
+- **NEVER skip syncing before starting work.** Run `vibehub sync` if the workspace has changed since the last session.
 - **If CLI is unavailable, STOP and tell the user.** Do not attempt to simulate CLI behavior by editing files.
 
 ## Stop Condition
@@ -148,4 +148,4 @@ Plain-language sync requests, including misspellings such as `sycn` and Chinese 
 
 Adapter file writes are the only INV-6 UI-write exception. They may update generated adapter configuration files after user confirmation, but must not write VibeHub canonical task, run, phase, or event state from the UI.
 
-Agent sessions must not autonomously run `vibehub-cli finish` or `vibehub-cli advance`. These are user-level decisions. Output completion evidence and ask before transitioning state.
+Agent sessions must not autonomously run `vibehub finish` or `vibehub advance`. These are user-level decisions. Output completion evidence and ask before transitioning state.

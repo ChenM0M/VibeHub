@@ -18,14 +18,14 @@ Read first / 先读:
 - `.vibehub/adapters/protocol.md`
 
 CLI:
-  vibehub-cli advance <project_path> --confirmed-by-user [--force]
+  vibehub advance <project_path> --confirmed-by-user [--force]
   Returns: {previous_phase, current_phase, next_phase, validation, handoff_complete}
   After: new phase context pack auto-built; resume with vibehub-continue.
 
 Pre-flight / 前置检查:
-  1. Run `vibehub-cli validate <project>` and `vibehub-cli output-lint <project>`.
-  2. Run `vibehub-cli handoff <project>` to check handoff is complete.
-  3. Run `vibehub-cli advance <project> --confirmed-by-user`; use --force only with user confirmation.
+  1. Run `vibehub validate <project>` and `vibehub output-lint <project>`.
+  2. Run `vibehub handoff <project>` to check handoff is complete.
+  3. Run `vibehub advance <project> --confirmed-by-user`; use --force only with user confirmation.
 
 Task / 任务:Advance to the next phase in the workflow after explicit user confirmation. Requires all current phase outputs to be valid. If handoff is incomplete, advance is blocked unless --force is used.
 
@@ -37,6 +37,6 @@ Write output to `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md` follo
 Constraints / 约束:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly. / 不要直接编辑。
 - Never manually create `.vibehub/tasks/` directories. / 不要手动创建目录，使用 CLI。
-- NEVER run `vibehub-cli finish` or `vibehub-cli advance` without user confirmation. / 未经确认绝不运行 finish/advance。
+- NEVER run `vibehub finish` or `vibehub advance` without user confirmation. / 未经确认绝不运行 finish/advance。
 - If CLI unavailable, ask user to run command. / 如 CLI 不可用请用户执行。
 - Run vibehub-sync first if state is stale or drifted. / 先运行 vibehub-sync。

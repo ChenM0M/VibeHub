@@ -18,20 +18,20 @@ Read first / 先读:
 - `.vibehub/adapters/protocol.md`
 
 CLI:
-  vibehub-cli finish <project_path> --confirmed-by-user
+  vibehub finish <project_path> --confirmed-by-user
   Returns: {previous_phase, previous_status, current_phase, current_status, next_phase, validation}
-  After: phase validated (required outputs checked); next run `vibehub-cli advance --confirmed-by-user`.
+  After: phase validated (required outputs checked); next run `vibehub advance --confirmed-by-user`.
 
 Pre-flight / 前置检查:
   1. Verify output.md exists at `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md`.
-  2. Run `vibehub-cli validate <project>` and `vibehub-cli output-lint <project>` before finishing.
-  3. Run `vibehub-cli finish <project> --confirmed-by-user` only after the user has confirmed.
+  2. Run `vibehub validate <project>` and `vibehub output-lint <project>` before finishing.
+  3. Run `vibehub finish <project> --confirmed-by-user` only after the user has confirmed.
 
-Task / 任务:Complete the current phase after explicit user confirmation. The CLI validates required outputs against the phase contract. On success, the phase is marked completed; next step is `vibehub-cli advance --confirmed-by-user` to move to the next phase.
+Task / 任务:Complete the current phase after explicit user confirmation. The CLI validates required outputs against the phase contract. On success, the phase is marked completed; next step is `vibehub advance --confirmed-by-user` to move to the next phase.
 
 Stop when:
-  1. `vibehub-cli validate` returns status=completed with no missing_outputs.
-  2. `vibehub-cli output-lint` has no severity=error issues.
+  1. `vibehub validate` returns status=completed with no missing_outputs.
+  2. `vibehub output-lint` has no severity=error issues.
   3. Handoff is complete or missing handoff context is documented in output.md.
 
 Output / 输出:
@@ -42,7 +42,7 @@ Write output to `.vibehub/tasks/<task_id>/runs/<run_id>/outputs/output.md` follo
 Constraints / 约束:
 - Do not edit `.vibehub/state.yaml` or canonical task/run pointers directly. / 不要直接编辑。
 - Never manually create `.vibehub/tasks/` directories. / 不要手动创建目录，使用 CLI。
-- NEVER run `vibehub-cli finish` or `vibehub-cli advance` without user confirmation. / 未经确认绝不运行 finish/advance。
+- NEVER run `vibehub finish` or `vibehub advance` without user confirmation. / 未经确认绝不运行 finish/advance。
 - If CLI unavailable, ask user to run command. / 如 CLI 不可用请用户执行。
 - Run vibehub-sync first if state is stale or drifted. / 先运行 vibehub-sync。
 
