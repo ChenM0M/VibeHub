@@ -558,6 +558,30 @@
             "noPreviewTargets": "No VibeHub preview targets are available.",
             "evidenceDetail": "Evidence map",
             "evidenceDataSource": "Source"
+        },
+        "agentUsage": {
+            "title": "AI usage",
+            "metricLabel": "AI usage",
+            "unavailable": "Local agent usage has not been loaded yet.",
+            "totalTokens": "Total tokens",
+            "sources": "Sources",
+            "generatedAt": "Generated",
+            "projectPath": "Project path",
+            "available": "Available",
+            "noRecords": "No records",
+            "noSourcePath": "No source path",
+            "records": "Records",
+            "cost": "Cost",
+            "latest": "Latest",
+            "breakdown": "Token breakdown",
+            "input": "Input",
+            "output": "Output",
+            "reasoning": "Reasoning",
+            "cachedInput": "Cached input",
+            "cacheRead": "Cache read",
+            "cacheWrite": "Cache write",
+            "recent": "Recent",
+            "emptyRecent": "No matching local records for this project."
         }
     },
     "settings": {

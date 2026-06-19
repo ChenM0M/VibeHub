@@ -7,6 +7,7 @@ use crate::{
         GatewayConfigPath, GatewayState,
     },
     launcher::Launcher,
+    local_agent_usage::{self, LocalAgentUsageOverview},
     models::*,
     scanner::Scanner,
     storage::Storage,
@@ -1266,6 +1267,13 @@ pub async fn vibehub_generate_review_evidence(
 #[tauri::command]
 pub async fn vibehub_read_overview(project_path: String) -> Result<CockpitOverview, String> {
     overview::read_overview(project_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn vibehub_read_local_agent_usage(
+    project_path: String,
+) -> Result<LocalAgentUsageOverview, String> {
+    local_agent_usage::read_local_agent_usage(project_path).map_err(|e| e.to_string())
 }
 
 /// Read the agent-written project-level digest (`.vibehub/notes/summary.md`
