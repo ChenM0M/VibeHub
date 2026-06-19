@@ -680,6 +680,49 @@ export interface VibehubCockpitOverview {
     initialized: boolean;
 }
 
+export interface LocalAgentUsageOverview {
+    project_path: string;
+    generated_at: string;
+    total_tokens: number;
+    source_count: number;
+    codex: AgentUsageSourceSummary;
+    opencode: AgentUsageSourceSummary;
+    warnings: string[];
+}
+
+export interface AgentUsageSourceSummary {
+    source: string;
+    available: boolean;
+    data_path?: string | null;
+    records: number;
+    total_tokens: number;
+    cost?: number | null;
+    tokens: AgentUsageTokenBreakdown;
+    latest_updated_at_ms?: number | null;
+    recent: AgentUsageRecentItem[];
+    warnings: string[];
+}
+
+export interface AgentUsageTokenBreakdown {
+    input: number;
+    output: number;
+    reasoning: number;
+    cached_input: number;
+    cache_read: number;
+    cache_write: number;
+    total: number;
+}
+
+export interface AgentUsageRecentItem {
+    id: string;
+    title: string;
+    model?: string | null;
+    agent?: string | null;
+    total_tokens: number;
+    cost?: number | null;
+    updated_at_ms?: number | null;
+}
+
 // Tells the UI why the active data dir was picked. Mirrors `StorageSource`
 // in `src-tauri/src/app_paths.rs` (serde renames to lowercase).
 export type StorageSource = 'env' | 'custom' | 'portable' | 'default';
