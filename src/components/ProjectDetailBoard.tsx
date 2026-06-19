@@ -34,6 +34,7 @@ import {
 import {
     PhaseValidationResult,
     Project,
+    LocalAgentUsageOverview,
     VibehubArchiveViewData,
     VibehubCockpitStatus,
     VibehubDiffViewData,
@@ -54,6 +55,7 @@ export interface ProjectDetailBoardProps {
     diffView: VibehubDiffViewData | null;
     eventTimeline: VibehubEventTimelineItem[];
     archiveView: VibehubArchiveViewData | null;
+    localAgentUsage: LocalAgentUsageOverview | null;
     projectStructure: VibehubProjectStructureViewData | null;
     currentFlow: ReturnType<typeof getModeFlow>;
     focusedTarget: FocusTarget | null;
@@ -76,6 +78,7 @@ export function ProjectDetailBoard({
     diffView,
     eventTimeline,
     archiveView,
+    localAgentUsage,
     projectStructure,
     currentFlow,
     focusedTarget,
@@ -93,6 +96,9 @@ export function ProjectDetailBoard({
     const commit = getRecentCommitSummary(gitBranches, project, t);
     const activity = getRecentActivitySummary(status, phaseValidation, eventTimeline, t);
     const changedFiles = diffView?.changed_files || [];
+    const agentUsageTokensLabel = localAgentUsage
+        ? formatCompactTokenCount(localAgentUsage.total_tokens)
+        : '--';
     const structureFiles = flattenStructureTree(projectStructure?.tree || []).slice(0, 8);
     const structureNodes = (projectStructure?.graph_nodes || [])
         .filter((node) => node.kind !== 'root')
@@ -151,10 +157,16 @@ export function ProjectDetailBoard({
                             detail={activity.detail}
                             onClick={() => onOpenDetail('activity')}
                         />
-                        <div className="grid grid-cols-3 gap-2 md:col-span-2 xl:col-span-1">
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:col-span-2 xl:col-span-1">
                             <MetricCell label={labelOrFallback(t, 'vibehub.projectMap.activeTasks', 'Active tasks')} value={String(tasks.length)} />
                             <MetricCell label={t('vibehub.tabs.changedFilesCount')} value={String(diffView?.changed_files_count || 0)} />
                             <MetricCell label={t('vibehub.tabs.warnings')} value={String(status.warnings.length + (archiveView?.warnings.length || 0))} tone={status.warnings.length ? 'warn' : 'normal'} />
+                            <MetricCell
+                                label={labelOrFallback(t, 'vibehub.agentUsage.metricLabel', 'AI usage')}
+                                value={agentUsageTokensLabel}
+                                tone={localAgentUsage?.warnings.length ? 'warn' : 'normal'}
+                                onClick={() => onOpenDetail('agentUsage')}
+                            />
                         </div>
                     </div>
                 </header>
@@ -281,13 +293,48 @@ function SummaryLink({
     );
 }
 
-function MetricCell({ label, value, tone = 'normal' }: { label: string; value: string; tone?: 'normal' | 'warn' }) {
-    return (
-        <div className="border border-border/70 px-3 py-2">
+function MetricCell({
+    label,
+    value,
+    tone = 'normal',
+    onClick,
+}: {
+    label: string;
+    value: string;
+    tone?: 'normal' | 'warn';
+    onClick?: () => void;
+}) {
+    const className = `border border-border/70 px-3 py-2 text-left ${onClick ? 'transition hover:border-foreground/30 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : ''}`;
+    const content = (
+        <>
             <div className="truncate text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
             <div className={`mt-1 text-lg font-semibold ${tone === 'warn' ? 'text-amber-600 dark:text-amber-400' : ''}`}>{value}</div>
+        </>
+    );
+    if (onClick) {
+        return (
+            <button type="button" className={className} onClick={onClick}>
+                {content}
+            </button>
+        );
+    }
+    return (
+        <div className={className}>
+            {content}
         </div>
     );
+}
+
+function formatCompactTokenCount(value: number) {
+    if (!Number.isFinite(value) || value <= 0) return '0';
+    if (value >= 1_000_000_000) return `${trimCompact(value / 1_000_000_000)}B`;
+    if (value >= 1_000_000) return `${trimCompact(value / 1_000_000)}M`;
+    if (value >= 1_000) return `${trimCompact(value / 1_000)}K`;
+    return String(Math.round(value));
+}
+
+function trimCompact(value: number) {
+    return value >= 10 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, '');
 }
 
 function SectionHeader({

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { listen } from '@tauri-apps/api/event';
 import { AlertCircle, Archive, Bot, Boxes, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, Code2, Copy, ExternalLink, Eye, FileText, FolderOpen, GitBranch, History, Layers3, Lightbulb, Network, RefreshCw, Settings, ShieldCheck, Wrench, X, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { AgentAdapterStatus, AgentTool, PhaseValidationResult, Project, ResearchStatus, VibehubArchivedTaskCard, VibehubArchiveViewData, VibehubActiveTask, VibehubCockpitStatus, VibehubContextViewData, VibehubDiffViewData, VibehubEventTimelineItem, VibehubFileReadResult, VibehubFlowDetail, VibehubGitBranchesView, VibehubHandoffViewData, VibehubProjectDigest, VibehubProjectStructureGraphNode, VibehubProjectStructureTreeNode, VibehubProjectStructureViewData, VibehubPromptRenderResult, VibehubPromptTemplateId, VibehubPromptTemplateOption, VibehubReviewViewData, WorkspaceDriftReport } from '@/types';
+import { AgentAdapterStatus, AgentTool, AgentUsageSourceSummary, AgentUsageTokenBreakdown, LocalAgentUsageOverview, PhaseValidationResult, Project, ResearchStatus, VibehubArchivedTaskCard, VibehubArchiveViewData, VibehubActiveTask, VibehubCockpitStatus, VibehubContextViewData, VibehubDiffViewData, VibehubEventTimelineItem, VibehubFileReadResult, VibehubFlowDetail, VibehubGitBranchesView, VibehubHandoffViewData, VibehubProjectDigest, VibehubProjectStructureGraphNode, VibehubProjectStructureTreeNode, VibehubProjectStructureViewData, VibehubPromptRenderResult, VibehubPromptTemplateId, VibehubPromptTemplateOption, VibehubReviewViewData, WorkspaceDriftReport } from '@/types';
 import { tauriApi } from '@/services/tauri';
 import { ProjectDetailBoard } from './ProjectDetailBoard';
 import { ProjectStructureExplorer } from './ProjectStructureExplorer';
@@ -39,7 +39,7 @@ export type RecommendedReadOnlyAction = {
 
 type PreviewCandidate = { path: string; label: string; exists: boolean };
 type VibehubStatusChangedEvent = { project_path: string; source: string };
-export type DashboardDetail = 'task' | 'phase' | 'git' | 'activity' | 'context' | 'output' | 'handoff' | 'review' | 'research' | 'evidence' | 'preview' | 'adapters' | 'settings' | 'structure' | 'archive';
+export type DashboardDetail = 'task' | 'phase' | 'git' | 'activity' | 'context' | 'output' | 'handoff' | 'review' | 'research' | 'evidence' | 'preview' | 'adapters' | 'settings' | 'structure' | 'archive' | 'agentUsage';
 export type FocusTarget = { taskId?: string | null; capability?: string | null; eventId?: string | null };
 export type DetailOpenTarget = { taskId?: string | null; phase?: string | null };
 type StructureNodeLike = VibehubProjectStructureGraphNode | VibehubProjectStructureTreeNode;
@@ -128,6 +128,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
     const [flowDetails, setFlowDetails] = useState<VibehubFlowDetail[]>([]);
     const [eventTimeline, setEventTimeline] = useState<VibehubEventTimelineItem[]>([]);
     const [archiveView, setArchiveView] = useState<VibehubArchiveViewData | null>(null);
+    const [localAgentUsage, setLocalAgentUsage] = useState<LocalAgentUsageOverview | null>(null);
     const [projectStructure, setProjectStructure] = useState<VibehubProjectStructureViewData | null>(null);
     const [phaseValidation, setPhaseValidation] = useState<PhaseValidationResult | null>(null);
     const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
@@ -201,12 +202,13 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
             }
 
             if (overview.initialized) {
-                const [driftResult, adapterResult, validationResult] = await Promise.allSettled([
+                const [driftResult, adapterResult, validationResult, localUsageResult] = await Promise.allSettled([
                     tauriApi.vibehubCheckWorkspaceDrift(project.path, i18n.language),
                     tauriApi.vibehubGetAgentAdapterStatus(project.path),
                     overview.status.current_task_id && overview.status.current_run_id && overview.status.current_phase
                         ? tauriApi.vibehubValidatePhase(project.path)
                         : Promise.resolve(null),
+                    tauriApi.vibehubReadLocalAgentUsage(project.path),
                 ]);
 
                 setDriftReport(driftResult.status === 'fulfilled' ? driftResult.value : null);
@@ -218,15 +220,18 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                     setAdapterStatus(null);
                 }
                 setPhaseValidation(validationResult.status === 'fulfilled' ? validationResult.value : null);
+                setLocalAgentUsage(localUsageResult.status === 'fulfilled' ? localUsageResult.value : null);
             } else {
                 setAdapterStatus(null);
                 setDriftReport(null);
                 setPhaseValidation(null);
+                setLocalAgentUsage(null);
             }
             if (clearActionState) {
                 setActionState(adapterWarnings.length ? { message: adapterWarnings[0], error: false } : null);
             }
         } catch (error) {
+            setLocalAgentUsage(null);
             setActionState({ message: String(error), error: true });
         } finally {
             setIsLoading(false);
@@ -252,6 +257,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
             setFlowDetails([]);
             setEventTimeline([]);
             setArchiveView(null);
+            setLocalAgentUsage(null);
             setPhaseValidation(null);
             setSelectedPhase(null);
             setFocusedTarget(null);
@@ -592,6 +598,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                         diffView={diffView}
                         eventTimeline={eventTimeline}
                         archiveView={archiveView}
+                        localAgentUsage={localAgentUsage}
                         projectStructure={projectStructure}
                         currentFlow={currentFlow}
                         focusedTarget={focusedTarget}
@@ -634,6 +641,7 @@ export function VibehubCockpitContent({ project, enabled = true, showOverview = 
                     gitBranches={gitBranches}
                     eventTimeline={eventTimeline}
                     archiveView={archiveView}
+                    localAgentUsage={localAgentUsage}
                     projectStructure={projectStructure}
                     previewCandidates={previewCandidates}
                     previewPath={previewPath}
@@ -698,6 +706,7 @@ function DetailDrawer({
     gitBranches,
     eventTimeline,
     archiveView,
+    localAgentUsage,
     projectStructure,
     previewCandidates,
     previewPath,
@@ -737,6 +746,7 @@ function DetailDrawer({
     gitBranches: VibehubGitBranchesView | null;
     eventTimeline: VibehubEventTimelineItem[];
     archiveView: VibehubArchiveViewData | null;
+    localAgentUsage: LocalAgentUsageOverview | null;
     projectStructure: VibehubProjectStructureViewData | null;
     previewCandidates: PreviewCandidate[];
     previewPath: string;
@@ -920,6 +930,9 @@ function DetailDrawer({
                             }}
                             t={t}
                         />
+                    )}
+                    {detail === 'agentUsage' && (
+                        <AgentUsageTabContent localAgentUsage={localAgentUsage} t={t} />
                     )}
 
                     {detail === 'settings' && readOnlyActions.length > 0 && (
@@ -1578,6 +1591,154 @@ function ActivityDetailContent({
                 ) : (
                     <Notice error={false} message={labelOrFallback(t, 'vibehub.activity.noEvents', 'No events match the current filters.')} />
                 )}
+            </div>
+        </div>
+    );
+}
+
+function AgentUsageTabContent({
+    localAgentUsage,
+    t,
+}: {
+    localAgentUsage: LocalAgentUsageOverview | null;
+    t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+    if (!localAgentUsage) {
+        return (
+            <Notice
+                error={false}
+                message={labelOrFallback(t, 'vibehub.agentUsage.unavailable', 'Local agent usage has not been loaded yet.')}
+            />
+        );
+    }
+
+    const sources = [
+        { title: 'Codex', summary: localAgentUsage.codex },
+        { title: 'OpenCode', summary: localAgentUsage.opencode },
+    ];
+
+    return (
+        <div className="space-y-5">
+            <div className="grid gap-2 text-xs sm:grid-cols-2">
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.totalTokens', 'Total tokens')} value={formatAgentUsageTokens(localAgentUsage.total_tokens)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.sources', 'Sources')} value={String(localAgentUsage.source_count)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.generatedAt', 'Generated')} value={formatUsageIsoDate(localAgentUsage.generated_at)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.projectPath', 'Project')} value={localAgentUsage.project_path} />
+            </div>
+
+            {localAgentUsage.warnings.length > 0 && (
+                <div className="space-y-2">
+                    {localAgentUsage.warnings.map((warning) => (
+                        <Notice key={warning} error={false} message={warning} />
+                    ))}
+                </div>
+            )}
+
+            <div className="grid gap-4 lg:grid-cols-2">
+                {sources.map(({ title, summary }) => (
+                    <AgentUsageSourceCard key={summary.source} title={title} summary={summary} t={t} />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function AgentUsageSourceCard({
+    title,
+    summary,
+    t,
+}: {
+    title: string;
+    summary: AgentUsageSourceSummary;
+    t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+    return (
+        <section className="space-y-3 rounded-md border bg-muted/10 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                    <div className="text-sm font-semibold">{title}</div>
+                    <div className="mt-1 break-all text-[11px] text-muted-foreground">
+                        {summary.data_path || labelOrFallback(t, 'vibehub.agentUsage.noSourcePath', 'No source path')}
+                    </div>
+                </div>
+                <Badge variant={summary.available ? 'default' : 'secondary'}>
+                    {summary.available ? labelOrFallback(t, 'vibehub.agentUsage.available', 'Available') : labelOrFallback(t, 'vibehub.agentUsage.noRecords', 'No records')}
+                </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.records', 'Records')} value={String(summary.records)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.totalTokens', 'Total tokens')} value={formatAgentUsageTokens(summary.total_tokens)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.cost', 'Cost')} value={formatAgentUsageCost(summary.cost)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.latest', 'Latest')} value={formatUsageTimestampMs(summary.latest_updated_at_ms)} />
+            </div>
+
+            <AgentUsageTokenBreakdownView tokens={summary.tokens} t={t} />
+
+            {summary.recent.length > 0 ? (
+                <div className="space-y-2">
+                    <SectionEyebrow>{labelOrFallback(t, 'vibehub.agentUsage.recent', 'Recent')}</SectionEyebrow>
+                    <div className="divide-y rounded-md border bg-background">
+                        {summary.recent.slice(0, 6).map((item) => (
+                            <div key={item.id} className="space-y-1 px-3 py-2 text-xs">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
+                                    <Badge variant="outline">{formatAgentUsageTokens(item.total_tokens)}</Badge>
+                                </div>
+                                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                                    {item.agent && <span className="truncate">{item.agent}</span>}
+                                    {item.model && <span className="truncate">{item.model}</span>}
+                                    <span>{formatUsageTimestampMs(item.updated_at_ms)}</span>
+                                    {item.cost != null && <span>{formatAgentUsageCost(item.cost)}</span>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : (
+                <Notice
+                    error={false}
+                    message={labelOrFallback(t, 'vibehub.agentUsage.emptyRecent', 'No matching local records for this project.')}
+                />
+            )}
+
+            {summary.warnings.length > 0 && (
+                <div className="space-y-2">
+                    {summary.warnings.map((warning) => (
+                        <Notice key={`${summary.source}:${warning}`} error={false} message={warning} />
+                    ))}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function AgentUsageTokenBreakdownView({
+    tokens,
+    t,
+}: {
+    tokens: AgentUsageTokenBreakdown;
+    t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+    const rows: Array<[string, number]> = [
+        [labelOrFallback(t, 'vibehub.agentUsage.input', 'Input'), tokens.input],
+        [labelOrFallback(t, 'vibehub.agentUsage.output', 'Output'), tokens.output],
+        [labelOrFallback(t, 'vibehub.agentUsage.reasoning', 'Reasoning'), tokens.reasoning],
+        [labelOrFallback(t, 'vibehub.agentUsage.cachedInput', 'Cached input'), tokens.cached_input],
+        [labelOrFallback(t, 'vibehub.agentUsage.cacheRead', 'Cache read'), tokens.cache_read],
+        [labelOrFallback(t, 'vibehub.agentUsage.cacheWrite', 'Cache write'), tokens.cache_write],
+    ];
+
+    return (
+        <div className="space-y-2">
+            <SectionEyebrow>{labelOrFallback(t, 'vibehub.agentUsage.breakdown', 'Token breakdown')}</SectionEyebrow>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {rows.map(([label, value]) => (
+                    <div key={label} className="rounded-md border bg-background px-2 py-2">
+                        <div className="truncate text-[10px] text-muted-foreground">{label}</div>
+                        <div className="mt-1 truncate text-xs font-semibold">{formatAgentUsageTokens(value)}</div>
+                    </div>
+                ))}
             </div>
         </div>
     );
@@ -3588,6 +3749,7 @@ function getDetailTitle(detail: DashboardDetail, t: (key: string, options?: Reco
         settings: t('common.settings'),
         structure: labelOrFallback(t, 'vibehub.projectMap.structure', 'Project structure'),
         archive: labelOrFallback(t, 'vibehub.projectMap.archive', 'Archive'),
+        agentUsage: labelOrFallback(t, 'vibehub.agentUsage.title', 'AI usage'),
     };
     return titles[detail];
 }
@@ -3595,7 +3757,7 @@ function getDetailTitle(detail: DashboardDetail, t: (key: string, options?: Reco
 function getDetailDrawerWidthClass(detail: DashboardDetail) {
     if (detail === 'structure') return 'max-w-5xl';
     if (detail === 'task' || detail === 'phase') return 'max-w-5xl';
-    if (detail === 'activity' || detail === 'archive' || detail === 'git') {
+    if (detail === 'activity' || detail === 'archive' || detail === 'git' || detail === 'agentUsage') {
         return 'max-w-4xl';
     }
     return 'max-w-xl';
@@ -3856,6 +4018,38 @@ function formatCompactDate(timestamp: string) {
     const date = new Date(timestamp);
     if (Number.isNaN(date.getTime())) return timestamp;
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatUsageIsoDate(timestamp: string) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return timestamp;
+    return date.toLocaleString();
+}
+
+function formatUsageTimestampMs(timestamp: number | null | undefined) {
+    if (!timestamp) return '--';
+    const millis = timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
+    const date = new Date(millis);
+    if (Number.isNaN(date.getTime())) return String(timestamp);
+    return date.toLocaleString();
+}
+
+function formatAgentUsageTokens(value: number) {
+    if (!Number.isFinite(value) || value <= 0) return '0';
+    if (value >= 1_000_000_000) return `${trimUsageNumber(value / 1_000_000_000)}B`;
+    if (value >= 1_000_000) return `${trimUsageNumber(value / 1_000_000)}M`;
+    if (value >= 1_000) return `${trimUsageNumber(value / 1_000)}K`;
+    return Math.round(value).toLocaleString();
+}
+
+function trimUsageNumber(value: number) {
+    return value >= 10 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, '');
+}
+
+function formatAgentUsageCost(value: number | null | undefined) {
+    if (value == null || !Number.isFinite(value)) return '--';
+    return `$${value.toFixed(value >= 10 ? 2 : 4).replace(/0+$/, '').replace(/\.$/, '')}`;
 }
 
 function uniqueValues(values: string[]) {
