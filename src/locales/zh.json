@@ -558,6 +558,30 @@
             "noPreviewTargets": "暂无可预览的 VibeHub 文件。",
             "evidenceDetail": "证据地图",
             "evidenceDataSource": "来源"
+        },
+        "agentUsage": {
+            "title": "AI 用量",
+            "metricLabel": "AI 用量",
+            "unavailable": "本地 Agent 用量尚未加载。",
+            "totalTokens": "总 Token",
+            "sources": "来源数",
+            "generatedAt": "生成时间",
+            "projectPath": "项目路径",
+            "available": "可用",
+            "noRecords": "无记录",
+            "noSourcePath": "未发现来源路径",
+            "records": "记录数",
+            "cost": "成本",
+            "latest": "最近更新",
+            "breakdown": "Token 分项",
+            "input": "输入",
+            "output": "输出",
+            "reasoning": "推理",
+            "cachedInput": "缓存输入",
+            "cacheRead": "缓存读取",
+            "cacheWrite": "缓存写入",
+            "recent": "最近记录",
+            "emptyRecent": "未发现该项目的本地匹配记录。"
         }
     },
     "settings": {

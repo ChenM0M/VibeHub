@@ -5,6 +5,7 @@ mod app_paths;
 mod commands;
 mod gateway;
 mod launcher;
+mod local_agent_usage;
 mod models;
 mod process_util;
 mod scanner;
@@ -98,6 +99,7 @@ fn main() {
             commands::vibehub_build_handoff,
             commands::vibehub_generate_review_evidence,
             commands::vibehub_read_overview,
+            commands::vibehub_read_local_agent_usage,
             commands::vibehub_read_project_digest,
             commands::vibehub_list_prompt_templates,
             commands::vibehub_render_prompt,

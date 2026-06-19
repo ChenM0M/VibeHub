@@ -21,6 +21,7 @@ import {
     Tag,
     VibehubCockpitOverview,
     VibehubFileReadResult,
+    LocalAgentUsageOverview,
     VibehubPromptRenderResult,
     VibehubPromptTemplateId,
     VibehubPromptTemplateOption,
@@ -309,6 +310,10 @@ export const tauriApi = {
     // one cached `git` invocation per call.
     vibehubReadOverview: async (projectPath: string): Promise<VibehubCockpitOverview> => {
         return await invoke('vibehub_read_overview', { projectPath });
+    },
+
+    vibehubReadLocalAgentUsage: async (projectPath: string): Promise<LocalAgentUsageOverview> => {
+        return await invoke('vibehub_read_local_agent_usage', { projectPath });
     },
 
     // Project-level digest reader. Read-only. Same data is also available
