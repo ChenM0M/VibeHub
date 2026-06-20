@@ -563,6 +563,8 @@
             "title": "AI 用量",
             "metricLabel": "AI 用量",
             "unavailable": "本地 Agent 用量尚未加载。",
+            "nonCachedTokens": "非缓存 Token",
+            "totalTokensWithCache": "含缓存总量",
             "totalTokens": "总 Token",
             "sources": "来源数",
             "generatedAt": "生成时间",
