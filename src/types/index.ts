@@ -683,6 +683,7 @@ export interface VibehubCockpitOverview {
 export interface LocalAgentUsageOverview {
     project_path: string;
     generated_at: string;
+    non_cached_total_tokens: number;
     total_tokens: number;
     source_count: number;
     codex: AgentUsageSourceSummary;
@@ -695,6 +696,7 @@ export interface AgentUsageSourceSummary {
     available: boolean;
     data_path?: string | null;
     records: number;
+    non_cached_total_tokens: number;
     total_tokens: number;
     cost?: number | null;
     tokens: AgentUsageTokenBreakdown;
@@ -718,6 +720,7 @@ export interface AgentUsageRecentItem {
     title: string;
     model?: string | null;
     agent?: string | null;
+    non_cached_total_tokens: number;
     total_tokens: number;
     cost?: number | null;
     updated_at_ms?: number | null;
