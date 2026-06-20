@@ -16,6 +16,7 @@ const RECENT_LIMIT: usize = 8;
 pub struct LocalAgentUsageOverview {
     pub project_path: String,
     pub generated_at: String,
+    pub non_cached_total_tokens: u64,
     pub total_tokens: u64,
     pub source_count: usize,
     pub codex: AgentUsageSourceSummary,
@@ -29,6 +30,7 @@ pub struct AgentUsageSourceSummary {
     pub available: bool,
     pub data_path: Option<String>,
     pub records: usize,
+    pub non_cached_total_tokens: u64,
     pub total_tokens: u64,
     pub cost: Option<f64>,
     pub tokens: TokenBreakdown,
@@ -54,9 +56,19 @@ pub struct AgentUsageRecentItem {
     pub title: String,
     pub model: Option<String>,
     pub agent: Option<String>,
+    pub non_cached_total_tokens: u64,
     pub total_tokens: u64,
     pub cost: Option<f64>,
     pub updated_at_ms: Option<i64>,
+}
+
+impl TokenBreakdown {
+    fn non_cached_total(&self) -> u64 {
+        self.total
+            .saturating_sub(self.cached_input)
+            .saturating_sub(self.cache_read)
+            .saturating_sub(self.cache_write)
+    }
 }
 
 #[derive(Debug)]
@@ -103,6 +115,9 @@ pub fn read_local_agent_usage(project_path: impl AsRef<Path>) -> Result<LocalAge
     }
 
     Ok(LocalAgentUsageOverview {
+        non_cached_total_tokens: codex
+            .non_cached_total_tokens
+            .saturating_add(opencode.non_cached_total_tokens),
         total_tokens: codex.total_tokens.saturating_add(opencode.total_tokens),
         source_count: [codex.available, opencode.available]
             .into_iter()
@@ -168,6 +183,10 @@ fn read_codex_usage_from_db(
         tokens.total = tokens.total.saturating_add(row.tokens_used);
         latest_updated_at_ms = max_opt_i64(latest_updated_at_ms, row.updated_at_ms);
         let usage = read_codex_rollout_usage(&row.rollout_path, warnings);
+        let non_cached_total_tokens = usage
+            .as_ref()
+            .map(TokenBreakdown::non_cached_total)
+            .unwrap_or(row.tokens_used);
         if let Some(usage) = usage {
             tokens.input = tokens.input.saturating_add(usage.input);
             tokens.output = tokens.output.saturating_add(usage.output);
@@ -180,6 +199,7 @@ fn read_codex_usage_from_db(
                 title: safe_title(&row.title),
                 model: row.model.clone().or_else(|| row.model_provider.clone()),
                 agent: Some("Codex".to_string()),
+                non_cached_total_tokens,
                 total_tokens: row.tokens_used,
                 cost: None,
                 updated_at_ms: row.updated_at_ms,
@@ -192,6 +212,7 @@ fn read_codex_usage_from_db(
         available: !rows.is_empty(),
         data_path: None,
         records: rows.len(),
+        non_cached_total_tokens: tokens.non_cached_total(),
         total_tokens: tokens.total,
         cost: None,
         tokens,
@@ -264,6 +285,9 @@ fn read_opencode_usage_from_db(
             .saturating_add(row.tokens_reasoning)
             .saturating_add(row.tokens_cache_read)
             .saturating_add(row.tokens_cache_write);
+        let non_cached_total_tokens = total
+            .saturating_sub(row.tokens_cache_read)
+            .saturating_sub(row.tokens_cache_write);
         tokens.input = tokens.input.saturating_add(row.tokens_input);
         tokens.output = tokens.output.saturating_add(row.tokens_output);
         tokens.reasoning = tokens.reasoning.saturating_add(row.tokens_reasoning);
@@ -278,6 +302,7 @@ fn read_opencode_usage_from_db(
                 title: safe_title(&row.title),
                 model: row.model.as_deref().map(format_opencode_model),
                 agent: row.agent.clone(),
+                non_cached_total_tokens,
                 total_tokens: total,
                 cost: Some(row.cost),
                 updated_at_ms: row.time_updated,
@@ -290,6 +315,7 @@ fn read_opencode_usage_from_db(
         available: !rows.is_empty(),
         data_path: None,
         records: rows.len(),
+        non_cached_total_tokens: tokens.non_cached_total(),
         total_tokens: tokens.total,
         cost: Some(cost),
         tokens,
@@ -428,6 +454,7 @@ fn empty_source(source: &str, warning: &str) -> AgentUsageSourceSummary {
         available: false,
         data_path: None,
         records: 0,
+        non_cached_total_tokens: 0,
         total_tokens: 0,
         cost: None,
         tokens: TokenBreakdown::default(),
@@ -556,8 +583,10 @@ mod tests {
         assert!(usage.available);
         assert_eq!(usage.records, 1);
         assert_eq!(usage.total_tokens, 21);
+        assert_eq!(usage.non_cached_total_tokens, 14);
         assert_eq!(usage.tokens.input, 11);
         assert_eq!(usage.tokens.cached_input, 7);
+        assert_eq!(usage.recent[0].non_cached_total_tokens, 14);
         assert_eq!(usage.recent[0].model.as_deref(), Some("gpt-test"));
     }
 
@@ -624,7 +653,9 @@ mod tests {
         assert!(usage.available);
         assert_eq!(usage.records, 1);
         assert_eq!(usage.total_tokens, 24);
+        assert_eq!(usage.non_cached_total_tokens, 15);
         assert_eq!(usage.tokens.cache_read, 4);
+        assert_eq!(usage.recent[0].non_cached_total_tokens, 15);
         assert_eq!(usage.recent[0].model.as_deref(), Some("model-a"));
     }
 

@@ -563,6 +563,8 @@
             "title": "AI usage",
             "metricLabel": "AI usage",
             "unavailable": "Local agent usage has not been loaded yet.",
+            "nonCachedTokens": "Non-cache tokens",
+            "totalTokensWithCache": "Total incl. cache",
             "totalTokens": "Total tokens",
             "sources": "Sources",
             "generatedAt": "Generated",
