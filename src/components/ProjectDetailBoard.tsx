@@ -97,7 +97,7 @@ export function ProjectDetailBoard({
     const activity = getRecentActivitySummary(status, phaseValidation, eventTimeline, t);
     const changedFiles = diffView?.changed_files || [];
     const agentUsageTokensLabel = localAgentUsage
-        ? formatCompactTokenCount(localAgentUsage.total_tokens)
+        ? formatCompactTokenCount(localAgentUsage.non_cached_total_tokens)
         : '--';
     const structureFiles = flattenStructureTree(projectStructure?.tree || []).slice(0, 8);
     const structureNodes = (projectStructure?.graph_nodes || [])
