@@ -3,8 +3,8 @@
 Task: T-20260619044922-98d818ee
 Run: R-20260619044922-fef32621
 Phase: Implement
-Generated at: 2026-06-20T15:05:52Z
-Source commit: 2c34b85
+Generated at: 2026-06-20T16:03:32Z
+Source commit: 7f4def4
 
 ## Instructions
 
@@ -59,6 +59,17 @@ Report files read, commands run, decisions made, and unresolved risks.
       "`user_confirmed`: 用户要求完成计划制定与 output 内容，结束计划阶段并进入执行阶段推进。",
       "`agent_reported`: 已形成实现计划，默认采用“AI 用量”作为顶部卡片文案，顶部显示本地观察到的 lifetime total token，详情页展示 Codex/OpenCode 分项 token、可用性、最近记录、数据源与 warnings。",
       "`agent_reported`: 已把多系统支持纳入计划：至少覆盖 macOS、Windows、Linux；Codex 通过 `CODEX_HOME` / `CODEX_SQLITE_HOME` 与 home fallback 解析，OpenCode 通过 XDG/macOS Application Support/Windows AppData 候选路径和可降级 warnings 解析。",
+      "`hard_observed`: Implement 阶段已新增只读本地 Agent 用量读取器 `src-tauri/src/local_agent_usage.rs`，支持 Codex 与 OpenCode 聚合、跨 macOS/Linux/Windows 路径候选、warnings 降级和 fixture 单元测试。",
+      "`hard_observed`: 已新增 Tauri command `vibehub_read_local_agent_usage`，并在前端 `tauriApi.vibehubReadLocalAgentUsage(projectPath)` 中暴露。",
+      "`hard_observed`: 已在项目详细页顶部 metrics 区新增可点击 `AI 用量` 卡片；点击会打开 `agentUsage` 详情抽屉。",
+      "`hard_observed`: 已新增 `AgentUsageTabContent`，展示总 token、来源数、Codex/OpenCode 分项、成本、最近记录、数据源路径和 warnings。",
+      "`hard_observed`: 已补充 `zh` / `zh-TW` / `en` 文案。",
+      "`hard_observed`: 发布前版本已从 `2.0.0-pre.17` 推进到 `2.0.0-pre.18`，覆盖 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 和 `Cargo.lock`。",
+      "`hard_observed`: 已确认远端已有 `v2.0.0-pre.17` tag；本轮当前最新内容将通过新 tag `v2.0.0-pre.18` 触发 release workflow。",
+      "### Implement Diff Summary",
+      "`hard_observed`: 后端新增 `rusqlite` bundled 依赖并更新 `Cargo.lock`，通过 read-only SQLite 查询 Codex `threads` 和 OpenCode `session`/`project` 表；Codex JSONL 仅解析 `payload.info.total_token_usage`，不读取或返回消息正文。",
+      "`hard_observed`: 前端随 dashboard 初始化并行读取本地用量，失败时只把 usage 置空，不阻塞项目详情页。",
+      "`hard_observed`: UI 首屏 metrics 从 3 个扩展为响应式 4 个；新增卡片使用 compact token 值，详情抽屉宽度设为 `max-w-4xl`。",
       "### Intent",
       "`user_confirmed`: 让 VibeHub 在项目详细页基于本机 Codex/OpenCode 数据展示每个工作区或项目的 AI Agent 用量信息，重点是 token 用量、会话数量、最近使用、模型/agent 来源、成本或缓存 token 等可观测指标。",
       "`inferred`: 首版应优先做只读本地聚合，不修改 Codex/OpenCode 数据，不依赖网络，不上传会话内容。",
@@ -92,6 +103,10 @@ Report files read, commands run, decisions made, and unresolved risks.
       "`agent_reported`: 计划阶段决定使用 `rusqlite` read-only 查询 SQLite；若实现时新增依赖需要联网下载，则按 Codex sandbox 规则请求批准。为跨平台稳定性优先考虑 bundled SQLite feature。",
       "`agent_reported`: 计划阶段决定首版只做 Project Detail 入口；Workspace 层聚合留作后续扩展。",
       "`agent_reported`: 计划阶段决定不要求 OpenCode CLI 在 PATH；只读本地数据文件。",
+      "`hard_observed`: 实现阶段采用 `AI 用量` 作为中文卡片和抽屉标题；英文为 `AI usage`。",
+      "`hard_observed`: 顶部卡片显示 Codex + OpenCode 本地观测总 token；详情保留 cache/read/write、input/output/reasoning/cost 等来源分项。",
+      "`hard_observed`: 单个来源不可用或无匹配记录时以 warnings/empty 状态展示，不让整个 dashboard 失败。",
+      "`hard_observed`: 由于 `v2.0.0-pre.17` 已指向旧 HEAD，本轮发版采用 `v2.0.0-pre.18`，避免移动既有 release tag。",
       "## Implementation Plan",
       "`agent_reported`: 本节是 plan 阶段的 implementation_plan，覆盖 required fields: `steps`, `validation_plan`, `affected_files`。",
       "### steps",
