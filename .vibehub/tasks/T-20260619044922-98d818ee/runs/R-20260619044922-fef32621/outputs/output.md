@@ -1,329 +1,111 @@
-# Display local Codex and OpenCode workspace usage insights - align + research output
+# Display local Codex and OpenCode workspace usage insights - implement output
 
 ## Completed
 
-- `user_confirmed`: 新建任务，目标是在项目详细页展示每个工作区/项目的本地 Codex 与 OpenCode token 用量等 AI Agent 使用信息，并支持点击进入详情查看。
-- `hard_observed`: 已创建 VibeHub task `T-20260619044922-98d818ee` / run `R-20260619044922-fef32621`，模式为 `evidence_drive`，当前 canonical phase 为 `align`。
-- `hard_observed`: 已通过 `vibehub gates` 确认 `research` 可 claim，并通过 `vibehub claim ... research` 进入 align + research 并行能力；`vibehub status` 显示当前任务 active_capabilities 为 `align, research`。
-- `hard_observed`: 已读取 align 与 research context pack；research 输出要求为 `sources`, `risks`, `open_questions`。
-- `hard_observed`: 已调查本机 Codex 存储。Codex 官方 manual 说明 `CODEX_HOME` 默认是 `~/.codex`，包含 config、auth、logs、sessions、skills、standalone package metadata；本机实际存在 `~/.codex/state_5.sqlite`、`~/.codex/logs_2.sqlite`、`~/.codex/session_index.jsonl`、`~/.codex/sessions/.../*.jsonl`。
-- `hard_observed`: Codex `state_5.sqlite` 的 `threads` 表包含 `cwd`, `rollout_path`, `tokens_used`, `model_provider`, `model`, `created_at_ms`, `updated_at_ms` 等字段，可按项目路径聚合 token 总量。
-- `hard_observed`: Codex rollout JSONL 中存在 `payload.info.total_token_usage` 和 `payload.info.last_token_usage`，字段包含 `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_output_tokens`, `total_tokens`，可用于拆分 token 类型。
-- `hard_observed`: 本机 Codex 对 `/Users/chenm0m/LocalRepo/VibeHub` 的聚合验证结果为 53 个 threads、`tokens_used=460711508`；最近样本 rollout 的 `total_token_usage.total_tokens` 与 `threads.tokens_used` 对齐。
-- `hard_observed`: 已调查本机 OpenCode 存储。项目内存在 `opencode.json` 和 `.opencode/commands`, `.opencode/vibehub`；全局配置在 `~/.config/opencode/opencode.jsonc`；主数据在 `~/.local/share/opencode/opencode.db`；桌面端另有 `~/Library/Application Support/ai.opencode.desktop/*`。
-- `hard_observed`: OpenCode `opencode.db` 的 `session` 表包含 `project_id`, `directory`, `workspace_id`, `path`, `agent`, `model`, `cost`, `tokens_input`, `tokens_output`, `tokens_reasoning`, `tokens_cache_read`, `tokens_cache_write`, `time_created`, `time_updated`；`project` 表包含 `worktree`；可按 project/worktree 聚合。
-- `hard_observed`: 本机 OpenCode 对 `/Users/chenm0m/LocalRepo/VibeHub` 的聚合验证结果为 22 个 sessions、`cost=6.4124`、`tokens_input=2716308`、`tokens_output=198539`、`tokens_reasoning=85235`、`tokens_cache_read=48174080`。
-- `hard_observed`: 项目详情页顶部指标区由 `src/components/ProjectDetailBoard.tsx` 渲染，当前有 Active tasks、Changed files、Warnings 三个 MetricCell；点击详细面板由 `DashboardDetail` / `DetailDrawer` 管理。
-- `inferred`: 用户截图蓝框位置最适合新增一个可点击的 “AI 用量 / Agent 用量” 指标块；点击后打开新的 detail panel，如 `agentUsage`，显示 Codex 与 OpenCode 分项、最近会话、来源路径与可用性状态。
-- `user_confirmed`: 用户要求完成计划制定与 output 内容，结束计划阶段并进入执行阶段推进。
-- `agent_reported`: 已形成实现计划，默认采用“AI 用量”作为顶部卡片文案，顶部显示本地观察到的 lifetime total token，详情页展示 Codex/OpenCode 分项 token、可用性、最近记录、数据源与 warnings。
-- `agent_reported`: 已把多系统支持纳入计划：至少覆盖 macOS、Windows、Linux；Codex 通过 `CODEX_HOME` / `CODEX_SQLITE_HOME` 与 home fallback 解析，OpenCode 通过 XDG/macOS Application Support/Windows AppData 候选路径和可降级 warnings 解析。
-- `hard_observed`: Implement 阶段已新增只读本地 Agent 用量读取器 `src-tauri/src/local_agent_usage.rs`，支持 Codex 与 OpenCode 聚合、跨 macOS/Linux/Windows 路径候选、warnings 降级和 fixture 单元测试。
-- `hard_observed`: 已新增 Tauri command `vibehub_read_local_agent_usage`，并在前端 `tauriApi.vibehubReadLocalAgentUsage(projectPath)` 中暴露。
-- `hard_observed`: 已在项目详细页顶部 metrics 区新增可点击 `AI 用量` 卡片；点击会打开 `agentUsage` 详情抽屉。
-- `hard_observed`: 已新增 `AgentUsageTabContent`，展示总 token、来源数、Codex/OpenCode 分项、成本、最近记录、数据源路径和 warnings。
-- `hard_observed`: 已补充 `zh` / `zh-TW` / `en` 文案。
-- `hard_observed`: 发布前版本已从 `2.0.0-pre.17` 推进到 `2.0.0-pre.18`，覆盖 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 和 `Cargo.lock`。
-- `hard_observed`: 已确认远端已有 `v2.0.0-pre.17` tag；本轮当前最新内容将通过新 tag `v2.0.0-pre.18` 触发 release workflow。
-
-### Implement Diff Summary
-
-- `hard_observed`: 后端新增 `rusqlite` bundled 依赖并更新 `Cargo.lock`，通过 read-only SQLite 查询 Codex `threads` 和 OpenCode `session`/`project` 表；Codex JSONL 仅解析 `payload.info.total_token_usage`，不读取或返回消息正文。
-- `hard_observed`: 前端随 dashboard 初始化并行读取本地用量，失败时只把 usage 置空，不阻塞项目详情页。
-- `hard_observed`: UI 首屏 metrics 从 3 个扩展为响应式 4 个；新增卡片使用 compact token 值，详情抽屉宽度设为 `max-w-4xl`。
-
-### Intent
-
-- `user_confirmed`: 让 VibeHub 在项目详细页基于本机 Codex/OpenCode 数据展示每个工作区或项目的 AI Agent 用量信息，重点是 token 用量、会话数量、最近使用、模型/agent 来源、成本或缓存 token 等可观测指标。
-- `inferred`: 首版应优先做只读本地聚合，不修改 Codex/OpenCode 数据，不依赖网络，不上传会话内容。
-
-### Scope
-
-- `hard_observed`: 数据源范围包括本机 Codex `~/.codex` / `CODEX_HOME` / `CODEX_SQLITE_HOME` 及 OpenCode `~/.local/share/opencode`, `~/.config/opencode`, 项目内 `.opencode` / `opencode.json`。
-- `inferred`: 后端新增只读读取器，前端新增项目详情页指标卡和详情抽屉；适配当前 Tauri invoke 模式。
-- `inferred`: 读取器需要按当前 project path 匹配 Codex `threads.cwd` 和 OpenCode `project.worktree` / `session.directory` / `session.path`。
-
-### Success Criteria / Acceptance Criteria
-
-- `inferred`: 项目详情页顶部指标区出现一个清晰的 AI Agent 用量入口，展示合计 token 或最近周期 token，并能点击进入详情。
-- `inferred`: 详情页至少展示 Codex 与 OpenCode 两块：可用/不可用状态、数据源路径、session/thread 数、总 token、input/output/reasoning/cache token、最近更新时间、最近若干会话摘要。
-- `inferred`: 若本机没有安装或没有数据，应显示 “未发现数据源” 或 “无本项目记录”，而不是报错或阻塞项目详情页。
-- `inferred`: 不读取或展示 auth token、access_token、refresh_token、消息正文、用户 prompt 正文；只读 schema/聚合字段和安全摘要。
-- `inferred`: 后端读取 SQLite/JSONL 失败时返回 warnings，并允许 UI 降级展示部分来源。
-- `inferred`: 验证需要至少覆盖后端聚合单元测试，以及前端详情页基本渲染/无数据状态。
-
-### Non-goals
-
-- `inferred`: 不在本任务首版实现云端 OpenAI/ChatGPT 企业用量统计或账单 API 对账。
-- `inferred`: 不修改 Codex/OpenCode 的本地数据库或配置文件。
-- `inferred`: 不展示完整会话正文、工具输出正文、diff 内容或密钥。
-- `inferred`: 不把 Codex 与 OpenCode 的 token 口径强行合并成单一精确账单数字；不同工具字段定义不同，应保留来源维度。
-
-### Autonomy Level
-
-- `user_confirmed`: 当前阶段先做对齐和调研，不进入实现。
-- `agent_reported`: 后续进入 plan/implement 前，需要用户确认展示指标口径和 UI 入口位置；若用户不确认，建议采用 “顶部指标卡 + 详情抽屉” 作为默认方案。
+- `user_confirmed`: 用户确认调整 AI 用量口径，避免当前显示比直觉中的实际用量偏大。
+- `hard_observed`: 已运行 `vibehub sync /Users/chenm0m/LocalRepo/VibeHub`；当前任务仍为 `T-20260619044922-98d818ee`，当前阶段为 `implement`，active capability 为 `implement`。
+- `hard_observed`: 已确认旧实现顶部卡片使用 `localAgentUsage.total_tokens`，后端总量为 Codex total + OpenCode total，且 OpenCode total 包含 `tokens_cache_read` / `tokens_cache_write`。
+- `hard_observed`: 本机数据抽样显示 Codex 对 `/Users/chenm0m/LocalRepo/VibeHub` 有 55 个 thread、约 480.3M total tokens；可解析 rollout 中 cached input 约 455.5M。
+- `hard_observed`: 本机 OpenCode 对 `/Users/chenm0m/LocalRepo/VibeHub` 有 24 个 session、约 51.6M total tokens，其中 cache read 约 48.4M。
+- `hard_observed`: 已在后端 `LocalAgentUsageOverview`、`AgentUsageSourceSummary`、`AgentUsageRecentItem` 增加 `non_cached_total_tokens` 字段。
+- `hard_observed`: 非缓存口径采用 `total - cached_input - cache_read - cache_write`，保留原始含缓存 `total_tokens` 供详情页展示。
+- `hard_observed`: 项目详情页顶部 `AI 用量` 卡片已改为显示 `non_cached_total_tokens`，不再把缓存 token 作为主数字。
+- `hard_observed`: `agentUsage` 详情抽屉已改为同时展示 `非缓存 Token` 与 `含缓存总量`；最近记录徽标也改为非缓存值。
+- `hard_observed`: 已更新 `zh` / `zh-TW` / `en` 三套文案，补充非缓存与含缓存总量标签。
+- `hard_observed`: 已补充 Rust fixture 单元测试断言，覆盖 Codex cached input 和 OpenCode cache read/write 被排除出非缓存主口径。
+- `hard_observed`: 由于 `v2.0.0-pre.18` 已存在并指向旧提交，已将本次发版版本推进到 `2.0.0-pre.19`。
+- `hard_observed`: `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage` 通过，2 个相关测试通过。
+- `hard_observed`: `npm run build` 通过，TypeScript 与 Vite production build 成功。
+- `hard_observed`: `vibehub validate /Users/chenm0m/LocalRepo/VibeHub` 通过，implement required outputs 均已找到。
+- `hard_observed`: `vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee` 通过，issue_count 为 0。
 
 ## Not Yet Done
 
-- `agent_reported`: 尚未在真实 Tauri 桌面运行态打开项目详情页做完整点击验证；web dev server 只能验证 React 页面基础渲染，因为浏览器中没有 Tauri 项目数据。
-- `agent_reported`: 尚未在真实 Windows/Linux 机器验证 OpenCode/Codex 默认路径；当前实现已包含候选路径与降级 warnings。
-- `agent_reported`: 尚未扩展到 workspace 列表/首页聚合；本轮仍限定为 Project Detail。
-- `agent_reported`: 顶部时间窗口当前采用 lifetime observed total；最近 7/30 天筛选可作为后续增强。
+- `agent_reported`: 尚未在真实 Tauri 桌面窗口中点击项目详情页做视觉验证；本轮已完成类型、构建和后端聚合测试。
+- `agent_reported`: 尚未新增最近 7 天 / 30 天筛选；当前仍是本地 observed lifetime 口径，只是主数字排除了缓存。
+- `agent_reported`: 尚未在真实 Windows/Linux 机器验证默认路径；当前依赖候选路径与 warnings 降级。
 
 ## Key Decisions Made
 
-- `agent_reported`: 推荐将功能命名为 `AgentUsage` 或 `LocalAgentUsage`，语义覆盖 Codex 与 OpenCode，避免绑定某一个工具。
-- `agent_reported`: 推荐后端在 `src-tauri` 或 `crates/vibehub-core` 中实现只读聚合逻辑；当前 Cargo 依赖尚未包含 SQLite 读取库，计划阶段需决定添加 `rusqlite` 或通过现有轻量方式读取。
-- `agent_reported`: 推荐 UI 放在 `ProjectDetailBoard` 顶部三指标右侧或改成四指标栅格；卡片点击打开 detail drawer，不放到 Settings。
-- `agent_reported`: 推荐详情抽屉新增 `DashboardDetail` 值，如 `agentUsage`，展示两个 provider section，而不是复用 `evidence` 或 `settings`。
-- `agent_reported`: 推荐数据读取只输出聚合和安全摘要；任何读取 session JSONL 时只解析 `payload.info.total_token_usage`，不输出消息内容。
-- `agent_reported`: 计划阶段决定使用 `rusqlite` read-only 查询 SQLite；若实现时新增依赖需要联网下载，则按 Codex sandbox 规则请求批准。为跨平台稳定性优先考虑 bundled SQLite feature。
-- `agent_reported`: 计划阶段决定首版只做 Project Detail 入口；Workspace 层聚合留作后续扩展。
-- `agent_reported`: 计划阶段决定不要求 OpenCode CLI 在 PATH；只读本地数据文件。
-- `hard_observed`: 实现阶段采用 `AI 用量` 作为中文卡片和抽屉标题；英文为 `AI usage`。
-- `hard_observed`: 顶部卡片显示 Codex + OpenCode 本地观测总 token；详情保留 cache/read/write、input/output/reasoning/cost 等来源分项。
-- `hard_observed`: 单个来源不可用或无匹配记录时以 warnings/empty 状态展示，不让整个 dashboard 失败。
-- `hard_observed`: 由于 `v2.0.0-pre.17` 已指向旧 HEAD，本轮发版采用 `v2.0.0-pre.18`，避免移动既有 release tag。
-
-## Implementation Plan
-
-- `agent_reported`: 本节是 plan 阶段的 implementation_plan，覆盖 required fields: `steps`, `validation_plan`, `affected_files`。
-
-### steps
-
-- `agent_reported`: Step 1 - 后端数据模型与路径解析：新增 `src-tauri/src/local_agent_usage.rs`，定义 `LocalAgentUsageOverview`、`AgentUsageSourceSummary`、`TokenBreakdown`、`AgentUsageRecentItem`、`AgentUsageSourceStatus` 等 serde 类型；实现 `resolve_codex_paths()` 和 `resolve_opencode_paths()`，按 macOS / Linux / Windows 候选路径查找本地数据。
-- `agent_reported`: Step 2 - Codex 只读聚合：读取 `CODEX_SQLITE_HOME` 或 `CODEX_HOME` 下 `state_5.sqlite`，按 `threads.cwd = project_path` 聚合 `tokens_used`、thread count、最近更新时间和最近 thread 摘要；安全解析 `rollout_path` 指向的 JSONL，只读取 `payload.info.total_token_usage` 作为可选 token breakdown，不输出消息正文。
-- `agent_reported`: Step 3 - OpenCode 只读聚合：读取 `~/.local/share/opencode/opencode.db`、XDG data dir、macOS Application Support 旁路候选和 Windows AppData 候选中的 SQLite DB；通过 `session` left join `project`，匹配 `project.worktree` / `session.directory` / `session.path`，聚合 `cost`、`tokens_input`、`tokens_output`、`tokens_reasoning`、`tokens_cache_read`、`tokens_cache_write`、sessions 和最近 session 摘要。
-- `agent_reported`: Step 4 - Tauri command：在 `src-tauri/src/commands.rs` 增加 `read_local_agent_usage(project_path)` 或 `vibehub_read_local_agent_usage(project_path)`；在 `src-tauri/src/main.rs` 注册 invoke handler。命令必须只读、失败返回 warnings，不因单个来源失败阻塞整个响应。
-- `agent_reported`: Step 5 - 前端类型和 API：在 `src/types/index.ts` 添加 `LocalAgentUsageOverview` 等接口；在 `src/services/tauri.ts` 增加 `vibehubReadLocalAgentUsage(projectPath)`。
-- `agent_reported`: Step 6 - 数据加载：在 `src/components/VibehubCockpitDialog.tsx` 中随 dashboard 加载项目用量；维护 loading/error/warnings 状态，传入 `ProjectDetailBoard` 和 `DetailDrawer`。
-- `agent_reported`: Step 7 - 顶部指标卡：在 `src/components/ProjectDetailBoard.tsx` 顶部 metrics 区加入第四个可点击 `MetricCell`，label 使用 `AI 用量` / fallback `AI usage`，value 使用 compact total tokens；无数据时显示 `--` 或 `0`，tone 可在 warnings 时轻量提示。
-- `agent_reported`: Step 8 - 详情抽屉：扩展 `DashboardDetail` 为 `agentUsage`；新增 `AgentUsageTabContent`，展示总览、Codex/OpenCode 两个来源、token breakdown、最近记录、数据源路径、warnings。保留紧凑工具型布局，不做营销式说明。
-- `agent_reported`: Step 9 - i18n 与格式化：在 `src/locales/zh.json`、`src/locales/zh-TW.json`、`src/locales/en.json` 添加必要文案；实现 token/cost/time compact formatter 或复用现有格式工具，避免按钮/卡片文本溢出。
-- `agent_reported`: Step 10 - 测试夹具：添加 Rust 单元测试，使用临时目录创建最小 Codex/OpenCode SQLite/JSONL fixture，覆盖有数据、无数据、缺字段、路径不存在、多系统路径候选、敏感表不读取等场景。
-- `agent_reported`: Step 11 - 构建验证与 UI 验证：运行 Rust/TS/Vite 构建；启动 dev server 或 app 页面后用浏览器/截图检查项目详情页顶部指标和详情抽屉无重叠、无文本溢出、无数据状态可读。
-
-### validation_plan
-
-- `agent_reported`: Rust unit tests: 针对 `local_agent_usage` 的 Codex/OpenCode parser/aggregator/path resolver fixture 测试；目标覆盖聚合字段、recent items、warnings 和 privacy guard。
-- `agent_reported`: TypeScript/build: 运行 `npm run build`，确保新增类型、Tauri API 调用和 React 组件编译通过。
-- `agent_reported`: Rust compile: 运行 `cargo test -p vibehub --bin vibehub --no-run` 或更窄的 `cargo test -p vibehub local_agent_usage`；若新增依赖下载受限，按 sandbox escalation 流程请求批准。
-- `agent_reported`: Visual QA: 启动 `npm run dev` 后用浏览器检查项目详情页；桌面宽度确认四指标卡对齐，移动宽度确认 metrics 不溢出；点击 “AI 用量” 能打开详情抽屉。
-- `agent_reported`: Privacy QA: 用 `rg -n "access_token|refresh_token|auth.json|message.data|part.data"` 检查实现没有读取或渲染敏感字段；fixture 中加入敏感列也不输出。
-- `agent_reported`: Cross-platform reasoning: 单元测试以参数化路径覆盖 macOS/Linux/Windows 候选路径；真实 Windows/Linux 路径仍列为 residual risk，首版以候选解析和手动路径 warnings 降级。
-
-### affected_files
-
-- `agent_reported`: `src-tauri/Cargo.toml` - 新增 SQLite 读取依赖，如 `rusqlite`。
-- `agent_reported`: `src-tauri/src/local_agent_usage.rs` - 新增本地 Codex/OpenCode usage 聚合模块。
-- `agent_reported`: `src-tauri/src/commands.rs` - 新增 Tauri command wrapper。
-- `agent_reported`: `src-tauri/src/main.rs` - 注册 Tauri command。
-- `agent_reported`: `src/types/index.ts` - 新增前端数据类型。
-- `agent_reported`: `src/services/tauri.ts` - 新增 invoke API。
-- `agent_reported`: `src/components/VibehubCockpitDialog.tsx` - 加载/传递 local agent usage，新增 detail drawer 分支。
-- `agent_reported`: `src/components/ProjectDetailBoard.tsx` - 新增顶部 “AI 用量” 指标卡。
-- `agent_reported`: `src/locales/zh.json`, `src/locales/zh-TW.json`, `src/locales/en.json` - 新增 UI 文案。
-- `agent_reported`: `src-tauri/Cargo.lock` / workspace lockfiles - 若新增依赖会更新。
-- `agent_reported`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/outputs/output.md` - 记录计划、验证和阶段推进结果。
-
-### Plan Risks
-
-- `inferred`: `rusqlite` 新依赖可能需要网络下载；如果 sandbox 阻止，需要请求升级权限。
-- `inferred`: Codex/OpenCode local DB schema 可能随版本变化，必须用字段探测和 warnings 降级，不能 panic。
-- `inferred`: 当前仓库有多个 active tasks 和未归属 docs 文件，实施时只触碰本任务范围内文件。
-- `inferred`: UI 顶部 metrics 从 3 个变 4 个，需检查小屏布局不拥挤。
-- `inferred`: Windows/Linux OpenCode 默认路径需要通过候选路径和 fixture 覆盖，真实机器验证仍可能发现差异。
-
-## Research Notes
-
-- `agent_reported`: 本节汇总本轮 Codex/OpenCode 本地存储调研、可实现性判断、技术方案、风险与开放问题；所有敏感凭据和消息正文均不纳入输出。
-
-### Sources
-
-- `hard_observed`: OpenAI Codex manual fetched to `/private/tmp/openai-docs-cache/codex-manual.md`; relevant sections: config/state locations, auth/session caching, app settings/profile usage insights, environment variables.
-- `hard_observed`: Local Codex SQLite schemas: `~/.codex/state_5.sqlite` tables `threads`, `agent_jobs`, `agent_job_items`; `~/.codex/logs_2.sqlite` table `logs`.
-- `hard_observed`: Local Codex JSONL session files under `~/.codex/sessions/2026/.../rollout-*.jsonl`.
-- `hard_observed`: Local OpenCode SQLite schema: `~/.local/share/opencode/opencode.db` tables `session`, `message`, `part`, `project`, `workspace`.
-- `hard_observed`: Local OpenCode config/data locations: project `opencode.json`, project `.opencode`, global `~/.config/opencode`, data `~/.local/share/opencode`, desktop support `~/Library/Application Support/ai.opencode.desktop`.
-- `hard_observed`: VibeHub UI/source files: `src/components/ProjectDetailBoard.tsx`, `src/components/VibehubCockpitDialog.tsx`, `src/types/index.ts`, `src/services/tauri.ts`, `src-tauri/src/main.rs`.
-
-### Feasibility
-
-- `hard_observed`: Codex total token aggregation is feasible from `threads.tokens_used` grouped by `cwd`.
-- `hard_observed`: Codex token breakdown is feasible for sessions whose `rollout_path` JSONL contains `total_token_usage`; some observed Codex rollout files may have no `total_token_usage`, so parser must tolerate null.
-- `hard_observed`: OpenCode token/cost aggregation is directly feasible from `session` columns and `project` join.
-- `inferred`: Cross-workspace display is feasible by iterating VibeHub configured projects/workspaces and running the same local readers per project path.
-- `inferred`: Accuracy should be described as local observed usage, not authoritative billing. Codex app profile/lifetime insights exist in product UI, but local DB schemas are not a public stable API.
-
-### Proposed Technical Implementation
-
-- `inferred`: Add backend data model:
-  - `LocalAgentUsageOverview { project_path, generated_at, codex, opencode, warnings }`
-  - `CodexUsage { available, source, threads, total_tokens, input_tokens?, output_tokens?, reasoning_tokens?, cached_input_tokens?, recent_threads }`
-  - `OpenCodeUsage { available, source, sessions, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, recent_sessions }`
-- `inferred`: Codex reader:
-  - Resolve `CODEX_HOME` default `~/.codex`; resolve `CODEX_SQLITE_HOME` default `CODEX_HOME` unless config says otherwise.
-  - Open `state_5.sqlite` read-only and query `threads where cwd = project_path`.
-  - Sum `tokens_used`; collect recent thread metadata without prompt/message body.
-  - Optionally parse each `rollout_path` JSONL and keep the last `payload.info.total_token_usage` to split token types.
-- `inferred`: OpenCode reader:
-  - Resolve XDG-style data dir `~/.local/share/opencode/opencode.db`; on macOS also treat desktop support files as secondary UI state, not primary token source.
-  - Query `session` joined to `project` by `project_id`, matching `project.worktree`, `session.directory`, or `session.path` to project path.
-  - Sum cost and token columns; collect recent session title/model/agent/timestamps.
-- `inferred`: Tauri/API:
-  - Add command `read_local_agent_usage(project_path)` or include it in cockpit overview loading.
-  - Add `tauriApi.vibehubReadLocalAgentUsage(projectPath)` and TypeScript interfaces in `src/types/index.ts`.
-  - Load in `VibehubCockpitDialog` alongside existing dashboard data; pass into `ProjectDetailBoard`.
-- `inferred`: UI:
-  - Add fourth MetricCell in header metric grid with label `AI 用量` and value like compact total tokens (`461M` / `54M`) or source count.
-  - Make metric clickable, `onOpenDetail('agentUsage')`.
-  - In drawer: top summary, Codex/OpenCode source cards, token breakdown table, recent sessions list, warnings/data-source section.
-
-### Risks
-
-- `hard_observed`: Codex/OpenCode local schemas are not guaranteed stable public APIs; implementation should version/field-detect and degrade gracefully.
-- `hard_observed`: Codex auth files and OpenCode account/auth tables contain sensitive tokens; implementation must explicitly avoid reading those files/tables.
-- `hard_observed`: OpenCode CLI is not currently on PATH in this shell, though its local data exists; feature must not require the CLI binary.
-- `hard_observed`: Current workspace has unrelated dirty/untracked file `docs/2026618loop...md`; ownership is unresolved and should not be touched in implementation.
-- `inferred`: Token numbers between tools are not strictly comparable. Codex `total_tokens` includes cached input in the input total; OpenCode exposes cache read/write separately.
-- `inferred`: SQLite WAL files may be active; read-only queries should use SQLite APIs that can read a live database safely.
-
-### Open Questions
-
-- `user_confirmed_needed`: 顶部卡片命名使用 “AI 用量”、“Agent 用量” 还是 “Token 用量”？
-- `user_confirmed_needed`: 顶部卡片显示 total token、最近 30 天 token、还是 Codex + OpenCode source count？
-- `user_confirmed_needed`: cache tokens 是否计入顶部合计？建议计入总量但详情拆分。
-- `user_confirmed_needed`: 详情页是否要显示 OpenCode `cost`？本地有字段，但可能让用户误解为精确账单。
-- `user_confirmed_needed`: 是否需要在 workspace 列表/首页也展示合计，还是只做 project detail？
+- `user_confirmed`: 接受“顶部显示非缓存口径，详情保留含缓存总量”的方案。
+- `agent_reported`: 不把当前功能命名成账单或成本统计，仍保持为本地 Agent 用量观察，避免暗示精确计费。
+- `agent_reported`: 不删除含缓存总量，因为它仍是 Codex/OpenCode 本地记录的硬证据；只是不作为顶部主指标。
+- `inferred`: 对 Codex，`cached_input_tokens` 已包含在 total/input 口径内；对 OpenCode，cache read/write 是独立字段。因此统一用 `total - cached_input - cache_read - cache_write` 作为非缓存主口径。
 
 ## Files Changed
 
-- `hard_observed`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/outputs/output.md` (this file)
-- `hard_observed`: VibeHub CLI created/updated task state files under `.vibehub/tasks/T-20260619044922-98d818ee/`, `.vibehub/agent-view/`, `.vibehub/state.yaml`, `.vibehub/derivation_trace.yaml`, `.vibehub/index/task-events.idx`, and `.vibehub/tasks/current`.
-- `hard_observed`: `Cargo.lock` - locked `rusqlite` and transitive SQLite dependencies.
-- `hard_observed`: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `Cargo.lock` - bumped release version to `2.0.0-pre.18`.
-- `hard_observed`: `src-tauri/Cargo.toml` - added `rusqlite = { version = "0.32", features = ["bundled"] }`.
-- `hard_observed`: `src-tauri/src/local_agent_usage.rs` - new read-only Codex/OpenCode local usage aggregator and unit tests.
-- `hard_observed`: `src-tauri/src/commands.rs` - added `vibehub_read_local_agent_usage`.
-- `hard_observed`: `src-tauri/src/main.rs` - registered command and module.
-- `hard_observed`: `src/types/index.ts` - added LocalAgentUsage TypeScript interfaces.
-- `hard_observed`: `src/services/tauri.ts` - added frontend invoke wrapper.
-- `hard_observed`: `src/components/ProjectDetailBoard.tsx` - added clickable `AI 用量` metric cell.
-- `hard_observed`: `src/components/VibehubCockpitDialog.tsx` - loaded usage data and added `agentUsage` detail drawer.
-- `hard_observed`: `src/locales/zh.json`, `src/locales/zh-TW.json`, `src/locales/en.json` - added UI copy.
-- `hard_observed`: `docs/2026618loop结构和反思、改进策略.md` is present as an untracked workspace file and will be included only because the user requested committing the current latest workspace content.
+- `hard_observed`: `src-tauri/src/local_agent_usage.rs` - 新增非缓存用量字段、计算逻辑和单元测试断言。
+- `hard_observed`: `src/types/index.ts` - 同步新增 `non_cached_total_tokens` TypeScript 字段。
+- `hard_observed`: `src/components/ProjectDetailBoard.tsx` - 顶部 `AI 用量` 卡片改用非缓存用量。
+- `hard_observed`: `src/components/VibehubCockpitDialog.tsx` - 详情抽屉展示非缓存与含缓存总量，最近记录徽标改为非缓存值。
+- `hard_observed`: `src/locales/zh.json`, `src/locales/zh-TW.json`, `src/locales/en.json` - 新增非缓存/含缓存文案。
+- `hard_observed`: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `Cargo.lock` - 版本推进到 `2.0.0-pre.19`。
+- `hard_observed`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/outputs/output.md` - 更新本阶段输出。
+- `hard_observed`: VibeHub sync 自动更新了 `.vibehub/agent-view/*`、`.vibehub/state.yaml`、当前 run context pack、events/index 和新增 sync report；这些由 VibeHub CLI 生成，未手工编辑 canonical state。
 
 ## Files Reportedly Read
 
 - `hard_observed`: `.vibehub/agent-view/current.md`
 - `hard_observed`: `.vibehub/agent-view/current-context.md`
 - `hard_observed`: `.vibehub/agent-view/handoff.md`
-- `hard_observed`: `.vibehub/agent-view/sync.md`
 - `hard_observed`: `.vibehub/rules/hard-rules.md`
 - `hard_observed`: `.vibehub/adapters/protocol.md`
 - `hard_observed`: `.vibehub/workflow.yaml`
-- `hard_observed`: `.agents/skills/vibehub-start/SKILL.md`
-- `hard_observed`: `.agents/skills/vibehub-sync/SKILL.md`
 - `hard_observed`: `.agents/skills/vibehub-continue/SKILL.md`
-- `hard_observed`: `.agents/skills/vibehub-research/SKILL.md`
-- `hard_observed`: `.agents/skills/vibehub-gates/SKILL.md`
-- `hard_observed`: `.agents/skills/vibehub-claim/SKILL.md`
-- `hard_observed`: `.agents/skills/vibehub-plan/SKILL.md`
-- `hard_observed`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/context-packs/align.md`
-- `hard_observed`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/context-packs/research.md`
-- `hard_observed`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/context-packs/plan.md`
-- `hard_observed`: `/private/tmp/openai-docs-cache/codex-manual.md`
+- `hard_observed`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/context-packs/implement.md`
+- `hard_observed`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/outputs/output.md`
+- `hard_observed`: `src-tauri/src/local_agent_usage.rs`
+- `hard_observed`: `src/types/index.ts`
 - `hard_observed`: `src/components/ProjectDetailBoard.tsx`
 - `hard_observed`: `src/components/VibehubCockpitDialog.tsx`
-- `hard_observed`: `src/types/index.ts`
-- `hard_observed`: `src/services/tauri.ts`
-- `hard_observed`: `src-tauri/src/local_agent_usage.rs`
-- `hard_observed`: `src-tauri/src/main.rs`
-- `hard_observed`: `src-tauri/src/commands.rs`
-- `hard_observed`: `src-tauri/Cargo.toml`
-- `hard_observed`: `package.json`
-- `hard_observed`: `src-tauri/tauri.conf.json`
-- `hard_observed`: `Cargo.lock`
-- `hard_observed`: `.github/workflows/release.yml`
-- `hard_observed`: `.agents/skills/vibehub-release/SKILL.md`
 - `hard_observed`: `src/locales/zh.json`
 - `hard_observed`: `src/locales/zh-TW.json`
 - `hard_observed`: `src/locales/en.json`
-- `hard_observed`: `Cargo.toml`
-- `hard_observed`: `opencode.json`
-- `hard_observed`: `.opencode/.gitignore`
-- `hard_observed`: local schemas/metadata from `~/.codex/state_5.sqlite`, `~/.codex/logs_2.sqlite`, `~/.codex/session_index.jsonl`, `~/.codex/sessions/.../*.jsonl`, `~/.local/share/opencode/opencode.db`
+- `hard_observed`: local Codex SQLite/JSONL metadata under `~/.codex`
+- `hard_observed`: local OpenCode SQLite metadata under `~/.local/share/opencode/opencode.db`
 
 ## Commands Run
 
-- `hard_observed`: `sed -n ...` reads for VibeHub protocol/current context/handoff/hard rules/workflow/skills/source files.
-- `hard_observed`: `vibehub status /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `vibehub start /Users/chenm0m/LocalRepo/VibeHub evidence_drive "Display local Codex and OpenCode workspace usage insights"`
-- `hard_observed`: `git status --short`
 - `hard_observed`: `vibehub sync /Users/chenm0m/LocalRepo/VibeHub`
-- `hard_observed`: `find ...` and `ls -la ...` metadata scans for local Codex/OpenCode storage paths.
-- `hard_observed`: `sqlite3 ... ".tables"` and `sqlite3 ... ".schema ..."` schema checks for Codex/OpenCode databases.
-- `hard_observed`: `sqlite3 -header -column ... select ... group by ...` aggregation probes for Codex/OpenCode usage.
-- `hard_observed`: `node -e ...` JSONL metadata parsing for Codex token key paths and sanitized token usage examples.
-- `hard_observed`: `node /Users/chenm0m/.codex/skills/.system/openai-docs/scripts/fetch-codex-manual.mjs --cache-dir /private/tmp/openai-docs-cache` initially failed due DNS/network sandbox.
-- `hard_observed`: Same Codex manual fetch rerun with approved network escalation succeeded.
-- `hard_observed`: `vibehub gates /Users/chenm0m/LocalRepo/VibeHub research`
-- `hard_observed`: `vibehub claim /Users/chenm0m/LocalRepo/VibeHub research`
-- `hard_observed`: `rg -n ...` searches for project detail UI, dashboard detail, SQLite/dependency references.
-- `hard_observed`: `vibehub finish /Users/chenm0m/LocalRepo/VibeHub --confirmed-by-user` and `vibehub advance /Users/chenm0m/LocalRepo/VibeHub --confirmed-by-user` were run to move align and research to completed, then enter plan.
-- `hard_observed`: `vibehub validate-task /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee` was run for plan after writing implementation plan.
-- `hard_observed`: `vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee` was run for plan after writing implementation plan.
-- `hard_observed`: `vibehub sync /Users/chenm0m/LocalRepo/VibeHub` was rerun at implement start; result `needs_attention` due dirty workspace ownership question.
-- `hard_observed`: `cargo fmt` in `src-tauri`.
-- `hard_observed`: `node -e ... JSON.parse(...)` validated `src/locales/zh.json`, `src/locales/zh-TW.json`, and `src/locales/en.json`.
-- `hard_observed`: `cargo test local_agent_usage` initially failed due sandbox DNS resolving `index.crates.io`; rerun with approved network escalation succeeded.
-- `hard_observed`: `npm run build` succeeded.
-- `hard_observed`: `rg -n "access_token|refresh_token|auth.json|message.data|part.data|prompt|content" ...` checked privacy-sensitive references; hits were existing prompt/preview UI, not the new backend usage reader.
-- `hard_observed`: `npm run dev -- --host 127.0.0.1` started Vite at `http://127.0.0.1:1420/`.
-- `hard_observed`: In-app browser opened `http://127.0.0.1:1420/`, verified page title/body/root and no console errors; dev server was stopped afterwards.
-- `hard_observed`: `git ls-remote --tags origin` confirmed remote tag `v2.0.0-pre.17` exists.
-- `hard_observed`: `git tag --list --sort=-version:refname`, `git log --oneline --decorate -8`, and `git diff --stat` inspected release baseline and pending changes.
-- `hard_observed`: `rg -n "2\\.0\\.0-pre\\.17" ...` found release version fields; `rg -n "2\\.0\\.0-pre\\.18" ...` verified the bump.
-- `hard_observed`: `cargo test -p vibehub local_agent_usage` passed after version bump.
-- `hard_observed`: `npm run build` passed after version bump.
-- `hard_observed`: `npm run tauri -- build --target aarch64-apple-darwin --bundles app` passed and built `/Users/chenm0m/LocalRepo/VibeHub/target/aarch64-apple-darwin/release/bundle/macos/VibeHub.app`.
-- `hard_observed`: `target/aarch64-apple-darwin/release/vibehub --version` returned `2.0.0-pre.18`.
-- `hard_observed`: `hdiutil create -volname VibeHub -fs APFS -srcfolder target/aarch64-apple-darwin/release/bundle/macos/VibeHub.app /private/tmp/VibeHub_2.0.0-pre.18_aarch64.dmg` initially failed in sandbox with `设备未配置`, then succeeded with approved escalation.
-- `hard_observed`: `hdiutil verify /private/tmp/VibeHub_2.0.0-pre.18_aarch64.dmg` succeeded with a valid checksum.
-- `hard_observed`: `target/aarch64-apple-darwin/release/vibehub validate /Users/chenm0m/LocalRepo/VibeHub` passed.
-- `hard_observed`: `target/aarch64-apple-darwin/release/vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub` passed before this release-output update.
+- `hard_observed`: `vibehub status /Users/chenm0m/LocalRepo/VibeHub`
+- `hard_observed`: `sed -n ...` / `nl -ba ...` reads for VibeHub protocol files and relevant source files.
+- `hard_observed`: `rg -n "agentUsage|local_agent_usage|LocalAgentUsage|AI 用量|tokens_used|cache_read|cached" src src-tauri -S`
+- `hard_observed`: `rg -n "2\\.0\\.0-pre\\.18|2\\.0\\.0-pre\\.19" package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json Cargo.lock`
+- `hard_observed`: `sqlite3 /Users/chenm0m/.codex/state_5.sqlite ...`
+- `hard_observed`: `sqlite3 /Users/chenm0m/.local/share/opencode/opencode.db ...`
+- `hard_observed`: `sqlite3 ... | node -e ...` to aggregate Codex rollout token breakdown without reading message text into output.
+- `hard_observed`: `cargo fmt --manifest-path src-tauri/Cargo.toml`
+- `hard_observed`: `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage`
+- `hard_observed`: `npm run build`
+- `hard_observed`: `vibehub validate /Users/chenm0m/LocalRepo/VibeHub`
+- `hard_observed`: `vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee`
+- `hard_observed`: `git status --short`
+- `hard_observed`: `git diff --stat`
 
 ## Tests Run
 
-- `hard_observed`: Data feasibility was validated through read-only schema and aggregate queries against local Codex/OpenCode stores.
-- `hard_observed`: Plan phase validation passed: `status=completed`, found `implementation_plan`, `validation_plan`, `context_plan`, missing outputs `[]`.
-- `hard_observed`: Plan phase output-lint passed with `issue_count=0`.
-- `hard_observed`: `cargo test local_agent_usage` passed: 2 tests passed, 0 failed.
-- `hard_observed`: `npm run build` passed: `tsc && vite build`.
-- `hard_observed`: Locale JSON parse check passed for `zh`, `zh-TW`, and `en`.
-- `hard_observed`: Browser smoke check passed for Vite web page: title `VibeHub`, root present, no console errors.
-- `hard_observed`: Post-bump release checks passed: `cargo test -p vibehub local_agent_usage`, `npm run build`, `npm run tauri -- build --target aarch64-apple-darwin --bundles app`, binary `--version`, APFS DMG create, and APFS DMG verify.
-- `agent_reported`: Full project-detail click verification in Tauri runtime was not completed because web dev server lacks Tauri backend project data.
+- `hard_observed`: `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage` passed: 2 passed, 0 failed.
+- `hard_observed`: `npm run build` passed: `tsc && vite build` completed successfully.
+- `hard_observed`: `vibehub validate /Users/chenm0m/LocalRepo/VibeHub` passed: implement output status completed, missing_outputs empty.
+- `hard_observed`: `vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee` passed: issue_count 0.
+- `agent_reported`: No browser/Tauri visual QA was run in this turn.
 
 ## Context Still Needed
 
-- `agent_reported`: None blocking for current implementation. Defaults implemented: Project Detail only, card label `AI 用量`, lifetime total token on the card, token/cost/source details in the drawer, read-only local aggregation.
-- `agent_reported`: Windows/Linux OpenCode default path should be treated as best-effort candidate resolution until tested on real machines.
+- `user_confirmed_needed`: 是否要继续增加时间窗口筛选，例如 lifetime / 30 天 / 7 天。
+- `user_confirmed_needed`: 是否要把详情页最近记录也同时显示含缓存值，而不是只在来源汇总里显示。
+- `agent_reported`: 真实 Windows/Linux 默认路径仍需后续机器验证。
 
 ## Warnings
 
-- `hard_observed`: Workspace already has multiple active tasks; current task is `T-20260619044922-98d818ee`.
-- `hard_observed`: `vibehub sync` reported `needs_attention` because workspace has dirty files whose ownership is unavailable; `delta_head` was `same`.
-- `hard_observed`: An untracked doc path under `docs/2026618loop...md` is present; it is outside the current implementation scope, but user requested committing the current latest workspace content.
-- `hard_observed`: Local OpenCode CLI was not found on PATH, but local OpenCode DB/config files were present and readable.
-- `agent_reported`: New implementation intentionally reads aggregate SQLite fields and Codex token usage metadata only; it does not render auth token values, prompts, message bodies, tool outputs, or diff content from Codex/OpenCode stores.
-- `hard_observed`: `cargo test local_agent_usage` needed approved network access to update Cargo registry and download `rusqlite` transitive dependencies.
-- `hard_observed`: PATH `vibehub --help` still resolves to installed `2.0.0-pre.17`; release validation used the freshly built repository binary at `target/aarch64-apple-darwin/release/vibehub`.
+- `hard_observed`: `vibehub sync` 报告 `needs_attention`，原因包括 `ownership_unavailable`、Git 工作区存在 VibeHub 状态之外观察到的未提交变更、Git HEAD 与 `last_seen_head` 不一致。
+- `hard_observed`: 当前仓库仍有多个 active tasks；本轮只改当前任务相关的 AI 用量文件。
+- `hard_observed`: `cargo test` 输出已有 warning：`vibehub-cli/src/main.rs` 被多个 bin target 使用，以及若干 gateway dead_code warning。
+- `hard_observed`: `npm run build` 输出已有 warning：Baseline/Browserslist 数据过旧，以及 chunk size 超过 500 kB。
+- `inferred`: Codex/OpenCode 本地 schema 不是稳定公共 API，未来版本变化仍可能需要字段探测或兼容。
 
 ## Next Session Should
 
-- `agent_reported`: Run Tauri desktop app and click through project detail `AI 用量` card against real project data.
-- `agent_reported`: After this output is committed, push `feature/vibehub-v2-p0` and tag `v2.0.0-pre.18`; GitHub Release workflow should create a draft prerelease from that tag.
-- `agent_reported`: If the user later confirms workflow phase completion, run VibeHub finish/advance for implement and move to review.
-- `agent_reported`: Consider follow-up for recent 7/30 day filtering and workspace-level aggregation after project-detail behavior is accepted.
+- `agent_reported`: 如用户要继续完善，优先做 Tauri 桌面视觉验证，确认项目详情页顶部数值与详情抽屉文案无溢出。
+- `agent_reported`: 如果要进一步贴近“实际消耗”，新增 lifetime / 30 天 / 7 天筛选，并在详情页标明当前时间窗口。
+- `agent_reported`: 在进入 review/finish 前，由用户确认是否要运行 `vibehub finish` / `vibehub advance`；本轮未执行这些状态转换命令。
