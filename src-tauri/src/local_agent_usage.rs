@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use rusqlite::{params, Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use serde_json::Value;
 use std::{
+    collections::{BTreeMap, BTreeSet},
     env,
     fs::File,
     io::{BufRead, BufReader},
@@ -97,8 +98,23 @@ struct OpenCodeSessionRow {
     time_updated: Option<i64>,
 }
 
+#[derive(Debug)]
+struct MatchedRows<T> {
+    exact: Vec<T>,
+    aliases: BTreeMap<String, Vec<T>>,
+}
+
+impl<T> Default for MatchedRows<T> {
+    fn default() -> Self {
+        Self {
+            exact: Vec::new(),
+            aliases: BTreeMap::new(),
+        }
+    }
+}
+
 pub fn read_local_agent_usage(project_path: impl AsRef<Path>) -> Result<LocalAgentUsageOverview> {
-    let project_path = normalize_path_string(project_path.as_ref());
+    let project_path = ProjectPathMatcher::new(project_path.as_ref());
     let mut warnings = Vec::new();
     let codex = read_codex_usage(&project_path);
     let opencode = read_opencode_usage(&project_path);
@@ -123,7 +139,7 @@ pub fn read_local_agent_usage(project_path: impl AsRef<Path>) -> Result<LocalAge
             .into_iter()
             .filter(|available| *available)
             .count(),
-        project_path,
+        project_path: project_path.display_path.clone(),
         generated_at: Utc::now().to_rfc3339(),
         codex,
         opencode,
@@ -131,23 +147,82 @@ pub fn read_local_agent_usage(project_path: impl AsRef<Path>) -> Result<LocalAge
     })
 }
 
-fn read_codex_usage(project_path: &str) -> AgentUsageSourceSummary {
+#[derive(Debug, Clone)]
+struct ProjectPathMatcher {
+    display_path: String,
+    primary: String,
+    primary_children: String,
+    canonical: String,
+    canonical_children: String,
+    basename: Option<String>,
+}
+
+impl ProjectPathMatcher {
+    fn new(path: &Path) -> Self {
+        let primary = normalize_path_string(path);
+        let canonical = path
+            .canonicalize()
+            .ok()
+            .map(|path| normalize_path_string(&path))
+            .unwrap_or_else(|| primary.clone());
+        let basename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .map(|name| name.to_ascii_lowercase());
+
+        Self {
+            display_path: primary.clone(),
+            primary_children: child_path_pattern(&primary),
+            canonical_children: child_path_pattern(&canonical),
+            primary,
+            canonical,
+            basename,
+        }
+    }
+
+    fn matches(&self, value: &str) -> bool {
+        let value = normalize_stored_path(value);
+        value.eq_ignore_ascii_case(&self.primary)
+            || value.eq_ignore_ascii_case(&self.canonical)
+            || lower_path_starts_with(&value, &self.primary_children)
+            || lower_path_starts_with(&value, &self.canonical_children)
+    }
+
+    fn alias_root(&self, value: &str) -> Option<String> {
+        let basename = self.basename.as_deref()?;
+        let value = normalize_stored_path(value);
+        let parts = value.split('/').collect::<Vec<_>>();
+        for index in (0..parts.len()).rev() {
+            if parts[index].eq_ignore_ascii_case(basename) {
+                return Some(parts[..=index].join("/"));
+            }
+        }
+        None
+    }
+}
+
+fn read_codex_usage(project_path: &ProjectPathMatcher) -> AgentUsageSourceSummary {
     let mut warnings = Vec::new();
-    let Some(db_path) = first_existing_path(codex_state_db_candidates()) else {
+    let db_paths = existing_paths(codex_state_db_candidates());
+    if db_paths.is_empty() {
         return empty_source(
             "codex",
             "Codex state database was not found in CODEX_SQLITE_HOME, CODEX_HOME, or ~/.codex.",
         );
     };
 
-    let result = read_codex_usage_from_db(project_path, &db_path, &mut warnings);
+    let result = read_codex_usage_from_dbs(project_path, &db_paths, &mut warnings);
     match result {
         Ok(mut summary) => {
-            summary.data_path = Some(db_path.display().to_string());
+            summary.warnings.append(&mut warnings);
+            summary
+        }
+        Err(error) => {
+            let mut summary = error_source("codex", db_paths.first().cloned(), error);
             summary.warnings = warnings;
             summary
         }
-        Err(error) => error_source("codex", Some(db_path), error),
     }
 }
 
@@ -156,24 +231,48 @@ fn read_codex_usage_from_db(
     db_path: &Path,
     warnings: &mut Vec<String>,
 ) -> Result<AgentUsageSourceSummary> {
-    let conn = open_readonly(db_path)?;
-    let mut stmt = conn.prepare(
-        "select id, rollout_path, title, model_provider, model, tokens_used, updated_at_ms \
-         from threads where cwd = ?1 order by updated_at_ms desc, updated_at desc, id desc",
-    )?;
-    let rows = stmt
-        .query_map(params![project_path], |row| {
-            Ok(CodexThreadRow {
-                id: row.get(0)?,
-                rollout_path: row.get(1)?,
-                title: row.get(2)?,
-                model_provider: row.get(3).ok(),
-                model: row.get(4).ok(),
-                tokens_used: signed_to_u64(row.get::<_, i64>(5).unwrap_or_default()),
-                updated_at_ms: row.get(6).ok(),
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let matcher = ProjectPathMatcher::new(Path::new(project_path));
+    read_codex_usage_from_dbs(&matcher, &[db_path.to_path_buf()], warnings)
+}
+
+fn read_codex_usage_from_dbs(
+    project_path: &ProjectPathMatcher,
+    db_paths: &[PathBuf],
+    warnings: &mut Vec<String>,
+) -> Result<AgentUsageSourceSummary> {
+    let mut best_exact_match: Option<(PathBuf, Vec<CodexThreadRow>)> = None;
+    let mut alias_matches = Vec::new();
+    let mut errors = Vec::new();
+
+    for db_path in db_paths {
+        match read_codex_rows_from_db(project_path, db_path) {
+            Ok(db_rows) => {
+                if should_replace_codex_match(
+                    best_exact_match.as_ref().map(|(_, rows)| rows),
+                    &db_rows.exact,
+                ) {
+                    best_exact_match = Some((db_path.clone(), db_rows.exact));
+                }
+                for (alias_root, rows) in db_rows.aliases {
+                    alias_matches.push((db_path.clone(), alias_root, rows));
+                }
+            }
+            Err(error) => errors.push(format!("{}: {error:#}", db_path.display())),
+        }
+    }
+
+    if best_exact_match.is_none() && alias_matches.is_empty() && errors.len() == db_paths.len() {
+        anyhow::bail!("{}", errors.join("; "));
+    }
+
+    warnings.extend(errors);
+    let (data_path, alias_root, mut rows) =
+        choose_codex_rows(project_path, best_exact_match, alias_matches, warnings);
+    rows.sort_by(|a, b| {
+        b.updated_at_ms
+            .cmp(&a.updated_at_ms)
+            .then_with(|| b.id.cmp(&a.id))
+    });
 
     let mut tokens = TokenBreakdown::default();
     let mut recent = Vec::new();
@@ -207,10 +306,25 @@ fn read_codex_usage_from_db(
         }
     }
 
+    if rows.is_empty() {
+        warnings.push(format!(
+            "No Codex records matched {} or its child paths.",
+            project_path.display_path
+        ));
+    }
+
     Ok(AgentUsageSourceSummary {
         source: "codex".to_string(),
         available: !rows.is_empty(),
-        data_path: None,
+        data_path: Some(if rows.is_empty() {
+            db_paths
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            data_path.display().to_string()
+        }),
         records: rows.len(),
         non_cached_total_tokens: tokens.non_cached_total(),
         total_tokens: tokens.total,
@@ -218,27 +332,125 @@ fn read_codex_usage_from_db(
         tokens,
         latest_updated_at_ms,
         recent,
-        warnings: Vec::new(),
+        warnings: alias_root
+            .map(|path| {
+                vec![format!(
+                    "No Codex records matched configured path {}; using same-name usage path {}.",
+                    project_path.display_path, path
+                )]
+            })
+            .unwrap_or_default(),
     })
 }
 
-fn read_opencode_usage(project_path: &str) -> AgentUsageSourceSummary {
+fn read_codex_rows_from_db(
+    project_path: &ProjectPathMatcher,
+    db_path: &Path,
+) -> Result<MatchedRows<CodexThreadRow>> {
+    let conn = open_readonly(db_path)?;
+    let mut stmt = conn.prepare(
+        "select id, rollout_path, title, model_provider, model, tokens_used, updated_at_ms, cwd \
+         from threads order by updated_at_ms desc, updated_at desc, id desc",
+    )?;
+    let mut rows = stmt.query([])?;
+    let mut out = MatchedRows::default();
+    while let Some(row) = rows.next()? {
+        let cwd: String = row.get(7)?;
+        let usage_row = CodexThreadRow {
+            id: row.get(0)?,
+            rollout_path: row.get(1)?,
+            title: row.get(2)?,
+            model_provider: row.get(3).ok(),
+            model: row.get(4).ok(),
+            tokens_used: signed_to_u64(row.get::<_, i64>(5).unwrap_or_default()),
+            updated_at_ms: row.get(6).ok(),
+        };
+        if project_path.matches(&cwd) {
+            out.exact.push(usage_row);
+        } else if let Some(alias_root) = project_path.alias_root(&cwd) {
+            out.aliases.entry(alias_root).or_default().push(usage_row);
+        }
+    }
+    Ok(out)
+}
+
+fn choose_codex_rows(
+    project_path: &ProjectPathMatcher,
+    exact_match: Option<(PathBuf, Vec<CodexThreadRow>)>,
+    alias_matches: Vec<(PathBuf, String, Vec<CodexThreadRow>)>,
+    warnings: &mut Vec<String>,
+) -> (PathBuf, Option<String>, Vec<CodexThreadRow>) {
+    if let Some((path, rows)) = exact_match.filter(|(_, rows)| !rows.is_empty()) {
+        return (path, None, rows);
+    }
+
+    let alias_roots = alias_matches
+        .iter()
+        .filter(|(_, _, rows)| !rows.is_empty())
+        .map(|(_, alias_root, _)| alias_root.clone())
+        .collect::<BTreeSet<_>>();
+
+    if alias_roots.len() == 1 {
+        let alias_root = alias_roots.into_iter().next().unwrap_or_default();
+        let mut best: Option<(PathBuf, Vec<CodexThreadRow>)> = None;
+        for (path, candidate_alias, rows) in alias_matches {
+            if candidate_alias == alias_root
+                && should_replace_codex_match(best.as_ref().map(|(_, rows)| rows), &rows)
+            {
+                best = Some((path, rows));
+            }
+        }
+        if let Some((path, rows)) = best {
+            return (path, Some(alias_root), rows);
+        }
+    } else if alias_roots.len() > 1 {
+        warnings.push(format!(
+            "Multiple same-name Codex usage paths matched {}; refusing ambiguous fallback: {}.",
+            project_path.display_path,
+            alias_roots.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    (PathBuf::new(), None, Vec::new())
+}
+
+fn should_replace_codex_match(
+    current: Option<&Vec<CodexThreadRow>>,
+    candidate: &[CodexThreadRow],
+) -> bool {
+    let Some(current) = current else {
+        return true;
+    };
+    candidate.len() > current.len()
+        || (candidate.len() == current.len()
+            && max_codex_updated_at(candidate) > max_codex_updated_at(current))
+}
+
+fn max_codex_updated_at(rows: &[CodexThreadRow]) -> Option<i64> {
+    rows.iter().filter_map(|row| row.updated_at_ms).max()
+}
+
+fn read_opencode_usage(project_path: &ProjectPathMatcher) -> AgentUsageSourceSummary {
     let mut warnings = Vec::new();
-    let Some(db_path) = first_existing_path(opencode_db_candidates()) else {
+    let db_paths = existing_paths(opencode_db_candidates());
+    if db_paths.is_empty() {
         return empty_source(
             "opencode",
             "OpenCode database was not found in XDG data, ~/.local/share/opencode, Application Support, or AppData candidates.",
         );
     };
 
-    let result = read_opencode_usage_from_db(project_path, &db_path);
+    let result = read_opencode_usage_from_dbs(project_path, &db_paths, &mut warnings);
     match result {
         Ok(mut summary) => {
-            summary.data_path = Some(db_path.display().to_string());
             summary.warnings.append(&mut warnings);
             summary
         }
-        Err(error) => error_source("opencode", Some(db_path), error),
+        Err(error) => {
+            let mut summary = error_source("opencode", db_paths.first().cloned(), error);
+            summary.warnings = warnings;
+            summary
+        }
     }
 }
 
@@ -246,32 +458,49 @@ fn read_opencode_usage_from_db(
     project_path: &str,
     db_path: &Path,
 ) -> Result<AgentUsageSourceSummary> {
-    let conn = open_readonly(db_path)?;
-    let mut stmt = conn.prepare(
-        "select s.id, s.title, s.agent, s.model, s.cost, s.tokens_input, s.tokens_output, \
-                s.tokens_reasoning, s.tokens_cache_read, s.tokens_cache_write, s.time_updated \
-         from session s \
-         left join project p on p.id = s.project_id \
-         where p.worktree = ?1 or s.directory = ?1 or s.path = ?1 \
-         order by s.time_updated desc, s.id desc",
-    )?;
-    let rows = stmt
-        .query_map(params![project_path], |row| {
-            Ok(OpenCodeSessionRow {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                agent: row.get(2).ok(),
-                model: row.get(3).ok(),
-                cost: row.get::<_, f64>(4).unwrap_or_default(),
-                tokens_input: signed_to_u64(row.get::<_, i64>(5).unwrap_or_default()),
-                tokens_output: signed_to_u64(row.get::<_, i64>(6).unwrap_or_default()),
-                tokens_reasoning: signed_to_u64(row.get::<_, i64>(7).unwrap_or_default()),
-                tokens_cache_read: signed_to_u64(row.get::<_, i64>(8).unwrap_or_default()),
-                tokens_cache_write: signed_to_u64(row.get::<_, i64>(9).unwrap_or_default()),
-                time_updated: row.get(10).ok(),
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let matcher = ProjectPathMatcher::new(Path::new(project_path));
+    let mut warnings = Vec::new();
+    read_opencode_usage_from_dbs(&matcher, &[db_path.to_path_buf()], &mut warnings)
+}
+
+fn read_opencode_usage_from_dbs(
+    project_path: &ProjectPathMatcher,
+    db_paths: &[PathBuf],
+    warnings: &mut Vec<String>,
+) -> Result<AgentUsageSourceSummary> {
+    let mut best_exact_match: Option<(PathBuf, Vec<OpenCodeSessionRow>)> = None;
+    let mut alias_matches = Vec::new();
+    let mut errors = Vec::new();
+
+    for db_path in db_paths {
+        match read_opencode_rows_from_db(project_path, db_path) {
+            Ok(db_rows) => {
+                if should_replace_opencode_match(
+                    best_exact_match.as_ref().map(|(_, rows)| rows),
+                    &db_rows.exact,
+                ) {
+                    best_exact_match = Some((db_path.clone(), db_rows.exact));
+                }
+                for (alias_root, rows) in db_rows.aliases {
+                    alias_matches.push((db_path.clone(), alias_root, rows));
+                }
+            }
+            Err(error) => errors.push(format!("{}: {error:#}", db_path.display())),
+        }
+    }
+
+    if best_exact_match.is_none() && alias_matches.is_empty() && errors.len() == db_paths.len() {
+        anyhow::bail!("{}", errors.join("; "));
+    }
+
+    warnings.extend(errors);
+    let (data_path, alias_root, mut rows) =
+        choose_opencode_rows(project_path, best_exact_match, alias_matches, warnings);
+    rows.sort_by(|a, b| {
+        b.time_updated
+            .cmp(&a.time_updated)
+            .then_with(|| b.id.cmp(&a.id))
+    });
 
     let mut tokens = TokenBreakdown::default();
     let mut cost = 0.0_f64;
@@ -310,10 +539,25 @@ fn read_opencode_usage_from_db(
         }
     }
 
+    if rows.is_empty() {
+        warnings.push(format!(
+            "No OpenCode records matched {} or its child paths.",
+            project_path.display_path
+        ));
+    }
+
     Ok(AgentUsageSourceSummary {
         source: "opencode".to_string(),
         available: !rows.is_empty(),
-        data_path: None,
+        data_path: Some(if rows.is_empty() {
+            db_paths
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            data_path.display().to_string()
+        }),
         records: rows.len(),
         non_cached_total_tokens: tokens.non_cached_total(),
         total_tokens: tokens.total,
@@ -321,8 +565,121 @@ fn read_opencode_usage_from_db(
         tokens,
         latest_updated_at_ms,
         recent,
-        warnings: Vec::new(),
+        warnings: alias_root
+            .map(|path| {
+                vec![format!(
+                    "No OpenCode records matched configured path {}; using same-name usage path {}.",
+                    project_path.display_path, path
+                )]
+            })
+            .unwrap_or_default(),
     })
+}
+
+fn read_opencode_rows_from_db(
+    project_path: &ProjectPathMatcher,
+    db_path: &Path,
+) -> Result<MatchedRows<OpenCodeSessionRow>> {
+    let conn = open_readonly(db_path)?;
+    let mut stmt = conn.prepare(
+        "select s.id, s.title, s.agent, s.model, s.cost, s.tokens_input, s.tokens_output, \
+                s.tokens_reasoning, s.tokens_cache_read, s.tokens_cache_write, s.time_updated, \
+                p.worktree, s.directory, s.path \
+         from session s \
+         left join project p on p.id = s.project_id \
+         order by s.time_updated desc, s.id desc",
+    )?;
+    let mut rows = stmt.query([])?;
+    let mut out = MatchedRows::default();
+    while let Some(row) = rows.next()? {
+        let worktree: Option<String> = row.get(11).ok();
+        let directory: Option<String> = row.get(12).ok();
+        let path: Option<String> = row.get(13).ok();
+        let paths = [worktree.as_deref(), directory.as_deref(), path.as_deref()];
+        let matches = paths
+            .into_iter()
+            .flatten()
+            .any(|path| project_path.matches(path));
+        let usage_row = OpenCodeSessionRow {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            agent: row.get(2).ok(),
+            model: row.get(3).ok(),
+            cost: row.get::<_, f64>(4).unwrap_or_default(),
+            tokens_input: signed_to_u64(row.get::<_, i64>(5).unwrap_or_default()),
+            tokens_output: signed_to_u64(row.get::<_, i64>(6).unwrap_or_default()),
+            tokens_reasoning: signed_to_u64(row.get::<_, i64>(7).unwrap_or_default()),
+            tokens_cache_read: signed_to_u64(row.get::<_, i64>(8).unwrap_or_default()),
+            tokens_cache_write: signed_to_u64(row.get::<_, i64>(9).unwrap_or_default()),
+            time_updated: row.get(10).ok(),
+        };
+        if matches {
+            out.exact.push(usage_row);
+        } else if let Some(alias_root) = paths
+            .into_iter()
+            .flatten()
+            .find_map(|path| project_path.alias_root(path))
+        {
+            out.aliases.entry(alias_root).or_default().push(usage_row);
+        }
+    }
+    Ok(out)
+}
+
+fn choose_opencode_rows(
+    project_path: &ProjectPathMatcher,
+    exact_match: Option<(PathBuf, Vec<OpenCodeSessionRow>)>,
+    alias_matches: Vec<(PathBuf, String, Vec<OpenCodeSessionRow>)>,
+    warnings: &mut Vec<String>,
+) -> (PathBuf, Option<String>, Vec<OpenCodeSessionRow>) {
+    if let Some((path, rows)) = exact_match.filter(|(_, rows)| !rows.is_empty()) {
+        return (path, None, rows);
+    }
+
+    let alias_roots = alias_matches
+        .iter()
+        .filter(|(_, _, rows)| !rows.is_empty())
+        .map(|(_, alias_root, _)| alias_root.clone())
+        .collect::<BTreeSet<_>>();
+
+    if alias_roots.len() == 1 {
+        let alias_root = alias_roots.into_iter().next().unwrap_or_default();
+        let mut best: Option<(PathBuf, Vec<OpenCodeSessionRow>)> = None;
+        for (path, candidate_alias, rows) in alias_matches {
+            if candidate_alias == alias_root
+                && should_replace_opencode_match(best.as_ref().map(|(_, rows)| rows), &rows)
+            {
+                best = Some((path, rows));
+            }
+        }
+        if let Some((path, rows)) = best {
+            return (path, Some(alias_root), rows);
+        }
+    } else if alias_roots.len() > 1 {
+        warnings.push(format!(
+            "Multiple same-name OpenCode usage paths matched {}; refusing ambiguous fallback: {}.",
+            project_path.display_path,
+            alias_roots.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    (PathBuf::new(), None, Vec::new())
+}
+
+fn should_replace_opencode_match(
+    current: Option<&Vec<OpenCodeSessionRow>>,
+    candidate: &[OpenCodeSessionRow],
+) -> bool {
+    let Some(current) = current else {
+        return true;
+    };
+    candidate.len() > current.len()
+        || (candidate.len() == current.len()
+            && max_opencode_updated_at(candidate) > max_opencode_updated_at(current))
+}
+
+fn max_opencode_updated_at(rows: &[OpenCodeSessionRow]) -> Option<i64> {
+    rows.iter().filter_map(|row| row.time_updated).max()
 }
 
 fn read_codex_rollout_usage(path: &str, warnings: &mut Vec<String>) -> Option<TokenBreakdown> {
@@ -444,8 +801,8 @@ fn open_readonly(path: &Path) -> Result<Connection> {
     .with_context(|| format!("Failed to open SQLite database {}", path.display()))
 }
 
-fn first_existing_path(paths: Vec<PathBuf>) -> Option<PathBuf> {
-    paths.into_iter().find(|path| path.is_file())
+fn existing_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths.into_iter().filter(|path| path.is_file()).collect()
 }
 
 fn empty_source(source: &str, warning: &str) -> AgentUsageSourceSummary {
@@ -475,7 +832,27 @@ fn error_source(
 }
 
 fn normalize_path_string(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    normalize_stored_path(&path.to_string_lossy())
+}
+
+fn normalize_stored_path(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let trimmed = normalized.trim_end_matches('/');
+    if trimmed.is_empty() {
+        normalized
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn child_path_pattern(path: &str) -> String {
+    format!("{}/", normalize_stored_path(path))
+}
+
+fn lower_path_starts_with(value: &str, prefix: &str) -> bool {
+    value
+        .to_ascii_lowercase()
+        .starts_with(&prefix.to_ascii_lowercase())
 }
 
 fn safe_title(value: &str) -> String {
@@ -544,24 +921,7 @@ mod tests {
         let rollout_path = dir.join("rollout.jsonl");
         write_rollout(&rollout_path, 11, 7, 3, 5, 21);
         let conn = Connection::open(&db_path).expect("open fixture db");
-        conn.execute_batch(
-            "create table threads (
-                id text primary key,
-                rollout_path text not null,
-                created_at integer not null default 0,
-                updated_at integer not null default 0,
-                source text not null default '',
-                model_provider text not null default '',
-                cwd text not null,
-                title text not null,
-                sandbox_policy text not null default '',
-                approval_mode text not null default '',
-                tokens_used integer not null default 0,
-                model text,
-                updated_at_ms integer
-            );",
-        )
-        .expect("schema");
+        create_codex_schema(&conn);
         conn.execute(
             "insert into threads (id, rollout_path, cwd, title, tokens_used, model, updated_at_ms)
              values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -591,33 +951,117 @@ mod tests {
     }
 
     #[test]
+    fn scans_later_codex_databases_and_matches_child_paths() {
+        let dir = temp_dir("codex-multi-db");
+        let empty_db_path = dir.join("empty-state_5.sqlite");
+        let matched_db_path = dir.join("matched-state_5.sqlite");
+        let empty_conn = Connection::open(&empty_db_path).expect("open empty fixture db");
+        create_codex_schema(&empty_conn);
+        drop(empty_conn);
+
+        let rollout_path = dir.join("rollout-child.jsonl");
+        write_rollout(&rollout_path, 20, 0, 4, 1, 25);
+        let matched_conn = Connection::open(&matched_db_path).expect("open matched fixture db");
+        create_codex_schema(&matched_conn);
+        matched_conn
+            .execute(
+                "insert into threads (id, rollout_path, cwd, title, tokens_used, model, updated_at_ms)
+                 values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    "thread-child",
+                    rollout_path.display().to_string(),
+                    "/repo/app/packages/web",
+                    "Child package work",
+                    25_i64,
+                    "gpt-test",
+                    321_i64
+                ],
+            )
+            .expect("insert child");
+        matched_conn
+            .execute(
+                "insert into threads (id, rollout_path, cwd, title, tokens_used, model, updated_at_ms)
+                 values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    "thread-sibling-prefix",
+                    rollout_path.display().to_string(),
+                    "/repo/application",
+                    "Should not match",
+                    999_i64,
+                    "gpt-test",
+                    322_i64
+                ],
+            )
+            .expect("insert sibling prefix");
+        drop(matched_conn);
+
+        let mut warnings = Vec::new();
+        let matcher = ProjectPathMatcher::new(Path::new("/repo/app"));
+        let usage = read_codex_usage_from_dbs(
+            &matcher,
+            &[empty_db_path.clone(), matched_db_path.clone()],
+            &mut warnings,
+        )
+        .expect("usage");
+
+        assert!(usage.available);
+        assert_eq!(usage.records, 1);
+        assert_eq!(usage.total_tokens, 25);
+        assert_eq!(usage.non_cached_total_tokens, 25);
+        assert_eq!(
+            usage.data_path.as_deref(),
+            Some(matched_db_path.to_str().unwrap())
+        );
+    }
+
+    #[test]
+    fn codex_falls_back_to_unique_same_name_project_path() {
+        let dir = temp_dir("codex-alias-path");
+        let db_path = dir.join("state_5.sqlite");
+        let rollout_path = dir.join("rollout-alias.jsonl");
+        write_rollout(&rollout_path, 30, 5, 4, 1, 40);
+        let conn = Connection::open(&db_path).expect("open fixture db");
+        create_codex_schema(&conn);
+        conn.execute(
+            "insert into threads (id, rollout_path, cwd, title, tokens_used, model, updated_at_ms)
+             values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                "thread-alias",
+                rollout_path.display().to_string(),
+                "/repo/local/mind2realistic",
+                "Moved project work",
+                40_i64,
+                "gpt-test",
+                654_i64
+            ],
+        )
+        .expect("insert alias");
+        drop(conn);
+
+        let mut warnings = Vec::new();
+        let usage =
+            read_codex_usage_from_db("/repo/archive/mind2realistic", &db_path, &mut warnings)
+                .expect("usage");
+
+        assert!(usage.available);
+        assert_eq!(usage.records, 1);
+        assert_eq!(usage.total_tokens, 40);
+        assert!(
+            usage
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("/repo/local/mind2realistic")),
+            "expected alias warning, got {:?}",
+            usage.warnings
+        );
+    }
+
+    #[test]
     fn aggregates_opencode_sessions() {
         let dir = temp_dir("opencode-usage");
         let db_path = dir.join("opencode.db");
         let conn = Connection::open(&db_path).expect("open fixture db");
-        conn.execute_batch(
-            "create table project (
-                id text primary key,
-                worktree text not null
-            );
-            create table session (
-                id text primary key,
-                project_id text not null,
-                directory text not null,
-                title text not null,
-                agent text,
-                model text,
-                cost real default 0 not null,
-                tokens_input integer default 0 not null,
-                tokens_output integer default 0 not null,
-                tokens_reasoning integer default 0 not null,
-                tokens_cache_read integer default 0 not null,
-                tokens_cache_write integer default 0 not null,
-                time_updated integer,
-                path text
-            );",
-        )
-        .expect("schema");
+        create_opencode_schema(&conn);
         conn.execute(
             "insert into project (id, worktree) values ('p1', '/repo/app')",
             [],
@@ -657,6 +1101,180 @@ mod tests {
         assert_eq!(usage.tokens.cache_read, 4);
         assert_eq!(usage.recent[0].non_cached_total_tokens, 15);
         assert_eq!(usage.recent[0].model.as_deref(), Some("model-a"));
+    }
+
+    #[test]
+    fn opencode_matches_child_paths_without_matching_prefix_siblings() {
+        let dir = temp_dir("opencode-child-path");
+        let db_path = dir.join("opencode.db");
+        let conn = Connection::open(&db_path).expect("open fixture db");
+        create_opencode_schema(&conn);
+        conn.execute(
+            "insert into project (id, worktree) values ('p1', '/repo/app/packages/web')",
+            [],
+        )
+        .expect("project child");
+        conn.execute(
+            "insert into project (id, worktree) values ('p2', '/repo/application')",
+            [],
+        )
+        .expect("project sibling prefix");
+        conn.execute(
+            "insert into session (
+                id, project_id, directory, title, agent, model, cost, tokens_input,
+                tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+                time_updated, path
+            ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                "ses-child",
+                "p1",
+                "/repo/app/packages/web",
+                "Child OpenCode work",
+                "build",
+                r#"{"id":"model-a"}"#,
+                1.0_f64,
+                10_i64,
+                2_i64,
+                3_i64,
+                4_i64,
+                5_i64,
+                456_i64,
+                "/repo/app/packages/web",
+            ],
+        )
+        .expect("child session");
+        conn.execute(
+            "insert into session (
+                id, project_id, directory, title, agent, model, cost, tokens_input,
+                tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+                time_updated, path
+            ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                "ses-sibling-prefix",
+                "p2",
+                "/repo/application",
+                "Should not match",
+                "build",
+                r#"{"id":"model-b"}"#,
+                1.0_f64,
+                1000_i64,
+                200_i64,
+                300_i64,
+                400_i64,
+                500_i64,
+                457_i64,
+                "/repo/application",
+            ],
+        )
+        .expect("sibling prefix session");
+        drop(conn);
+
+        let usage = read_opencode_usage_from_db("/repo/app", &db_path).expect("usage");
+        assert!(usage.available);
+        assert_eq!(usage.records, 1);
+        assert_eq!(usage.total_tokens, 24);
+        assert_eq!(usage.recent[0].id, "ses-child");
+    }
+
+    #[test]
+    fn opencode_falls_back_to_unique_same_name_project_path() {
+        let dir = temp_dir("opencode-alias-path");
+        let db_path = dir.join("opencode.db");
+        let conn = Connection::open(&db_path).expect("open fixture db");
+        create_opencode_schema(&conn);
+        conn.execute(
+            "insert into project (id, worktree) values ('p1', '/repo/local/mind2realistic')",
+            [],
+        )
+        .expect("project alias");
+        conn.execute(
+            "insert into session (
+                id, project_id, directory, title, agent, model, cost, tokens_input,
+                tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+                time_updated, path
+            ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                "ses-alias",
+                "p1",
+                "/repo/local/mind2realistic",
+                "Moved OpenCode work",
+                "build",
+                r#"{"id":"model-a"}"#,
+                1.0_f64,
+                10_i64,
+                2_i64,
+                3_i64,
+                4_i64,
+                5_i64,
+                654_i64,
+                "/repo/local/mind2realistic",
+            ],
+        )
+        .expect("alias session");
+        drop(conn);
+
+        let usage =
+            read_opencode_usage_from_db("/repo/archive/mind2realistic", &db_path).expect("usage");
+
+        assert!(usage.available);
+        assert_eq!(usage.records, 1);
+        assert_eq!(usage.total_tokens, 24);
+        assert_eq!(usage.recent[0].id, "ses-alias");
+        assert!(
+            usage
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("/repo/local/mind2realistic")),
+            "expected alias warning, got {:?}",
+            usage.warnings
+        );
+    }
+
+    fn create_codex_schema(conn: &Connection) {
+        conn.execute_batch(
+            "create table threads (
+                id text primary key,
+                rollout_path text not null,
+                created_at integer not null default 0,
+                updated_at integer not null default 0,
+                source text not null default '',
+                model_provider text not null default '',
+                cwd text not null,
+                title text not null,
+                sandbox_policy text not null default '',
+                approval_mode text not null default '',
+                tokens_used integer not null default 0,
+                model text,
+                updated_at_ms integer
+            );",
+        )
+        .expect("codex schema");
+    }
+
+    fn create_opencode_schema(conn: &Connection) {
+        conn.execute_batch(
+            "create table project (
+                id text primary key,
+                worktree text not null
+            );
+            create table session (
+                id text primary key,
+                project_id text not null,
+                directory text not null,
+                title text not null,
+                agent text,
+                model text,
+                cost real default 0 not null,
+                tokens_input integer default 0 not null,
+                tokens_output integer default 0 not null,
+                tokens_reasoning integer default 0 not null,
+                tokens_cache_read integer default 0 not null,
+                tokens_cache_write integer default 0 not null,
+                time_updated integer,
+                path text
+            );",
+        )
+        .expect("opencode schema");
     }
 
     fn write_rollout(
