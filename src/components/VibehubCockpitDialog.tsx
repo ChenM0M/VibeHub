@@ -1620,7 +1620,8 @@ function AgentUsageTabContent({
     return (
         <div className="space-y-5">
             <div className="grid gap-2 text-xs sm:grid-cols-2">
-                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.totalTokens', 'Total tokens')} value={formatAgentUsageTokens(localAgentUsage.total_tokens)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.nonCachedTokens', 'Non-cache tokens')} value={formatAgentUsageTokens(localAgentUsage.non_cached_total_tokens)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.totalTokensWithCache', 'Total incl. cache')} value={formatAgentUsageTokens(localAgentUsage.total_tokens)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.sources', 'Sources')} value={String(localAgentUsage.source_count)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.generatedAt', 'Generated')} value={formatUsageIsoDate(localAgentUsage.generated_at)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.projectPath', 'Project')} value={localAgentUsage.project_path} />
@@ -1668,7 +1669,8 @@ function AgentUsageSourceCard({
 
             <div className="grid grid-cols-2 gap-2 text-xs">
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.records', 'Records')} value={String(summary.records)} />
-                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.totalTokens', 'Total tokens')} value={formatAgentUsageTokens(summary.total_tokens)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.nonCachedTokens', 'Non-cache tokens')} value={formatAgentUsageTokens(summary.non_cached_total_tokens)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.totalTokensWithCache', 'Total incl. cache')} value={formatAgentUsageTokens(summary.total_tokens)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.cost', 'Cost')} value={formatAgentUsageCost(summary.cost)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.latest', 'Latest')} value={formatUsageTimestampMs(summary.latest_updated_at_ms)} />
             </div>
@@ -1683,7 +1685,7 @@ function AgentUsageSourceCard({
                             <div key={item.id} className="space-y-1 px-3 py-2 text-xs">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
-                                    <Badge variant="outline">{formatAgentUsageTokens(item.total_tokens)}</Badge>
+                                    <Badge variant="outline">{formatAgentUsageTokens(item.non_cached_total_tokens)}</Badge>
                                 </div>
                                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                                     {item.agent && <span className="truncate">{item.agent}</span>}
