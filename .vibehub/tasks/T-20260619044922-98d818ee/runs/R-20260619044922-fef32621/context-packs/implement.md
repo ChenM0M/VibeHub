@@ -3,8 +3,8 @@
 Task: T-20260619044922-98d818ee
 Run: R-20260619044922-fef32621
 Phase: Implement
-Generated at: 2026-06-21T03:12:09Z
-Source commit: 751d88c
+Generated at: 2026-06-21T05:52:15Z
+Source commit: d08b65e
 
 ## Instructions
 
@@ -38,7 +38,32 @@ Report files read, commands run, decisions made, and unresolved risks.
 
 ## Prior Outputs Summary
 
-- None available.
+```json
+[
+  {
+    "capability": "align",
+    "completed": [
+      "`user_confirmed`: 本轮目标不是让项目详情页顶部“刷新/同步检测”按钮执行更新，而是让项目详情页设置面板里的“修复/更新 Agent 工具”按钮确实可用，至少能弥补本次 `vibehub-cli` -> `vibehub` CLI 调用问题。",
+      "`hard_observed`: 保持刷新按钮为只读 reload；设置页更新按钮仍走 `vibehubSyncAgentAdapters` / `sync_agent_adapters`。",
+      "`hard_observed`: `sync_agent_adapters` 现在会识别旧版 VibeHub 生成的 adapter/skill/command 文件，即使旧项目没有 `generated_hashes` 记录，也会安全覆盖明显由 VibeHub 生成的旧文件。",
+      "`hard_observed`: 新增回归测试覆盖旧 `.agents/skills/vibehub-sync/SKILL.md` 中 `vibehub-cli sync <project_path>` 会被设置页更新按钮背后的 sync 逻辑改为 `vibehub sync <project_path>`。",
+      "`hard_observed`: app 主二进制 headless CLI 补齐 `next-action`、`output-lint`、`validate-task`、`sync-adapters`、`adapter-status`、`archive`、`start-intake --stdin` 等生成指令会引用的动作，并对 `finish` / `advance` / `archive` 加回显式用户确认检查。",
+      "`hard_observed`: 已实际运行 `cargo run -p vibehub -- sync-adapters /Users/chenm0m/LocalRepo/VibeHub`，结果为 created=0、updated=3、skipped=150、conflicts=0，验证设置页更新按钮背后的后端入口可写入本项目 adapter 更新。",
+      "`hard_observed`: `crates/vibehub-cli` 现在同时产出 `vibehub` 和 legacy `vibehub-cli` 两个 bin，同一份 `main.rs` 支持 `vibehub ...`、`vibehub-cli ...` 以及 `vibehub vibehub-cli ...` 兼容入口。",
+      "`hard_observed`: Tauri app bundle 内 `Contents/MacOS/vibehub` 可执行 `--help`、`--version`、`output-lint`、`vibehub-cli status` 和 `sync-adapters --dry-run`，覆盖 Homebrew cask `binary \"#{appdir}/VibeHub.app/Contents/MacOS/vibehub\", target: \"vibehub\"` 路径。",
+      "`hard_observed`: `target/aarch64-apple-darwin/release/vibehub` standalone release 二进制可执行 `--version`、`output-lint` 和 `sync-adapters --dry-run`，覆盖 macOS portable-style binary path；Windows/Linux portable release 使用同一 Tauri app binary headless dispatch。",
+      "`hard_observed`: 发布版本已 bump 到 `2.0.0-pre.17`，覆盖 npm、Tauri、Rust workspace crate versions 和 lockfiles。"
+    ],
+    "full_ref": ".vibehub/tasks/T-20260616062024-a8e8bdc2/runs/R-20260616062024-6b02149c/outputs/output.md",
+    "key_decisions": [
+      "`user_confirmed`: 更新行为应由项目详情页设置面板的更新按钮触发，不由刷新/同步检测按钮触发。",
+      "`agent_reported`: 对旧项目采用“识别 VibeHub 生成物并覆盖”的兼容策略，只覆盖 `.agents/skills/vibehub-*`、`.claude/commands/vibehub-*`、`.opencode/commands/vibehub-*`、`.vibehub/adapters/generated/`、平台约束/索引等明确受管路径；普通用户文件仍按冲突处理。",
+      "`agent_reported`: 继续保留对外部手工改动的保护：不符合旧 VibeHub 生成特征的文件仍返回 conflict。",
+      "`agent_reported`: 对新安装路径统一推荐 `vibehub`；对旧脚本、旧 agent 文档、旧便携式二进制调用保留 `vibehub-cli` 兼容别名。"
+    ]
+  }
+]
+```
 
 ## Neighbors
 
@@ -47,33 +72,19 @@ Report files read, commands run, decisions made, and unresolved risks.
   {
     "task_id": "T-20260531153015-3a283c0b",
     "title": "Redesign VibeHub project detail UI and project structure explorer",
-    "active_capabilities": [
-      "implement"
-    ],
+    "active_capabilities": [],
     "shared_files": []
   },
   {
     "task_id": "T-20260609092907-7c439d16",
     "title": "Harden VibeHub agent protocol and CLI routing",
-    "active_capabilities": [
-      "implement"
-    ],
+    "active_capabilities": [],
     "shared_files": []
   },
   {
     "task_id": "T-20260616062024-a8e8bdc2",
     "title": "test cli dispatch",
-    "active_capabilities": [
-      "align"
-    ],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260621031051-c83ce63c",
-    "title": "Fix macOS native titlebar still visible",
-    "active_capabilities": [
-      "align_lite"
-    ],
+    "active_capabilities": [],
     "shared_files": []
   }
 ]

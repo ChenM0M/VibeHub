@@ -22,7 +22,6 @@
 - T-20260609092907-7c439d16
 - T-20260616062024-a8e8bdc2
 - T-20260619044922-98d818ee (current)
-- T-20260621031051-c83ce63c
 
 ## Intake Queue
 
@@ -40,10 +39,9 @@
 
 ## Neighbor Tasks
 
-- T-20260531153015-3a283c0b (Redesign VibeHub project detail UI and project structure explorer): active_capabilities=[implement], shared_files=[]
-- T-20260609092907-7c439d16 (Harden VibeHub agent protocol and CLI routing): active_capabilities=[implement], shared_files=[]
-- T-20260616062024-a8e8bdc2 (test cli dispatch): active_capabilities=[align], shared_files=[]
-- T-20260621031051-c83ce63c (Fix macOS native titlebar still visible): active_capabilities=[align_lite], shared_files=[]
+- T-20260531153015-3a283c0b (Redesign VibeHub project detail UI and project structure explorer): active_capabilities=[], shared_files=[]
+- T-20260609092907-7c439d16 (Harden VibeHub agent protocol and CLI routing): active_capabilities=[], shared_files=[]
+- T-20260616062024-a8e8bdc2 (test cli dispatch): active_capabilities=[], shared_files=[]
 
 
 ## Observability Note

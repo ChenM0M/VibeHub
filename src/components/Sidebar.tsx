@@ -34,6 +34,7 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
     const { config, refreshConfig, selectedWorkspaceId, setSelectedWorkspaceId } = useAppStore();
     const [expandedWorkspaces, setExpandedWorkspaces] = useState<boolean>(true);
     const [expandedTags, setExpandedTags] = useState<boolean>(true);
+    const [isMac] = useState(() => /\bMacintosh\b|\bMac OS X\b/.test(navigator.userAgent));
     const [editingTag, setEditingTag] = useState<Tag | null>(null);
     const [appVersion, setAppVersion] = useState<string>('');
 
@@ -43,6 +44,22 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
 
     const workspaces = config?.workspaces || [];
     const tags = config?.tags || [];
+    const brand = (
+        <button
+            type="button"
+            className="mb-5 flex h-10 w-full items-center gap-2.5 rounded-lg px-1 text-left text-lg font-semibold transition-colors hover:bg-accent/50"
+            onClick={() => {
+                setSelectedWorkspaceId(null);
+                onNavigate('home');
+            }}
+            title="返回主页"
+        >
+            <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-[0.6rem] bg-white shadow-sm ring-1 ring-black/10 dark:bg-white/95 dark:ring-white/10">
+                <img src="/app-icon.png" alt="VibeHub" className="h-8 w-8 -translate-y-px scale-[1.05] object-cover" />
+            </span>
+            <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">VibeHub</span>
+        </button>
+    );
 
     const handleSaveTag = async (tag: Tag) => {
         try {
@@ -55,19 +72,10 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
 
     return (
         <div className={cn("w-64 glass border-r border-border/50 h-full flex flex-col", className)}>
-            <div className="p-4">
-                <div
-                    className="flex items-center gap-2 font-semibold text-lg mb-6 cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => {
-                        setSelectedWorkspaceId(null);
-                        onNavigate('home');
-                    }}
-                    title="返回主页"
-                >
-                    <img src="/app-icon.png" alt="VibeHub" className="w-8 h-8 rounded-lg" />
-                    <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">VibeHub</span>
-                </div>
+            {isMac && <div className="h-12 shrink-0" data-tauri-drag-region="deep" />}
 
+            <div className="p-4">
+                {brand}
                 <div className="space-y-1">
                     <Button
                         variant={currentPage === 'home' && !selectedWorkspaceId ? "secondary" : "ghost"}
@@ -134,7 +142,7 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
                                             setSelectedWorkspaceId(
                                                 selectedWorkspaceId === ws.id ? null : ws.id
                                             );
-                                            if (currentPage !== 'home') onNavigate('home');
+                                            onNavigate('home');
                                         }}
                                     >
                                         <div className="flex items-center overflow-hidden">
@@ -219,4 +227,3 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
         </div>
     );
 }
-
