@@ -4,7 +4,6 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { useAppStore } from '@/stores/appStore';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { cn } from '@/lib/utils';
 
 interface HeaderProps {
     onSearch: (query: string) => void;
@@ -60,28 +59,13 @@ export function Header({ onSearch }: HeaderProps) {
         }
     };
 
-    const handleDragStart = async (e: React.MouseEvent) => {
-        if (isMac) return;
-
-        // Only start drag on left mouse button and not on interactive elements
-        if (e.button !== 0) return;
-        const target = e.target as HTMLElement;
-        if (target.closest('button, input, a')) return;
-
-        try {
-            await getCurrentWindow().startDragging();
-        } catch (err) {
-            console.error('Drag failed:', err);
-        }
-    };
-
     return (
         <header
             className="h-12 border-b border-border/50 flex items-center glass sticky top-0 z-10 select-none"
-            onMouseDown={handleDragStart}
+            data-tauri-drag-region="deep"
             data-platform={isMac ? 'macos' : 'default'}
         >
-            <div className={cn('flex-1 max-w-xl relative ml-4', isMac && 'ml-20')}>
+            <div className="flex-1 max-w-xl relative ml-4">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
                     ref={inputRef}
