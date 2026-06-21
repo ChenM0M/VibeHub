@@ -3,8 +3,8 @@
 Task: T-20260616062024-a8e8bdc2
 Run: R-20260616062024-6b02149c
 Phase: Align
-Generated at: 2026-06-16T06:59:41Z
-Source commit: e52d156
+Generated at: 2026-06-21T05:51:59Z
+Source commit: d08b65e
 
 ## Instructions
 
@@ -37,7 +37,37 @@ Report files read, commands run, decisions made, and unresolved risks.
 
 ## Prior Outputs Summary
 
-- None available.
+```json
+[
+  {
+    "capability": "implement",
+    "completed": [
+      "`user_confirmed`: 用户要求一次性优化 VibeHub 面向 Agent 暴露的定位、能力边界、工具调用和流程约束问题。",
+      "`hard_observed`: 无头 CLI 二进制名已从 `vibehub` 改为 `vibehub-cli`，帮助文本和 Agent-facing 命令示例统一使用 `vibehub-cli ...`。",
+      "`hard_observed`: Agent 协议和适配器模板已加入一句话定位：VibeHub 是 coding agent 的 project memory、task router 和 workflow gatekeeper；Agent 做工程工作，VibeHub 追踪 state/context/gates/output/handoff。",
+      "`hard_observed`: `next-action` 已支持 intent-aware 路由，能把 Agent/VibeHub 协议审视路由到 `vibehub-start`，把继续/同步路由到 `vibehub-sync`，把多 active task 校验风险路由到 `validate-task`。",
+      "`hard_observed`: CLI 已新增 `next-action`、`validate-task`、`output-lint`，并对 `finish`、`advance`、`archive` 强制要求 `--confirmed-by-user`。",
+      "`hard_observed`: Adapter generator 已移除旧的 `.vibehub/notes/status.md` 与 `phases/<phase>.output.md` lifecycle artifact 要求，统一要求写 active run 的 `outputs/output.md`。",
+      "`hard_observed`: Codex、Claude Code、OpenCode 的 adapter/skills/commands 已同步生成；`adapter-status` 最终无 warnings。",
+      "`hard_observed`: 第二轮自检修正了 `next-action` 的歧义路由：`继续当前状态` 仍路由到 `vibehub-sync`，但 `继续优化 Agent 协议和工具调用流程` 会优先识别为 VibeHub/Agent 协议改进工作并路由到 `vibehub-start`。"
+    ],
+    "full_ref": ".vibehub/tasks/T-20260609092907-7c439d16/runs/R-20260609092907-c9e04b56/outputs/output.md",
+    "key_decisions": [
+      "`agent_reported`: 将 VibeHub 的 Agent 心智模型收敛为“状态拥有者 + 路由器 + gatekeeper”，减少 Agent 把 VibeHub误当工程执行者或普通文档库的概率。",
+      "`agent_reported`: 用 `vibehub-cli` 明确区分无头 Agent CLI 与桌面/Tauri app，避免裸 `vibehub` 命令撞到桌面入口。",
+      "`agent_reported`: 对状态转换采取“CLI 可执行但必须显式用户确认”的约束，而不是只在文档里提醒，降低 Agent 忘记确认或过度自动推进的风险。",
+      "`agent_reported`: 对多 active task 引入 `validate-task` 和协议提示，避免默认 `validate` 校验错误 current pointer。",
+      "`agent_reported`: `next-action` 先看用户最新 intent，再看当前 phase/output 状态，避免新需求或元评估被误判成“当前 phase ready to validate”。",
+      "`agent_reported`: 元层 Agent/VibeHub 协议意图优先于泛化的“继续/同步”词匹配；这保留了同步保守性，同时避免明确的协议优化请求被误吸成普通 refresh。",
+      "## Diff Summary",
+      "`hard_observed`: CLI 层改名并扩展命令面：`vibehub-cli` 帮助文本、`next-action`、`validate-task`、`output-lint`、状态转换确认 gate。",
+      "`hard_observed`: Core 层新增 `next_action` 与 `output_lint` 模块，扩展 phase task-scoped validation，并修正 advance 后 agent-view 刷新时序。",
+      "`hard_observed`: Agent adapter 模板、协议、constraints、skills、Claude/OpenCode commands 和 docs 已同步到新的命令名、操作循环、多任务校验指导、输出 lint 指导。",
+      "`hard_observed`: Prompt 模板的 new-task/sync 文案已改为 `vibehub-cli`，并强调多意图拆分、继续/刷新先同步、agent-view 重新生成一致性。"
+    ]
+  }
+]
+```
 
 ## Neighbors
 
@@ -46,14 +76,18 @@ Report files read, commands run, decisions made, and unresolved risks.
   {
     "task_id": "T-20260531153015-3a283c0b",
     "title": "Redesign VibeHub project detail UI and project structure explorer",
-    "active_capabilities": [
-      "implement"
-    ],
+    "active_capabilities": [],
     "shared_files": []
   },
   {
     "task_id": "T-20260609092907-7c439d16",
     "title": "Harden VibeHub agent protocol and CLI routing",
+    "active_capabilities": [],
+    "shared_files": []
+  },
+  {
+    "task_id": "T-20260619044922-98d818ee",
+    "title": "Display local Codex and OpenCode workspace usage insights",
     "active_capabilities": [
       "implement"
     ],

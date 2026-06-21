@@ -15,6 +15,7 @@ type PageType = 'home' | 'settings' | 'gateway' | 'about';
 function App() {
     const { initializeApp } = useAppStore();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
+    const [homeResetKey, setHomeResetKey] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
     const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
     const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -33,6 +34,13 @@ function App() {
         setIsCheckingUpdate(false);
     };
 
+    const handleNavigate = (page: PageType) => {
+        if (page === 'home') {
+            setHomeResetKey((key) => key + 1);
+        }
+        setCurrentPage(page);
+    };
+
     return (
         <>
             <UpdateChecker
@@ -42,11 +50,11 @@ function App() {
             <Layout
                 onSearch={setSearchQuery}
                 currentPage={currentPage}
-                onNavigate={setCurrentPage}
+                onNavigate={handleNavigate}
                 onCheckUpdate={handleCheckUpdate}
                 isCheckingUpdate={isCheckingUpdate}
             >
-                {currentPage === 'home' && <Home searchQuery={searchQuery} />}
+                {currentPage === 'home' && <Home searchQuery={searchQuery} resetKey={homeResetKey} />}
                 {currentPage === 'settings' && <Settings />}
                 {currentPage === 'gateway' && <Gateway />}
                 {currentPage === 'about' && <About />}
@@ -60,4 +68,3 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
         <App />
     </React.StrictMode>
 );
-

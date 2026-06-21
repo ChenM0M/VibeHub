@@ -1,9 +1,9 @@
 schema_version: 1
 kind: vibehub_task
-task_id: "T-20260621031051-c83ce63c"
-title: "Fix macOS native titlebar still visible"
-mode: "yolo_drive"
-phase: "align_lite"
-phase_status: "active"
-created_at: "2026-06-21T03:10:51Z"
+task_id: T-20260621031051-c83ce63c
+title: Fix macOS native titlebar still visible
+mode: yolo_drive
+phase: align_lite
+phase_status: completed
+created_at: 2026-06-21T03:10:51Z
 created_by: vibehub

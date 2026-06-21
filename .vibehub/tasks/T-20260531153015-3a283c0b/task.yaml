@@ -4,6 +4,6 @@ task_id: T-20260531153015-3a283c0b
 title: Redesign VibeHub project detail UI and project structure explorer
 mode: guided_drive
 phase: implement
-phase_status: active
+phase_status: completed
 created_at: 2026-05-31T15:30:15Z
 created_by: vibehub

@@ -1,10 +1,10 @@
 schema_version: 1
 kind: vibehub_run
-task_id: "T-20260621031051-c83ce63c"
-run_id: "R-20260621031051-0e0ff0a7"
-mode: "yolo_drive"
-phase: "align_lite"
-phase_status: "active"
-created_at: "2026-06-21T03:10:51Z"
+task_id: T-20260621031051-c83ce63c
+run_id: R-20260621031051-0e0ff0a7
+mode: yolo_drive
+phase: align_lite
+phase_status: completed
+created_at: 2026-06-21T03:10:51Z
 created_by: vibehub
 baseline_commit: null

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { LaunchDialog } from '@/components/LaunchDialog';
 import { Project } from '@/types';
@@ -31,9 +31,10 @@ import { VibehubProjectCenter } from '@/components/VibehubProjectCenter';
 
 interface HomeProps {
     searchQuery: string;
+    resetKey: number;
 }
 
-export function Home({ searchQuery }: HomeProps) {
+export function Home({ searchQuery, resetKey }: HomeProps) {
     const { t } = useTranslation();
     const { config, reorderProjects, refreshAllWorkspaces, selectedWorkspaceId } = useAppStore();
     const [launchProject, setLaunchProject] = useState<Project | null>(null);
@@ -41,6 +42,9 @@ export function Home({ searchQuery }: HomeProps) {
     const [isScanning, setIsScanning] = useState(false);
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
+    useEffect(() => {
+        setSelectedProjectId(null);
+    }, [resetKey, selectedWorkspaceId]);
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
