@@ -1,9 +1,9 @@
 schema_version: 1
 kind: vibehub_task
-task_id: "T-20260616062024-a8e8bdc2"
-title: "test cli dispatch"
-mode: "guided_drive"
-phase: "align"
-phase_status: "active"
-created_at: "2026-06-16T06:20:24Z"
+task_id: T-20260616062024-a8e8bdc2
+title: test cli dispatch
+mode: guided_drive
+phase: align
+phase_status: completed
+created_at: 2026-06-16T06:20:24Z
 created_by: vibehub
