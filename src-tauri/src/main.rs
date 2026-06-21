@@ -132,6 +132,7 @@ fn configure_platform_window(app: &mut tauri::App) {
     #[cfg(target_os = "macos")]
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_decorations(true);
+        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
         let _ = window.set_title("VibeHub");
     }
 }

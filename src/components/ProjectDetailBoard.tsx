@@ -96,8 +96,8 @@ export function ProjectDetailBoard({
     const commit = getRecentCommitSummary(gitBranches, project, t);
     const activity = getRecentActivitySummary(status, phaseValidation, eventTimeline, t);
     const changedFiles = diffView?.changed_files || [];
-    const agentUsageTokensLabel = localAgentUsage
-        ? formatCompactTokenCount(localAgentUsage.non_cached_total_tokens)
+    const agentUsagePrimaryLabel = localAgentUsage
+        ? formatAgentUsagePrimaryMetric(localAgentUsage)
         : '--';
     const structureFiles = flattenStructureTree(projectStructure?.tree || []).slice(0, 8);
     const structureNodes = (projectStructure?.graph_nodes || [])
@@ -162,8 +162,8 @@ export function ProjectDetailBoard({
                             <MetricCell label={t('vibehub.tabs.changedFilesCount')} value={String(diffView?.changed_files_count || 0)} />
                             <MetricCell label={t('vibehub.tabs.warnings')} value={String(status.warnings.length + (archiveView?.warnings.length || 0))} tone={status.warnings.length ? 'warn' : 'normal'} />
                             <MetricCell
-                                label={labelOrFallback(t, 'vibehub.agentUsage.metricLabel', 'AI usage')}
-                                value={agentUsageTokensLabel}
+                                label={labelOrFallback(t, 'vibehub.agentUsage.tokenMetricLabel', 'Token usage')}
+                                value={agentUsagePrimaryLabel}
                                 tone={localAgentUsage?.warnings.length ? 'warn' : 'normal'}
                                 onClick={() => onOpenDetail('agentUsage')}
                             />
@@ -331,6 +331,14 @@ function formatCompactTokenCount(value: number) {
     if (value >= 1_000_000) return `${trimCompact(value / 1_000_000)}M`;
     if (value >= 1_000) return `${trimCompact(value / 1_000)}K`;
     return String(Math.round(value));
+}
+
+function formatAgentUsagePrimaryMetric(usage: LocalAgentUsageOverview) {
+    const metric = usage.primary_metric;
+    if (metric.kind === 'tokens' || metric.kind === 'token_fallback') {
+        return `${formatCompactTokenCount(metric.tokens ?? usage.total_tokens)} tokens`;
+    }
+    return '--';
 }
 
 function trimCompact(value: number) {

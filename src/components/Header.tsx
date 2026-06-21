@@ -4,14 +4,15 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { useAppStore } from '@/stores/appStore';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { cn } from '@/lib/utils';
 
 interface HeaderProps {
     onSearch: (query: string) => void;
 }
 
 export function Header({ onSearch }: HeaderProps) {
-    const { config, setTheme } = useAppStore();
-    const isDark = config?.theme === 'dark';
+    const { effectiveTheme, setTheme } = useAppStore();
+    const isDark = effectiveTheme === 'dark';
     const [searchValue, setSearchValue] = useState('');
     const [isMac] = useState(() => /\bMacintosh\b|\bMac OS X\b/.test(navigator.userAgent));
     const inputRef = useRef<HTMLInputElement>(null);
@@ -78,8 +79,9 @@ export function Header({ onSearch }: HeaderProps) {
         <header
             className="h-12 border-b border-border/50 flex items-center glass sticky top-0 z-10 select-none"
             onMouseDown={handleDragStart}
+            data-platform={isMac ? 'macos' : 'default'}
         >
-            <div className="flex-1 max-w-xl relative ml-4">
+            <div className={cn('flex-1 max-w-xl relative ml-4', isMac && 'ml-20')}>
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
                     ref={inputRef}
