@@ -15,7 +15,7 @@ pointers:
   task_pointer: .vibehub/tasks/current
   run_pointer: .vibehub/tasks/T-20260619044922-98d818ee/runs/current
 flow:
-  align_lite: pending
+  align_lite: active
   align: completed
   research: completed
   plan: completed
@@ -42,37 +42,39 @@ context:
 agent_report:
   status: not_started
   validation_status: pending
-  last_sync_report: .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/sync/sync-20260620-160332.md
+  last_sync_report: .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/sync/sync-20260621-023219.md
 handoff:
   current: .vibehub/agent-view/handoff.md
   status: available
 git:
   baseline_commit: null
-  last_seen_head: 7f4def4cc00b45e2074b949bae5966cf2093b0a9
+  last_seen_head: 751d88ce84c250239313cf2a06e0cf068cec8201
   dirty: true
-  changed_files_count: 7
+  changed_files_count: 14
 loop_detection:
-  status: normal
-  warnings: []
-last_updated: 2026-06-20T16:03:32Z
+  status: warning
+  warnings:
+  - 循环警告：14 个变更文件已达到或超过 repeated_file_edits 阈值 8。
+last_updated: 2026-06-21T03:12:09Z
 resume_hint: .vibehub/agent-view/current.md
 sync:
-  last_synced_at: 2026-06-20T16:03:32Z
-  last_report: .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/sync/sync-20260620-160332.md
+  last_synced_at: 2026-06-21T02:32:19Z
+  last_report: .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/sync/sync-20260621-023219.md
   agent_view_sync: .vibehub/agent-view/sync.md
   questions:
-  - Git 当前有 7 个变更文件。这些变更是否都属于当前 VibeHub 任务？如不是，请说明哪些需要排除或另开任务。
+  - Git 当前有 14 个变更文件。这些变更是否都属于当前 VibeHub 任务？如不是，请说明哪些需要排除或另开任务。
+  - 当前阶段缺少必要输出：intent, acceptance_criteria, autonomy_level。请补充当前进度、未完成项、验证结果或未验证原因，以及后续计划。
   level: rebuild
   reason: ownership_unavailable
 preferences:
   locale: zh-CN
 metrics:
   tasks:
-    active_count: 4
+    active_count: 5
   capabilities:
     active_count: 1
   sync:
-    avg_duration_ms: 98.0
+    avg_duration_ms: 94.33333333333333
     last_mode: workspace
   pack:
     avg_size_tokens: 416.0
@@ -80,7 +82,7 @@ metrics:
   schema:
     validation_failure_rate: 0.0
   events:
-    write_per_minute: 0.18065828869428718
+    write_per_minute: 0.03341990225972263
   subagent:
     timeout_count: 0
 derived:
@@ -95,3 +97,41 @@ tasks:
   - T-20260609092907-7c439d16
   - T-20260616062024-a8e8bdc2
   - T-20260619044922-98d818ee
+  - T-20260621031051-c83ce63c
+  intake_queue:
+    batch_id: intake-20260620165245
+    split_confidence: high
+    current_task_id: T-20260620165245-f6d23db9
+    created_at: 2026-06-20T16:52:45Z
+    source_message: 目前这个用量显示总感觉还是不太对劲。我是希望它能够跟我的远端保持一致的，就是远端主要用来计价的，一般来说的那个统计呃统计数字。我的远端要么是Sub to API，要么是new API这种。然后我希望你这一次做了丰富且全面的调查之后再实行。其次就是需要给Vibehub添加一个就是自动变深色模式的功能。无论是Windows电脑还是Mac电脑。其次就是目前在Mac电脑上面，我觉得还是不够美观，因为它上面它有一个那个框。它不是就是它最顶上它有个框一样的，而不是直接在应用上我们自己，然后包含它Mac的三个操作，就是红黄绿的三个点这样子。而上面一个框这样，好奇怪哦，很违和。不过修改的时候记得不要影响到其他平台、其他系统。
+    split_reason: The usage accounting model and desktop window/theme behavior are independently deliverable, testable, and likely touch different subsystems. The usage task also requires dedicated research before implementation.
+    remaining_task_ids:
+    - T-20260620165245-f6d23db9
+    - T-20260620165245-165f9e8f
+    items:
+    - order: 1
+      title: Align usage display with remote billing statistics
+      intent: Investigate Sub to API/new API usage and pricing-stat semantics, compare them with local Codex/OpenCode token sources, then update the VibeHub usage display to use a remote-aligned metric with clear labeling and fallback behavior.
+      task_id: T-20260620165245-f6d23db9
+      run_id: R-20260620165245-c5dbdd1b
+      acceptance_criteria:
+      - Research notes identify available remote usage/stat fields for Sub to API and new API style providers and document assumptions with evidence labels.
+      - Usage display primary number matches the remote billing/statistical unit as closely as possible instead of only local raw or non-cached tokens.
+      - UI labels clearly distinguish remote-aligned estimate, local observed tokens, cache effects, and unavailable remote data.
+      - Existing local Codex/OpenCode usage details remain available for diagnostics.
+      - Relevant Rust/TypeScript tests or focused build checks pass.
+      dependencies: []
+      status: created
+    - order: 2
+      title: Add desktop auto dark mode and macOS integrated titlebar
+      intent: Add system-following dark mode on Windows and macOS, and improve macOS window chrome so VibeHub uses an integrated custom app titlebar with native red/yellow/green controls while preserving behavior on other platforms.
+      task_id: T-20260620165245-165f9e8f
+      run_id: R-20260620165245-c3b6eb90
+      acceptance_criteria:
+      - VibeHub can follow system light/dark appearance automatically on Windows and macOS.
+      - Manual theme behavior, if already present, remains compatible and predictable.
+      - macOS uses an integrated hidden-titlebar/overlay style that keeps native traffic-light controls visually within the app surface.
+      - Windows/Linux window behavior is unchanged except for system theme following where intended.
+      - Visual or build verification covers macOS-specific config and cross-platform guarded code paths.
+      dependencies: []
+      status: created

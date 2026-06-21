@@ -2,8 +2,67 @@ import { create } from 'zustand';
 import { tauriApi } from '@/services/tauri';
 import { AppConfig, Project, Tag, Theme } from '@/types';
 
+type EffectiveTheme = 'light' | 'dark';
+
+const systemThemeQuery = '(prefers-color-scheme: dark)';
+
+let mediaQueryList: MediaQueryList | null = null;
+let removeSystemThemeListener: (() => void) | null = null;
+
+export function resolveEffectiveTheme(theme: Theme, prefersDark: boolean): EffectiveTheme {
+    if (theme === 'auto') {
+        return prefersDark ? 'dark' : 'light';
+    }
+    return theme;
+}
+
+function getSystemPrefersDark(): boolean {
+    if (typeof window === 'undefined' || !window.matchMedia) {
+        return false;
+    }
+    return window.matchMedia(systemThemeQuery).matches;
+}
+
+function applyTheme(theme: Theme, setEffectiveTheme?: (theme: EffectiveTheme) => void) {
+    const effectiveTheme = resolveEffectiveTheme(theme, getSystemPrefersDark());
+    document.documentElement.classList.toggle('dark', effectiveTheme === 'dark');
+    setEffectiveTheme?.(effectiveTheme);
+}
+
+function watchSystemTheme(getTheme: () => Theme | undefined, onThemeChange: () => void) {
+    if (typeof window === 'undefined' || !window.matchMedia) {
+        return;
+    }
+    if (removeSystemThemeListener) {
+        return;
+    }
+
+    mediaQueryList = window.matchMedia(systemThemeQuery);
+    const handleSystemThemeChange = () => {
+        if (getTheme() === 'auto') {
+            onThemeChange();
+        }
+    };
+
+    if (mediaQueryList.addEventListener) {
+        mediaQueryList.addEventListener('change', handleSystemThemeChange);
+    } else {
+        mediaQueryList.addListener(handleSystemThemeChange);
+    }
+    removeSystemThemeListener = () => {
+        if (mediaQueryList?.removeEventListener) {
+            mediaQueryList.removeEventListener('change', handleSystemThemeChange);
+        } else {
+            mediaQueryList?.removeListener(handleSystemThemeChange);
+        }
+        mediaQueryList = null;
+        removeSystemThemeListener = null;
+    };
+}
+
 interface AppState {
     config: AppConfig | null;
+    effectiveTheme: EffectiveTheme;
     isLoading: boolean;
     error: string | null;
     selectedWorkspaceId: string | null;
@@ -36,6 +95,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
     config: null,
+    effectiveTheme: 'light',
     isLoading: false,
     error: null,
     selectedWorkspaceId: null,
@@ -48,14 +108,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             await tauriApi.initializeDefaultConfigs();
             const config = await tauriApi.loadConfig();
             set({ config, isLoading: false });
-
-            // Apply theme
-            const theme = config.theme;
-            if (theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.classList.add('dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-            }
+            applyTheme(config.theme, (effectiveTheme) => set({ effectiveTheme }));
+            watchSystemTheme(
+                () => get().config?.theme,
+                () => applyTheme(get().config?.theme ?? 'auto', (effectiveTheme) => set({ effectiveTheme }))
+            );
         } catch (error) {
             set({ error: (error as Error).message, isLoading: false });
         }
@@ -65,6 +122,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         try {
             const config = await tauriApi.loadConfig();
             set({ config });
+            applyTheme(config.theme, (effectiveTheme) => set({ effectiveTheme }));
         } catch (error) {
             console.error('Failed to refresh config:', error);
         }
@@ -75,6 +133,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             await tauriApi.refreshAllWorkspaces();
             const config = await tauriApi.loadConfig();
             set({ config });
+            applyTheme(config.theme, (effectiveTheme) => set({ effectiveTheme }));
         } catch (error) {
             console.error('Failed to refresh workspaces:', error);
         }
@@ -182,11 +241,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     setTheme: async (theme) => {
         await tauriApi.setTheme(theme);
         await get().refreshConfig();
-
-        if (theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
+        applyTheme(theme, (effectiveTheme) => set({ effectiveTheme }));
     },
 }));

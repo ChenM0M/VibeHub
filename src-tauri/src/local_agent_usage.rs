@@ -17,12 +17,26 @@ const RECENT_LIMIT: usize = 8;
 pub struct LocalAgentUsageOverview {
     pub project_path: String,
     pub generated_at: String,
+    pub primary_metric: AgentUsagePrimaryMetric,
     pub non_cached_total_tokens: u64,
     pub total_tokens: u64,
     pub source_count: usize,
     pub codex: AgentUsageSourceSummary,
     pub opencode: AgentUsageSourceSummary,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentUsagePrimaryMetric {
+    pub kind: String,
+    pub label: String,
+    pub value: Option<f64>,
+    pub currency: Option<String>,
+    pub tokens: Option<u64>,
+    pub source: String,
+    pub confidence: String,
+    pub estimated: bool,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -130,21 +144,65 @@ pub fn read_local_agent_usage(project_path: impl AsRef<Path>) -> Result<LocalAge
         );
     }
 
+    let non_cached_total_tokens = codex
+        .non_cached_total_tokens
+        .saturating_add(opencode.non_cached_total_tokens);
+    let total_tokens = codex.total_tokens.saturating_add(opencode.total_tokens);
+    let source_count = [codex.available, opencode.available]
+        .into_iter()
+        .filter(|available| *available)
+        .count();
+    let primary_metric = select_primary_metric(&codex, &opencode, total_tokens);
+
     Ok(LocalAgentUsageOverview {
-        non_cached_total_tokens: codex
-            .non_cached_total_tokens
-            .saturating_add(opencode.non_cached_total_tokens),
-        total_tokens: codex.total_tokens.saturating_add(opencode.total_tokens),
-        source_count: [codex.available, opencode.available]
-            .into_iter()
-            .filter(|available| *available)
-            .count(),
+        non_cached_total_tokens,
+        total_tokens,
+        source_count,
+        primary_metric,
         project_path: project_path.display_path.clone(),
         generated_at: Utc::now().to_rfc3339(),
         codex,
         opencode,
         warnings,
     })
+}
+
+fn select_primary_metric(
+    codex: &AgentUsageSourceSummary,
+    opencode: &AgentUsageSourceSummary,
+    total_tokens: u64,
+) -> AgentUsagePrimaryMetric {
+    if total_tokens > 0 {
+        let source = match (codex.available, opencode.available) {
+            (true, true) => "local_agents",
+            (true, false) => "codex",
+            (false, true) => "opencode",
+            (false, false) => "local_tokens",
+        };
+        return AgentUsagePrimaryMetric {
+            kind: "tokens".to_string(),
+            label: "Total local tokens".to_string(),
+            value: None,
+            currency: None,
+            tokens: Some(total_tokens),
+            source: source.to_string(),
+            confidence: "local_recorded".to_string(),
+            estimated: false,
+            detail: "Primary usage is local total token usage including cache. Codex uses total_tokens from the local rollout records. OpenCode adds input + output + reasoning + cache_read + cache_write. The non-cache number remains available as a breakdown, and cost fields stay in diagnostics only because they are not reliable enough for the primary display.".to_string(),
+        };
+    }
+
+    AgentUsagePrimaryMetric {
+        kind: "unavailable".to_string(),
+        label: "No token usage available".to_string(),
+        value: None,
+        currency: None,
+        tokens: None,
+        source: "none".to_string(),
+        confidence: "unavailable".to_string(),
+        estimated: false,
+        detail: "No local Codex or OpenCode token records matched this project.".to_string(),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1104,6 +1162,50 @@ mod tests {
     }
 
     #[test]
+    fn primary_metric_uses_total_tokens_even_when_cost_is_available() {
+        let codex = test_source("codex", false, 0, 0, None);
+        let opencode = test_source("opencode", true, 15, 24, Some(1.25));
+
+        let metric = select_primary_metric(&codex, &opencode, 24);
+
+        assert_eq!(metric.kind, "tokens");
+        assert_eq!(metric.source, "opencode");
+        assert_eq!(metric.currency, None);
+        assert_eq!(metric.value, None);
+        assert_eq!(metric.tokens, Some(24));
+        assert!(!metric.estimated);
+    }
+
+    #[test]
+    fn primary_metric_uses_codex_tokens_without_opencode() {
+        let codex = test_source("codex", true, 14, 21, None);
+        let opencode = test_source("opencode", false, 0, 0, None);
+
+        let metric = select_primary_metric(&codex, &opencode, 21);
+
+        assert_eq!(metric.kind, "tokens");
+        assert_eq!(metric.source, "codex");
+        assert_eq!(metric.value, None);
+        assert_eq!(metric.currency, None);
+        assert_eq!(metric.tokens, Some(21));
+        assert!(!metric.estimated);
+    }
+
+    #[test]
+    fn primary_metric_is_unavailable_without_matching_usage() {
+        let codex = test_source("codex", false, 0, 0, None);
+        let opencode = test_source("opencode", false, 0, 0, None);
+
+        let metric = select_primary_metric(&codex, &opencode, 0);
+
+        assert_eq!(metric.kind, "unavailable");
+        assert_eq!(metric.source, "none");
+        assert_eq!(metric.value, None);
+        assert_eq!(metric.tokens, None);
+        assert!(!metric.estimated);
+    }
+
+    #[test]
     fn opencode_matches_child_paths_without_matching_prefix_siblings() {
         let dir = temp_dir("opencode-child-path");
         let db_path = dir.join("opencode.db");
@@ -1249,6 +1351,31 @@ mod tests {
             );",
         )
         .expect("codex schema");
+    }
+
+    fn test_source(
+        source: &str,
+        available: bool,
+        non_cached_total_tokens: u64,
+        total_tokens: u64,
+        cost: Option<f64>,
+    ) -> AgentUsageSourceSummary {
+        AgentUsageSourceSummary {
+            source: source.to_string(),
+            available,
+            data_path: None,
+            records: usize::from(available),
+            non_cached_total_tokens,
+            total_tokens,
+            cost,
+            tokens: TokenBreakdown {
+                total: total_tokens,
+                ..TokenBreakdown::default()
+            },
+            latest_updated_at_ms: None,
+            recent: Vec::new(),
+            warnings: Vec::new(),
+        }
     }
 
     fn create_opencode_schema(conn: &Connection) {

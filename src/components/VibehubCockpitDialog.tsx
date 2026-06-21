@@ -1619,9 +1619,29 @@ function AgentUsageTabContent({
 
     return (
         <div className="space-y-5">
+            <section className="space-y-3 rounded-md border bg-primary/5 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                        <SectionEyebrow>{labelOrFallback(t, 'vibehub.agentUsage.tokenBasis', 'Token basis')}</SectionEyebrow>
+                        <div className="mt-1 text-2xl font-semibold">
+                            {formatAgentUsagePrimaryMetric(localAgentUsage)}
+                        </div>
+                    </div>
+                    <Badge variant={localAgentUsage.primary_metric.kind === 'tokens' ? 'default' : 'secondary'}>
+                        {formatAgentUsageMetricKind(localAgentUsage.primary_metric.kind, t)}
+                    </Badge>
+                </div>
+                <div className="grid gap-2 text-xs sm:grid-cols-3">
+                    <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.metricSource', 'Source')} value={formatAgentUsageMetricSource(localAgentUsage.primary_metric.source)} />
+                    <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.confidence', 'Confidence')} value={formatAgentUsageConfidence(localAgentUsage.primary_metric.confidence, t)} />
+                    <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.estimated', 'Estimated')} value={localAgentUsage.primary_metric.estimated ? labelOrFallback(t, 'common.yes', 'Yes') : labelOrFallback(t, 'common.no', 'No')} />
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">{localAgentUsage.primary_metric.detail}</p>
+            </section>
+
             <div className="grid gap-2 text-xs sm:grid-cols-2">
-                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.nonCachedTokens', 'Non-cache tokens')} value={formatAgentUsageTokens(localAgentUsage.non_cached_total_tokens)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.totalTokensWithCache', 'Total incl. cache')} value={formatAgentUsageTokens(localAgentUsage.total_tokens)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.nonCachedTokens', 'Non-cache tokens')} value={formatAgentUsageTokens(localAgentUsage.non_cached_total_tokens)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.sources', 'Sources')} value={String(localAgentUsage.source_count)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.generatedAt', 'Generated')} value={formatUsageIsoDate(localAgentUsage.generated_at)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.projectPath', 'Project')} value={localAgentUsage.project_path} />
@@ -1669,8 +1689,8 @@ function AgentUsageSourceCard({
 
             <div className="grid grid-cols-2 gap-2 text-xs">
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.records', 'Records')} value={String(summary.records)} />
-                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.nonCachedTokens', 'Non-cache tokens')} value={formatAgentUsageTokens(summary.non_cached_total_tokens)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.totalTokensWithCache', 'Total incl. cache')} value={formatAgentUsageTokens(summary.total_tokens)} />
+                <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.nonCachedTokens', 'Non-cache tokens')} value={formatAgentUsageTokens(summary.non_cached_total_tokens)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.cost', 'Cost')} value={formatAgentUsageCost(summary.cost)} />
                 <ViewField label={labelOrFallback(t, 'vibehub.agentUsage.latest', 'Latest')} value={formatUsageTimestampMs(summary.latest_updated_at_ms)} />
             </div>
@@ -1685,7 +1705,7 @@ function AgentUsageSourceCard({
                             <div key={item.id} className="space-y-1 px-3 py-2 text-xs">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
-                                    <Badge variant="outline">{formatAgentUsageTokens(item.non_cached_total_tokens)}</Badge>
+                                    <Badge variant="outline">{formatAgentUsageTokens(item.total_tokens)}</Badge>
                                 </div>
                                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                                     {item.agent && <span className="truncate">{item.agent}</span>}
@@ -4045,13 +4065,51 @@ function formatAgentUsageTokens(value: number) {
     return Math.round(value).toLocaleString();
 }
 
+function formatAgentUsagePrimaryMetric(usage: LocalAgentUsageOverview) {
+    const metric = usage.primary_metric;
+    if (metric.kind === 'tokens' || metric.kind === 'token_fallback') {
+        return `${formatAgentUsageTokens(metric.tokens ?? usage.total_tokens)} tokens`;
+    }
+    return '--';
+}
+
+function formatAgentUsageMetricKind(kind: string, t: (key: string, options?: Record<string, unknown>) => string) {
+    if (kind === 'tokens') return labelOrFallback(t, 'vibehub.agentUsage.metricKinds.tokens', 'Tokens');
+    if (kind === 'cost') return labelOrFallback(t, 'vibehub.agentUsage.metricKinds.cost', 'Cost');
+    if (kind === 'quota') return labelOrFallback(t, 'vibehub.agentUsage.metricKinds.quota', 'Quota');
+    if (kind === 'token_fallback') return labelOrFallback(t, 'vibehub.agentUsage.metricKinds.tokenFallback', 'Token fallback');
+    if (kind === 'unavailable') return labelOrFallback(t, 'vibehub.agentUsage.metricKinds.unavailable', 'Unavailable');
+    return kind;
+}
+
+function formatAgentUsageMetricSource(source: string) {
+    if (source === 'local_agents') return 'Codex + OpenCode';
+    if (source === 'opencode') return 'OpenCode';
+    if (source === 'codex') return 'Codex';
+    if (source === 'none') return '--';
+    return source;
+}
+
+function formatAgentUsageConfidence(confidence: string, t: (key: string, options?: Record<string, unknown>) => string) {
+    if (confidence === 'local_recorded') return labelOrFallback(t, 'vibehub.agentUsage.confidenceLocalRecorded', 'Local recorded');
+    if (confidence === 'fallback') return labelOrFallback(t, 'vibehub.agentUsage.confidenceFallback', 'Fallback');
+    if (confidence === 'unavailable') return labelOrFallback(t, 'vibehub.agentUsage.confidenceUnavailable', 'Unavailable');
+    return confidence;
+}
+
 function trimUsageNumber(value: number) {
     return value >= 10 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, '');
 }
 
 function formatAgentUsageCost(value: number | null | undefined) {
+    return formatAgentUsageAmount(value, 'USD');
+}
+
+function formatAgentUsageAmount(value: number | null | undefined, currency?: string | null) {
     if (value == null || !Number.isFinite(value)) return '--';
-    return `$${value.toFixed(value >= 10 ? 2 : 4).replace(/0+$/, '').replace(/\.$/, '')}`;
+    const compact = value.toFixed(value >= 10 ? 2 : 4).replace(/0+$/, '').replace(/\.$/, '');
+    const code = currency?.toUpperCase() || 'USD';
+    return code === 'USD' ? `$${compact}` : `${compact} ${code}`;
 }
 
 function uniqueValues(values: string[]) {
