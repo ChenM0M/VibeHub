@@ -3,8 +3,8 @@
 Task: T-20260531153015-3a283c0b
 Run: R-20260531153015-bd42f253
 Phase: Implement
-Generated at: 2026-06-21T03:10:51Z
-Source commit: 751d88c
+Generated at: 2026-06-21T05:51:40Z
+Source commit: d08b65e
 
 ## Instructions
 
@@ -41,38 +41,27 @@ Report files read, commands run, decisions made, and unresolved risks.
 ```json
 [
   {
-    "capability": "review",
+    "capability": "implement",
     "completed": [
-      "`hard_observed`: 已进入 `review` 阶段并读取 review context pack。",
-      "`hard_observed`: 已运行 `git diff --check -- src/stores/appStore.ts src/main.tsx src/components/Header.tsx src-tauri/src/main.rs`，未发现空白错误。",
-      "`hard_observed`: 已运行 `vibehub review /Users/chenm0m/LocalRepo/VibeHub` 生成 review evidence。",
-      "`agent_reported`: 已人工复查主题监听、入口冲突移除、Header effective theme、macOS titlebar overlay 和平台隔离路径。",
-      "### summary",
-      "`agent_reported`: 本次改动满足 align/plan 的核心目标：`auto` 模式会监听系统深浅色变化，手动 `light` / `dark` 不被系统变化覆盖，入口层不再覆盖 store 的 auto 结果。",
-      "`agent_reported`: macOS 路径保留原生 traffic lights，并设置 overlay titlebar style；Windows/Linux 的自定义窗口按钮仍受 `!isMac` 条件保护。",
-      "`agent_reported`: 验证覆盖 TypeScript/Vite 构建、Rust fmt、Rust check、主题 resolver 断言和 diff whitespace check。",
-      "### concerns",
-      "`agent_reported`: 未发现阻塞性代码问题。",
-      "`inferred`: Header 左侧 `ml-20` 是保守预留值，真实 macOS 窗口里仍可能需要视觉微调。",
-      "`hard_observed`: `vibehub review` 的 evidence 统计包含大量 VibeHub 状态文件，不全是本任务应用源码改动；本次人工 review 重点限定在应用代码四个文件和当前任务输出。",
-      "### gate_pass",
-      "`agent_reported`: pass。",
-      "### verdict",
-      "`agent_reported`: pass。当前主题/标题栏 diff 可以进入收口；未发现阻塞问题。",
-      "### risk_review",
-      "`agent_reported`: auto 主题监听风险低：listener 只在配置为 `auto` 时响应系统变化，且初始化有单例 guard，避免 React StrictMode 下重复注册。",
-      "`agent_reported`: 手动主题回归风险低：`resolveEffectiveTheme('light', true)` 保持 `light`，`resolveEffectiveTheme('dark', false)` 保持 `dark`，并已用 Node 断言验证。",
-      "`agent_reported`: 平台影响风险中低：macOS titlebar 改动在 Rust `#[cfg(target_os = \"macos\")]` 内，Header 的窗口按钮仍只在非 macOS 显示。",
-      "`inferred`: macOS 视觉风险未完全消除：当前未打开真实 GUI 窗口确认 traffic lights 与搜索框的精确距离。",
-      "### evidence_grades",
-      "`hard_observed`: 源码 diff、`npm run build`、`cargo fmt --check`、`cargo check`、Node resolver assertions、`git diff --check` 均来自本地命令输出。",
-      "`agent_reported`: 代码审查结论、风险评级和 gate verdict 来自本轮人工审查。",
-      "`inferred`: macOS 真实视觉微调风险来自 titlebar overlay 行为和未打开 GUI 的验证边界。"
+      "`hard_observed`: 已按 `continue/继续` 路由先执行 VibeHub sync；`cargo run -p vibehub-cli --offline -- sync /Users/chenm0m/LocalRepo/VibeHub` 生成 `.vibehub/agent-view/sync.md` 和本 run 下 `sync-20260615-065327.md`，状态为 `needs_attention`，原因是 dirty worktree ownership unavailable。",
+      "`hard_observed`: 在 `src/components/VibehubCockpitDialog.tsx` 中新增共享 `TaskLifecycleCanvas`，用 React + SVG/HTML 实现只读任务生命周期 canvas；未新增 React Flow / Konva / ELK 等依赖。",
+      "`hard_observed`: `TaskDetailContent` 改为复用 `TaskLifecycleCanvas`，具体任务详情不再显示全项目任务列表或左侧阶段列表 + 右侧堆叠信息的旧结构。",
+      "`hard_observed`: `StatusTabContent` / phase detail 改为复用同一个 `TaskLifecycleCanvas`，从 phase pill 打开时继续传入 `selectedTaskId` / `selectedPhase` 并自动聚焦对应节点。",
+      "`hard_observed`: Canvas 节点按任务 mode 的完整 phase flow 展示，节点包含 phase/status、read inputs、written outputs、events 和 package path 摘要；节点之间用 SVG 连接线表达阶段流转。",
+      "`hard_observed`: 右侧 inspector 展示选中 phase 的 task/run metadata、阶段传递包体、phase files、当前 phase validation、节点事件、task relations 和 warnings。",
+      "`hard_observed`: task / phase detail drawer 宽度调整为 `max-w-5xl`，给 canvas + inspector 留出稳定空间；activity/archive/git 仍保持 `max-w-4xl`。",
+      "`hard_observed`: `npm run build` 已通过，包含 TypeScript 严格检查和 Vite production build。",
+      "`hard_observed`: 本地 Vite dev server 已启动于 `http://127.0.0.1:1420/`；Codex in-app Browser 可加载首页且无 console error，但当前浏览器 profile 没有 workspace/project，无法通过正常 UI 进入 cockpit 做截图级 canvas 验收。",
+      "`user_confirmed`: 用户确认不用继续等待视觉验收，直接提交、推送、发版。",
+      "`hard_observed`: 发布版本已统一 bump 到 `2.0.0-pre.16`，覆盖 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`crates/vibehub-cli/Cargo.toml`、`crates/vibehub-core/Cargo.toml` 和 `Cargo.lock`。",
+      "`hard_observed`: `npm run build`、`cargo test`、`npm run tauri -- build --target aarch64-apple-darwin --bundles app` 均已在 `2.0.0-pre.16` 下通过。"
     ],
-    "full_ref": ".vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/outputs/output.md",
+    "full_ref": ".vibehub/tasks/T-20260531153015-3a283c0b/runs/R-20260531153015-bd42f253/outputs/output.md",
     "key_decisions": [
-      "`agent_reported`: 不再为本次 review 回改代码；当前 diff 进入通过状态。",
-      "`agent_reported`: 将 macOS 真实视觉确认记录为非阻塞风险，而非阻塞本次功能修复。"
+      "`user_confirmed`: 项目页定位仍是“项目状态中台 / project command map”，不推翻主视图；本轮只改“点击具体任务/phase 后的内部详情形态”。",
+      "`agent_reported`: 任务详情采用轻量自研 canvas，不新增流程图库；核心是只读展示任务内阶段流转、上下文传递、输出、验证和事件历史。",
+      "`agent_reported`: phase detail 不再是一套孤立状态页；它复用任务生命周期 canvas，并用传入 phase 作为默认选中节点。",
+      "`agent_reported`: Canvas 只读，不新增任何 workflow mutation button；保留现有安全的 artifact/file/preview 模式。"
     ]
   }
 ]
@@ -104,18 +93,6 @@ Report files read, commands run, decisions made, and unresolved risks.
     "active_capabilities": [
       "implement"
     ],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260620165245-165f9e8f",
-    "title": "Add desktop auto dark mode and macOS integrated titlebar",
-    "active_capabilities": [],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260620165245-f6d23db9",
-    "title": "Align usage display with remote billing statistics",
-    "active_capabilities": [],
     "shared_files": []
   }
 ]
