@@ -13,7 +13,7 @@ import './i18n';
 type PageType = 'home' | 'settings' | 'gateway' | 'about';
 
 function App() {
-    const { initializeApp, config } = useAppStore();
+    const { initializeApp } = useAppStore();
     const [currentPage, setCurrentPage] = useState<PageType>('home');
     const [searchQuery, setSearchQuery] = useState('');
     const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
@@ -22,15 +22,6 @@ function App() {
     useEffect(() => {
         initializeApp();
     }, []);
-
-    // Apply dark mode class to HTML element
-    useEffect(() => {
-        if (config?.theme === 'dark') {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }, [config?.theme]);
 
     const handleCheckUpdate = () => {
         setIsCheckingUpdate(true);
@@ -69,5 +60,4 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
         <App />
     </React.StrictMode>
 );
-
 

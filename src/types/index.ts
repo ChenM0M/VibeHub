@@ -683,12 +683,27 @@ export interface VibehubCockpitOverview {
 export interface LocalAgentUsageOverview {
     project_path: string;
     generated_at: string;
+    primary_metric: AgentUsagePrimaryMetric;
     non_cached_total_tokens: number;
     total_tokens: number;
     source_count: number;
     codex: AgentUsageSourceSummary;
     opencode: AgentUsageSourceSummary;
     warnings: string[];
+}
+
+export type AgentUsagePrimaryMetricKind = 'tokens' | 'cost' | 'quota' | 'token_fallback' | 'unavailable' | string;
+
+export interface AgentUsagePrimaryMetric {
+    kind: AgentUsagePrimaryMetricKind;
+    label: string;
+    value?: number | null;
+    currency?: string | null;
+    tokens?: number | null;
+    source: string;
+    confidence: string;
+    estimated: boolean;
+    detail: string;
 }
 
 export interface AgentUsageSourceSummary {
