@@ -3,8 +3,8 @@ schema_version: 1
 phase: align_lite
 task_id: T-20260621031051-c83ce63c
 run_id: R-20260621031051-0e0ff0a7
-generated_at: 2026-06-21T03:10:51Z
-source_commit: 751d88c
+generated_at: 2026-06-21T04:44:12Z
+source_commit: d08b65e
 budget:
   max_file_size_bytes: 262144
   max_tokens: 12000

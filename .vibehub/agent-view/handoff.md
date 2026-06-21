@@ -4,7 +4,7 @@
 运行: R-20260619044922-fef32621
 阶段: Implement
 生成来源: VibeHub
-生成时间: 2026-06-21T03:12:09Z
+生成时间: 2026-06-21T05:52:15Z
 来源: .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/outputs/output.md
 交接完成: 是
 证据等级: mixed
@@ -37,7 +37,7 @@
 - `hard_observed`: 已修复路径匹配：不再只做 `cwd = project_path` / `worktree = project_path` 精确匹配；现在支持 normalized path、canonical path、尾斜杠规整、大小写兼容和项目子路径匹配，同时避免把 `/repo/app` 误匹配到 `/repo/application`。
 - `hard_observed`: 用户指定样本 `mind2realistic` 的 VibeHub 配置路径为 `/Users/chenm0m/ArchiveRepo/mind2realistic`，但 Codex/OpenCode 本地用量记录路径为 `/Users/chenm0m/LocalRepo/mind2realistic`；这是项目搬家后历史用量仍按旧 cwd/worktree 保存导致的无记录。
 - `hard_observed`: 已新增受控同名项目 fallback：当配置路径无精确/子路径命中，且本地用量库里项目目录名唯一匹配时，使用该同名历史路径并在来源 warnings 中说明 fallback 路径；若同名路径不唯一则拒绝 fallback，避免误归因。
-- `hard_observed`: 已保留上一轮非缓存主口径：顶部 `AI 用量` 使用 `non_cached_total_tokens`，详情页同时展示非缓存与含缓存总量。
+- `hard_observed`: 已将顶部主口径调整为总用量：`primary_metric.tokens` 使用 `total_tokens`，详情页同时展示“总用量（含缓存）”和“非缓存部分”。
 - `hard_observed`: 已新增回归测试覆盖“第一个候选 Codex DB 为空但后续 DB 有记录”、“OpenCode/Codex 子路径能匹配但同前缀兄弟目录不匹配”、“配置路径搬家后可回落到唯一同名历史路径”。
 - `hard_observed`: `cargo fmt --manifest-path src-tauri/Cargo.toml` 已运行。
 - `hard_observed`: `cargo test --manifest-path src-tauri/Cargo.toml` 通过，14 个测试全部通过，其中 `local_agent_usage` 6 个测试全部通过。
@@ -47,16 +47,31 @@
 - `user_confirmed`: 用户确认非缓存口径解释符合预期，并要求提交、推送、发版。
 - `hard_observed`: 已将 prerelease 版本从 `2.0.0-pre.19` bump 到 `2.0.0-pre.20`，准备创建 `v2.0.0-pre.20` tag。
 - `hard_observed`: 版本 bump 后重新运行 `cargo test --manifest-path src-tauri/Cargo.toml`、`npm run build`、`vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee`，均通过。
+- `user_confirmed`: 用户反馈不希望主显示 USD/cost，因为本地 cost 不可靠；希望看到最直观的 `M tokens` 口径，并理解缓存/非缓存计算方式。
+- `hard_observed`: 已更新 `src-tauri/src/local_agent_usage.rs`，`primary_metric` 改为总 token-first：即使 OpenCode 有 `cost` 字段，主指标仍为 `total_tokens`，cost 只留在来源诊断明细。
+- `hard_observed`: 已更新 `src/components/ProjectDetailBoard.tsx`，项目详情指标从“账单口径”改为“Token 用量”，显示 `xx.xM tokens` / `K tokens` 等紧凑 token 文案。
+- `hard_observed`: 已更新 `src/components/VibehubCockpitDialog.tsx`，Agent Usage 详情顶部从“账单口径”改为“Token 口径”，并展示 token 指标来源、可信度、是否估算和计算说明。
+- `hard_observed`: 已更新 `src/types/index.ts` 以及 `src/locales/zh.json`、`src/locales/zh-TW.json`、`src/locales/en.json`，新增 `tokens` 主指标类型和 Token 口径文案。
+- `hard_observed`: 本轮 `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage` 通过：9 passed, 0 failed。
+- `hard_observed`: 本轮 `npm run build` 通过。
+- `hard_observed`: 本轮 `cargo fmt --manifest-path src-tauri/Cargo.toml --check` 和 `git diff --check -- ...` 均通过。
+- `hard_observed`: 用户进一步确认“实际用量总量”应为非缓存加缓存后，已将主指标从 `non_cached_total_tokens` 改为 `total_tokens`，并将来源卡片/最近记录的主展示同步为总 token。
+- `hard_observed`: 总量口径调整后重新运行 `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage`、`npm run build`、`git diff --check -- ...`，均通过。
+- `hard_observed`: 因 `v2.0.0-pre.20` 已存在且已推送到远端，本次待发布版本已推进到 `2.0.0-pre.21`。
+- `hard_observed`: `2.0.0-pre.21` 发布前验证已重新运行：`cargo test --manifest-path src-tauri/Cargo.toml` 通过 17 个测试，`npm run build` 通过，`git diff --check` 通过。
 ### Not Yet Done
 - `agent_reported`: 尚未在真实 Tauri 桌面窗口点击项目详情页做视觉验证；本轮重点修复后端读取链路和回归测试。
 - `agent_reported`: 尚未新增最近 7 天 / 30 天筛选；当前仍是本地 observed lifetime 口径，顶部主数字排除缓存。
 - `agent_reported`: 尚未在真实 Windows/Linux 机器验证默认路径；当前通过候选路径、路径规整和 warnings 降级降低风险。
+- `agent_reported`: 尚未接入 Sub to API / New API 的远端用量 API；当前显示是本地 Codex/OpenCode 记录推导出的 observed token 口径。
 ### Key Decisions Made
 - `agent_reported`: 对多个 Codex/OpenCode 候选数据库采用“选择最佳匹配库”而不是“全部合并”，避免把旧库和当前库重复计入。
 - `agent_reported`: 最佳库选择规则为：优先匹配记录数更多；记录数相同时优先最近更新时间更晚。
 - `agent_reported`: 路径匹配放到 Rust 侧过滤，避免新增 `rusqlite` 的 `functions` feature，也让匹配逻辑更容易测试。
 - `agent_reported`: 对 moved project 的历史用量只做唯一 basename fallback，不做自由模糊搜索；这样能恢复 `mind2realistic` 这类搬家项目，同时避免多个同名 repo 时错误合并。
 - `inferred`: 用户遇到“任何用量都检测不到”时，最危险的回归点是候选库顺序、路径别名/子路径和精确匹配过窄；因此这些场景必须进入单元测试。
+- `user_confirmed`: 主显示不使用 USD/cost；主显示使用总用量 `total_tokens`，也就是非缓存部分加缓存部分。
+- `agent_reported`: Codex 主总量直接使用本地 `total_tokens`；OpenCode 主总量为 `tokens_input + tokens_output + tokens_reasoning + tokens_cache_read + tokens_cache_write`。`non_cached_total_tokens` 作为详情拆分项保留；OpenCode 的 `cost` 仍保留在来源诊断卡片，但不再参与主指标。
 ### Files Changed
 - .vibehub/agent-view/current.md
 - .vibehub/agent-view/handoff.md
@@ -67,70 +82,45 @@
 - .vibehub/tasks/T-20260531153015-3a283c0b/runs/R-20260531153015-bd42f253/context-packs/implement.manifest.yaml
 - .vibehub/tasks/T-20260531153015-3a283c0b/runs/R-20260531153015-bd42f253/context-packs/implement.md
 - .vibehub/tasks/T-20260531153015-3a283c0b/runs/R-20260531153015-bd42f253/events.jsonl
+- .vibehub/tasks/T-20260531153015-3a283c0b/runs/R-20260531153015-bd42f253/run.yaml
 - .vibehub/tasks/T-20260531153015-3a283c0b/runs/current
+- .vibehub/tasks/T-20260531153015-3a283c0b/task.yaml
+- .vibehub/tasks/T-20260609092907-7c439d16/runs/R-20260609092907-c9e04b56/context-packs/implement.manifest.yaml
+- .vibehub/tasks/T-20260609092907-7c439d16/runs/R-20260609092907-c9e04b56/context-packs/implement.md
+- .vibehub/tasks/T-20260609092907-7c439d16/runs/R-20260609092907-c9e04b56/events.jsonl
+- .vibehub/tasks/T-20260609092907-7c439d16/runs/R-20260609092907-c9e04b56/run.yaml
+- .vibehub/tasks/T-20260609092907-7c439d16/runs/current
+- .vibehub/tasks/T-20260609092907-7c439d16/task.yaml
+- .vibehub/tasks/T-20260616062024-a8e8bdc2/runs/R-20260616062024-6b02149c/context-packs/align.manifest.yaml
+- .vibehub/tasks/T-20260616062024-a8e8bdc2/runs/R-20260616062024-6b02149c/context-packs/align.md
+- .vibehub/tasks/T-20260616062024-a8e8bdc2/runs/R-20260616062024-6b02149c/events.jsonl
+- .vibehub/tasks/T-20260616062024-a8e8bdc2/runs/R-20260616062024-6b02149c/run.yaml
+- .vibehub/tasks/T-20260616062024-a8e8bdc2/runs/current
+- .vibehub/tasks/T-20260616062024-a8e8bdc2/task.yaml
 - .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/context-packs/implement.manifest.yaml
 - .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/context-packs/implement.md
 - .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/events.jsonl
-- .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/sync/sync-20260620-165225.md
 - .vibehub/tasks/T-20260619044922-98d818ee/runs/current
-- .vibehub/tasks/T-20260620165245-165f9e8f/context/align.yaml
-- .vibehub/tasks/T-20260620165245-165f9e8f/context/implement.yaml
-- .vibehub/tasks/T-20260620165245-165f9e8f/context/plan.yaml
-- .vibehub/tasks/T-20260620165245-165f9e8f/context/review.yaml
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/context-packs/align.manifest.yaml
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/context-packs/align.md
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/context-packs/implement.manifest.yaml
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/context-packs/implement.md
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/context-packs/plan.manifest.yaml
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/context-packs/plan.md
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/context-packs/review.manifest.yaml
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/context-packs/review.md
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/events.jsonl
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/evidence/changed-files.txt
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/evidence/diff.patch
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/outputs/output.md
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/phases/review.md
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/run.yaml
-- .vibehub/tasks/T-20260620165245-165f9e8f/runs/R-20260620165245-c3b6eb90/sync/sync-20260621-023219.md
-- .vibehub/tasks/T-20260620165245-165f9e8f/task.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/context/align.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/context/implement.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/context/plan.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/context/review.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/context-packs/align.manifest.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/context-packs/align.md
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/context-packs/implement.manifest.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/context-packs/implement.md
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/context-packs/plan.manifest.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/context-packs/plan.md
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/context-packs/review.manifest.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/context-packs/review.md
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/events.jsonl
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/evidence/changed-files.txt
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/evidence/diff.patch
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/outputs/output.md
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/phases/review.md
-- .vibehub/tasks/T-20260620165245-f6d23db9/runs/R-20260620165245-c5dbdd1b/run.yaml
-- .vibehub/tasks/T-20260620165245-f6d23db9/task.yaml
-- .vibehub/tasks/T-20260621031051-c83ce63c/context/align_lite.yaml
 - .vibehub/tasks/T-20260621031051-c83ce63c/runs/R-20260621031051-0e0ff0a7/context-packs/align_lite.manifest.yaml
 - .vibehub/tasks/T-20260621031051-c83ce63c/runs/R-20260621031051-0e0ff0a7/context-packs/align_lite.md
 - .vibehub/tasks/T-20260621031051-c83ce63c/runs/R-20260621031051-0e0ff0a7/events.jsonl
+- .vibehub/tasks/T-20260621031051-c83ce63c/runs/R-20260621031051-0e0ff0a7/outputs/output.md
 - .vibehub/tasks/T-20260621031051-c83ce63c/runs/R-20260621031051-0e0ff0a7/run.yaml
+- .vibehub/tasks/T-20260621031051-c83ce63c/runs/R-20260621031051-0e0ff0a7/sync/sync-20260621-044412.md
 - .vibehub/tasks/T-20260621031051-c83ce63c/runs/current
 - .vibehub/tasks/T-20260621031051-c83ce63c/task.yaml
 - .vibehub/tasks/current
-- src-tauri/src/local_agent_usage.rs
+- Cargo.lock
+- package.json
+- src-tauri/Cargo.lock
+- src-tauri/Cargo.toml
 - src-tauri/src/main.rs
+- src-tauri/tauri.conf.json
 - src/components/Header.tsx
-- src/components/ProjectDetailBoard.tsx
-- src/components/VibehubCockpitDialog.tsx
-- src/locales/en.json
-- src/locales/zh-TW.json
-- src/locales/zh.json
+- src/components/Sidebar.tsx
 - src/main.tsx
-- src/stores/appStore.ts
-- src/types/index.ts
+- src/pages/Home.tsx
+- src/styles/globals.css
 
 证据等级: mixed
 
@@ -150,7 +140,7 @@
       "`hard_observed`: 已修复路径匹配：不再只做 `cwd = project_path` / `worktree = project_path` 精确匹配；现在支持 normalized path、canonical path、尾斜杠规整、大小写兼容和项目子路径匹配，同时避免把 `/repo/app` 误匹配到 `/repo/application`。",
       "`hard_observed`: 用户指定样本 `mind2realistic` 的 VibeHub 配置路径为 `/Users/chenm0m/ArchiveRepo/mind2realistic`，但 Codex/OpenCode 本地用量记录路径为 `/Users/chenm0m/LocalRepo/mind2realistic`；这是项目搬家后历史用量仍按旧 cwd/worktree 保存导致的无记录。",
       "`hard_observed`: 已新增受控同名项目 fallback：当配置路径无精确/子路径命中，且本地用量库里项目目录名唯一匹配时，使用该同名历史路径并在来源 warnings 中说明 fallback 路径；若同名路径不唯一则拒绝 fallback，避免误归因。",
-      "`hard_observed`: 已保留上一轮非缓存主口径：顶部 `AI 用量` 使用 `non_cached_total_tokens`，详情页同时展示非缓存与含缓存总量。",
+      "`hard_observed`: 已将顶部主口径调整为总用量：`primary_metric.tokens` 使用 `total_tokens`，详情页同时展示“总用量（含缓存）”和“非缓存部分”。",
       "`hard_observed`: 已新增回归测试覆盖“第一个候选 Codex DB 为空但后续 DB 有记录”、“OpenCode/Codex 子路径能匹配但同前缀兄弟目录不匹配”、“配置路径搬家后可回落到唯一同名历史路径”。",
       "`hard_observed`: `cargo fmt --manifest-path src-tauri/Cargo.toml` 已运行。",
       "`hard_observed`: `cargo test --manifest-path src-tauri/Cargo.toml` 通过，14 个测试全部通过，其中 `local_agent_usage` 6 个测试全部通过。",
@@ -159,7 +149,19 @@
       "`hard_observed`: `vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee` 通过，issue_count 为 0。",
       "`user_confirmed`: 用户确认非缓存口径解释符合预期，并要求提交、推送、发版。",
       "`hard_observed`: 已将 prerelease 版本从 `2.0.0-pre.19` bump 到 `2.0.0-pre.20`，准备创建 `v2.0.0-pre.20` tag。",
-      "`hard_observed`: 版本 bump 后重新运行 `cargo test --manifest-path src-tauri/Cargo.toml`、`npm run build`、`vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee`，均通过。"
+      "`hard_observed`: 版本 bump 后重新运行 `cargo test --manifest-path src-tauri/Cargo.toml`、`npm run build`、`vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee`，均通过。",
+      "`user_confirmed`: 用户反馈不希望主显示 USD/cost，因为本地 cost 不可靠；希望看到最直观的 `M tokens` 口径，并理解缓存/非缓存计算方式。",
+      "`hard_observed`: 已更新 `src-tauri/src/local_agent_usage.rs`，`primary_metric` 改为总 token-first：即使 OpenCode 有 `cost` 字段，主指标仍为 `total_tokens`，cost 只留在来源诊断明细。",
+      "`hard_observed`: 已更新 `src/components/ProjectDetailBoard.tsx`，项目详情指标从“账单口径”改为“Token 用量”，显示 `xx.xM tokens` / `K tokens` 等紧凑 token 文案。",
+      "`hard_observed`: 已更新 `src/components/VibehubCockpitDialog.tsx`，Agent Usage 详情顶部从“账单口径”改为“Token 口径”，并展示 token 指标来源、可信度、是否估算和计算说明。",
+      "`hard_observed`: 已更新 `src/types/index.ts` 以及 `src/locales/zh.json`、`src/locales/zh-TW.json`、`src/locales/en.json`，新增 `tokens` 主指标类型和 Token 口径文案。",
+      "`hard_observed`: 本轮 `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage` 通过：9 passed, 0 failed。",
+      "`hard_observed`: 本轮 `npm run build` 通过。",
+      "`hard_observed`: 本轮 `cargo fmt --manifest-path src-tauri/Cargo.toml --check` 和 `git diff --check -- ...` 均通过。",
+      "`hard_observed`: 用户进一步确认“实际用量总量”应为非缓存加缓存后，已将主指标从 `non_cached_total_tokens` 改为 `total_tokens`，并将来源卡片/最近记录的主展示同步为总 token。",
+      "`hard_observed`: 总量口径调整后重新运行 `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage`、`npm run build`、`git diff --check -- ...`，均通过。",
+      "`hard_observed`: 因 `v2.0.0-pre.20` 已存在且已推送到远端，本次待发布版本已推进到 `2.0.0-pre.21`。",
+      "`hard_observed`: `2.0.0-pre.21` 发布前验证已重新运行：`cargo test --manifest-path src-tauri/Cargo.toml` 通过 17 个测试，`npm run build` 通过，`git diff --check` 通过。"
     ],
     "full_ref": ".vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/outputs/output.md",
     "key_decisions": [
@@ -167,7 +169,9 @@
       "`agent_reported`: 最佳库选择规则为：优先匹配记录数更多；记录数相同时优先最近更新时间更晚。",
       "`agent_reported`: 路径匹配放到 Rust 侧过滤，避免新增 `rusqlite` 的 `functions` feature，也让匹配逻辑更容易测试。",
       "`agent_reported`: 对 moved project 的历史用量只做唯一 basename fallback，不做自由模糊搜索；这样能恢复 `mind2realistic` 这类搬家项目，同时避免多个同名 repo 时错误合并。",
-      "`inferred`: 用户遇到“任何用量都检测不到”时，最危险的回归点是候选库顺序、路径别名/子路径和精确匹配过窄；因此这些场景必须进入单元测试。"
+      "`inferred`: 用户遇到“任何用量都检测不到”时，最危险的回归点是候选库顺序、路径别名/子路径和精确匹配过窄；因此这些场景必须进入单元测试。",
+      "`user_confirmed`: 主显示不使用 USD/cost；主显示使用总用量 `total_tokens`，也就是非缓存部分加缓存部分。",
+      "`agent_reported`: Codex 主总量直接使用本地 `total_tokens`；OpenCode 主总量为 `tokens_input + tokens_output + tokens_reasoning + tokens_cache_read + tokens_cache_write`。`non_cached_total_tokens` 作为详情拆分项保留；OpenCode 的 `cost` 仍保留在来源诊断卡片，但不再参与主指标。"
     ]
   }
 ]
@@ -205,6 +209,19 @@
 - `hard_observed`: `vibehub validate /Users/chenm0m/LocalRepo/VibeHub`
 - `hard_observed`: `vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee`
 - `hard_observed`: `rg -n "2\\.0\\.0-pre\\.19|2\\.0\\.0-pre\\.20" package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json Cargo.lock`
+- `hard_observed`: `vibehub status /Users/chenm0m/LocalRepo/VibeHub`
+- `hard_observed`: `vibehub switch /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee`
+- `hard_observed`: `rg -n "primary_metric|non_cached|cached|total_tokens|tokens|cost|quota|billing|账单|用量|usage" src-tauri/src/local_agent_usage.rs src/components/ProjectDetailBoard.tsx src/components/VibehubCockpitDialog.tsx src/types/index.ts src/locales/zh.json src/locales/en.json`
+- `hard_observed`: `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage`
+- `hard_observed`: `npm run build`
+- `hard_observed`: `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+- `hard_observed`: `git diff --check -- src-tauri/src/local_agent_usage.rs src/components/ProjectDetailBoard.tsx src/components/VibehubCockpitDialog.tsx src/types/index.ts src/locales/zh.json src/locales/zh-TW.json src/locales/en.json`
+- `hard_observed`: `rg -n "Local recorded cost|billing-style|token_fallback|Billing usage|Billing basis|账单口径|帳單口徑" src-tauri/src/local_agent_usage.rs src/components/ProjectDetailBoard.tsx src/components/VibehubCockpitDialog.tsx src/locales/zh.json src/locales/zh-TW.json src/locales/en.json src/types/index.ts`
+- `hard_observed`: `rg -n "\"version\"|2\\.0\\.0-pre\\." package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json Cargo.lock`
+- `hard_observed`: `git ls-remote --tags origin v2.0.0-pre.20`
+- `hard_observed`: `cargo test --manifest-path src-tauri/Cargo.toml`
+- `hard_observed`: `npm run build`
+- `hard_observed`: `git diff --check`
 证据等级: agent_reported
 
 ## 运行的测试
@@ -215,6 +232,16 @@
 - `hard_observed`: `vibehub validate /Users/chenm0m/LocalRepo/VibeHub` passed: status completed, missing_outputs empty.
 - `hard_observed`: `vibehub output-lint /Users/chenm0m/LocalRepo/VibeHub T-20260619044922-98d818ee` passed: issue_count 0.
 - `hard_observed`: Release-bump validation passed after `2.0.0-pre.20`: Rust 14 passed, frontend build passed, output-lint passed.
+- `hard_observed`: 本轮 `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage` passed: 9 passed, 0 failed.
+- `hard_observed`: 本轮 `npm run build` passed: `tsc && vite build` completed successfully.
+- `hard_observed`: 本轮 `cargo fmt --manifest-path src-tauri/Cargo.toml --check` passed.
+- `hard_observed`: 本轮 `git diff --check -- src-tauri/src/local_agent_usage.rs src/components/ProjectDetailBoard.tsx src/components/VibehubCockpitDialog.tsx src/types/index.ts src/locales/zh.json src/locales/zh-TW.json src/locales/en.json` passed.
+- `hard_observed`: 总量口径调整后再次运行 `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage` passed: 9 passed, 0 failed.
+- `hard_observed`: 总量口径调整后再次运行 `npm run build` passed: `tsc && vite build` completed successfully.
+- `hard_observed`: 总量口径调整后再次运行 `git diff --check -- src-tauri/src/local_agent_usage.rs src/components/ProjectDetailBoard.tsx src/components/VibehubCockpitDialog.tsx src/types/index.ts src/locales/zh.json src/locales/zh-TW.json src/locales/en.json` passed.
+- `hard_observed`: `2.0.0-pre.21` 发布前 `cargo test --manifest-path src-tauri/Cargo.toml` passed: 17 passed, 0 failed.
+- `hard_observed`: `2.0.0-pre.21` 发布前 `npm run build` passed: `tsc && vite build` completed successfully.
+- `hard_observed`: `2.0.0-pre.21` 发布前 `git diff --check` passed.
 - `agent_reported`: No browser/Tauri visual QA was run in this turn.
 证据等级: agent_reported
 
@@ -265,7 +292,7 @@
 
 - `agent_reported`: 优先在真实 Tauri 桌面窗口打开项目详情页，确认 `AI 用量` 卡片能显示本地记录且详情抽屉能打开。
 - `agent_reported`: 如果用户确认实现已可接受，可进入 review/finish 流程；未经用户确认不要运行 `vibehub finish` / `vibehub advance`。
-- `agent_reported`: 若用户确认发版，再 bump/tag/push 新的 prerelease；当前没有执行 `finish` / `advance` / `archive`。
+- `agent_reported`: 当前没有执行 `vibehub finish` / `vibehub advance` / `vibehub archive`；后续若进入 review/finish 仍需用户明确确认。
 证据等级: agent_reported
 
 ## 交接完整性

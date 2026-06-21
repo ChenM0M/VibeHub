@@ -20,7 +20,6 @@ use std::{
     sync::Mutex,
 };
 use storage::Storage;
-use tauri::Manager;
 
 /// Compiled-in version, used by the headless `--version` / `--help` output.
 const VER: &str = env!("CARGO_PKG_VERSION");
@@ -37,7 +36,6 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            configure_platform_window(app);
             gateway::init(app.handle());
             Ok(())
         })
@@ -126,15 +124,6 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-fn configure_platform_window(app: &mut tauri::App) {
-    #[cfg(target_os = "macos")]
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_decorations(true);
-        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
-        let _ = window.set_title("VibeHub");
-    }
 }
 
 fn replay_pending_events_for_known_projects(storage: &Storage) {
