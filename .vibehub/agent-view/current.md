@@ -22,10 +22,17 @@
 - T-20260609092907-7c439d16
 - T-20260616062024-a8e8bdc2
 - T-20260619044922-98d818ee (current)
+- T-20260621031051-c83ce63c
 
 ## Intake Queue
 
-- None observed.
+- Batch: intake-20260620165245
+- Split confidence: high
+- Source message: 目前这个用量显示总感觉还是不太对劲。我是希望它能够跟我的远端保持一致的，就是远端主要用来计价的，一般来说的那个统计呃统计数字。我的远端要么是Sub to API，要么是new API这种。然后我希望你这一次做了丰富且全面的调查之后再实行。其次就是需要给Vibehub添加一个就是自动变深色模式的功能。无论是Windows电脑还是Mac电脑。其次就是目前在Mac电脑上面，我觉得还是不够美观，因为它上面它有一个那个框。它不是就是它最顶上它有个框一样的，而不是直接在应用上我们自己，然后包含它Mac的三个操作，就是红黄绿的三个点这样子。而上面一个框这样，好奇怪哦，很违和。不过修改的时候记得不要影响到其他平台、其他系统。
+- Current queue task: T-20260620165245-f6d23db9
+- Remaining order: T-20260620165245-f6d23db9 -> T-20260620165245-165f9e8f
+- 1. T-20260620165245-f6d23db9 (Align usage display with remote billing statistics): created
+- 2. T-20260620165245-165f9e8f (Add desktop auto dark mode and macOS integrated titlebar): created
 
 ## Active Capabilities
 
@@ -36,6 +43,7 @@
 - T-20260531153015-3a283c0b (Redesign VibeHub project detail UI and project structure explorer): active_capabilities=[implement], shared_files=[]
 - T-20260609092907-7c439d16 (Harden VibeHub agent protocol and CLI routing): active_capabilities=[implement], shared_files=[]
 - T-20260616062024-a8e8bdc2 (test cli dispatch): active_capabilities=[align], shared_files=[]
+- T-20260621031051-c83ce63c (Fix macOS native titlebar still visible): active_capabilities=[align_lite], shared_files=[]
 
 
 ## Observability Note
