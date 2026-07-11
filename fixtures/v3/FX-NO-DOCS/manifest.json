@@ -1,0 +1,51 @@
+{
+  "scenario_id": "FX-NO-DOCS",
+  "seed": 20260711,
+  "platforms": [
+    "neutral"
+  ],
+  "criteria": [
+    "M0-C03",
+    "M0-C06",
+    "M0-C11"
+  ],
+  "expected_states": [
+    "fresh/complete"
+  ],
+  "expected_warnings": [
+    "NO_DECLARED_ARCHITECTURE"
+  ],
+  "expected_errors": [],
+  "contracts": [
+    {
+      "contract": "project_overview",
+      "schema": "project-overview-view.schema.json",
+      "file": "project-overview.json",
+      "sha256": "3e20e8e9e84ca9db5dab5d5477550a9ef9643f8bf04471cb92eb0e3626037310"
+    },
+    {
+      "contract": "project_structure",
+      "schema": "project-structure-view.schema.json",
+      "file": "project-structure.json",
+      "sha256": "e7b7bdf72dcc41017dd76550a8f01c9184d0c38fe7c1425d6015f3a2f846264b"
+    },
+    {
+      "contract": "task_timeline",
+      "schema": "task-timeline-view.schema.json",
+      "file": "task-timeline.json",
+      "sha256": "2f1a094c84d87b407ec13d020c8c41cc7cd762c61914f2cdf6f5e028d317b6aa"
+    },
+    {
+      "contract": "plan_graph",
+      "schema": "plan-graph-view.schema.json",
+      "file": "plan-graph.json",
+      "sha256": "af36463df69a64538aa74f433cefad3a81fc71317104ddbcbccf9cc0d568a4a0"
+    },
+    {
+      "contract": "node_brief",
+      "schema": "node-brief.schema.json",
+      "file": "node-brief.json",
+      "sha256": "64c6fd05296a76ef8bc57952d2cdc6ba1f4eca8fe9bd851109f47afe4b5f7d75"
+    }
+  ]
+}
