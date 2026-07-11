@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/task-timeline-view.schema.json",
+  "title": "TaskTimelineView",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "project_id", "task_id", "title", "state", "generated_at", "model_version", "freshness", "completeness", "criteria", "lanes", "events", "window", "evidence_refs", "warnings", "errors"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" }, "project_id": { "$ref": "common.schema.json#/$defs/StableId" }, "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "title": { "type": "string", "minLength": 1 }, "state": { "enum": ["planned", "active", "blocked", "review", "completed", "cancelled"] },
+    "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "model_version": { "type": "string", "minLength": 1 },
+    "freshness": { "$ref": "common.schema.json#/$defs/Freshness" }, "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
+    "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
+    "lanes": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false, "required": ["lane_id", "kind", "label", "state"],
+        "properties": { "lane_id": { "$ref": "common.schema.json#/$defs/StableId" }, "kind": { "enum": ["task", "session", "node"] }, "label": { "type": "string" }, "state": { "enum": ["open", "active", "idle", "closed", "gapped", "abandoned", "repaired"] } }
+      }
+    },
+    "events": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["timeline_event_id", "kind", "occurred_at", "recorded_at", "order_state", "lane_id", "actor", "summary_key", "evidence_refs"],
+        "properties": {
+          "timeline_event_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "kind": { "enum": ["decision", "evidence", "finding", "attempt", "validation", "confirmation", "gap", "session", "plan"] },
+          "occurred_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "recorded_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+          "order_state": { "enum": ["ordered", "late", "reordered"] }, "lane_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "actor": { "type": "string", "minLength": 1 }, "tool": { "type": ["string", "null"] }, "node_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+          "session_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] }, "commit_sha": { "type": ["string", "null"] },
+          "summary_key": { "type": "string", "minLength": 1 }, "details": { "type": "object" }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+        }
+      }
+    },
+    "window": { "$ref": "common.schema.json#/$defs/Page" }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
+    "warnings": { "$ref": "common.schema.json#/$defs/Warnings" }, "errors": { "$ref": "common.schema.json#/$defs/Errors" }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "scenario_id": "FX-ERROR",
+  "seed": 20260711,
+  "platforms": [
+    "macos",
+    "windows"
+  ],
+  "criteria": [
+    "M0-C02",
+    "M0-C03",
+    "M0-C06",
+    "M0-C07"
+  ],
+  "expected_states": [
+    "unavailable/unknown"
+  ],
+  "expected_warnings": [],
+  "expected_errors": [
+    "CONTRACT_TERMINAL",
+    "PROJECTION_UNAVAILABLE"
+  ],
+  "contracts": [
+    {
+      "contract": "project_overview",
+      "schema": "project-overview-view.schema.json",
+      "file": "project-overview.json",
+      "sha256": "787ef511d28e1433614488db01ba3ec98068877facd207e69c14a1dd3987083e"
+    },
+    {
+      "contract": "project_structure",
+      "schema": "project-structure-view.schema.json",
+      "file": "project-structure.json",
+      "sha256": "9b03e3324377087efc40b182c4eb5bfc7747892bfe94a324f9bf73af8cd6dae1"
+    },
+    {
+      "contract": "task_timeline",
+      "schema": "task-timeline-view.schema.json",
+      "file": "task-timeline.json",
+      "sha256": "6cef7fae26ed8dd1d2a6980a293b7c0eb9b6614924f4f97fc032715f25d5b44a"
+    },
+    {
+      "contract": "plan_graph",
+      "schema": "plan-graph-view.schema.json",
+      "file": "plan-graph.json",
+      "sha256": "39dd8347394ee94ba8c062d857cad58223c6378766f102a56a9948daffc11beb"
+    },
+    {
+      "contract": "node_brief",
+      "schema": "node-brief.schema.json",
+      "file": "node-brief.json",
+      "sha256": "6fb4ec519646eedb9afaf8721e8758680b6e09937378c2e54edf75f7ae03f1d0"
+    }
+  ]
+}

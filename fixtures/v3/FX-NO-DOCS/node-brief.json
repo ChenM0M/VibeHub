@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "complete",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "NO_DECLARED_ARCHITECTURE",
+      "severity": "warning",
+      "message_key": "warning.no_declared_architecture",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "task_id": "task.m0",
+  "node_id": "node.contracts",
+  "goal": "Create M1-ready contracts",
+  "scope": [
+    "contracts/v3",
+    "fixtures/v3"
+  ],
+  "non_scope": [
+    "V3 event store",
+    "M1 UI"
+  ],
+  "dependencies": [],
+  "accepted_decisions": [
+    "JSON Schema 2020-12 is canonical"
+  ],
+  "research_summary": [
+    "Fixture-first isolates M1 from V2"
+  ],
+  "criteria": [
+    {
+      "criterion_id": "criterion.m0.c07",
+      "title": "Fixture repository consumer proof",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "platform": "macos",
+      "native": "/Users/alex/Projects/VibeHub",
+      "display": "/Users/alex/Projects/VibeHub",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub",
+      "path_kind": "absolute",
+      "accessible": true
+    }
+  ],
+  "validation_commands": [
+    "npm run v3:contracts:check"
+  ],
+  "state": "active",
+  "next_intent": "Validate generated fixtures",
+  "budget": {
+    "max_tokens": 4000,
+    "estimated_tokens": 900,
+    "truncated_sections": []
+  },
+  "source_versions": {
+    "contract": "1.0",
+    "model": "model.fixture.1"
+  },
+  "protocol_coverage": "complete"
+}

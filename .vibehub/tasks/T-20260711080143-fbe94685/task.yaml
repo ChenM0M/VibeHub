@@ -1,0 +1,25 @@
+schema_version: 1
+kind: vibehub_task
+task_id: T-20260711080143-fbe94685
+title: M4 完成 Task 计划图、时间线与验收闭环
+mode: guided_drive
+phase: align
+phase_status: active
+created_at: 2026-07-11T08:01:43Z
+created_by: vibehub
+intent: 把 PlanGraph、Criterion、Finding、Attempt 与 session timeline 接入真实 core，形成可回放的五段工作闭环。
+acceptance_criteria:
+- 真实任务完成 align 到 review 的事件化闭环，图变更可回放
+- Criterion 逐项验收，失败项不能投影为 completed
+- Finding-remediation-re-review 保留全部 attempts
+- 三类 agent 会话启动与 brief 归属正确，M4 达到稳定门槛
+dependencies:
+- M2
+- M3
+intake:
+  batch_id: intake-20260711080143
+  split_confidence: high
+  suggested_order: 4
+  total_tasks: 3
+  source_message: align阶段已经结束，现在需要进行调查和计划阶段，产出正式 research pack、五份 RFC backlog 和 M0 Task Pack。M0–M6 分别创建独立任务，不能做成一个超级大任务。M0 固化契约和 fixtures，M1 做高保真前端，M2 再接真实 core/MCP。等 M4 稳定后再让 v3 自己管理 M5，避免过早 self-host。
+  split_reason: 用户明确要求 M0-M6 分别创建独立任务，且每个里程碑都有独立交付面、依赖与验收边界。

@@ -1,0 +1,24 @@
+schema_version: 1
+kind: vibehub_task
+task_id: T-20260711080143-49b5012c
+title: M1 基于 fixtures 构建 V3 高保真前端体验
+mode: guided_drive
+phase: align
+phase_status: active
+created_at: 2026-07-11T08:01:43Z
+created_by: vibehub
+intent: 用 M0 contracts/fixtures 实现 Project 与 Task 双层高保真体验，不接真实 v3 core/MCP。
+acceptance_criteria:
+- Project Center 与 Task 体验覆盖主流程和 loading/empty/stale/error/partial/large-data 状态
+- 字段均映射到 M0 contract 和 evidence source，无神秘指标
+- Windows/macOS viewport、长路径与大数据 fixture 无溢出重叠
+- 完成理解项目、发现风险、进入 Task、查看依据、IDE 深入的可用性走查
+dependencies:
+- M0
+intake:
+  batch_id: intake-20260711080143
+  split_confidence: high
+  suggested_order: 1
+  total_tasks: 3
+  source_message: align阶段已经结束，现在需要进行调查和计划阶段，产出正式 research pack、五份 RFC backlog 和 M0 Task Pack。M0–M6 分别创建独立任务，不能做成一个超级大任务。M0 固化契约和 fixtures，M1 做高保真前端，M2 再接真实 core/MCP。等 M4 稳定后再让 v3 自己管理 M5，避免过早 self-host。
+  split_reason: 用户明确要求 M0-M6 分别创建独立任务，且每个里程碑都有独立交付面、依赖与验收边界。
