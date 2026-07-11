@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "complete",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "NO_DECLARED_ARCHITECTURE",
+      "severity": "warning",
+      "message_key": "warning.no_declared_architecture",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "task_id": "task.m0",
+  "title": "Freeze V3 contracts",
+  "state": "active",
+  "criteria": [
+    {
+      "criterion_id": "criterion.m0.c07",
+      "title": "Fixture repository consumer proof",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "lanes": [
+    {
+      "lane_id": "lane.session.main",
+      "kind": "session",
+      "label": "Codex main",
+      "state": "closed"
+    }
+  ],
+  "events": [
+    {
+      "timeline_event_id": "timeline.session.open",
+      "kind": "session",
+      "occurred_at": "2026-07-11T08:00:00.000Z",
+      "recorded_at": "2026-07-11T08:00:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "codex",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.session.opened",
+      "details": {},
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.session",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.session",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "timeline.validation.pass",
+      "kind": "validation",
+      "occurred_at": "2026-07-11T08:10:00.000Z",
+      "recorded_at": "2026-07-11T08:10:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "npm",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": "d7ece57",
+      "summary_key": "timeline.validation.passed",
+      "details": {
+        "command": "npm run v3:contracts:check"
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.validation",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.validation",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "window": {
+    "cursor": null,
+    "next_cursor": null,
+    "limit": 100,
+    "returned": 2,
+    "total_estimate": 2,
+    "truncated": false,
+    "truncation_reason": "none",
+    "model_version": "model.fixture.1"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/project-overview-view.schema.json",
+  "title": "ProjectOverviewView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "name", "root", "generated_at", "model_version", "freshness", "completeness", "repository", "model", "architecture", "active_tasks", "protocol_coverage", "evidence_refs", "warnings", "errors"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+    "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "name": { "type": "string", "minLength": 1 },
+    "root": { "$ref": "common.schema.json#/$defs/NativePath" },
+    "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+    "model_version": { "type": "string", "minLength": 1 },
+    "freshness": { "$ref": "common.schema.json#/$defs/Freshness" },
+    "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
+    "repository": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "branch", "head", "dirty", "worktree_count"],
+      "properties": {
+        "state": { "enum": ["available", "not_repository", "unavailable"] },
+        "branch": { "type": ["string", "null"] }, "head": { "type": ["string", "null"] },
+        "dirty": { "type": ["boolean", "null"] }, "worktree_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "model": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "last_evidence_at", "generator_version", "indexed_files"],
+      "properties": {
+        "state": { "enum": ["uninitialized", "rebuilding", "ready", "error"] },
+        "last_evidence_at": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Timestamp" }, { "type": "null" }] },
+        "generator_version": { "type": "string" }, "indexed_files": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "architecture": {
+      "type": "object", "additionalProperties": false,
+      "required": ["declared_docs", "modules", "relationships", "confidence", "evidence_refs"],
+      "properties": {
+        "declared_docs": { "type": "integer", "minimum": 0 }, "modules": { "type": "integer", "minimum": 0 },
+        "relationships": { "type": "integer", "minimum": 0 }, "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+      }
+    },
+    "active_tasks": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["task_id", "title", "state", "risk_level", "criteria", "active_sessions"],
+        "properties": {
+          "task_id": { "$ref": "common.schema.json#/$defs/StableId" }, "title": { "type": "string", "minLength": 1 },
+          "state": { "enum": ["planned", "active", "blocked", "review", "completed", "cancelled"] },
+          "risk_level": { "enum": ["none", "low", "medium", "high", "critical"] },
+          "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
+          "active_sessions": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "protocol_coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "opened_sessions", "closed_sessions", "gaps"],
+      "properties": {
+        "state": { "enum": ["complete", "partial", "gapped", "unknown"] },
+        "opened_sessions": { "type": "integer", "minimum": 0 }, "closed_sessions": { "type": "integer", "minimum": 0 }, "gaps": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
+    "warnings": { "$ref": "common.schema.json#/$defs/Warnings" },
+    "errors": { "$ref": "common.schema.json#/$defs/Errors" }
+  }
+}

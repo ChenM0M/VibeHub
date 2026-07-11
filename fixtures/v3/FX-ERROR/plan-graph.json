@@ -1,0 +1,209 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "unavailable",
+  "completeness": "unknown",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [],
+  "errors": [
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "task_id": "task.m0",
+  "plan_version": 1,
+  "graph_state": "valid",
+  "nodes": [
+    {
+      "node_id": "node.contracts",
+      "title": "Freeze contracts",
+      "goal": "Create M1-ready contracts",
+      "state": "active",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "contracts/v3",
+        "fixtures/v3"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    }
+  ],
+  "scheduling_edges": [],
+  "trace_relations": [],
+  "execution": {
+    "planned_sessions": 1,
+    "observed_sessions": 1,
+    "planned_worktrees": 0,
+    "observed_worktrees": 0
+  }
+}
