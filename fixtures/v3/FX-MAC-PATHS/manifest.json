@@ -1,0 +1,48 @@
+{
+  "scenario_id": "FX-MAC-PATHS",
+  "seed": 20260711,
+  "platforms": [
+    "macos"
+  ],
+  "criteria": [
+    "M0-C03",
+    "M0-C07"
+  ],
+  "expected_states": [
+    "fresh/complete"
+  ],
+  "expected_warnings": [],
+  "expected_errors": [],
+  "contracts": [
+    {
+      "contract": "project_overview",
+      "schema": "project-overview-view.schema.json",
+      "file": "project-overview.json",
+      "sha256": "5b9be392a597b046eb5292ab68fee896733cf86ee67d1ba75ab2d6becbe48350"
+    },
+    {
+      "contract": "project_structure",
+      "schema": "project-structure-view.schema.json",
+      "file": "project-structure.json",
+      "sha256": "ba02a93aa9d07b2d02d755ab8d2b40c050b979222d8583dc8150d17e601beb1b"
+    },
+    {
+      "contract": "task_timeline",
+      "schema": "task-timeline-view.schema.json",
+      "file": "task-timeline.json",
+      "sha256": "8022409791447f57d0ece2d8be0802682f92446735b7b5db1e923c2c539492ab"
+    },
+    {
+      "contract": "plan_graph",
+      "schema": "plan-graph-view.schema.json",
+      "file": "plan-graph.json",
+      "sha256": "412d0fe0c2d0cadc97390ea18e66206d31614d27995e1b623941272207ac8920"
+    },
+    {
+      "contract": "node_brief",
+      "schema": "node-brief.schema.json",
+      "file": "node-brief.json",
+      "sha256": "d3340ad8fa9d514f950586698853d205e2d3378425460002058aaa3c5949f5ff"
+    }
+  ]
+}

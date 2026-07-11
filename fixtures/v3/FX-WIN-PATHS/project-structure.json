@@ -1,0 +1,255 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "complete",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "PATH_CASE_COLLISION",
+      "severity": "warning",
+      "message_key": "warning.path_case_collision",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PATH_LOCKED",
+      "severity": "warning",
+      "message_key": "warning.path_locked",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "index_state": "ready",
+  "nodes": [
+    {
+      "node_id": "file.win.0",
+      "parent_id": null,
+      "name": "VibeHub",
+      "kind": "root",
+      "path": {
+        "platform": "windows",
+        "native": "C:\\Users\\Alex\\VibeHub",
+        "display": "C:/Users/Alex/VibeHub",
+        "identity_key": "windows:C:\\Users\\Alex\\VibeHub",
+        "path_kind": "drive",
+        "accessible": true
+      },
+      "git_state": "unknown",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.win.0",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.win.0",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.win.1",
+      "parent_id": "file.win.0",
+      "name": "VibeHub",
+      "kind": "file",
+      "path": {
+        "platform": "windows",
+        "native": "\\\\server\\share\\VibeHub",
+        "display": "//server/share/VibeHub",
+        "identity_key": "windows:\\\\server\\share\\VibeHub",
+        "path_kind": "unc",
+        "accessible": true
+      },
+      "git_state": "unknown",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.win.1",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.win.1",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.win.2",
+      "parent_id": "file.win.0",
+      "name": "VibeHub",
+      "kind": "file",
+      "path": {
+        "platform": "windows",
+        "native": "\\\\?\\C:\\Users\\Alex\\VibeHub",
+        "display": "C:/Users/Alex/VibeHub",
+        "identity_key": "windows:\\\\?\\C:\\Users\\Alex\\VibeHub",
+        "path_kind": "extended",
+        "accessible": true
+      },
+      "git_state": "unknown",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.win.2",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.win.2",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.win.3",
+      "parent_id": "file.win.0",
+      "name": "file.ts",
+      "kind": "file",
+      "path": {
+        "platform": "windows",
+        "native": "C:\\Users\\Alex\\very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-\\file.ts",
+        "display": "C:/Users/Alex/very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-/file.ts",
+        "identity_key": "windows:C:\\Users\\Alex\\very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-very-long-component-\\file.ts",
+        "path_kind": "drive",
+        "accessible": true
+      },
+      "git_state": "unknown",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.win.3",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.win.3",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.win.4",
+      "parent_id": "file.win.0",
+      "name": "Readme.md",
+      "kind": "file",
+      "path": {
+        "platform": "windows",
+        "native": "C:\\Repo\\Readme.md",
+        "display": "C:/Repo/Readme.md",
+        "identity_key": "windows:C:\\Repo\\Readme.md",
+        "path_kind": "drive",
+        "accessible": true
+      },
+      "git_state": "unknown",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.win.4",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.win.4",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.win.5",
+      "parent_id": "file.win.0",
+      "name": "README.md",
+      "kind": "file",
+      "path": {
+        "platform": "windows",
+        "native": "C:\\Repo\\README.md",
+        "display": "C:/Repo/README.md",
+        "identity_key": "windows:C:\\Repo\\README.md",
+        "path_kind": "drive",
+        "accessible": true
+      },
+      "git_state": "unknown",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.win.5",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.win.5",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.win.6",
+      "parent_id": "file.win.0",
+      "name": "locked.db",
+      "kind": "file",
+      "path": {
+        "platform": "windows",
+        "native": "C:\\Repo\\locked.db",
+        "display": "C:/Repo/locked.db",
+        "identity_key": "windows:C:\\Repo\\locked.db",
+        "path_kind": "drive",
+        "accessible": false
+      },
+      "git_state": "unknown",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.win.6",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.win.6",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "edges": [],
+  "unsupported_analyzers": [],
+  "page": {
+    "cursor": null,
+    "next_cursor": null,
+    "limit": 100,
+    "returned": 7,
+    "total_estimate": 7,
+    "truncated": false,
+    "truncation_reason": "none",
+    "model_version": "model.fixture.1"
+  }
+}

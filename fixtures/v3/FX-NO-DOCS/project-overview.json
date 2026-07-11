@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "complete",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "NO_DECLARED_ARCHITECTURE",
+      "severity": "warning",
+      "message_key": "warning.no_declared_architecture",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "name": "VibeHub",
+  "root": {
+    "platform": "macos",
+    "native": "/Users/alex/Projects/VibeHub",
+    "display": "/Users/alex/Projects/VibeHub",
+    "identity_key": "macos:/Users/alex/Projects/VibeHub",
+    "path_kind": "absolute",
+    "accessible": true
+  },
+  "repository": {
+    "state": "available",
+    "branch": "feature/v3",
+    "head": "d7ece57",
+    "dirty": false,
+    "worktree_count": 1
+  },
+  "model": {
+    "state": "ready",
+    "last_evidence_at": "2026-07-11T08:00:00.000Z",
+    "generator_version": "fixture-1.0",
+    "indexed_files": 128
+  },
+  "architecture": {
+    "declared_docs": 0,
+    "modules": 3,
+    "relationships": 4,
+    "confidence": 0.7,
+    "evidence_refs": [
+      {
+        "evidence_id": "ev.architecture",
+        "kind": "test",
+        "grade": "hard_observed",
+        "label_key": "evidence.fixture.generated",
+        "locator": "fixtures/v3/ev.architecture",
+        "captured_at": "2026-07-11T08:00:00.000Z"
+      }
+    ]
+  },
+  "active_tasks": [
+    {
+      "task_id": "task.m0",
+      "title": "Freeze V3 contracts",
+      "state": "active",
+      "risk_level": "low",
+      "criteria": [
+        {
+          "criterion_id": "criterion.m0.c07",
+          "title": "Fixture repository consumer proof",
+          "status": "passed",
+          "required": true,
+          "evidence_refs": [
+            {
+              "evidence_id": "ev.criterion",
+              "kind": "test",
+              "grade": "hard_observed",
+              "label_key": "evidence.fixture.generated",
+              "locator": "fixtures/v3/ev.criterion",
+              "captured_at": "2026-07-11T08:00:00.000Z"
+            }
+          ]
+        }
+      ],
+      "active_sessions": 1
+    }
+  ],
+  "protocol_coverage": {
+    "state": "complete",
+    "opened_sessions": 1,
+    "closed_sessions": 1,
+    "gaps": 0
+  }
+}

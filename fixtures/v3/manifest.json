@@ -1,0 +1,162 @@
+{
+  "schema_version": "1.0",
+  "fixture_version": "1.0.0",
+  "generator": "scripts/v3-contracts/fixture-data.mjs",
+  "seed": 20260711,
+  "scenarios": [
+    {
+      "scenario_id": "FX-EMPTY",
+      "manifest": "FX-EMPTY/manifest.json",
+      "platforms": [
+        "macos",
+        "windows"
+      ],
+      "criteria": [
+        "M0-C02",
+        "M0-C03",
+        "M0-C06",
+        "M0-C07"
+      ]
+    },
+    {
+      "scenario_id": "FX-HAPPY",
+      "manifest": "FX-HAPPY/manifest.json",
+      "platforms": [
+        "neutral"
+      ],
+      "criteria": [
+        "M0-C01",
+        "M0-C02",
+        "M0-C07",
+        "M0-C11"
+      ]
+    },
+    {
+      "scenario_id": "FX-NO-DOCS",
+      "manifest": "FX-NO-DOCS/manifest.json",
+      "platforms": [
+        "neutral"
+      ],
+      "criteria": [
+        "M0-C03",
+        "M0-C06",
+        "M0-C11"
+      ]
+    },
+    {
+      "scenario_id": "FX-PARALLEL",
+      "manifest": "FX-PARALLEL/manifest.json",
+      "platforms": [
+        "neutral"
+      ],
+      "criteria": [
+        "M0-C03",
+        "M0-C07",
+        "M0-C11"
+      ]
+    },
+    {
+      "scenario_id": "FX-REWORK",
+      "manifest": "FX-REWORK/manifest.json",
+      "platforms": [
+        "neutral"
+      ],
+      "criteria": [
+        "M0-C03",
+        "M0-C07",
+        "M0-C11"
+      ]
+    },
+    {
+      "scenario_id": "FX-STALE",
+      "manifest": "FX-STALE/manifest.json",
+      "platforms": [
+        "neutral"
+      ],
+      "criteria": [
+        "M0-C03",
+        "M0-C06",
+        "M0-C07"
+      ]
+    },
+    {
+      "scenario_id": "FX-PARTIAL",
+      "manifest": "FX-PARTIAL/manifest.json",
+      "platforms": [
+        "neutral"
+      ],
+      "criteria": [
+        "M0-C03",
+        "M0-C06",
+        "M0-C07"
+      ]
+    },
+    {
+      "scenario_id": "FX-ERROR",
+      "manifest": "FX-ERROR/manifest.json",
+      "platforms": [
+        "macos",
+        "windows"
+      ],
+      "criteria": [
+        "M0-C02",
+        "M0-C03",
+        "M0-C06",
+        "M0-C07"
+      ]
+    },
+    {
+      "scenario_id": "FX-WIN-PATHS",
+      "manifest": "FX-WIN-PATHS/manifest.json",
+      "platforms": [
+        "windows"
+      ],
+      "criteria": [
+        "M0-C03",
+        "M0-C05",
+        "M0-C07"
+      ]
+    },
+    {
+      "scenario_id": "FX-MAC-PATHS",
+      "manifest": "FX-MAC-PATHS/manifest.json",
+      "platforms": [
+        "macos"
+      ],
+      "criteria": [
+        "M0-C03",
+        "M0-C07"
+      ]
+    },
+    {
+      "scenario_id": "FX-LARGE",
+      "manifest": "FX-LARGE/manifest.json",
+      "platforms": [
+        "macos",
+        "windows"
+      ],
+      "criteria": [
+        "M0-C03",
+        "M0-C04",
+        "M0-C07"
+      ]
+    },
+    {
+      "scenario_id": "FX-COVERAGE-GAP",
+      "manifest": "FX-COVERAGE-GAP/manifest.json",
+      "platforms": [
+        "all_hosts"
+      ],
+      "criteria": [
+        "M0-C03",
+        "M0-C06",
+        "M0-C07"
+      ]
+    }
+  ],
+  "invalid_sentinels": [
+    "invalid/invalid-version.json",
+    "invalid/invalid-path.json",
+    "invalid/invalid-windows-mixed-separators.json"
+  ]
+}
