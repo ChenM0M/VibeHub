@@ -2,11 +2,11 @@
 
 ## Context Pack
 
-- Path: .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/context-packs/implement.md
+- Path: .vibehub/tasks/T-20260711080143-49b5012c/runs/R-20260711080143-b14d3ac8/context-packs/align.md
 
 ## Manifest
 
-- Path: .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/context-packs/implement.manifest.yaml
+- Path: .vibehub/tasks/T-20260711080143-49b5012c/runs/R-20260711080143-b14d3ac8/context-packs/align.manifest.yaml
 - Status: available
 
 ## Important Project Files
@@ -15,9 +15,9 @@
 
 ## Research Pack
 
-- Required: true
-- Status: required
-- Present on disk: no
+- Required: false
+- Status: skipped
+- Present on disk: yes
 - Current research path: .vibehub/research/current/research-pack.md
 
 ## Known Missing Context

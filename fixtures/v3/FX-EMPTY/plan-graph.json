@@ -1,0 +1,108 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "unknown",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "task_id": "task.none",
+  "plan_version": 1,
+  "graph_state": "valid",
+  "nodes": [],
+  "scheduling_edges": [],
+  "trace_relations": [],
+  "execution": {
+    "planned_sessions": 0,
+    "observed_sessions": 0,
+    "planned_worktrees": 0,
+    "observed_worktrees": 0
+  }
+}

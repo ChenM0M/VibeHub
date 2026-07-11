@@ -2,46 +2,51 @@
 
 ## Task
 
-- Task ID: T-20260619044922-98d818ee
-- Task path: .vibehub/tasks/T-20260619044922-98d818ee
-- Run ID: R-20260619044922-fef32621
-- Run path: .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621
+- Task ID: T-20260711080143-49b5012c
+- Task path: .vibehub/tasks/T-20260711080143-49b5012c
+- Run ID: R-20260711080143-b14d3ac8
+- Run path: .vibehub/tasks/T-20260711080143-49b5012c/runs/R-20260711080143-b14d3ac8
 
 ## Mode
 
-- Mode: evidence_drive
+- Mode: guided_drive
 
 ## Current Phase
 
-- Phase: implement
+- Phase: align
 - Status: active
 
 ## Active Tasks
 
-- T-20260531153015-3a283c0b
-- T-20260609092907-7c439d16
-- T-20260616062024-a8e8bdc2
-- T-20260619044922-98d818ee (current)
+- T-20260711080143-49b5012c (current)
+- T-20260711080143-b1ff21ea
+- T-20260711080143-c3669d9d
+- T-20260711080143-e975f3c8
+- T-20260711080143-fbe94685
+- T-20260711080144-5db160f2
+- T-20260711080144-de5ecb84
 
 ## Intake Queue
 
-- Batch: intake-20260620165245
+- Batch: intake-20260711080144
 - Split confidence: high
-- Source message: 目前这个用量显示总感觉还是不太对劲。我是希望它能够跟我的远端保持一致的，就是远端主要用来计价的，一般来说的那个统计呃统计数字。我的远端要么是Sub to API，要么是new API这种。然后我希望你这一次做了丰富且全面的调查之后再实行。其次就是需要给Vibehub添加一个就是自动变深色模式的功能。无论是Windows电脑还是Mac电脑。其次就是目前在Mac电脑上面，我觉得还是不够美观，因为它上面它有一个那个框。它不是就是它最顶上它有个框一样的，而不是直接在应用上我们自己，然后包含它Mac的三个操作，就是红黄绿的三个点这样子。而上面一个框这样，好奇怪哦，很违和。不过修改的时候记得不要影响到其他平台、其他系统。
-- Current queue task: T-20260620165245-f6d23db9
-- Remaining order: T-20260620165245-f6d23db9 -> T-20260620165245-165f9e8f
-- 1. T-20260620165245-f6d23db9 (Align usage display with remote billing statistics): created
-- 2. T-20260620165245-165f9e8f (Add desktop auto dark mode and macOS integrated titlebar): created
+- Source message: align阶段已经结束，现在需要进行调查和计划阶段，产出正式 research pack、五份 RFC backlog 和 M0 Task Pack。M0–M6 分别创建独立任务，不能做成一个超级大任务。M0 固化契约和 fixtures，M1 做高保真前端，M2 再接真实 core/MCP。等 M4 稳定后再让 v3 自己管理 M5，避免过早 self-host。
+- Current queue task: T-20260711080144-5db160f2
+- Remaining order: T-20260711080144-5db160f2
+- 6. T-20260711080144-5db160f2 (M6 完成 legacy-v2 只读迁移与发布硬化): created; depends_on=[M5]
 
 ## Active Capabilities
 
-- implement
+- align
 
 ## Neighbor Tasks
 
-- T-20260531153015-3a283c0b (Redesign VibeHub project detail UI and project structure explorer): active_capabilities=[], shared_files=[]
-- T-20260609092907-7c439d16 (Harden VibeHub agent protocol and CLI routing): active_capabilities=[], shared_files=[]
-- T-20260616062024-a8e8bdc2 (test cli dispatch): active_capabilities=[], shared_files=[]
+- T-20260711080143-b1ff21ea (M2 实现 V3 事件核心与 MCP 控制面): active_capabilities=[align], shared_files=[]
+- T-20260711080143-c3669d9d (M0 冻结 V3 契约、fixtures 与实施基线): active_capabilities=[], shared_files=[]
+- T-20260711080143-e975f3c8 (M3 构建 Project Intelligence 与架构地图): active_capabilities=[align], shared_files=[]
+- T-20260711080143-fbe94685 (M4 完成 Task 计划图、时间线与验收闭环): active_capabilities=[align], shared_files=[]
+- T-20260711080144-5db160f2 (M6 完成 legacy-v2 只读迁移与发布硬化): active_capabilities=[align], shared_files=[]
+- T-20260711080144-de5ecb84 (M5 用稳定 V3 自管理多会话与 worktree 编排): active_capabilities=[align], shared_files=[]
 
 
 ## Observability Note
@@ -58,11 +63,11 @@
 - .vibehub/agent-view/current-context.md
 - .vibehub/agent-view/handoff.md
 - .vibehub/rules/hard-rules.md
-- .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/context-packs/implement.md
+- .vibehub/tasks/T-20260711080143-49b5012c/runs/R-20260711080143-b14d3ac8/context-packs/align.md
 
 ## What To Write
 
-- Suggested phase output under .vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/outputs/ if needed.
+- Suggested phase output under .vibehub/tasks/T-20260711080143-49b5012c/runs/R-20260711080143-b14d3ac8/outputs/ if needed.
 - Changed files only within the active task scope.
 - Final response or agent output must include changed files, commands run, tests run or reason not run, unresolved risks, and handoff notes.
 

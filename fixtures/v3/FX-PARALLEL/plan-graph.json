@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "complete",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "SCOPE_OVERLAP",
+      "severity": "warning",
+      "message_key": "warning.scope_overlap",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "task_id": "task.m0",
+  "plan_version": 1,
+  "graph_state": "valid",
+  "nodes": [
+    {
+      "node_id": "node.contracts",
+      "title": "Freeze contracts",
+      "goal": "Create M1-ready contracts",
+      "state": "active",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "contracts/v3",
+        "fixtures/v3"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.ui",
+      "title": "Build Project view",
+      "goal": "Render fixtures",
+      "state": "active",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "src/v3/project"
+      ],
+      "criterion_ids": [
+        "criterion.m1.visual"
+      ]
+    },
+    {
+      "node_id": "node.shared",
+      "title": "Update shared types",
+      "goal": "Resolve overlap",
+      "state": "blocked",
+      "readiness": "blocked",
+      "block_reasons": [
+        "scope_overlap"
+      ],
+      "scope": [
+        "src/v3/contracts"
+      ],
+      "criterion_ids": [
+        "criterion.m1.visual"
+      ]
+    }
+  ],
+  "scheduling_edges": [],
+  "trace_relations": [],
+  "execution": {
+    "planned_sessions": 3,
+    "observed_sessions": 3,
+    "planned_worktrees": 2,
+    "observed_worktrees": 2
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "scenario_id": "FX-COVERAGE-GAP",
+  "seed": 20260711,
+  "platforms": [
+    "all_hosts"
+  ],
+  "criteria": [
+    "M0-C03",
+    "M0-C06",
+    "M0-C07"
+  ],
+  "expected_states": [
+    "fresh/complete"
+  ],
+  "expected_warnings": [
+    "PROTOCOL_COVERAGE_GAP"
+  ],
+  "expected_errors": [],
+  "contracts": [
+    {
+      "contract": "project_overview",
+      "schema": "project-overview-view.schema.json",
+      "file": "project-overview.json",
+      "sha256": "59bbef4f5ee2f5ff4c7080bfca69d1410584c841315bcc1d9d3d5fc1d859c181"
+    },
+    {
+      "contract": "project_structure",
+      "schema": "project-structure-view.schema.json",
+      "file": "project-structure.json",
+      "sha256": "2e6730c8b38fc3027cdae4517a98ac45d32c580300ae3e649eff8984bdae9fad"
+    },
+    {
+      "contract": "task_timeline",
+      "schema": "task-timeline-view.schema.json",
+      "file": "task-timeline.json",
+      "sha256": "0f4c8aa943add7a2c60a3a4a69eb01a840b35502cbf3310f9c3dee4385f5548a"
+    },
+    {
+      "contract": "plan_graph",
+      "schema": "plan-graph-view.schema.json",
+      "file": "plan-graph.json",
+      "sha256": "8badd70deeff772a92b10ffbb755ae14124e275bf2912a376bc88578af47ec71"
+    },
+    {
+      "contract": "node_brief",
+      "schema": "node-brief.schema.json",
+      "file": "node-brief.json",
+      "sha256": "fdc12754f2b5bf08e8319f2f7ec048626ca1722aad6e16d5d0c3cfc3c2310138"
+    }
+  ]
+}

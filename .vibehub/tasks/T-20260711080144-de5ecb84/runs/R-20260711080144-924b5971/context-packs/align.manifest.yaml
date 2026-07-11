@@ -1,0 +1,42 @@
+id: align-context-R-20260711080144-924b5971-v1
+schema_version: 1
+phase: align
+task_id: T-20260711080144-de5ecb84
+run_id: R-20260711080144-924b5971
+generated_at: 2026-07-11T08:01:44Z
+source_commit: d7ece57
+budget:
+  max_file_size_bytes: 262144
+  max_tokens: 12000
+  estimated_tokens: 408
+included:
+- path: .vibehub/tasks/T-20260711080144-de5ecb84/task.yaml
+  reason: active task metadata and goal
+  required: true
+  confidence: high
+  bytes: 251
+  estimated_tokens: 57
+- path: .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/run.yaml
+  reason: active run metadata
+  required: true
+  confidence: high
+  bytes: 245
+  estimated_tokens: 62
+- path: .vibehub/rules/hard-rules.md
+  reason: protocol hard rules
+  required: true
+  confidence: high
+  bytes: 1605
+  estimated_tokens: 289
+missing: []
+excluded: []
+quality:
+  has_goal: true
+  has_plan: false
+  has_relevant_code: false
+  has_test_hint: false
+  stale_sources: []
+  flags: []
+observation:
+  generated_by: vibehub_backend
+  evidence_grade: hard_observed

@@ -1,0 +1,10 @@
+schema_version: 1
+kind: vibehub_run
+task_id: "T-20260711080143-e975f3c8"
+run_id: "R-20260711080143-b413c29d"
+mode: "guided_drive"
+phase: "align"
+phase_status: "active"
+created_at: "2026-07-11T08:01:43Z"
+created_by: vibehub
+baseline_commit: null

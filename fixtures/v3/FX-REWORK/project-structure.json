@@ -1,0 +1,153 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "complete",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [],
+  "errors": [],
+  "index_state": "ready",
+  "nodes": [
+    {
+      "node_id": "file.root",
+      "parent_id": null,
+      "name": "VibeHub",
+      "kind": "root",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Projects/VibeHub",
+        "display": "/Users/alex/Projects/VibeHub",
+        "identity_key": "macos:/Users/alex/Projects/VibeHub",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "git_state": "clean",
+      "module_id": null,
+      "ide_target": "vscode://file/VibeHub",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.root",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.root",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "module.core",
+      "parent_id": "file.root",
+      "name": "vibehub-core",
+      "kind": "module",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Projects/VibeHub/crates/vibehub-core",
+        "display": "/Users/alex/Projects/VibeHub/crates/vibehub-core",
+        "identity_key": "macos:/Users/alex/Projects/VibeHub/crates/vibehub-core",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "git_state": "clean",
+      "module_id": "module.core",
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.manifest",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.manifest",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.lib",
+      "parent_id": "module.core",
+      "name": "lib.rs",
+      "kind": "file",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Projects/VibeHub/crates/vibehub-core/src/lib.rs",
+        "display": "/Users/alex/Projects/VibeHub/crates/vibehub-core/src/lib.rs",
+        "identity_key": "macos:/Users/alex/Projects/VibeHub/crates/vibehub-core/src/lib.rs",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "git_state": "modified",
+      "module_id": "module.core",
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.git",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.git",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "edge_id": "edge.root.core",
+      "from_node_id": "file.root",
+      "to_node_id": "module.core",
+      "kind": "contains",
+      "source_kind": "filesystem",
+      "confidence": 1,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.root",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.root",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "edge_id": "edge.core.lib",
+      "from_node_id": "module.core",
+      "to_node_id": "file.lib",
+      "kind": "contains",
+      "source_kind": "filesystem",
+      "confidence": 1,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.manifest",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.manifest",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "unsupported_analyzers": [],
+  "page": {
+    "cursor": null,
+    "next_cursor": null,
+    "limit": 100,
+    "returned": 3,
+    "total_estimate": 3,
+    "truncated": false,
+    "truncation_reason": "none",
+    "model_version": "model.fixture.1"
+  }
+}
