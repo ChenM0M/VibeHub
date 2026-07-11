@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/common.schema.json",
+  "title": "VibeHub V3 Common Contract Vocabulary",
+  "$defs": {
+    "SchemaVersion": { "const": "1.0" },
+    "StableId": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:-]{2,127}$" },
+    "Timestamp": { "type": "string", "format": "date-time" },
+    "Freshness": { "enum": ["fresh", "stale", "rebuilding", "unavailable"] },
+    "Completeness": { "enum": ["complete", "partial", "unsupported", "unknown"] },
+    "EvidenceGrade": { "enum": ["hard_observed", "agent_reported", "inferred", "user_confirmed"] },
+    "EvidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "kind", "grade", "label_key", "locator"],
+      "properties": {
+        "evidence_id": { "$ref": "#/$defs/StableId" },
+        "kind": { "enum": ["event", "file", "git", "command", "test", "user", "external"] },
+        "grade": { "$ref": "#/$defs/EvidenceGrade" },
+        "label_key": { "type": "string", "minLength": 1 },
+        "locator": { "type": "string", "minLength": 1 },
+        "captured_at": { "$ref": "#/$defs/Timestamp" },
+        "excerpt": { "type": "string" }
+      }
+    },
+    "EvidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/EvidenceRef" }, "uniqueItems": true },
+    "Warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message_key", "evidence_refs"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "message_key": { "type": "string", "minLength": 1 },
+        "details": { "type": "object" },
+        "evidence_refs": { "$ref": "#/$defs/EvidenceRefs" }
+      }
+    },
+    "Warnings": { "type": "array", "items": { "$ref": "#/$defs/Warning" } },
+    "StructuredError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category", "recoverable", "message_key", "evidence_refs"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+        "category": { "enum": ["validation", "not_found", "permission", "conflict", "unsupported", "internal"] },
+        "recoverable": { "type": "boolean" },
+        "message_key": { "type": "string", "minLength": 1 },
+        "retry_after_ms": { "type": "integer", "minimum": 0 },
+        "details": { "type": "object" },
+        "evidence_refs": { "$ref": "#/$defs/EvidenceRefs" }
+      }
+    },
+    "Errors": { "type": "array", "items": { "$ref": "#/$defs/StructuredError" } },
+    "NativePath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "native", "display", "identity_key"],
+      "properties": {
+        "platform": { "enum": ["macos", "windows", "linux", "unknown"] },
+        "native": { "type": "string", "minLength": 1 },
+        "display": { "type": "string", "minLength": 1 },
+        "identity_key": { "type": "string", "minLength": 1 },
+        "path_kind": { "enum": ["absolute", "drive", "unc", "extended", "relative"] },
+        "accessible": { "type": ["boolean", "null"] },
+        "symlink_target": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "platform": { "const": "windows" } }, "required": ["platform"] },
+          "then": {
+            "properties": {
+              "native": { "type": "string", "pattern": "^(?:[A-Za-z]:\\\\|\\\\\\\\)[^/]+$" },
+              "display": { "type": "string", "pattern": "^[^\\\\]+$" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "platform": { "const": "macos" } }, "required": ["platform"] },
+          "then": { "properties": { "native": { "type": "string", "pattern": "^/" } } }
+        }
+      ]
+    },
+    "Page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cursor", "next_cursor", "limit", "returned", "total_estimate", "truncated", "truncation_reason", "model_version"],
+      "properties": {
+        "cursor": { "type": ["string", "null"] },
+        "next_cursor": { "type": ["string", "null"] },
+        "limit": { "type": "integer", "minimum": 1 },
+        "returned": { "type": "integer", "minimum": 0 },
+        "total_estimate": { "type": ["integer", "null"], "minimum": 0 },
+        "truncated": { "type": "boolean" },
+        "truncation_reason": { "enum": ["none", "page_limit", "size_budget", "permission", "unsupported"] },
+        "model_version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "Confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "CriterionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion_id", "title", "status", "required", "evidence_refs"],
+      "properties": {
+        "criterion_id": { "$ref": "#/$defs/StableId" },
+        "title": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["proposed", "accepted", "passed", "failed", "blocked", "not_applicable"] },
+        "required": { "type": "boolean" },
+        "evidence_refs": { "$ref": "#/$defs/EvidenceRefs" }
+      }
+    }
+  }
+}

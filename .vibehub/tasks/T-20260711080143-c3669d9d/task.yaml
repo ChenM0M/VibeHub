@@ -1,0 +1,23 @@
+schema_version: 1
+kind: vibehub_task
+task_id: T-20260711080143-c3669d9d
+title: M0 冻结 V3 契约、fixtures 与实施基线
+mode: guided_drive
+phase: review
+phase_status: completed
+created_at: 2026-07-11T08:01:43Z
+created_by: vibehub
+intent: 冻结五类 view contract、事件与证据术语、双平台 fixtures，并形成能独立驱动 M1 的 M0 Task Pack。
+acceptance_criteria:
+- ProjectOverviewView、ProjectStructureView、TaskTimelineView、PlanGraphView、NodeBrief 的 JSON Schema 与版本策略完成
+- fixtures 覆盖空项目、大仓库、无架构文档、并行 Task、Windows 路径、stale/partial/error 状态
+- 五份 RFC backlog 的决策问题、依赖与退出条件完成
+- M1 可仅依赖 contracts/fixtures 开发，不读取 v2 YAML 或调用真实 v3 core
+dependencies: []
+intake:
+  batch_id: intake-20260711080143
+  split_confidence: high
+  suggested_order: 0
+  total_tasks: 3
+  source_message: align阶段已经结束，现在需要进行调查和计划阶段，产出正式 research pack、五份 RFC backlog 和 M0 Task Pack。M0–M6 分别创建独立任务，不能做成一个超级大任务。M0 固化契约和 fixtures，M1 做高保真前端，M2 再接真实 core/MCP。等 M4 稳定后再让 v3 自己管理 M5，避免过早 self-host。
+  split_reason: 用户明确要求 M0-M6 分别创建独立任务，且每个里程碑都有独立交付面、依赖与验收边界。

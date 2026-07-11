@@ -33,6 +33,9 @@
 - `hard_observed`: 总量口径调整后重新运行 `cargo test --manifest-path src-tauri/Cargo.toml local_agent_usage`、`npm run build`、`git diff --check -- ...`，均通过。
 - `hard_observed`: 因 `v2.0.0-pre.20` 已存在且已推送到远端，本次待发布版本已推进到 `2.0.0-pre.21`。
 - `hard_observed`: `2.0.0-pre.21` 发布前验证已重新运行：`cargo test --manifest-path src-tauri/Cargo.toml` 通过 17 个测试，`npm run build` 通过，`git diff --check` 通过。
+- `hard_observed`: 诊断用户反馈的 Homebrew upgrade 卡在 pre21：本地 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、lockfiles 和本地/远端 `v2.0.0-pre.22` tag 均已存在，GitHub release `v2.0.0-pre.22` 已发布且包含 arm64/x64 DMG。
+- `hard_observed`: 远端 Homebrew tap `ChenM0M/homebrew-vibehub` 的 `Casks/vibehub.rb` 已是 `2.0.0-pre.22`，但本机 tap checkout 仍停在 commit `0b8da64` / `2.0.0-pre.21`，且 `brew config` 显示 `HOMEBREW_NO_AUTO_UPDATE: set`；因此 `brew upgrade` 使用旧 tap 误判已是最新。
+- `hard_observed`: 已运行 `brew update` 更新 `chenm0m/vibehub` tap 到 commit `e46b3f9`，随后 `brew upgrade --cask vibehub` 成功将本机安装从 `2.0.0-pre.21` 升级到 `2.0.0-pre.22`；`/opt/homebrew/bin/vibehub --version` 现输出 `2.0.0-pre.22`。
 
 ## Not Yet Done
 
@@ -61,6 +64,7 @@
 - `hard_observed`: `src/locales/zh.json`, `src/locales/zh-TW.json`, `src/locales/en.json` - 更新 Token 口径文案。
 - `hard_observed`: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `Cargo.lock` - 版本推进到 `2.0.0-pre.21`。
 - `hard_observed`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/outputs/output.md` - 更新本轮修复、验证和风险记录。
+- `hard_observed`: `.vibehub/tasks/T-20260619044922-98d818ee/runs/R-20260619044922-fef32621/outputs/output.md` - 追加 pre22 Homebrew tap/本机安装诊断与升级结果。
 - `hard_observed`: VibeHub CLI sync 自动更新 `.vibehub/agent-view/handoff.md`、`.vibehub/agent-view/sync.md`、`.vibehub/index/task-events.idx`、`.vibehub/state.yaml`、当前 run context pack、events 和新增 sync report；未手工编辑 canonical state。
 
 ## Files Reportedly Read
@@ -81,6 +85,8 @@
 - `hard_observed`: `src/types/index.ts`
 - `hard_observed`: `src-tauri/src/commands.rs`
 - `hard_observed`: `src-tauri/tauri.conf.json`
+- `hard_observed`: `.github/workflows/homebrew.yml`
+- `hard_observed`: `/opt/homebrew/Library/Taps/chenm0m/homebrew-vibehub/Casks/vibehub.rb`
 - `hard_observed`: local Codex SQLite metadata under `~/.codex`
 - `hard_observed`: local OpenCode SQLite metadata under `~/.local/share/opencode/opencode.db`
 
@@ -120,6 +126,18 @@
 - `hard_observed`: `cargo test --manifest-path src-tauri/Cargo.toml`
 - `hard_observed`: `npm run build`
 - `hard_observed`: `git diff --check`
+- `hard_observed`: `git tag --list 'v2.0.0-pre.*' --sort=-version:refname | head -20`
+- `hard_observed`: `git show-ref --tags v2.0.0-pre.22 v2.0.0-pre.21`
+- `hard_observed`: `git ls-remote --tags origin 'refs/tags/v2.0.0-pre.22' 'refs/tags/v2.0.0-pre.21'`
+- `hard_observed`: `curl -fsSL https://raw.githubusercontent.com/ChenM0M/homebrew-vibehub/main/Casks/vibehub.rb | sed -n '1,120p'`
+- `hard_observed`: `curl -fsSL https://api.github.com/repos/ChenM0M/VibeHub/releases/tags/v2.0.0-pre.22 | rg '"tag_name"|"name"|"browser_download_url"|"published_at"'`
+- `hard_observed`: `brew config | rg 'HOMEBREW_NO_AUTO_UPDATE|HOMEBREW_AUTO_UPDATE|API|TAP|HOMEBREW_VERSION|Core tap|HOMEBREW_BREW_GIT_REMOTE|HOMEBREW_NO_INSTALL_FROM_API'`
+- `hard_observed`: `brew update`
+- `hard_observed`: `brew info --cask vibehub`
+- `hard_observed`: `brew upgrade --cask vibehub`
+- `hard_observed`: `which vibehub && vibehub --version`
+- `hard_observed`: `brew list --cask --versions vibehub`
+- `hard_observed`: `brew outdated --cask vibehub || true`
 
 ## Tests Run
 
@@ -140,6 +158,7 @@
 - `hard_observed`: `2.0.0-pre.21` 发布前 `npm run build` passed: `tsc && vite build` completed successfully.
 - `hard_observed`: `2.0.0-pre.21` 发布前 `git diff --check` passed.
 - `agent_reported`: No browser/Tauri visual QA was run in this turn.
+- `hard_observed`: Homebrew upgrade verification passed: `vibehub --version` outputs `2.0.0-pre.22`, `brew list --cask --versions vibehub` outputs `vibehub 2.0.0-pre.22`, and `brew outdated --cask vibehub` reports no outdated cask.
 
 ## Context Still Needed
 
@@ -154,6 +173,7 @@
 - `hard_observed`: `cargo test` 输出已有 warning：`vibehub-cli/src/main.rs` 被多个 bin target 使用，以及若干 gateway dead_code warning。
 - `hard_observed`: `npm run build` 输出已有 warning：Baseline/Browserslist 数据过旧，以及 chunk size 超过 500 kB。
 - `inferred`: Codex/OpenCode 本地 schema 不是稳定公共 API，未来版本变化仍可能需要字段探测或兼容。
+- `hard_observed`: 本机 Homebrew 环境设置了 `HOMEBREW_NO_AUTO_UPDATE`；未来如果直接运行 `brew upgrade vibehub` 而不先 `brew update`，仍可能再次看到 tap 未刷新导致的“已是最新”假象。
 
 ## Next Session Should
 
