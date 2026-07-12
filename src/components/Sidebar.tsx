@@ -54,8 +54,9 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
             }}
             title="返回主页"
         >
-            <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-[0.6rem] bg-white shadow-sm ring-1 ring-black/10 dark:bg-white/95 dark:ring-white/10">
-                <img src="/app-icon.png" alt="VibeHub" className="h-8 w-8 -translate-y-px scale-[1.05] object-cover" />
+            <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-[0.6rem] bg-white shadow-sm ring-1 ring-black/10 dark:bg-transparent dark:ring-white/5">
+                <img src="/app-icon.png" alt="VibeHub" className="h-8 w-8 -translate-y-px scale-[1.05] object-cover dark:hidden" />
+                <img src="/logo-dark.jpg" alt="VibeHub Dark" className="h-8 w-8 -translate-y-px scale-[1.05] object-cover hidden dark:block" />
             </span>
             <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">VibeHub</span>
         </button>
@@ -71,7 +72,7 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
     };
 
     return (
-        <div className={cn("w-64 glass border-r border-border/50 h-full flex flex-col", className)}>
+        <div className={cn("w-64 glass border-r border-border/30 h-full flex flex-col", className)}>
             {isMac && <div className="h-12 shrink-0" data-tauri-drag-region="deep" />}
 
             <div className="p-4">
