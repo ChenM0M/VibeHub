@@ -15,6 +15,16 @@ export interface TaskTimelineView {
   freshness: "fresh" | "stale" | "rebuilding" | "unavailable";
   completeness: "complete" | "partial" | "unsupported" | "unknown";
   criteria: CriterionSummary[];
+  completion: {
+    proposal_event_id: string | null;
+    proposed_at_version: number | null;
+    digest: string | null;
+    valid: boolean;
+    confirmed: boolean;
+    confirmed_at_version: number | null;
+    confirmed_by: string | null;
+    channel: string | null;
+  };
   lanes: {
     lane_id: string;
     kind: "task" | "session" | "node";

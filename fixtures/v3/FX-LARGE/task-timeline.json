@@ -18,9 +18,41 @@
   "warnings": [],
   "errors": [],
   "task_id": "task.m0",
-  "title": "Freeze V3 contracts",
+  "title": "Freeze V3 contracts and fixtures",
   "state": "active",
   "criteria": [
+    {
+      "criterion_id": "criterion.m0.c01",
+      "title": "Schema hash stability",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion.m0.c01",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion.m0.c01",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "criterion_id": "criterion.m0.c02",
+      "title": "All views validate against schema",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion.m0.c02",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion.m0.c02",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
     {
       "criterion_id": "criterion.m0.c07",
       "title": "Fixture repository consumer proof",
@@ -28,22 +60,38 @@
       "required": true,
       "evidence_refs": [
         {
-          "evidence_id": "ev.criterion",
+          "evidence_id": "ev.criterion.m0.c07",
           "kind": "test",
           "grade": "hard_observed",
           "label_key": "evidence.fixture.generated",
-          "locator": "fixtures/v3/ev.criterion",
+          "locator": "fixtures/v3/ev.criterion.m0.c07",
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
     }
   ],
+  "completion": {
+    "proposal_event_id": null,
+    "proposed_at_version": null,
+    "digest": null,
+    "valid": false,
+    "confirmed": false,
+    "confirmed_at_version": null,
+    "confirmed_by": null,
+    "channel": null
+  },
   "lanes": [
     {
       "lane_id": "lane.session.main",
       "kind": "session",
-      "label": "Codex main",
+      "label": "Codex 主会话",
       "state": "closed"
+    },
+    {
+      "lane_id": "lane.node.contracts",
+      "kind": "node",
+      "label": "节点：冻结契约",
+      "state": "repaired"
     }
   ],
   "events": [
