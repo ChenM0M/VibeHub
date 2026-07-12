@@ -18,6 +18,7 @@ Phase: align (active)
 - `agent_reported`: 实现每个 eligible node 的创建、锁定、agent cwd 启动、dirty/commit checks、integration queue、pre-integration validation、base drift、conflict ownership、retry、retention 和 cleanup。
 - `agent_reported`: 通过 M1/M4 现有 UI 表达：PlanGraph node/session distribution 显示 owner/并行/阻塞/集成状态，timeline 显示 lease/worktree/integration/conflict/recovery 事件，NodeBrief 显示 scope/base/branch/cwd/next action，概要显示任务级风险与验收。
 - `agent_reported`: V3 记录 M5 的 Task/PlanNode/Session/Worktree events；V2 只保留最小 audit pointer、shadow comparison 和 rollback control。
+- `user_confirmed`: launcher/cockpit 是只读看板；criterion review、completion confirmation 与 workflow truth 由 agent 通过受控 CLI/MCP/application command surface 判断和写入，production UI 不提供直接改写入口。
 
 ## Success Criteria
 
@@ -31,7 +32,7 @@ Phase: align (active)
 6. `M5-C06 冲突不丢失`: 人为制造同文件与 shared generated file 冲突；系统在启动前预警或 integration 时明确 conflict owner、files、base drift、resolution/retry path，绝不静默覆盖或自动选择胜者。
 7. `M5-C07 故障恢复`: agent crash、desktop exit、orphan process、missing/moved worktree、stale lease、Windows locked file/antivirus occupation 后均可诊断和恢复；dirty worktree 永不自动 remove/reset，reclaim 需 challenge/evidence。
 8. `M5-C08 Git/native 安全`: 所有 Git 调用使用 argument arrays 和稳定 porcelain parser；覆盖 unborn/detached/already checked out、long path、drive/UNC/case、path occupation 和 application shutdown，macOS/Windows 行为有实测矩阵。
-9. `M5-C09 M1 产品守恒`: 不新增割裂的编排主页面；四 Tab、task 选择、PlanGraph layout/toggle/node click、timeline filter/detail、NodeBrief 与结构架构入口保持一致，只在既有信息位增加真实 session/worktree/integration data 和明确 actions。
+9. `M5-C09 M1 产品守恒`: 不新增割裂的编排主页面；四 Tab、task 选择、PlanGraph layout/toggle/node click、timeline filter/detail、NodeBrief 与结构架构入口保持一致，只在既有信息位增加真实 session/worktree/integration data。看板交互限于选择、筛选、展开、刷新和导航，不直接写 criterion/completion/workflow truth。
 10. `M5-C10 完成闭环`: 三并行节点成功提交并按 project policy 集成，required criteria 经 M4 规则逐项验收；冲突、repair 和 integration attempts 全史可回放，M5 自身能 kill-resume 并从正确 task/node/base 继续。
 
 ## Acceptance Criteria
@@ -44,6 +45,7 @@ Phase: align (active)
 
 - `user_confirmed`: 不改变 M1 四 Tab 与核心交互，不另做“多 agent 大屏”替代当前 cockpit。
 - `agent_reported`: 不让系统自行决定产品目标、拆 task 或替用户完成语义确认；编排只管理已批准 PlanNodes、scope、执行环境和集成生命周期。
+- `user_confirmed`: 不把 launcher 变成人工验收控制台；不得在 production cockpit 增加通过/失败/阻塞、提出完成、确认完成等 domain mutation controls。
 - `agent_reported`: 不支持 remote/cloud runner、多人权限系统或任意 daemon orchestration。
 - `agent_reported`: 不自动删除 dirty worktree、不自动解决冲突、不绕过 M4 Criterion/confirmation truth rules。
 
@@ -61,6 +63,8 @@ Phase: align (active)
 ## Completed
 
 - `hard_observed`: 对照 M1 产品基线、M4 stability gate、M5 task metadata、主计划 M5 与 RFC-005，完成 M5 entry/self-host、orchestration、recovery 和 UI 映射验收重写。
+- `hard_observed`: 审计并移除 M4 引入的 desktop lifecycle write chain；production cockpit 恢复为只读验收展示，agent/core lifecycle 保留。
+- `hard_observed`: 按 M1-M4 归属建立 5 个 Git commits，形成可归因 baseline；`.vibehub/v3/` 本地 event store 已加入忽略。
 
 ## Not Yet Done
 
@@ -70,6 +74,7 @@ Phase: align (active)
 
 - `hard_observed`: `.vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/outputs/output.md`。
 - `hard_observed`: `vibehub switch/sync` 管理的 agent-view、context pack、events、index 与 projection 文件。
+- `hard_observed`: 本轮边界修正涉及 `src/v3/app/V3Cockpit.tsx`, `AcceptanceProgress.tsx`, `src/services/v3ProductionViews.ts`, `src-tauri/src/commands.rs`, `src-tauri/src/main.rs`, `.gitignore`，已随里程碑 commits 记录。
 
 ## Files Reportedly Read
 
@@ -81,10 +86,12 @@ Phase: align (active)
 
 - `hard_observed`: `vibehub switch . T-20260711080144-de5ecb84`, `vibehub sync .`。
 - `hard_observed`: `rg`, `sed`, `find` 等任务、源码和文档读取命令。
+- `hard_observed`: `npm run build`, `cargo fmt --all -- --check`, `cargo test --workspace`；按里程碑执行 `git add`/`git commit`。
 
 ## Tests Run
 
-- `not_tested`: Align 只完善任务定义，未运行 worktree/native/self-host tests。
+- `hard_observed`: production build 通过；workspace tests 通过：Tauri 17、adapters 2、core 233，零失败。
+- `not_tested`: Align 尚未运行 worktree/native/self-host tests。
 - `hard_observed`: M1 golden evidence 和 M4 定义的未来 stability evidence 是 M5 输入；目前不构成 M5 gate pass。
 
 ## Context Still Needed
@@ -93,7 +100,7 @@ Phase: align (active)
 
 ## Warnings
 
-- `hard_observed`: 当前工作区已有大量未提交 M0/M1/VibeHub 变更，不适合作为 M5 并行隔离 baseline；进入 M5 前必须建立可归因 clean baseline。
+- `hard_observed`: M0-M4 代码与任务历史已按里程碑提交，当前建立了可归因 baseline；M5 后续仍需在每次 VibeHub sync 后保持状态提交纪律。
 - `inferred`: 当前 PlanGraph 的 agent distribution 是 mock-derived；M5 必须替换为真实 session/worktree projection，同时保留用户已认可的 toggle、节点和详情交互。
 
 ## Next Session Should
