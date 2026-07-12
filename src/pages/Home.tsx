@@ -27,7 +27,10 @@ import {
     rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableProjectCard } from '@/components/SortableProjectCard';
-import { VibehubProjectCenter } from '@/components/VibehubProjectCenter';
+import { V3Cockpit } from '@/v3/app/V3Cockpit';
+import { isV3PlaygroundRequested, V3_DEBUG_ENABLED } from '@/v3/debug';
+import { loadV3ProductionViews } from '@/services/v3ProductionViews';
+import { useV3Store } from '@/v3/stores/v3Store';
 
 interface HomeProps {
     searchQuery: string;
@@ -41,10 +44,13 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
     const [isCustomLaunchMode, setIsCustomLaunchMode] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+    const showV3Playground = isV3PlaygroundRequested();
+    const leaveV3Project = useV3Store((state) => state.leaveProject);
 
     useEffect(() => {
+        leaveV3Project();
         setSelectedProjectId(null);
-    }, [resetKey, selectedWorkspaceId]);
+    }, [resetKey, selectedWorkspaceId, leaveV3Project]);
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -92,6 +98,19 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
         e.preventDefault();
         // Drag and drop file logic can be added here
     };
+
+    if (showV3Playground) {
+        return (
+            <V3Cockpit
+                debugMode
+                onBack={() => {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('v3-playground');
+                    window.location.assign(url.toString());
+                }}
+            />
+        );
+    }
 
     if (!config) return null;
 
@@ -147,9 +166,14 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
 
     if (selectedProject) {
         return (
-            <VibehubProjectCenter
-                project={selectedProject}
-                onBack={() => setSelectedProjectId(null)}
+            <V3Cockpit
+                projectPath={selectedProject.path}
+                productionLoader={loadV3ProductionViews}
+                debugMode={V3_DEBUG_ENABLED}
+                onBack={() => {
+                    leaveV3Project();
+                    setSelectedProjectId(null);
+                }}
             />
         );
     }
