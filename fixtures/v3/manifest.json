@@ -157,6 +157,8 @@
   "invalid_sentinels": [
     "invalid/invalid-version.json",
     "invalid/invalid-path.json",
-    "invalid/invalid-windows-mixed-separators.json"
+    "invalid/invalid-windows-mixed-separators.json",
+    "invalid/invalid-worktree-lease-generation.json",
+    "invalid/invalid-worktree-eligibility-digest.json"
   ]
 }

@@ -176,6 +176,38 @@
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
     }
   ],
   "index_state": "ready",

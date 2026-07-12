@@ -35,6 +35,16 @@ export interface NodeBrief {
   validation_commands: string[];
   state: "planned" | "ready" | "active" | "blocked" | "review" | "completed" | "cancelled" | "superseded";
   next_intent: string;
+  execution?: {
+    session_ids: string[];
+    worktree: WorktreeRef | null;
+    base_sha: string | null;
+    native_path: NativePath | null;
+    dirty: boolean | null;
+    integration_state: "not_requested" | "queued" | "integrating" | "integrated" | "conflicted" | "blocked";
+    conflict_owner: string | null;
+    next_action: string;
+  } | null;
   budget: {
     max_tokens: number;
     estimated_tokens: number;
@@ -63,6 +73,24 @@ export interface EvidenceRef {
   locator: string;
   captured_at?: string;
   excerpt?: string;
+}
+export interface WorktreeRef {
+  worktree_id: string;
+  lease_id: string | null;
+  branch: string;
+  state:
+    | "planned"
+    | "creating"
+    | "ready"
+    | "active"
+    | "dirty"
+    | "submitted"
+    | "integrating"
+    | "integrated"
+    | "conflicted"
+    | "abandoned"
+    | "repairing"
+    | "cleaned";
 }
 export interface Warning {
   code: string;

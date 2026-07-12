@@ -23,6 +23,8 @@ export interface PlanGraphView {
     block_reasons: string[];
     scope: string[];
     criterion_ids: string[];
+    session_ids?: string[];
+    worktree?: WorktreeRef | null;
   }[];
   scheduling_edges: {
     edge_id: string;
@@ -46,6 +48,24 @@ export interface PlanGraphView {
   evidence_refs: EvidenceRefs;
   warnings: Warnings;
   errors: Errors;
+}
+export interface WorktreeRef {
+  worktree_id: string;
+  lease_id: string | null;
+  branch: string;
+  state:
+    | "planned"
+    | "creating"
+    | "ready"
+    | "active"
+    | "dirty"
+    | "submitted"
+    | "integrating"
+    | "integrated"
+    | "conflicted"
+    | "abandoned"
+    | "repairing"
+    | "cleaned";
 }
 export interface EvidenceRef {
   evidence_id: string;

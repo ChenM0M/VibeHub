@@ -97,6 +97,23 @@
       }
     },
     "Confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "GitSha": { "type": "string", "pattern": "^[0-9a-fA-F]{7,64}$" },
+    "WorktreeState": {
+      "enum": ["planned", "creating", "ready", "active", "dirty", "submitted", "integrating", "integrated", "conflicted", "abandoned", "repairing", "cleaned"]
+    },
+    "EligibilityDecision": { "enum": ["allow", "warn", "block"] },
+    "IntegrationPolicy": { "enum": ["merge_no_ff", "rebase", "cherry_pick"] },
+    "WorktreeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["worktree_id", "lease_id", "branch", "state"],
+      "properties": {
+        "worktree_id": { "$ref": "#/$defs/StableId" },
+        "lease_id": { "anyOf": [{ "$ref": "#/$defs/StableId" }, { "type": "null" }] },
+        "branch": { "type": "string", "minLength": 1 },
+        "state": { "$ref": "#/$defs/WorktreeState" }
+      }
+    },
     "CriterionSummary": {
       "type": "object",
       "additionalProperties": false,

@@ -24,6 +24,7 @@ const schemaNames = [
   "task-timeline-view.schema.json",
   "plan-graph-view.schema.json",
   "node-brief.schema.json",
+  "worktree-orchestration-view.schema.json",
 ];
 const requiredScenarios = [
   "FX-EMPTY", "FX-HAPPY", "FX-NO-DOCS", "FX-PARALLEL", "FX-REWORK", "FX-STALE",
@@ -64,7 +65,7 @@ assert(new Set(manifest.scenarios.flatMap((item) => item.criteria)).size >= 8, "
 
 for (const scenario of manifest.scenarios) {
   const scenarioManifest = await readJson(resolve(fixtureRoot, scenario.manifest));
-  assert(scenarioManifest.contracts.length === Object.keys(CONTRACT_FILES).length, `${scenario.scenario_id} covers all five view contracts`);
+  assert(scenarioManifest.contracts.length === Object.keys(CONTRACT_FILES).length, `${scenario.scenario_id} covers all view contracts`);
   for (const contract of scenarioManifest.contracts) {
     const content = await readFile(resolve(fixtureRoot, scenario.scenario_id, contract.file), "utf8");
     const instance = JSON.parse(content);
@@ -116,7 +117,7 @@ for (const sourcePath of v3Sources) {
 }
 const repositorySource = await readFile(resolve(projectRoot, "src/v3/contracts/fixtureRepository.ts"), "utf8");
 for (const filename of Object.values(CONTRACT_FILES)) assert(repositorySource.includes(filename), `fixture repository loads ${filename}`);
-assert(repositorySource.includes("Promise.all"), "fixture repository exposes one five-view bundle load boundary");
+assert(repositorySource.includes("Promise.all"), "fixture repository exposes one view-bundle load boundary");
 const transpiledRepository = ts.transpileModule(repositorySource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
 }).outputText;
@@ -158,9 +159,36 @@ assert(commandValidator({
   idempotency_key: "idem.command.open",
 }), `session_open command sample validates: ${ajv.errorsText(commandValidator.errors)}`);
 assert(!commandValidator({ command: "session_open", project_id: "project.contract" }), "write command rejects missing scope/version/idempotency");
+assert(commandValidator({
+  command: "worktree_create",
+  project_id: "project.contract",
+  task_id: "task.contract",
+  session_id: "session.main",
+  actor: "contract-check",
+  expected_version: 3,
+  idempotency_key: "idem.command.worktree-create",
+  node_id: "node.contracts",
+  worktree_id: "worktree.contracts",
+  lease_id: "lease.contracts",
+  operation_id: "operation.create.contracts",
+  eligibility_digest: "a".repeat(64),
+}), `worktree_create command sample validates: ${ajv.errorsText(commandValidator.errors)}`);
+assert(!commandValidator({
+  command: "worktree_create",
+  project_id: "project.contract",
+  task_id: "task.contract",
+  session_id: "session.main",
+  actor: "contract-check",
+  expected_version: 3,
+  idempotency_key: "idem.command.worktree-create-invalid",
+  node_id: "node.contracts",
+  worktree_id: "worktree.contracts",
+  operation_id: "operation.create.contracts",
+  eligibility_digest: "not-a-digest",
+}), "worktree command rejects an invalid eligibility digest");
 for (const scenario of ["FX-HAPPY", "FX-WIN-PATHS", "FX-REWORK", "FX-LARGE"]) {
   const bundle = await repository.loadScenario(scenario);
-  assert(Object.keys(bundle).length === 5, `TypeScript repository loads all views for ${scenario}`);
+  assert(Object.keys(bundle).length === Object.keys(CONTRACT_FILES).length, `TypeScript repository loads all views for ${scenario}`);
   assert(Object.values(bundle).every((view) => view.schema_version === CONTRACT_VERSION), `TypeScript repository preserves version for ${scenario}`);
 }
 
@@ -179,9 +207,19 @@ const parallelTimeline = await readJson(resolve(fixtureRoot, "FX-PARALLEL/task-t
 const parallelGraph = await readJson(resolve(fixtureRoot, "FX-PARALLEL/plan-graph.json"));
 assert(parallelOverview.active_tasks.length >= 2 && parallelTimeline.lanes.length >= 3, "parallel fixture covers multiple tasks and sessions");
 assert(parallelGraph.warnings.some((item) => item.code === "SCOPE_OVERLAP"), "parallel fixture exposes overlap warning");
+const parallelOrchestration = await readJson(resolve(fixtureRoot, "FX-PARALLEL/worktree-orchestration.json"));
+assert(parallelOrchestration.worktrees.length === 2, "parallel fixture projects two worktrees");
+assert(parallelOrchestration.worktrees.some((item) => item.eligibility.decision === "block" && item.lease === null), "blocked parallel scope receives no lease");
+assert(parallelOrchestration.entry_gate.state === "closed" && !parallelOrchestration.entry_gate.self_host_writes_allowed, "M5 fixture keeps self-host writes closed without native and owner evidence");
 const reworkTimeline = await readJson(resolve(fixtureRoot, "FX-REWORK/task-timeline.json"));
 const reworkGraph = await readJson(resolve(fixtureRoot, "FX-REWORK/plan-graph.json"));
 assert(reworkTimeline.events.filter((item) => item.kind === "attempt").length >= 2 && reworkGraph.trace_relations.length >= 2, "rework fixture preserves two attempts and causal traces");
+const reworkOrchestration = await readJson(resolve(fixtureRoot, "FX-REWORK/worktree-orchestration.json"));
+assert(reworkOrchestration.worktrees[0].state === "conflicted" && reworkOrchestration.worktrees[0].conflict.owner_session_id === "session.main", "rework fixture keeps conflict ownership on the original session");
+assert(reworkOrchestration.worktrees[0].recovery.operation_id === reworkOrchestration.worktrees[0].integration.operation_id, "rework fixture preserves operation identity across retry");
+const winOrchestration = await readJson(resolve(fixtureRoot, "FX-WIN-PATHS/worktree-orchestration.json"));
+assert(winOrchestration.worktrees[0].git.dirty && winOrchestration.worktrees[0].recovery.state === "inspect_required", "Windows fixture refuses blind cleanup of a dirty worktree");
+assert(winOrchestration.orphan_candidates[0].process_state === "unknown" && winOrchestration.orphan_candidates[0].inspect_required, "Windows fixture does not infer process death from timeout");
 
 const schemaHashSummary = schemaNames.map((name) => `${basename(name)}=${sha256(JSON.stringify(schemas.get(name)))}`).join(" ");
 if (failures.length) {
@@ -189,6 +227,6 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exitCode = 1;
 } else {
-  console.log(`V3 contract check passed: ${passed.length} assertions, ${manifest.scenarios.length} scenarios, 5 views, 2 write contracts.`);
+  console.log(`V3 contract check passed: ${passed.length} assertions, ${manifest.scenarios.length} scenarios, 6 views, 2 write contracts.`);
   console.log(`Schema hashes: ${schemaHashSummary}`);
 }

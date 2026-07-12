@@ -4,6 +4,7 @@ import type {
   ProjectOverviewView,
   ProjectStructureView,
   TaskTimelineView,
+  WorktreeOrchestrationView,
 } from "./generated";
 
 export const V3_FIXTURE_SCENARIOS = [
@@ -29,6 +30,8 @@ export interface V3FixtureBundle {
   taskTimeline: TaskTimelineView;
   planGraph: PlanGraphView;
   nodeBrief: NodeBrief;
+  // Production gains this projection when the M5 core slice lands; fixtures always provide it.
+  worktreeOrchestration?: WorktreeOrchestrationView;
 }
 
 export type JsonLoader = <T>(path: string) => Promise<T>;
@@ -44,6 +47,7 @@ const fixtureFiles = {
   taskTimeline: "task-timeline.json",
   planGraph: "plan-graph.json",
   nodeBrief: "node-brief.json",
+  worktreeOrchestration: "worktree-orchestration.json",
 } as const;
 
 export function createV3FixtureRepository(
@@ -55,15 +59,16 @@ export function createV3FixtureRepository(
     async loadScenario(scenario) {
       const load = <T>(filename: string) =>
         loadJson<T>(`${basePath}/${scenario}/${filename}`);
-      const [projectOverview, projectStructure, taskTimeline, planGraph, nodeBrief] =
+      const [projectOverview, projectStructure, taskTimeline, planGraph, nodeBrief, worktreeOrchestration] =
         await Promise.all([
           load<ProjectOverviewView>(fixtureFiles.projectOverview),
           load<ProjectStructureView>(fixtureFiles.projectStructure),
           load<TaskTimelineView>(fixtureFiles.taskTimeline),
           load<PlanGraphView>(fixtureFiles.planGraph),
           load<NodeBrief>(fixtureFiles.nodeBrief),
+          load<WorktreeOrchestrationView>(fixtureFiles.worktreeOrchestration),
         ]);
-      return { projectOverview, projectStructure, taskTimeline, planGraph, nodeBrief };
+      return { projectOverview, projectStructure, taskTimeline, planGraph, nodeBrief, worktreeOrchestration };
     },
   };
 }

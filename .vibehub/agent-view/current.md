@@ -2,10 +2,10 @@
 
 ## Task
 
-- Task ID: T-20260711080144-de5ecb84
-- Task path: .vibehub/tasks/T-20260711080144-de5ecb84
-- Run ID: R-20260711080144-924b5971
-- Run path: .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971
+- Task ID: T-20260711080144-5db160f2
+- Task path: .vibehub/tasks/T-20260711080144-5db160f2
+- Run ID: R-20260711080144-b9c6e08e
+- Run path: .vibehub/tasks/T-20260711080144-5db160f2/runs/R-20260711080144-b9c6e08e
 
 ## Mode
 
@@ -18,8 +18,7 @@
 
 ## Active Tasks
 
-- T-20260711080144-5db160f2
-- T-20260711080144-de5ecb84 (current)
+- T-20260711080144-5db160f2 (current)
 
 ## Intake Queue
 
@@ -36,8 +35,7 @@
 
 ## Neighbor Tasks
 
-- T-20260711080144-5db160f2 (M6 完成 legacy-v2 只读迁移与发布硬化): active_capabilities=[align], shared_files=[]
-
+- None observed.
 
 ## Observability Note
 
@@ -53,11 +51,11 @@
 - .vibehub/agent-view/current-context.md
 - .vibehub/agent-view/handoff.md
 - .vibehub/rules/hard-rules.md
-- .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/context-packs/align.md
+- .vibehub/tasks/T-20260711080144-5db160f2/runs/R-20260711080144-b9c6e08e/context-packs/align.md
 
 ## What To Write
 
-- Suggested phase output under .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/outputs/ if needed.
+- Suggested phase output under .vibehub/tasks/T-20260711080144-5db160f2/runs/R-20260711080144-b9c6e08e/outputs/ if needed.
 - Changed files only within the active task scope.
 - Final response or agent output must include changed files, commands run, tests run or reason not run, unresolved risks, and handoff notes.
 

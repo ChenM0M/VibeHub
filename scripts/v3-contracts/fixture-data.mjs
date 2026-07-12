@@ -10,6 +10,7 @@ export const CONTRACT_FILES = {
   task_timeline: "task-timeline.json",
   plan_graph: "plan-graph.json",
   node_brief: "node-brief.json",
+  worktree_orchestration: "worktree-orchestration.json",
 };
 
 const schemaFor = {
@@ -18,6 +19,7 @@ const schemaFor = {
   task_timeline: "task-timeline-view.schema.json",
   plan_graph: "plan-graph-view.schema.json",
   node_brief: "node-brief.schema.json",
+  worktree_orchestration: "worktree-orchestration-view.schema.json",
 };
 
 const scenarioSpecs = [
@@ -88,6 +90,62 @@ function err(code, recoverable, category = "internal") {
 
 function criterion(id, title, status = "passed", required = true) {
   return { criterion_id: id, title, status, required, evidence_refs: evidence(`ev.${id}`) };
+}
+
+function orchestrationWorktree(overrides = {}) {
+  const worktreeId = overrides.worktree_id ?? "worktree.contracts";
+  const nodeId = overrides.node_id ?? "node.contracts";
+  const sessionIds = overrides.session_ids ?? ["session.main"];
+  const leaseId = overrides.lease_id ?? "lease.contracts";
+  const nativePath = overrides.native_path ?? path("macos", "/Users/alex/.vibehub/worktrees/task-m0/node-contracts");
+  return {
+    worktree_id: worktreeId,
+    node_id: nodeId,
+    session_ids: sessionIds,
+    display_name: overrides.display_name ?? "M0 / contracts",
+    branch: overrides.branch ?? "vibehub/m0/contracts-a1b2c3d",
+    base_sha: overrides.base_sha ?? "d7ece57",
+    head_sha: overrides.head_sha ?? "e3a1b90",
+    native_path: nativePath,
+    state: overrides.state ?? "active",
+    read_only: overrides.read_only ?? false,
+    eligibility: overrides.eligibility ?? {
+      decision: "allow",
+      digest: "a".repeat(64),
+      reason_codes: [],
+      declared_scope: ["contracts/v3", "scripts/v3-contracts"],
+      observed_delta: ["contracts/v3/common.schema.json"],
+      override: false,
+      evidence_refs: evidence(`ev.${worktreeId}.eligibility`, "event", "hard_observed", "evidence.worktree.eligibility", `events/${worktreeId}/eligibility`),
+    },
+    lease: overrides.read_only ? null : (Object.hasOwn(overrides, "lease") ? overrides.lease : {
+      lease_id: leaseId,
+      owner_session_id: sessionIds[0],
+      owner_host: "macbook-pro",
+      owner_tool: "codex",
+      state: "active",
+      generation: 1,
+      acquired_at: "2026-07-11T08:20:00.000Z",
+      heartbeat_at: "2026-07-11T08:25:00.000Z",
+      expires_at: "2026-07-11T08:35:00.000Z",
+      reclaim_challenge: null,
+      evidence_refs: evidence(`ev.${leaseId}`, "event", "hard_observed", "evidence.lease.active", `events/${leaseId}`),
+    }),
+    git: overrides.git ?? {
+      presence: "present", locked: false, dirty: false, detached: false, unborn: false, base_drift: false,
+      changed_files: [], observed_at: "2026-07-11T08:25:00.000Z",
+      evidence_refs: evidence(`ev.${worktreeId}.git`, "git", "hard_observed", "evidence.worktree.git", `git/${worktreeId}`),
+    },
+    integration: overrides.integration ?? {
+      operation_id: null, policy: "merge_no_ff", state: "not_requested", queue_position: null, target_branch: "main", evidence_refs: [],
+    },
+    conflict: overrides.conflict ?? null,
+    recovery: overrides.recovery ?? {
+      state: "none", operation_id: null, attempts: 0, last_error: null, owner_process_state: "alive", evidence_refs: [],
+    },
+    next_action: overrides.next_action ?? "Continue the assigned node",
+    evidence_refs: evidence(`ev.${worktreeId}`, "event", "hard_observed", "evidence.worktree.projected", `events/${worktreeId}`),
+  };
 }
 
 function baseViews() {
@@ -239,6 +297,23 @@ function baseViews() {
       ],
       execution: { planned_sessions: 3, observed_sessions: 2, planned_worktrees: 1, observed_worktrees: 0 },
     },
+    worktree_orchestration: {
+      ...shared,
+      task_id: "task.m0",
+      entry_gate: {
+        state: "closed", m4_gate_digest: null, windows_native_evidence: false, owner_approved: false,
+        self_host_writes_allowed: false,
+        evidence_refs: evidence("ev.m5.entry-gate", "file", "hard_observed", "evidence.m5.entryGate", "docs/v3/m4-stability-gate.md"),
+      },
+      policy: {
+        integration_policy: "merge_no_ff", unknown_scope_decision: "warn",
+        denylist: [".vibehub/state.yaml", ".vibehub/events/**", "migrations/**", "src/v3/contracts/generated/**"],
+        case_sensitive: true, retention_seconds: 86400,
+      },
+      worktrees: [orchestrationWorktree()],
+      integration_queue: [],
+      orphan_candidates: [],
+    },
     node_brief: {
       ...shared,
       task_id: "task.m0", node_id: "node.contracts", goal: "冻结契约与 TypeScript 类型",
@@ -303,6 +378,10 @@ function applyScenario(kind, views) {
     views.plan_graph.scheduling_edges = [];
     views.plan_graph.trace_relations = [];
     views.plan_graph.execution = { planned_sessions: 0, observed_sessions: 0, planned_worktrees: 0, observed_worktrees: 0 };
+    views.worktree_orchestration.task_id = "task.none";
+    views.worktree_orchestration.worktrees = [];
+    views.worktree_orchestration.integration_queue = [];
+    views.worktree_orchestration.orphan_candidates = [];
     views.node_brief.task_id = "task.none";
     views.node_brief.node_id = "node.none";
     views.node_brief.goal = "未选择任务";
@@ -345,6 +424,38 @@ function applyScenario(kind, views) {
     );
     views.plan_graph.execution = { planned_sessions: 3, observed_sessions: 3, planned_worktrees: 2, observed_worktrees: 2 };
     views.plan_graph.warnings.push(warning("SCOPE_OVERLAP"));
+    views.worktree_orchestration.worktrees = [
+      orchestrationWorktree({
+        worktree_id: "worktree.ui", node_id: "node.ui", session_ids: ["session.ui"], lease_id: "lease.ui",
+        display_name: "M1 / project UI", branch: "vibehub/m1/project-ui-3f91a2c",
+        native_path: path("macos", "/Users/alex/.vibehub/worktrees/task-m1/node-ui"),
+        eligibility: {
+          decision: "allow", digest: "b".repeat(64), reason_codes: [], declared_scope: ["src/v3/components/project"], observed_delta: [], override: false,
+          evidence_refs: evidence("ev.worktree.ui.eligibility", "event", "hard_observed", "evidence.worktree.eligibility", "events/worktree.ui/eligibility"),
+        },
+      }),
+      orchestrationWorktree({
+        worktree_id: "worktree.shared", node_id: "node.shared", session_ids: ["session.types"], lease_id: "lease.shared",
+        display_name: "M1 / shared types", branch: "vibehub/m1/shared-types-905c2be",
+        native_path: path("macos", "/Users/alex/.vibehub/worktrees/task-m1/node-shared"), state: "planned",
+        eligibility: {
+          decision: "block", digest: "c".repeat(64), reason_codes: ["SCOPE_OVERLAP", "GENERATED_ENTRYPOINT"],
+          declared_scope: ["src/v3/contracts"], observed_delta: ["src/v3/contracts/generated/index.ts"], override: false,
+          evidence_refs: evidence("ev.worktree.shared.eligibility", "event", "hard_observed", "evidence.worktree.blocked", "events/worktree.shared/eligibility"),
+        },
+        lease: null,
+        recovery: { state: "blocked", operation_id: null, attempts: 0, last_error: "eligibility_blocked", owner_process_state: "not_applicable", evidence_refs: [] },
+        next_action: "Resolve scope overlap or record an owner override with evidence",
+      }),
+    ];
+    views.worktree_orchestration.warnings.push(warning("SCOPE_OVERLAP"));
+    for (const node of views.plan_graph.nodes) {
+      const worktree = views.worktree_orchestration.worktrees.find((item) => item.node_id === node.node_id);
+      if (worktree) {
+        node.session_ids = worktree.session_ids;
+        node.worktree = { worktree_id: worktree.worktree_id, lease_id: worktree.lease?.lease_id ?? null, branch: worktree.branch, state: worktree.state };
+      }
+    }
   }
   if (kind === "rework") {
     views.task_timeline.events.push(
@@ -359,6 +470,42 @@ function applyScenario(kind, views) {
       { relation_id: "trace.attempt1.addresses.finding", from_id: "evt.rework.attempt1", to_id: "evt.rework.finding", kind: "addresses", evidence_refs: evidence("ev.trace.attempt1", "event", "hard_observed", "evidence.trace.addresses", "events/attempt.1") },
       { relation_id: "trace.attempt2.repairs.finding", from_id: "evt.rework.attempt2", to_id: "evt.rework.finding", kind: "repairs", evidence_refs: evidence("ev.trace.attempt2", "event", "hard_observed", "evidence.trace.repairs", "events/attempt.2") },
     );
+    const conflicted = orchestrationWorktree({
+      state: "conflicted",
+      git: {
+        presence: "present", locked: false, dirty: true, detached: false, unborn: false, base_drift: true,
+        changed_files: ["contracts/v3/common.schema.json"], observed_at: "2026-07-11T08:42:00.000Z",
+        evidence_refs: evidence("ev.worktree.contracts.conflict-git", "git", "hard_observed", "evidence.worktree.conflict", "git/worktree.contracts/conflict"),
+      },
+      integration: {
+        operation_id: "operation.integrate.contracts", policy: "merge_no_ff", state: "conflicted", queue_position: null, target_branch: "main",
+        evidence_refs: evidence("ev.integration.contracts", "event", "hard_observed", "evidence.integration.conflicted", "events/integration.contracts"),
+      },
+      conflict: {
+        owner_session_id: "session.main", files: ["contracts/v3/common.schema.json"], base_sha: "d7ece57", head_sha: "e3a1b90", target_sha: "f81a2c3",
+        next_action: "Return conflict resolution to session.main",
+        evidence_refs: evidence("ev.conflict.contracts", "git", "hard_observed", "evidence.conflict.files", "git/conflicts/contracts"),
+      },
+      recovery: {
+        state: "retry_ready", operation_id: "operation.integrate.contracts", attempts: 2, last_error: "merge_conflict", owner_process_state: "alive",
+        evidence_refs: evidence("ev.recovery.contracts", "event", "hard_observed", "evidence.recovery.retry", "events/recovery.contracts"),
+      },
+      next_action: "Resolve the recorded conflict in session.main, then retry with the same operation id",
+    });
+    views.worktree_orchestration.worktrees = [conflicted];
+    views.worktree_orchestration.integration_queue = [{
+      operation_id: "operation.integrate.contracts", worktree_id: conflicted.worktree_id, node_id: conflicted.node_id,
+      topology_rank: 0, ready_at: "2026-07-11T08:40:00.000Z", state: "blocked",
+    }];
+    views.task_timeline.lanes.push({ lane_id: "lane.worktree.contracts", kind: "worktree", label: "contracts worktree", state: "active", worktree_id: "worktree.contracts" });
+    views.task_timeline.events.push({
+      timeline_event_id: "evt.rework.conflict", kind: "conflict", occurred_at: "2026-07-11T08:42:00.000Z", recorded_at: "2026-07-11T08:42:00.000Z",
+      order_state: "ordered", lane_id: "lane.worktree.contracts", actor: "vibehub", tool: "git", node_id: "node.contracts", session_id: "session.main", commit_sha: "e3a1b90",
+      worktree_id: "worktree.contracts", lease_id: "lease.contracts", summary_key: "timeline.integration.conflicted", details: { operation_id: "operation.integrate.contracts" },
+      evidence_refs: evidence("ev.timeline.conflict", "event", "hard_observed", "evidence.timeline.conflict", "events/integration.contracts"),
+    });
+    views.task_timeline.window.returned = views.task_timeline.events.length;
+    views.task_timeline.window.total_estimate = views.task_timeline.events.length;
   }
   if (kind === "stale") {
     for (const view of allViews) {
@@ -398,6 +545,26 @@ function applyScenario(kind, views) {
     views.project_structure.page.total_estimate = paths.length;
     views.project_structure.warnings.push(warning("PATH_CASE_COLLISION"), warning("PATH_LOCKED"));
     views.node_brief.files = paths;
+    views.worktree_orchestration.policy.case_sensitive = false;
+    views.worktree_orchestration.worktrees = [orchestrationWorktree({
+      worktree_id: "worktree.windows", node_id: "node.contracts", session_ids: ["session.windows"], lease_id: "lease.windows",
+      native_path: clone(paths[2]), state: "repairing",
+      eligibility: {
+        decision: "warn", digest: "d".repeat(64), reason_codes: ["PATH_BUDGET_UNKNOWN", "CASE_COLLISION"], declared_scope: ["C:/Repo/Readme.md"], observed_delta: ["C:/Repo/README.md"], override: false,
+        evidence_refs: evidence("ev.worktree.windows.eligibility", "test", "hard_observed", "evidence.windows.contract", "fixtures/v3/FX-WIN-PATHS"),
+      },
+      git: {
+        presence: "present", locked: true, dirty: true, detached: false, unborn: false, base_drift: false, changed_files: ["README.md"],
+        observed_at: "2026-07-11T08:25:00.000Z", evidence_refs: evidence("ev.worktree.windows.git", "test", "hard_observed", "evidence.windows.locked", "fixtures/v3/FX-WIN-PATHS"),
+      },
+      recovery: { state: "inspect_required", operation_id: "operation.windows.inspect", attempts: 1, last_error: "path_locked", owner_process_state: "unknown", evidence_refs: evidence("ev.windows.recovery", "test", "hard_observed", "evidence.windows.recovery", "fixtures/v3/FX-WIN-PATHS") },
+      next_action: "Inspect the owning process on a Windows native host; do not remove the dirty worktree",
+    })];
+    views.worktree_orchestration.orphan_candidates = [{
+      worktree_id: "worktree.windows", session_id: "session.windows", reason_code: "OWNER_PROCESS_UNKNOWN", process_state: "unknown", inspect_required: true,
+      evidence_refs: evidence("ev.windows.orphan", "test", "hard_observed", "evidence.windows.orphan", "fixtures/v3/FX-WIN-PATHS"),
+    }];
+    views.worktree_orchestration.warnings.push(warning("PATH_BUDGET_UNKNOWN"), warning("DIRTY_CLEANUP_REFUSED"));
   }
   if (kind === "macos_paths") {
     const paths = [
@@ -483,6 +650,18 @@ export function buildFixtureTree() {
         value.nodes[0].path = path("windows", "C:\\Repo/mixed\\file.ts", "C:/Repo/mixed/file.ts", { path_kind: "drive" });
         return value;
       })(),
+    },
+    "invalid/invalid-worktree-lease-generation.json": {
+      expected_schema: "worktree-orchestration-view.schema.json",
+      expected_keyword: "minimum",
+      expected_instance_path: "/worktrees/0/lease/generation",
+      instance: (() => { const value = baseViews().worktree_orchestration; value.worktrees[0].lease.generation = 0; return value; })(),
+    },
+    "invalid/invalid-worktree-eligibility-digest.json": {
+      expected_schema: "worktree-orchestration-view.schema.json",
+      expected_keyword: "pattern",
+      expected_instance_path: "/worktrees/0/eligibility/digest",
+      instance: (() => { const value = baseViews().worktree_orchestration; value.worktrees[0].eligibility.digest = "not-a-digest"; return value; })(),
     },
   };
   for (const [relativePath, value] of Object.entries(invalid)) files.set(relativePath, prettyJson(value));
