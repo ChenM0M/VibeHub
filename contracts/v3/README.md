@@ -58,6 +58,7 @@ projection checkpoint, evidence index, and structured validator/adapter result.
 | PlanGraphView | `project_id`, `task_id`, `plan_version`, `graph_state` | selected version and invalid/stale graph state; plan event projection and validator |
 | PlanGraphView | `nodes`, `scheduling_edges`, `trace_relations` | executable plan and causal repair overlay; plan/finding/attempt/validation events |
 | PlanGraphView | `execution` | planned versus observed sessions/worktrees; plan plus session/worktree observations, never orchestration claims |
+| WorktreeOrchestrationView | `entry_gate`, `worktrees`, `integration_queue` | eligibility, lease, Git observation, integration, conflict, recovery, and next-action projection; self-host writes remain explicitly gated |
 | NodeBrief | `project_id`, `task_id`, `node_id`, `state`, `next_intent` | recoverable scoped work header; current plan/session projection |
 | NodeBrief | `goal`, `scope`, `non_scope`, `dependencies` | bounded agent assignment; accepted plan version |
 | NodeBrief | `accepted_decisions`, `research_summary`, `criteria` | decision/research/acceptance context; journal, research, and criterion evidence |

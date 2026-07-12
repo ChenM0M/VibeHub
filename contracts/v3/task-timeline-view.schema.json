@@ -25,7 +25,7 @@
     "lanes": {
       "type": "array", "items": {
         "type": "object", "additionalProperties": false, "required": ["lane_id", "kind", "label", "state"],
-        "properties": { "lane_id": { "$ref": "common.schema.json#/$defs/StableId" }, "kind": { "enum": ["task", "session", "node"] }, "label": { "type": "string" }, "state": { "enum": ["open", "active", "idle", "closed", "gapped", "abandoned", "repaired"] } }
+        "properties": { "lane_id": { "$ref": "common.schema.json#/$defs/StableId" }, "kind": { "enum": ["task", "session", "node", "worktree"] }, "label": { "type": "string" }, "state": { "enum": ["open", "active", "idle", "closed", "gapped", "abandoned", "repaired"] }, "worktree_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] } }
       }
     },
     "events": {
@@ -34,11 +34,13 @@
         "required": ["timeline_event_id", "kind", "occurred_at", "recorded_at", "order_state", "lane_id", "actor", "summary_key", "evidence_refs"],
         "properties": {
           "timeline_event_id": { "$ref": "common.schema.json#/$defs/StableId" },
-          "kind": { "enum": ["decision", "evidence", "finding", "attempt", "validation", "confirmation", "gap", "session", "plan"] },
+          "kind": { "enum": ["decision", "evidence", "finding", "attempt", "validation", "confirmation", "gap", "session", "plan", "lease", "worktree", "integration", "conflict", "recovery"] },
           "occurred_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "recorded_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
           "order_state": { "enum": ["ordered", "late", "reordered"] }, "lane_id": { "$ref": "common.schema.json#/$defs/StableId" },
           "actor": { "type": "string", "minLength": 1 }, "tool": { "type": ["string", "null"] }, "node_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
           "session_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] }, "commit_sha": { "type": ["string", "null"] },
+          "worktree_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+          "lease_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
           "summary_key": { "type": "string", "minLength": 1 }, "details": { "type": "object" }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
         }
       }

@@ -46,10 +46,22 @@ impl V3EventStore {
         {
             let same_request = event.event_type == draft.event_type
                 && event.aggregate_id == draft.aggregate_id
+                && event.expected_version == draft.expected_version
                 && event.project_id == draft.project_id
                 && event.task_id == draft.task_id
                 && event.node_id == draft.node_id
-                && event.session_id == draft.session_id;
+                && event.session_id == draft.session_id
+                && event.worktree_id == draft.worktree_id
+                && event.lease_id == draft.lease_id
+                && event.operation_id == draft.operation_id
+                && event.actor == draft.actor
+                && event.evidence_grade == draft.evidence_grade
+                && event.commit_sha == draft.commit_sha
+                && event.payload == draft.payload
+                && draft
+                    .occurred_at
+                    .as_ref()
+                    .is_none_or(|occurred_at| event.occurred_at == *occurred_at);
             if !same_request {
                 return Err(V3Error::new(
                     "V3_IDEMPOTENCY_SCOPE_MISMATCH",
@@ -94,6 +106,9 @@ impl V3EventStore {
             task_id: draft.task_id,
             node_id: draft.node_id,
             session_id: draft.session_id,
+            worktree_id: draft.worktree_id,
+            lease_id: draft.lease_id,
+            operation_id: draft.operation_id,
             actor: draft.actor,
             evidence_grade: draft.evidence_grade,
             occurred_at: draft.occurred_at.unwrap_or_else(|| recorded_at.clone()),
@@ -343,6 +358,9 @@ mod tests {
             task_id: TaskId::from("task.test"),
             node_id: None,
             session_id: None,
+            worktree_id: None,
+            lease_id: None,
+            operation_id: None,
             actor: "test".to_owned(),
             evidence_grade: EvidenceGrade::HardObserved,
             occurred_at: None,
@@ -392,6 +410,28 @@ mod tests {
         different.aggregate_id = "session.other".to_owned();
         let error = store.append(different).unwrap_err();
         assert_eq!(error.category, V3ErrorCategory::ScopeMismatch);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn idempotency_key_cannot_hide_changed_request_semantics() {
+        let root = root();
+        let store = V3EventStore::open(&root).unwrap();
+        store.append(draft(0, "key.shared")).unwrap();
+
+        let mut changed_payload = draft(0, "key.shared");
+        changed_payload.payload = json!({"read_only": true});
+        assert_eq!(
+            store.append(changed_payload).unwrap_err().code,
+            "V3_IDEMPOTENCY_SCOPE_MISMATCH"
+        );
+
+        let mut changed_actor = draft(0, "key.shared");
+        changed_actor.actor = "other-agent".to_owned();
+        assert_eq!(
+            store.append(changed_actor).unwrap_err().code,
+            "V3_IDEMPOTENCY_SCOPE_MISMATCH"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

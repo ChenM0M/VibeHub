@@ -15,6 +15,7 @@ const schemas = [
   ["task-timeline-view.schema.json", "TaskTimelineView"],
   ["plan-graph-view.schema.json", "PlanGraphView"],
   ["node-brief.schema.json", "NodeBrief"],
+  ["worktree-orchestration-view.schema.json", "WorktreeOrchestrationView"],
 ];
 
 await rm(outputRoot, { recursive: true, force: true });

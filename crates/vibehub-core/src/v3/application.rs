@@ -5,6 +5,7 @@ use super::event_store::V3EventStore;
 use super::lifecycle::{
     apply_command_with_required_criteria, LifecycleCommand, TaskLifecycleProjection,
 };
+use super::orchestration::{self, OrchestrationCommand, OrchestrationProjection};
 use super::projection::{self, V3Projection};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -115,6 +116,22 @@ impl V3ApplicationService {
         Ok(super::lifecycle::fold_task(task_id, &events))
     }
 
+    pub fn orchestration_command(
+        &self,
+        command: OrchestrationCommand,
+    ) -> Result<AppendResult, V3Error> {
+        orchestration::apply_command(&self.store, command)
+    }
+
+    pub fn worktree_orchestration(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<OrchestrationProjection, V3Error> {
+        let events = self.store.load_project(project_id)?;
+        Ok(orchestration::fold_task(task_id, &events))
+    }
+
     fn required_criterion_ids(&self, task_id: &str) -> Result<BTreeSet<String>, V3Error> {
         #[derive(Deserialize)]
         struct TaskCriteria {
@@ -172,6 +189,9 @@ impl V3ApplicationService {
             task_id: TaskId::from(task_id),
             node_id: None,
             session_id: Some(SessionId::from(session_id)),
+            worktree_id: None,
+            lease_id: None,
+            operation_id: None,
             actor: actor.to_owned(),
             evidence_grade: EvidenceGrade::AgentReported,
             occurred_at: None,
@@ -300,6 +320,44 @@ mod tests {
 
         let projection = app.task_lifecycle("project.test", "task.test").unwrap();
         assert_eq!(projection.state, "completion_pending");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn project_rebuild_includes_worktree_orchestration() {
+        use crate::v3::orchestration::OrchestrationCommand;
+
+        let root = std::env::temp_dir().join(format!("vibehub-v3-app-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub")).unwrap();
+        let app = V3ApplicationService::open(&root).unwrap();
+        app.orchestration_command(OrchestrationCommand {
+            event_type: "worktree.planned".to_owned(),
+            project_id: "project.test".to_owned(),
+            task_id: "task.test".to_owned(),
+            node_id: "node.test".to_owned(),
+            worktree_id: "worktree.test".to_owned(),
+            session_id: Some("session.test".to_owned()),
+            lease_id: None,
+            operation_id: Some("operation.plan".to_owned()),
+            eligibility_digest: "a".repeat(64),
+            lease_generation: None,
+            actor: "codex".to_owned(),
+            expected_version: 0,
+            idempotency_key: "worktree.plan.1".to_owned(),
+            evidence_grade: Some(EvidenceGrade::HardObserved),
+            payload: json!({}),
+        })
+        .unwrap();
+
+        let first = app.rebuild("project.test").unwrap();
+        fs::remove_file(app.store.projection_path("project.test")).unwrap();
+        let second = app.rebuild("project.test").unwrap();
+        assert_eq!(first, second);
+        assert_eq!(
+            second.worktrees["worktree.test"].state,
+            crate::v3::worktree::WorktreeState::Planned
+        );
+        assert!(second.unknown_event_types.is_empty());
         fs::remove_dir_all(root).unwrap();
     }
 }
