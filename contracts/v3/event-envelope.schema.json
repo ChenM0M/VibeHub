@@ -21,11 +21,14 @@
     "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
     "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
     "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "worktree_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "lease_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "operation_id": { "$ref": "common.schema.json#/$defs/StableId" },
     "actor": { "type": "string", "minLength": 1, "maxLength": 128 },
     "evidence_grade": { "$ref": "common.schema.json#/$defs/EvidenceGrade" },
     "occurred_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
     "recorded_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
-    "commit_sha": { "type": "string", "pattern": "^[0-9a-fA-F]{7,64}$" },
+    "commit_sha": { "$ref": "common.schema.json#/$defs/GitSha" },
     "payload": { "type": "object" }
   }
 }

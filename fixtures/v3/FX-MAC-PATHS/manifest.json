@@ -43,6 +43,12 @@
       "schema": "node-brief.schema.json",
       "file": "node-brief.json",
       "sha256": "3fd0078c59683eefc27486369283ae701a481a43d4bb5e0340cf11c057826a81"
+    },
+    {
+      "contract": "worktree_orchestration",
+      "schema": "worktree-orchestration-view.schema.json",
+      "file": "worktree-orchestration.json",
+      "sha256": "69ee81bbdcceb82704a4847444d7b8d5c19477726d1d6c3a96da51f3c6af06af"
     }
   ]
 }

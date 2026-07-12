@@ -2,11 +2,11 @@
 
 ## Context Pack
 
-- Path: .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/context-packs/align.md
+- Path: .vibehub/tasks/T-20260711080144-5db160f2/runs/R-20260711080144-b9c6e08e/context-packs/align.md
 
 ## Manifest
 
-- Path: .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/context-packs/align.manifest.yaml
+- Path: .vibehub/tasks/T-20260711080144-5db160f2/runs/R-20260711080144-b9c6e08e/context-packs/align.manifest.yaml
 - Status: available
 
 ## Important Project Files

@@ -45,6 +45,36 @@
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
+    },
+    {
+      "code": "PATH_BUDGET_UNKNOWN",
+      "severity": "warning",
+      "message_key": "warning.path_budget_unknown",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "DIRTY_CLEANUP_REFUSED",
+      "severity": "warning",
+      "message_key": "warning.dirty_cleanup_refused",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
     }
   ],
   "errors": [],

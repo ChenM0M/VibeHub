@@ -90,6 +90,21 @@
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
     }
   ],
   "errors": [],

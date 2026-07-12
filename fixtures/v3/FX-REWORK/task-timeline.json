@@ -92,6 +92,13 @@
       "kind": "node",
       "label": "节点：冻结契约",
       "state": "repaired"
+    },
+    {
+      "lane_id": "lane.worktree.contracts",
+      "kind": "worktree",
+      "label": "contracts worktree",
+      "state": "active",
+      "worktree_id": "worktree.contracts"
     }
   ],
   "events": [
@@ -424,14 +431,43 @@
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
+    },
+    {
+      "timeline_event_id": "evt.rework.conflict",
+      "kind": "conflict",
+      "occurred_at": "2026-07-11T08:42:00.000Z",
+      "recorded_at": "2026-07-11T08:42:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.worktree.contracts",
+      "actor": "vibehub",
+      "tool": "git",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": "e3a1b90",
+      "worktree_id": "worktree.contracts",
+      "lease_id": "lease.contracts",
+      "summary_key": "timeline.integration.conflicted",
+      "details": {
+        "operation_id": "operation.integrate.contracts"
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.timeline.conflict",
+          "kind": "event",
+          "grade": "hard_observed",
+          "label_key": "evidence.timeline.conflict",
+          "locator": "events/integration.contracts",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
     }
   ],
   "window": {
     "cursor": null,
     "next_cursor": null,
     "limit": 100,
-    "returned": 12,
-    "total_estimate": 12,
+    "returned": 13,
+    "total_estimate": 13,
     "truncated": false,
     "truncation_reason": "none",
     "model_version": "model.fixture.1"
