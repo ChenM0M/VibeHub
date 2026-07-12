@@ -18,31 +18,273 @@
   "warnings": [],
   "errors": [],
   "task_id": "task.m0",
-  "plan_version": 1,
+  "plan_version": 2,
   "graph_state": "valid",
   "nodes": [
     {
+      "node_id": "node.schema",
+      "title": "定义 JSON Schema",
+      "goal": "编写 5 个视图的 JSON Schema 2020-12 定义",
+      "state": "completed",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "contracts/v3/*.schema.json"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c01"
+      ]
+    },
+    {
+      "node_id": "node.fixtures",
+      "title": "生成 Fixture 数据",
+      "goal": "生成 12 场景 × 5 视图的确定性 fixture",
+      "state": "completed",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "fixtures/v3",
+        "scripts/v3-contracts/fixture-data.mjs"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c02"
+      ]
+    },
+    {
       "node_id": "node.contracts",
-      "title": "Freeze contracts",
-      "goal": "Create M1-ready contracts",
+      "title": "冻结契约与 TS 类型",
+      "goal": "生成 TypeScript 类型并冻结契约版本",
       "state": "active",
       "readiness": "ready",
       "block_reasons": [],
       "scope": [
-        "contracts/v3",
-        "fixtures/v3"
+        "src/v3/contracts/generated",
+        "src/v3/contracts/fixtureRepository.ts"
       ],
       "criterion_ids": [
         "criterion.m0.c07"
       ]
+    },
+    {
+      "node_id": "node.check",
+      "title": "验证管线",
+      "goal": "342 项断言全通过",
+      "state": "completed",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "scripts/v3-contracts/check.mjs"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c02"
+      ]
+    },
+    {
+      "node_id": "node.repo",
+      "title": "Fixture 仓库接口",
+      "goal": "实现 createV3FixtureRepository 和 JsonLoader",
+      "state": "completed",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "src/v3/contracts/fixtureRepository.ts"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.ui.common",
+      "title": "通用 UI 组件",
+      "goal": "StateBadge / EvidenceLink / WarningList 等 6 个通用组件",
+      "state": "active",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "src/v3/components/common"
+      ],
+      "criterion_ids": [
+        "criterion.m1.c01"
+      ]
+    },
+    {
+      "node_id": "node.ui.project",
+      "title": "Project 视图",
+      "goal": "ProjectOverview / StructureExplorer / ArchitectureMap / GlobalTimeline",
+      "state": "active",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "src/v3/components/project"
+      ],
+      "criterion_ids": [
+        "criterion.m1.c01",
+        "criterion.m1.c03"
+      ]
+    },
+    {
+      "node_id": "node.ui.task",
+      "title": "Task 视图",
+      "goal": "TaskTimeline / PlanGraph / AcceptanceProgress / NodeBriefPanel",
+      "state": "blocked",
+      "readiness": "blocked",
+      "block_reasons": [
+        "scope_overlap"
+      ],
+      "scope": [
+        "src/v3/components/task"
+      ],
+      "criterion_ids": [
+        "criterion.m1.c01"
+      ]
+    },
+    {
+      "node_id": "node.ui.layout",
+      "title": "Cockpit 布局整合",
+      "goal": "V3Cockpit 单页面 + 标签面板 + 侧滑详情",
+      "state": "planned",
+      "readiness": "unknown",
+      "block_reasons": [],
+      "scope": [
+        "src/v3/app/V3Cockpit.tsx"
+      ],
+      "criterion_ids": [
+        "criterion.m1.c02"
+      ]
+    },
+    {
+      "node_id": "node.ui.coverage",
+      "title": "12 场景全覆盖",
+      "goal": "逐场景验证降级状态渲染",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "depends_on_ui_task"
+      ],
+      "scope": [
+        "fixtures/v3/*"
+      ],
+      "criterion_ids": [
+        "criterion.m1.c01"
+      ]
     }
   ],
-  "scheduling_edges": [],
-  "trace_relations": [],
+  "scheduling_edges": [
+    {
+      "edge_id": "edge.schema.fixtures",
+      "from_node_id": "node.schema",
+      "to_node_id": "node.fixtures",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.fixtures.contracts",
+      "from_node_id": "node.fixtures",
+      "to_node_id": "node.contracts",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.fixtures.repo",
+      "from_node_id": "node.fixtures",
+      "to_node_id": "node.repo",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.contracts.check",
+      "from_node_id": "node.contracts",
+      "to_node_id": "node.check",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.repo.ui.common",
+      "from_node_id": "node.repo",
+      "to_node_id": "node.ui.common",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.ui.common.ui.project",
+      "from_node_id": "node.ui.common",
+      "to_node_id": "node.ui.project",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.ui.common.ui.task",
+      "from_node_id": "node.ui.common",
+      "to_node_id": "node.ui.task",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.ui.project.ui.layout",
+      "from_node_id": "node.ui.project",
+      "to_node_id": "node.ui.layout",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.ui.task.ui.layout",
+      "from_node_id": "node.ui.task",
+      "to_node_id": "node.ui.layout",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.ui.layout.ui.coverage",
+      "from_node_id": "node.ui.layout",
+      "to_node_id": "node.ui.coverage",
+      "kind": "depends_on"
+    }
+  ],
+  "trace_relations": [
+    {
+      "relation_id": "trace.check.validates.fixtures",
+      "from_id": "node.check",
+      "to_id": "node.fixtures",
+      "kind": "validates",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.trace1",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.trace.validates",
+          "locator": "scripts/v3-contracts/check.mjs",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "relation_id": "trace.contracts.addresses.schema",
+      "from_id": "node.contracts",
+      "to_id": "node.schema",
+      "kind": "addresses",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.trace2",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.trace.addresses",
+          "locator": "src/v3/contracts/generated",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "relation_id": "trace.repo.validates.fixtures",
+      "from_id": "node.repo",
+      "to_id": "node.fixtures",
+      "kind": "validates",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.trace3",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.trace.repo",
+          "locator": "src/v3/contracts/fixtureRepository.ts",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
   "execution": {
-    "planned_sessions": 1,
-    "observed_sessions": 1,
-    "planned_worktrees": 0,
+    "planned_sessions": 3,
+    "observed_sessions": 2,
+    "planned_worktrees": 1,
     "observed_worktrees": 0
   }
 }
