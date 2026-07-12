@@ -17,7 +17,9 @@
           "node_id": { "$ref": "common.schema.json#/$defs/StableId" }, "title": { "type": "string", "minLength": 1 }, "goal": { "type": "string", "minLength": 1 },
           "state": { "enum": ["planned", "ready", "active", "blocked", "review", "completed", "cancelled", "superseded"] },
           "readiness": { "enum": ["ready", "blocked", "unknown"] }, "block_reasons": { "type": "array", "items": { "type": "string" } },
-          "scope": { "type": "array", "items": { "type": "string" } }, "criterion_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } }
+          "scope": { "type": "array", "items": { "type": "string" } }, "criterion_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } },
+          "session_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" }, "uniqueItems": true },
+          "worktree": { "anyOf": [{ "$ref": "common.schema.json#/$defs/WorktreeRef" }, { "type": "null" }] }
         }
       }
     },

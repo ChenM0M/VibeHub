@@ -3,8 +3,8 @@
 Task: T-20260711080144-de5ecb84
 Run: R-20260711080144-924b5971
 Phase: Align
-Generated at: 2026-07-12T05:58:48Z
-Source commit: 1b9cd05
+Generated at: 2026-07-12T06:07:58Z
+Source commit: b24a9e9
 
 ## Instructions
 
@@ -83,7 +83,7 @@ task_id: T-20260711080144-de5ecb84
 title: M5 用稳定 V3 自管理多会话与 worktree 编排
 mode: guided_drive
 phase: align
-phase_status: active
+phase_status: completed
 created_at: 2026-07-11T08:01:44Z
 created_by: vibehub
 intent: 仅在 M4 稳定后，让 V3 自己管理 M5 的任务状态，并实现 scope、lease、worktree、集成与冲突生命周期。
@@ -110,12 +110,12 @@ Reason: active run metadata
 ```text
 schema_version: 1
 kind: vibehub_run
-task_id: "T-20260711080144-de5ecb84"
-run_id: "R-20260711080144-924b5971"
-mode: "guided_drive"
-phase: "align"
-phase_status: "active"
-created_at: "2026-07-11T08:01:44Z"
+task_id: T-20260711080144-de5ecb84
+run_id: R-20260711080144-924b5971
+mode: guided_drive
+phase: align
+phase_status: completed
+created_at: 2026-07-11T08:01:44Z
 created_by: vibehub
 baseline_commit: null
 ```

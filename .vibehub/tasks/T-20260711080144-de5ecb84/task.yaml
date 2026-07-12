@@ -3,8 +3,8 @@ kind: vibehub_task
 task_id: T-20260711080144-de5ecb84
 title: M5 用稳定 V3 自管理多会话与 worktree 编排
 mode: guided_drive
-phase: align
-phase_status: active
+phase: review
+phase_status: completed
 created_at: 2026-07-11T08:01:44Z
 created_by: vibehub
 intent: 仅在 M4 稳定后，让 V3 自己管理 M5 的任务状态，并实现 scope、lease、worktree、集成与冲突生命周期。

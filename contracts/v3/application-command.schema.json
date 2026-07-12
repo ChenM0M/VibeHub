@@ -6,6 +6,7 @@
     { "$ref": "#/$defs/SessionOpen" },
     { "$ref": "#/$defs/EventLog" },
     { "$ref": "#/$defs/SessionClose" },
+    { "$ref": "#/$defs/WorktreeCommand" },
     { "$ref": "#/$defs/Rebuild" }
   ],
   "$defs": {
@@ -51,6 +52,34 @@
       "allOf": [
         { "$ref": "#/$defs/WriteScope" },
         { "type": "object", "required": ["command"], "properties": { "command": { "const": "session_close" } } }
+      ]
+    },
+    "WorktreeCommand": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/WriteScope" },
+        {
+          "type": "object",
+          "required": ["command", "node_id", "worktree_id", "operation_id", "eligibility_digest"],
+          "properties": {
+            "command": {
+              "enum": [
+                "worktree_plan", "worktree_create", "worktree_activate", "worktree_mark_dirty",
+                "worktree_submit", "worktree_integrate", "worktree_repair", "worktree_abandon", "worktree_clean",
+                "lease_acquire", "lease_heartbeat", "lease_release", "lease_reclaim"
+              ]
+            },
+            "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "worktree_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "lease_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "operation_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "eligibility_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "lease_generation": { "type": "integer", "minimum": 1 },
+            "integration_policy": { "$ref": "common.schema.json#/$defs/IntegrationPolicy" },
+            "details": { "type": "object" }
+          }
+        }
       ]
     },
     "Rebuild": {

@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/worktree-orchestration-view.schema.json",
+  "title": "WorktreeOrchestrationView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "project_id", "task_id", "generated_at", "model_version", "freshness", "completeness",
+    "entry_gate", "policy", "worktrees", "integration_queue", "orphan_candidates", "evidence_refs", "warnings", "errors"
+  ],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+    "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+    "model_version": { "type": "string", "minLength": 1 },
+    "freshness": { "$ref": "common.schema.json#/$defs/Freshness" },
+    "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
+    "entry_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "m4_gate_digest", "windows_native_evidence", "owner_approved", "self_host_writes_allowed", "evidence_refs"],
+      "properties": {
+        "state": { "enum": ["open", "closed"] },
+        "m4_gate_digest": { "type": ["string", "null"] },
+        "windows_native_evidence": { "type": "boolean" },
+        "owner_approved": { "type": "boolean" },
+        "self_host_writes_allowed": { "type": "boolean" },
+        "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["integration_policy", "unknown_scope_decision", "denylist", "case_sensitive", "retention_seconds"],
+      "properties": {
+        "integration_policy": { "$ref": "common.schema.json#/$defs/IntegrationPolicy" },
+        "unknown_scope_decision": { "$ref": "common.schema.json#/$defs/EligibilityDecision" },
+        "denylist": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "case_sensitive": { "type": "boolean" },
+        "retention_seconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "worktrees": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "worktree_id", "node_id", "session_ids", "display_name", "branch", "base_sha", "head_sha", "native_path", "state",
+          "read_only", "eligibility", "lease", "git", "integration", "conflict", "recovery", "next_action", "evidence_refs"
+        ],
+        "properties": {
+          "worktree_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "session_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" }, "uniqueItems": true },
+          "display_name": { "type": "string", "minLength": 1 },
+          "branch": { "type": "string", "minLength": 1 },
+          "base_sha": { "$ref": "common.schema.json#/$defs/GitSha" },
+          "head_sha": { "$ref": "common.schema.json#/$defs/GitSha" },
+          "native_path": { "$ref": "common.schema.json#/$defs/NativePath" },
+          "state": { "$ref": "common.schema.json#/$defs/WorktreeState" },
+          "read_only": { "type": "boolean" },
+          "eligibility": {
+            "type": "object", "additionalProperties": false,
+            "required": ["decision", "digest", "reason_codes", "declared_scope", "observed_delta", "override", "evidence_refs"],
+            "properties": {
+              "decision": { "$ref": "common.schema.json#/$defs/EligibilityDecision" },
+              "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "reason_codes": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" }, "uniqueItems": true },
+              "declared_scope": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+              "observed_delta": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+              "override": { "type": "boolean" },
+              "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+            }
+          },
+          "lease": {
+            "anyOf": [
+              { "type": "null" },
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["lease_id", "owner_session_id", "owner_host", "owner_tool", "state", "generation", "acquired_at", "heartbeat_at", "expires_at", "reclaim_challenge", "evidence_refs"],
+                "properties": {
+                  "lease_id": { "$ref": "common.schema.json#/$defs/StableId" },
+                  "owner_session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+                  "owner_host": { "type": "string", "minLength": 1 },
+                  "owner_tool": { "type": "string", "minLength": 1 },
+                  "state": { "enum": ["active", "stale", "released", "reclaim_pending", "reclaimed"] },
+                  "generation": { "type": "integer", "minimum": 1 },
+                  "acquired_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+                  "heartbeat_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+                  "expires_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+                  "reclaim_challenge": { "type": ["string", "null"] },
+                  "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+                }
+              }
+            ]
+          },
+          "git": {
+            "type": "object", "additionalProperties": false,
+            "required": ["presence", "locked", "dirty", "detached", "unborn", "base_drift", "changed_files", "observed_at", "evidence_refs"],
+            "properties": {
+              "presence": { "enum": ["present", "missing", "moved", "pruned", "unknown"] },
+              "locked": { "type": "boolean" }, "dirty": { "type": "boolean" }, "detached": { "type": "boolean" }, "unborn": { "type": "boolean" }, "base_drift": { "type": "boolean" },
+              "changed_files": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+              "observed_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+              "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+            }
+          },
+          "integration": {
+            "type": "object", "additionalProperties": false,
+            "required": ["operation_id", "policy", "state", "queue_position", "target_branch", "evidence_refs"],
+            "properties": {
+              "operation_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+              "policy": { "$ref": "common.schema.json#/$defs/IntegrationPolicy" },
+              "state": { "enum": ["not_requested", "queued", "integrating", "integrated", "conflicted", "blocked"] },
+              "queue_position": { "type": ["integer", "null"], "minimum": 0 },
+              "target_branch": { "type": "string", "minLength": 1 },
+              "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+            }
+          },
+          "conflict": {
+            "anyOf": [
+              { "type": "null" },
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["owner_session_id", "files", "base_sha", "head_sha", "target_sha", "next_action", "evidence_refs"],
+                "properties": {
+                  "owner_session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+                  "files": { "type": "array", "minItems": 1, "items": { "type": "string" }, "uniqueItems": true },
+                  "base_sha": { "$ref": "common.schema.json#/$defs/GitSha" }, "head_sha": { "$ref": "common.schema.json#/$defs/GitSha" }, "target_sha": { "$ref": "common.schema.json#/$defs/GitSha" },
+                  "next_action": { "type": "string", "minLength": 1 },
+                  "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+                }
+              }
+            ]
+          },
+          "recovery": {
+            "type": "object", "additionalProperties": false,
+            "required": ["state", "operation_id", "attempts", "last_error", "owner_process_state", "evidence_refs"],
+            "properties": {
+              "state": { "enum": ["none", "inspect_required", "retry_ready", "blocked", "repaired"] },
+              "operation_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+              "attempts": { "type": "integer", "minimum": 0 },
+              "last_error": { "type": ["string", "null"] },
+              "owner_process_state": { "enum": ["alive", "dead", "unknown", "not_applicable"] },
+              "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+            }
+          },
+          "next_action": { "type": "string", "minLength": 1 },
+          "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+        }
+      }
+    },
+    "integration_queue": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["operation_id", "worktree_id", "node_id", "topology_rank", "ready_at", "state"],
+        "properties": {
+          "operation_id": { "$ref": "common.schema.json#/$defs/StableId" }, "worktree_id": { "$ref": "common.schema.json#/$defs/StableId" }, "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "topology_rank": { "type": "integer", "minimum": 0 }, "ready_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "state": { "enum": ["queued", "integrating", "blocked"] }
+        }
+      }
+    },
+    "orphan_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["worktree_id", "session_id", "reason_code", "process_state", "inspect_required", "evidence_refs"],
+        "properties": {
+          "worktree_id": { "$ref": "common.schema.json#/$defs/StableId" }, "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "reason_code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" }, "process_state": { "enum": ["alive", "dead", "unknown"] },
+          "inspect_required": { "type": "boolean" }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+        }
+      }
+    },
+    "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
+    "warnings": { "$ref": "common.schema.json#/$defs/Warnings" },
+    "errors": { "$ref": "common.schema.json#/$defs/Errors" }
+  }
+}
