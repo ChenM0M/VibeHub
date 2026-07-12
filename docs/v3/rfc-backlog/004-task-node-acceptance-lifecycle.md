@@ -19,7 +19,18 @@ V3 replaces the hard-coded phase pipeline with an editable plan graph while pres
 4. Criterion status is independent and cannot be inferred from node completion alone.
 5. Failed findings/attempts remain visible after remediation.
 
-## Decisions To Resolve
+## M4 Freeze Record
+
+- Status: frozen on 2026-07-12 for M4 implementation.
+- Aggregate: lifecycle commands use `task_id` as the optimistic-version aggregate; node/session IDs remain scoped identities in the envelope.
+- Scheduling: `dependencies` form an acyclic Plan DAG. Finding-to-attempt causality is emitted as Trace Graph `addresses` relations and never becomes a scheduling edge.
+- Criterion transitions: `proposed -> accepted -> passed|failed|blocked|not_applicable`; a later review may move failed/blocked back to passed, but every review appends evidence and reviewer identity.
+- Node transitions: planned/ready/active/blocked/failed can only use the legal transitions enforced by `lifecycle.rs`; completed and cancelled are terminal in M4.
+- Finding loop: open/regressed findings retain every attempt ID and all evidence; closure requires at least one remediation attempt.
+- Session coverage: open/heartbeat/close/gap/recover events project complete/recoverable/degraded/unknown coverage independently from code quality.
+- Completion: proposal digest is SHA-256 over task identity, aggregate version and required Criterion truth. Confirmation requires the same digest, a human identity and trusted `desktop_ui` or `cli` channel. Any later task event invalidates it.
+
+## Resolved Decisions
 
 ### D1. Entity identity and ownership
 
@@ -45,6 +56,8 @@ Define open/active/idle/closed/gapped/abandoned/repaired, heartbeat, node scope,
 
 Define proposal digest, state version, criterion summary, confirmation channel, expiry, rejection, and invalidation after new events.
 
+Resolved by the freeze record above and machine-checked in `crates/vibehub-core/src/v3/lifecycle.rs`.
+
 ## M4 Stability Gate Before Self-Hosting M5
 
 All items are mandatory:
@@ -58,6 +71,8 @@ All items are mandatory:
 7. No open P0/P1 data-loss, wrong-task, false-completion, or confirmation-authenticity defect.
 8. A predeclared soak count/duration passes; the threshold cannot be weakened after seeing failures.
 9. The project owner explicitly approves the V3-managed M5 shadow run.
+
+Frozen soak threshold: 100 deterministic rebuild/retry iterations, 10 open/gap/recover/close loops per Codex/OpenCode/Claude Code host, and all four kill-resume semantic gates. `npm run v3:m4:stability` writes `target/m4-stability-report.json`; native Windows and project-owner approval remain explicit non-automated gates.
 
 If any item fails, M5 remains managed by V2. No partial self-hosting is inferred from feature completeness.
 

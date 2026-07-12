@@ -94,7 +94,7 @@
   ],
   "errors": [],
   "task_id": "task.none",
-  "plan_version": 1,
+  "plan_version": 2,
   "graph_state": "valid",
   "nodes": [],
   "scheduling_edges": [],
