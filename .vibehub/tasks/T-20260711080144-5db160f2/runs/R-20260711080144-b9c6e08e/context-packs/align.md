@@ -3,8 +3,8 @@
 Task: T-20260711080144-5db160f2
 Run: R-20260711080144-b9c6e08e
 Phase: Align
-Generated at: 2026-07-11T08:24:07Z
-Source commit: d7ece57
+Generated at: 2026-07-12T05:48:14Z
+Source commit: 4359ef6
 
 ## Instructions
 
@@ -40,21 +40,15 @@ Report files read, commands run, decisions made, and unresolved risks.
 ```json
 [
   {
-    "capability": "plan",
+    "capability": "review",
     "completed": [
-      "`hard_observed` 已产出五份正式 RFC backlog，分别覆盖 domain/event、MCP control plane、Project Intelligence、Task/PlanNode/acceptance、worktree orchestration。",
-      "`hard_observed` 已产出 `docs/v3/m0-task-pack.md`，包含 scope/non-scope、五类 view contract 最小字段、12 组 fixture、planned file surface、7 个 work packages、12 条 Criterion、验证计划、stop conditions 与 M1 handoff。",
-      "`hard_observed` 已将 M0-M6 七个独立 VibeHub Task ID、依赖和正式工件入口回写到 V3 总计划，并将状态从 draft 更新为 aligned。",
-      "`user_confirmed` 计划顺序保持为 M0 contract/fixtures -> M1 fixture-only 高保真前端 -> M2 真实 core/MCP。",
-      "`user_confirmed` RFC-004/005 固定 M4 stability gate；只有全部证据通过且项目所有者明确批准后，M5 才由 V3 self-host。"
+      "`hard_observed`: M4 implementation、两个 P1 remediation、最终 review 与自动化复验完成。",
+      "`hard_observed`: VibeHub review evidence 已生成到当前 run 的 `phases/review.md`、`evidence/changed-files.txt` 与 `evidence/diff.patch`。"
     ],
-    "full_ref": ".vibehub/tasks/T-20260711062223-6f07315c/runs/R-20260711062223-10a76733/outputs/output.md",
+    "full_ref": ".vibehub/tasks/T-20260711080143-fbe94685/runs/R-20260711080143-1866a605/outputs/output.md",
     "key_decisions": [
-      "`inferred` M0 的 canonical boundary 是五份 JSON Schema 2020-12 read models 和 deterministic fixtures，不是 V2 storage/event/Tauri response。",
-      "`inferred` M1 只能经 fixture repository 消费契约；不得读 V2 YAML、调用 V2 workflow commands 或启动真实 MCP。",
-      "`inferred` M0 生产文件范围限制为 `contracts/v3`、`fixtures/v3`、contract scripts/types/tests 与 RFC/Task Pack 决策更新；不得改 V2 production workflow modules。",
-      "`inferred` M0 native fixture 可验证 parsing/display/identity，但不得把未执行的 Windows/macOS file operations 报成通过。",
-      "`inferred` M4 gate 包括 deterministic rebuild、idempotent retry、两轮 remediation history、kill-resume、三 host MCP loop、双平台 native smoke、零未解决 P0/P1、预声明 soak 和 owner approval。"
+      "`agent_reported`: Review 通过只关闭 M4 correctness/implementation，不把外部 native/human gate 推断为通过。",
+      "`user_confirmed`: 完成后归档 M4 并切换到下一个依赖任务。"
     ]
   }
 ]
@@ -65,49 +59,9 @@ Report files read, commands run, decisions made, and unresolved risks.
 ```json
 [
   {
-    "task_id": "T-20260711062223-6f07315c",
-    "title": "完善 VibeHub V3 重设计方案与 Agent 集成架构",
-    "active_capabilities": [],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260711080143-49b5012c",
-    "title": "M1 基于 fixtures 构建 V3 高保真前端体验",
-    "active_capabilities": [
-      "align"
-    ],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260711080143-b1ff21ea",
-    "title": "M2 实现 V3 事件核心与 MCP 控制面",
-    "active_capabilities": [
-      "align"
-    ],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260711080143-c3669d9d",
-    "title": "M0 冻结 V3 契约、fixtures 与实施基线",
-    "active_capabilities": [
-      "align"
-    ],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260711080143-e975f3c8",
-    "title": "M3 构建 Project Intelligence 与架构地图",
-    "active_capabilities": [
-      "align"
-    ],
-    "shared_files": []
-  },
-  {
     "task_id": "T-20260711080143-fbe94685",
     "title": "M4 完成 Task 计划图、时间线与验收闭环",
-    "active_capabilities": [
-      "align"
-    ],
+    "active_capabilities": [],
     "shared_files": []
   },
   {

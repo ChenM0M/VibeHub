@@ -3,19 +3,19 @@ schema_version: 1
 phase: align
 task_id: T-20260711080144-de5ecb84
 run_id: R-20260711080144-924b5971
-generated_at: 2026-07-11T08:01:44Z
-source_commit: d7ece57
+generated_at: 2026-07-12T05:49:18Z
+source_commit: 4359ef6
 budget:
   max_file_size_bytes: 262144
   max_tokens: 12000
-  estimated_tokens: 408
+  estimated_tokens: 563
 included:
 - path: .vibehub/tasks/T-20260711080144-de5ecb84/task.yaml
   reason: active task metadata and goal
   required: true
   confidence: high
-  bytes: 251
-  estimated_tokens: 57
+  bytes: 1366
+  estimated_tokens: 212
 - path: .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/run.yaml
   reason: active run metadata
   required: true
