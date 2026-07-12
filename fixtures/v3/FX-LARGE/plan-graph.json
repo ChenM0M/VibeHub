@@ -18,7 +18,7 @@
   "warnings": [],
   "errors": [],
   "task_id": "task.m0",
-  "plan_version": 1,
+  "plan_version": 2,
   "graph_state": "valid",
   "nodes": [
     {
@@ -1774,11 +1774,60 @@
       "kind": "depends_on"
     }
   ],
-  "trace_relations": [],
+  "trace_relations": [
+    {
+      "relation_id": "trace.check.validates.fixtures",
+      "from_id": "node.check",
+      "to_id": "node.fixtures",
+      "kind": "validates",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.trace1",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.trace.validates",
+          "locator": "scripts/v3-contracts/check.mjs",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "relation_id": "trace.contracts.addresses.schema",
+      "from_id": "node.contracts",
+      "to_id": "node.schema",
+      "kind": "addresses",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.trace2",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.trace.addresses",
+          "locator": "src/v3/contracts/generated",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "relation_id": "trace.repo.validates.fixtures",
+      "from_id": "node.repo",
+      "to_id": "node.fixtures",
+      "kind": "validates",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.trace3",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.trace.repo",
+          "locator": "src/v3/contracts/fixtureRepository.ts",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
   "execution": {
-    "planned_sessions": 1,
-    "observed_sessions": 1,
-    "planned_worktrees": 0,
+    "planned_sessions": 3,
+    "observed_sessions": 2,
+    "planned_worktrees": 1,
     "observed_worktrees": 0
   }
 }

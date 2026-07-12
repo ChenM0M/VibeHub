@@ -18,9 +18,41 @@
   "warnings": [],
   "errors": [],
   "task_id": "task.m0",
-  "title": "Freeze V3 contracts",
+  "title": "Freeze V3 contracts and fixtures",
   "state": "active",
   "criteria": [
+    {
+      "criterion_id": "criterion.m0.c01",
+      "title": "Schema hash stability",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion.m0.c01",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion.m0.c01",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "criterion_id": "criterion.m0.c02",
+      "title": "All views validate against schema",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion.m0.c02",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion.m0.c02",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
     {
       "criterion_id": "criterion.m0.c07",
       "title": "Fixture repository consumer proof",
@@ -28,30 +60,46 @@
       "required": true,
       "evidence_refs": [
         {
-          "evidence_id": "ev.criterion",
+          "evidence_id": "ev.criterion.m0.c07",
           "kind": "test",
           "grade": "hard_observed",
           "label_key": "evidence.fixture.generated",
-          "locator": "fixtures/v3/ev.criterion",
+          "locator": "fixtures/v3/ev.criterion.m0.c07",
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
     }
   ],
+  "completion": {
+    "proposal_event_id": null,
+    "proposed_at_version": null,
+    "digest": null,
+    "valid": false,
+    "confirmed": false,
+    "confirmed_at_version": null,
+    "confirmed_by": null,
+    "channel": null
+  },
   "lanes": [
     {
       "lane_id": "lane.session.main",
       "kind": "session",
-      "label": "Codex main",
+      "label": "Codex 主会话",
       "state": "closed"
+    },
+    {
+      "lane_id": "lane.node.contracts",
+      "kind": "node",
+      "label": "节点：冻结契约",
+      "state": "repaired"
     }
   ],
   "events": [
     {
-      "timeline_event_id": "timeline.session.open",
+      "timeline_event_id": "evt.session.open",
       "kind": "session",
-      "occurred_at": "2026-07-11T08:00:00.000Z",
-      "recorded_at": "2026-07-11T08:00:00.000Z",
+      "occurred_at": "2026-07-11T07:30:00.000Z",
+      "recorded_at": "2026-07-11T07:30:00.000Z",
       "order_state": "ordered",
       "lane_id": "lane.session.main",
       "actor": "codex",
@@ -63,20 +111,132 @@
       "details": {},
       "evidence_refs": [
         {
-          "evidence_id": "ev.session",
-          "kind": "test",
+          "evidence_id": "ev.session.open",
+          "kind": "event",
           "grade": "hard_observed",
-          "label_key": "evidence.fixture.generated",
-          "locator": "fixtures/v3/ev.session",
+          "label_key": "evidence.session.opened",
+          "locator": "events/session.open",
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
     },
     {
-      "timeline_event_id": "timeline.validation.pass",
+      "timeline_event_id": "evt.plan.created",
+      "kind": "plan",
+      "occurred_at": "2026-07-11T07:35:00.000Z",
+      "recorded_at": "2026-07-11T07:35:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "codex",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.plan.created",
+      "details": {
+        "nodes": 3,
+        "edges": 2
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.plan",
+          "kind": "event",
+          "grade": "agent_reported",
+          "label_key": "evidence.plan.created",
+          "locator": "events/plan.created",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.decision.schema",
+      "kind": "decision",
+      "occurred_at": "2026-07-11T07:42:00.000Z",
+      "recorded_at": "2026-07-11T07:42:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": null,
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.decision.schema2020",
+      "details": {
+        "decision": "JSON Schema 2020-12 as canonical"
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.decision",
+          "kind": "event",
+          "grade": "user_confirmed",
+          "label_key": "evidence.decision.schema",
+          "locator": "events/decision.schema",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.evidence.contract",
+      "kind": "evidence",
+      "occurred_at": "2026-07-11T07:50:00.000Z",
+      "recorded_at": "2026-07-11T07:50:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "codex",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.evidence.contractDrafted",
+      "details": {
+        "files": [
+          "contracts/v3/common.schema.json",
+          "contracts/v3/project-overview-view.schema.json"
+        ]
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.evidence",
+          "kind": "file",
+          "grade": "hard_observed",
+          "label_key": "evidence.evidence.drafted",
+          "locator": "contracts/v3/common.schema.json",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.attempt.generate",
+      "kind": "attempt",
+      "occurred_at": "2026-07-11T07:58:00.000Z",
+      "recorded_at": "2026-07-11T07:58:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "node",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.attempt.generateFixtures",
+      "details": {
+        "command": "node scripts/v3-contracts/generate-fixtures.mjs"
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.attempt",
+          "kind": "command",
+          "grade": "hard_observed",
+          "label_key": "evidence.attempt.generate",
+          "locator": "commands/generate-fixtures",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.validation.check",
       "kind": "validation",
-      "occurred_at": "2026-07-11T08:10:00.000Z",
-      "recorded_at": "2026-07-11T08:10:00.000Z",
+      "occurred_at": "2026-07-11T08:05:00.000Z",
+      "recorded_at": "2026-07-11T08:05:00.000Z",
       "order_state": "ordered",
       "lane_id": "lane.session.main",
       "actor": "codex",
@@ -86,51 +246,53 @@
       "commit_sha": "d7ece57",
       "summary_key": "timeline.validation.passed",
       "details": {
-        "command": "npm run v3:contracts:check"
+        "command": "npm run v3:contracts:check",
+        "assertions": 342
       },
       "evidence_refs": [
         {
           "evidence_id": "ev.validation",
-          "kind": "test",
+          "kind": "command",
           "grade": "hard_observed",
-          "label_key": "evidence.fixture.generated",
-          "locator": "fixtures/v3/ev.validation",
+          "label_key": "evidence.validation.passed",
+          "locator": "commands/v3-contracts-check",
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
     },
     {
-      "timeline_event_id": "timeline.finding.one",
-      "kind": "finding",
-      "occurred_at": "2026-07-11T08:20:00.000Z",
-      "recorded_at": "2026-07-11T08:20:00.000Z",
+      "timeline_event_id": "evt.confirmation.commit",
+      "kind": "confirmation",
+      "occurred_at": "2026-07-11T08:10:00.000Z",
+      "recorded_at": "2026-07-11T08:10:00.000Z",
       "order_state": "ordered",
       "lane_id": "lane.session.main",
-      "actor": "reviewer",
-      "tool": "codex",
+      "actor": "codex",
+      "tool": "git",
       "node_id": "node.contracts",
       "session_id": "session.main",
-      "commit_sha": null,
-      "summary_key": "timeline.finding.schema_gap",
+      "commit_sha": "d7ece57",
+      "summary_key": "timeline.confirmation.committed",
       "details": {
-        "severity": "high"
+        "sha": "d7ece57",
+        "message": "M0: freeze V3 contracts and fixtures"
       },
       "evidence_refs": [
         {
-          "evidence_id": "ev.finding",
-          "kind": "test",
+          "evidence_id": "ev.commit",
+          "kind": "git",
           "grade": "hard_observed",
-          "label_key": "evidence.fixture.generated",
-          "locator": "fixtures/v3/ev.finding",
+          "label_key": "evidence.confirmation.commit",
+          "locator": "git/d7ece57",
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
     },
     {
-      "timeline_event_id": "timeline.attempt.one",
-      "kind": "attempt",
-      "occurred_at": "2026-07-11T08:30:00.000Z",
-      "recorded_at": "2026-07-11T08:30:00.000Z",
+      "timeline_event_id": "evt.session.close",
+      "kind": "session",
+      "occurred_at": "2026-07-11T08:15:00.000Z",
+      "recorded_at": "2026-07-11T08:15:00.000Z",
       "order_state": "ordered",
       "lane_id": "lane.session.main",
       "actor": "codex",
@@ -138,23 +300,49 @@
       "node_id": "node.contracts",
       "session_id": "session.main",
       "commit_sha": null,
-      "summary_key": "timeline.attempt.remediation",
-      "details": {
-        "attempt": 1
-      },
+      "summary_key": "timeline.session.closed",
+      "details": {},
       "evidence_refs": [
         {
-          "evidence_id": "ev.attempt",
-          "kind": "test",
+          "evidence_id": "ev.session.close",
+          "kind": "event",
           "grade": "hard_observed",
-          "label_key": "evidence.fixture.generated",
-          "locator": "fixtures/v3/ev.attempt",
+          "label_key": "evidence.session.closed",
+          "locator": "events/session.close",
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
     },
     {
-      "timeline_event_id": "timeline.attempt.two",
+      "timeline_event_id": "evt.rework.finding",
+      "kind": "finding",
+      "occurred_at": "2026-07-11T08:30:00.000Z",
+      "recorded_at": "2026-07-11T08:30:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "reviewer",
+      "tool": "codex",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.finding.schemaGap",
+      "details": {
+        "severity": "high",
+        "gap": "common.schema.json 缺少 EvidenceGrade 枚举"
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.finding.rework",
+          "kind": "event",
+          "grade": "agent_reported",
+          "label_key": "evidence.finding.schema",
+          "locator": "events/finding.schema",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.rework.attempt1",
       "kind": "attempt",
       "occurred_at": "2026-07-11T08:35:00.000Z",
       "recorded_at": "2026-07-11T08:35:00.000Z",
@@ -167,42 +355,72 @@
       "commit_sha": null,
       "summary_key": "timeline.attempt.remediation",
       "details": {
-        "attempt": 2
+        "attempt": 1,
+        "action": "添加 EvidenceGrade 枚举到 common.schema.json"
       },
       "evidence_refs": [
         {
-          "evidence_id": "ev.attempt.two",
-          "kind": "test",
+          "evidence_id": "ev.attempt1",
+          "kind": "event",
           "grade": "hard_observed",
-          "label_key": "evidence.fixture.generated",
-          "locator": "fixtures/v3/ev.attempt.two",
+          "label_key": "evidence.attempt.first",
+          "locator": "events/attempt.1",
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
     },
     {
-      "timeline_event_id": "timeline.validation.repass",
+      "timeline_event_id": "evt.rework.attempt2",
+      "kind": "attempt",
+      "occurred_at": "2026-07-11T08:42:00.000Z",
+      "recorded_at": "2026-07-11T08:42:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "codex",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": "e3a1b90",
+      "summary_key": "timeline.attempt.remediation",
+      "details": {
+        "attempt": 2,
+        "action": "修正 EvidenceRef.grade 引用为 $ref"
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.attempt2",
+          "kind": "event",
+          "grade": "hard_observed",
+          "label_key": "evidence.attempt.second",
+          "locator": "events/attempt.2",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.rework.revalidation",
       "kind": "validation",
-      "occurred_at": "2026-07-11T08:40:00.000Z",
-      "recorded_at": "2026-07-11T08:40:00.000Z",
+      "occurred_at": "2026-07-11T08:48:00.000Z",
+      "recorded_at": "2026-07-11T08:48:00.000Z",
       "order_state": "ordered",
       "lane_id": "lane.session.main",
       "actor": "reviewer",
       "tool": "npm",
       "node_id": "node.contracts",
       "session_id": "session.main",
-      "commit_sha": null,
+      "commit_sha": "e3a1b90",
       "summary_key": "timeline.validation.repassed",
       "details": {
-        "attempt": 2
+        "attempt": 2,
+        "assertions": 342
       },
       "evidence_refs": [
         {
-          "evidence_id": "ev.repass",
-          "kind": "test",
+          "evidence_id": "ev.revalidation",
+          "kind": "command",
           "grade": "hard_observed",
-          "label_key": "evidence.fixture.generated",
-          "locator": "fixtures/v3/ev.repass",
+          "label_key": "evidence.validation.repass",
+          "locator": "commands/v3-contracts-check",
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
@@ -212,8 +430,8 @@
     "cursor": null,
     "next_cursor": null,
     "limit": 100,
-    "returned": 6,
-    "total_estimate": 6,
+    "returned": 12,
+    "total_estimate": 12,
     "truncated": false,
     "truncation_reason": "none",
     "model_version": "model.fixture.1"

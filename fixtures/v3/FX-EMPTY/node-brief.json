@@ -95,29 +95,37 @@
   "errors": [],
   "task_id": "task.none",
   "node_id": "node.none",
-  "goal": "No task selected",
+  "goal": "未选择任务",
   "scope": [],
   "non_scope": [],
-  "dependencies": [],
+  "dependencies": [
+    "node.schema",
+    "node.fixtures"
+  ],
   "accepted_decisions": [
-    "JSON Schema 2020-12 is canonical"
+    "JSON Schema 2020-12 作为规范格式",
+    "Fixture-first 策略隔离 M1 与 V2",
+    "确定性种子 20260711 保证可复现"
   ],
   "research_summary": [
-    "Fixture-first isolates M1 from V2"
+    "调查了 JSON Schema 2020-12 vs OpenAPI 3.1，选择前者因为 AJV2020 支持更好",
+    "Fixture-first 隔离 M1 前端开发与 V2 后端耦合",
+    "12 场景覆盖正常/异常/边界/大数据/跨平台路径"
   ],
   "criteria": [],
   "files": [],
   "validation_commands": [],
   "state": "active",
-  "next_intent": "Create or select a task",
+  "next_intent": "创建或选择一个任务",
   "budget": {
-    "max_tokens": 4000,
-    "estimated_tokens": 900,
+    "max_tokens": 8000,
+    "estimated_tokens": 3200,
     "truncated_sections": []
   },
   "source_versions": {
     "contract": "1.0",
-    "model": "model.fixture.1"
+    "model": "model.fixture.1",
+    "json-schema": "2020-12"
   },
   "protocol_coverage": "unknown"
 }

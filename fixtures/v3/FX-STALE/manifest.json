@@ -21,31 +21,31 @@
       "contract": "project_overview",
       "schema": "project-overview-view.schema.json",
       "file": "project-overview.json",
-      "sha256": "4dbc3125a65c9a131cf1ce0aa9880ae09ec17e84189ca8d4c597b69cd4b71a4d"
+      "sha256": "e6642b99569044211922405bf84b89474dd18ad98b4d945217419648f2e1b400"
     },
     {
       "contract": "project_structure",
       "schema": "project-structure-view.schema.json",
       "file": "project-structure.json",
-      "sha256": "ad500a733e07790faf26a5dd5c6367bb98fc262225c29140029dda609bff970b"
+      "sha256": "c6cf52123773a333efdec66128ba10aaf4b1bffbb8fe554e176e6e44c15c0f0d"
     },
     {
       "contract": "task_timeline",
       "schema": "task-timeline-view.schema.json",
       "file": "task-timeline.json",
-      "sha256": "71700171955b093c677d5e7e936119ca68dbb9cb60a19f38bbe96a3ecc670fe7"
+      "sha256": "e54428f99ad9a8cfba6717155825db5f8ebd61e86215e553d1e9c9e399bd94ec"
     },
     {
       "contract": "plan_graph",
       "schema": "plan-graph-view.schema.json",
       "file": "plan-graph.json",
-      "sha256": "91a1fdaf442efb645cac23dbbb134d6edb1d940cc280b6d545af921586d5fb60"
+      "sha256": "d014af9d180e37a796484656d30c4c2989a45d20e36eb238ad9b9b9f886ee297"
     },
     {
       "contract": "node_brief",
       "schema": "node-brief.schema.json",
       "file": "node-brief.json",
-      "sha256": "2a25ebe93ded1e89a0e07ed2932dc23711e57a510d924609b59df3ec76cd1dfd"
+      "sha256": "34503330e00d798a06340378dddbf7842e46ece3418dfb8ba8a13763895c948e"
     }
   ]
 }
