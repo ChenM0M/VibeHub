@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::{self, Read};
 
+use vibehub_core::v3::{V3ApplicationService, V3ViewRepository};
 use vibehub_core::vibehub;
 
 fn main() {
@@ -74,6 +75,12 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   debug-dump             Create debug dump: vibehub debug-dump <project>
   locale                 Set project locale: vibehub locale <project> <en|zh-CN|zh-TW>
 
+=== V3 Core (CLI fallback) ===
+  v3 <project> session-open <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key>
+  v3 <project> event-log <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> <progress|risk> <details_json>
+  v3 <project> session-close <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key>
+  v3 <project> rebuild <project_id>
+
 All commands output JSON to stdout. Errors go to stderr.
 Use `vibehub --help` or `vibehub-cli --help` to see this message again.
 "#
@@ -87,6 +94,8 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
     };
 
     match action {
+        "mcp-stdio" => vibehub_adapters::mcp::run_stdio(project_path),
+        "v3" => run_v3_action(project_path, &args[1..]),
         "start" | "start-task" | "start_task" => {
             let mode = args.get(1).cloned();
             let title = if args.len() > 2 {
@@ -323,6 +332,129 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
             std::process::exit(2);
         }
     }
+}
+
+fn run_v3_action(project_root: &str, args: &[String]) {
+    let Some(command) = args.first().map(String::as_str) else {
+        eprintln!(
+            "Missing V3 command. Expected session-open, event-log, session-close, rebuild, or view-bundle."
+        );
+        std::process::exit(2);
+    };
+    let app = match V3ApplicationService::open(project_root) {
+        Ok(app) => app,
+        Err(error) => print_v3_error(error),
+    };
+    match command {
+        "session-open" | "session-close" => {
+            let (project_id, task_id, session_id, actor, expected_version, idempotency_key) =
+                parse_v3_write_scope(command, &args[1..]);
+            let result = if command == "session-open" {
+                app.session_open(
+                    project_id,
+                    task_id,
+                    session_id,
+                    actor,
+                    expected_version,
+                    idempotency_key,
+                )
+            } else {
+                app.session_close(
+                    project_id,
+                    task_id,
+                    session_id,
+                    actor,
+                    expected_version,
+                    idempotency_key,
+                )
+            };
+            print_v3_json(result);
+        }
+        "event-log" => {
+            let (project_id, task_id, session_id, actor, expected_version, idempotency_key) =
+                parse_v3_write_scope(command, &args[1..]);
+            let Some(kind) = args.get(7) else {
+                v3_usage_error(command, "missing event kind");
+            };
+            let Some(details) = args.get(8) else {
+                v3_usage_error(command, "missing details JSON");
+            };
+            let details = serde_json::from_str(details).unwrap_or_else(|error| {
+                v3_usage_error(command, &format!("invalid details JSON: {error}"))
+            });
+            print_v3_json(app.event_log(
+                kind,
+                project_id,
+                task_id,
+                session_id,
+                actor,
+                expected_version,
+                idempotency_key,
+                details,
+            ));
+        }
+        "rebuild" => {
+            let Some(project_id) = args.get(1) else {
+                v3_usage_error(command, "missing project_id");
+            };
+            print_v3_json(app.rebuild(project_id));
+        }
+        "view-bundle" => {
+            let Some(task_id) = args.get(1) else {
+                v3_usage_error(command, "missing task_id");
+            };
+            let repository =
+                V3ViewRepository::open(project_root).unwrap_or_else(|error| print_v3_error(error));
+            print_v3_json(repository.load_bundle(task_id));
+        }
+        _ => v3_usage_error(command, "unknown command"),
+    }
+}
+
+fn parse_v3_write_scope<'a>(
+    command: &str,
+    args: &'a [String],
+) -> (&'a str, &'a str, &'a str, &'a str, u64, &'a str) {
+    if args.len() < 6 {
+        v3_usage_error(
+            command,
+            "expected project_id task_id session_id actor expected_version idempotency_key",
+        );
+    }
+    let expected_version = args[4].parse::<u64>().unwrap_or_else(|error| {
+        v3_usage_error(command, &format!("invalid expected_version: {error}"))
+    });
+    (
+        &args[0],
+        &args[1],
+        &args[2],
+        &args[3],
+        expected_version,
+        &args[5],
+    )
+}
+
+fn v3_usage_error(command: &str, message: &str) -> ! {
+    eprintln!("Invalid V3 {command} request: {message}");
+    std::process::exit(2);
+}
+
+fn print_v3_json<T: serde::Serialize>(result: Result<T, vibehub_core::v3::V3Error>) {
+    match result {
+        Ok(value) => println!(
+            "{}",
+            serde_json::to_string_pretty(&value).expect("V3 result must serialize")
+        ),
+        Err(error) => print_v3_error(error),
+    }
+}
+
+fn print_v3_error(error: vibehub_core::v3::V3Error) -> ! {
+    eprintln!(
+        "{}",
+        serde_json::to_string_pretty(&error).expect("V3 error must serialize")
+    );
+    std::process::exit(1);
 }
 
 fn read_intake_request_content(request_path: &str) -> (String, String) {

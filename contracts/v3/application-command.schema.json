@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/application-command.schema.json",
+  "title": "V3ApplicationCommand",
+  "oneOf": [
+    { "$ref": "#/$defs/SessionOpen" },
+    { "$ref": "#/$defs/EventLog" },
+    { "$ref": "#/$defs/SessionClose" },
+    { "$ref": "#/$defs/Rebuild" }
+  ],
+  "$defs": {
+    "WriteScope": {
+      "type": "object",
+      "required": ["project_id", "task_id", "session_id", "actor", "expected_version", "idempotency_key"],
+      "properties": {
+        "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "actor": { "type": "string", "minLength": 1 },
+        "expected_version": { "type": "integer", "minimum": 0 },
+        "idempotency_key": { "$ref": "common.schema.json#/$defs/StableId" }
+      }
+    },
+    "SessionOpen": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/WriteScope" },
+        { "type": "object", "required": ["command"], "properties": { "command": { "const": "session_open" } } }
+      ]
+    },
+    "EventLog": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/WriteScope" },
+        {
+          "type": "object",
+          "required": ["command", "kind", "details"],
+          "properties": {
+            "command": { "const": "event_log" },
+            "kind": { "enum": ["progress", "risk"] },
+            "details": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "SessionClose": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/WriteScope" },
+        { "type": "object", "required": ["command"], "properties": { "command": { "const": "session_close" } } }
+      ]
+    },
+    "Rebuild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "project_id"],
+      "properties": {
+        "command": { "const": "rebuild" },
+        "project_id": { "$ref": "common.schema.json#/$defs/StableId" }
+      }
+    }
+  }
+}

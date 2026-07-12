@@ -71,6 +71,8 @@ fn main() {
             commands::set_theme,
             commands::refresh_all_workspaces,
             commands::check_for_updates,
+            commands::v3_load_view_bundle,
+            commands::v3_query_project_structure,
             commands::vibehub_init,
             commands::vibehub_start_task,
             commands::vibehub_start_task_intake,
@@ -142,6 +144,14 @@ fn run_vibehub_cli_if_requested() -> bool {
     };
 
     match command.as_str() {
+        "mcp-stdio" => {
+            let Some(project_path) = args.next() else {
+                eprintln!("Missing project path for mcp-stdio");
+                std::process::exit(2);
+            };
+            vibehub_adapters::mcp::run_stdio(&project_path);
+            true
+        }
         "vibehub" | "vibehub-cli" => {
             let Some(action) = args.next() else {
                 eprintln!("Missing VibeHub action. Expected start, start-intake, continue, switch, ownership, record, neighbors, claim, gates, sync, status, next-action, output-lint, replay-pending, debug-dump, review, recover, handoff, pause, validate, validate-task, advance, finish, archive, workflow-explain, schema-check, sync-adapters, adapter-status, migrate, or locale.");
