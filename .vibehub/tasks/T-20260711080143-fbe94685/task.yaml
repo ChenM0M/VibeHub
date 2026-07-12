@@ -3,8 +3,8 @@ kind: vibehub_task
 task_id: T-20260711080143-fbe94685
 title: M4 完成 Task 计划图、时间线与验收闭环
 mode: guided_drive
-phase: align
-phase_status: active
+phase: review
+phase_status: completed
 created_at: 2026-07-11T08:01:43Z
 created_by: vibehub
 intent: 把 PlanGraph、Criterion、Finding、Attempt 与 session timeline 接入真实 core，形成可回放的五段工作闭环。

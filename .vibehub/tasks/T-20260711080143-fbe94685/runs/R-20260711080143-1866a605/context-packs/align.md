@@ -3,8 +3,8 @@
 Task: T-20260711080143-fbe94685
 Run: R-20260711080143-1866a605
 Phase: Align
-Generated at: 2026-07-11T08:01:43Z
-Source commit: d7ece57
+Generated at: 2026-07-12T05:16:25Z
+Source commit: 4359ef6
 
 ## Instructions
 
@@ -37,47 +37,39 @@ Report files read, commands run, decisions made, and unresolved risks.
 
 ## Prior Outputs Summary
 
-- None available.
+```json
+[
+  {
+    "capability": "align",
+    "completed": [
+      "`hard_observed`: 对照 M1 Review/current components、M4 task metadata、主计划 M4、RFC-004 和 M5 entry requirements，完成 M4 范围、页面映射、真实性与稳定性验收重写。"
+    ],
+    "full_ref": ".vibehub/tasks/T-20260711080143-fbe94685/runs/R-20260711080143-1866a605/outputs/output.md",
+    "key_decisions": [
+      "`user_confirmed`: M1 是产品交互基线；M4 通过接真实状态与动作增强它，不另建 Task 产品。",
+      "`agent_reported`: 概要、时间线、计划图和结构架构各有单一职责；五段方法论映射到 graph/template，不映射到页面数量。",
+      "`agent_reported`: 节点完成、Criterion pass 和 Task completion 是三个独立状态，不能互相隐式推断。",
+      "`agent_reported`: M5 entry gate 是 M4 的独立交付物；阈值必须预先声明且失败后不可下调。"
+    ]
+  }
+]
+```
 
 ## Neighbors
 
 ```json
 [
   {
-    "task_id": "T-20260711062223-6f07315c",
-    "title": "完善 VibeHub V3 重设计方案与 Agent 集成架构",
-    "active_capabilities": [
-      "research"
-    ],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260711080143-49b5012c",
-    "title": "M1 基于 fixtures 构建 V3 高保真前端体验",
+    "task_id": "T-20260711080144-5db160f2",
+    "title": "M6 完成 legacy-v2 只读迁移与发布硬化",
     "active_capabilities": [
       "align"
     ],
     "shared_files": []
   },
   {
-    "task_id": "T-20260711080143-b1ff21ea",
-    "title": "M2 实现 V3 事件核心与 MCP 控制面",
-    "active_capabilities": [
-      "align"
-    ],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260711080143-c3669d9d",
-    "title": "M0 冻结 V3 契约、fixtures 与实施基线",
-    "active_capabilities": [
-      "align"
-    ],
-    "shared_files": []
-  },
-  {
-    "task_id": "T-20260711080143-e975f3c8",
-    "title": "M3 构建 Project Intelligence 与架构地图",
+    "task_id": "T-20260711080144-de5ecb84",
+    "title": "M5 用稳定 V3 自管理多会话与 worktree 编排",
     "active_capabilities": [
       "align"
     ],
@@ -93,13 +85,29 @@ Reason: active task metadata and goal
 ```text
 schema_version: 1
 kind: vibehub_task
-task_id: "T-20260711080143-fbe94685"
-title: "M4 完成 Task 计划图、时间线与验收闭环"
-mode: "guided_drive"
-phase: "align"
-phase_status: "active"
-created_at: "2026-07-11T08:01:43Z"
+task_id: T-20260711080143-fbe94685
+title: M4 完成 Task 计划图、时间线与验收闭环
+mode: guided_drive
+phase: align
+phase_status: active
+created_at: 2026-07-11T08:01:43Z
 created_by: vibehub
+intent: 把 PlanGraph、Criterion、Finding、Attempt 与 session timeline 接入真实 core，形成可回放的五段工作闭环。
+acceptance_criteria:
+- 真实任务完成 align 到 review 的事件化闭环，图变更可回放
+- Criterion 逐项验收，失败项不能投影为 completed
+- Finding-remediation-re-review 保留全部 attempts
+- 三类 agent 会话启动与 brief 归属正确，M4 达到稳定门槛
+dependencies:
+- M2
+- M3
+intake:
+  batch_id: intake-20260711080143
+  split_confidence: high
+  suggested_order: 4
+  total_tasks: 3
+  source_message: align阶段已经结束，现在需要进行调查和计划阶段，产出正式 research pack、五份 RFC backlog 和 M0 Task Pack。M0–M6 分别创建独立任务，不能做成一个超级大任务。M0 固化契约和 fixtures，M1 做高保真前端，M2 再接真实 core/MCP。等 M4 稳定后再让 v3 自己管理 M5，避免过早 self-host。
+  split_reason: 用户明确要求 M0-M6 分别创建独立任务，且每个里程碑都有独立交付面、依赖与验收边界。
 ```
 
 ## File: .vibehub/tasks/T-20260711080143-fbe94685/runs/R-20260711080143-1866a605/run.yaml

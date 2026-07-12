@@ -3,8 +3,8 @@ kind: vibehub_task
 task_id: T-20260711080143-e975f3c8
 title: M3 构建 Project Intelligence 与架构地图
 mode: guided_drive
-phase: align
-phase_status: active
+phase: review
+phase_status: completed
 created_at: 2026-07-11T08:01:43Z
 created_by: vibehub
 intent: 把现有文件结构浏览升级为证据化、增量化、可降级的项目架构与知识视图。
