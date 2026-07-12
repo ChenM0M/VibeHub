@@ -30,6 +30,21 @@
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
+    },
+    {
+      "code": "SCOPE_OVERLAP",
+      "severity": "warning",
+      "message_key": "warning.scope_overlap",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
     }
   ],
   "errors": [],
@@ -196,7 +211,16 @@
       ],
       "criterion_ids": [
         "criterion.m1.c01"
-      ]
+      ],
+      "session_ids": [
+        "session.ui"
+      ],
+      "worktree": {
+        "worktree_id": "worktree.ui",
+        "lease_id": "lease.ui",
+        "branch": "vibehub/m1/project-ui-3f91a2c",
+        "state": "active"
+      }
     },
     {
       "node_id": "node.shared",
@@ -212,7 +236,16 @@
       ],
       "criterion_ids": [
         "criterion.m1.c01"
-      ]
+      ],
+      "session_ids": [
+        "session.types"
+      ],
+      "worktree": {
+        "worktree_id": "worktree.shared",
+        "lease_id": null,
+        "branch": "vibehub/m1/shared-types-905c2be",
+        "state": "planned"
+      }
     }
   ],
   "scheduling_edges": [

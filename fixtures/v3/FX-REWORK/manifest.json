@@ -31,7 +31,7 @@
       "contract": "task_timeline",
       "schema": "task-timeline-view.schema.json",
       "file": "task-timeline.json",
-      "sha256": "0d9721d722327fd3a6aefd269276ba0c3b451faf62c04c12362973531ef907a8"
+      "sha256": "44a756698b0be0cd770fe4b4f52a428e42535277457af13291e336e507336308"
     },
     {
       "contract": "plan_graph",
@@ -44,6 +44,12 @@
       "schema": "node-brief.schema.json",
       "file": "node-brief.json",
       "sha256": "719de8ff2d72122d74688ae77fa6d9f15bbe11bf2a368bedb3ae0c367faf5696"
+    },
+    {
+      "contract": "worktree_orchestration",
+      "schema": "worktree-orchestration-view.schema.json",
+      "file": "worktree-orchestration.json",
+      "sha256": "fa56ca1e6998fb66c85fc2a950a8c3f98fbd6bd5c00d5f0e76b2ea5107f34b5c"
     }
   ]
 }

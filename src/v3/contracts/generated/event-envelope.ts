@@ -12,6 +12,9 @@ export interface V3EventEnvelope {
   task_id: string;
   node_id?: string;
   session_id?: string;
+  worktree_id?: string;
+  lease_id?: string;
+  operation_id?: string;
   actor: string;
   evidence_grade: "hard_observed" | "agent_reported" | "inferred" | "user_confirmed";
   occurred_at: string;

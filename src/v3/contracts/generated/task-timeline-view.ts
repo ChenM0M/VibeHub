@@ -27,13 +27,28 @@ export interface TaskTimelineView {
   };
   lanes: {
     lane_id: string;
-    kind: "task" | "session" | "node";
+    kind: "task" | "session" | "node" | "worktree";
     label: string;
     state: "open" | "active" | "idle" | "closed" | "gapped" | "abandoned" | "repaired";
+    worktree_id?: string | null;
   }[];
   events: {
     timeline_event_id: string;
-    kind: "decision" | "evidence" | "finding" | "attempt" | "validation" | "confirmation" | "gap" | "session" | "plan";
+    kind:
+      | "decision"
+      | "evidence"
+      | "finding"
+      | "attempt"
+      | "validation"
+      | "confirmation"
+      | "gap"
+      | "session"
+      | "plan"
+      | "lease"
+      | "worktree"
+      | "integration"
+      | "conflict"
+      | "recovery";
     occurred_at: string;
     recorded_at: string;
     order_state: "ordered" | "late" | "reordered";
@@ -43,6 +58,8 @@ export interface TaskTimelineView {
     node_id?: string | null;
     session_id?: string | null;
     commit_sha?: string | null;
+    worktree_id?: string | null;
+    lease_id?: string | null;
     summary_key: string;
     details?: {
       [k: string]: unknown;

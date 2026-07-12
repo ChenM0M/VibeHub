@@ -250,6 +250,9 @@ fn command_draft(command: LifecycleCommand) -> EventDraft {
         task_id: TaskId(command.task_id),
         node_id: command.node_id.map(NodeId),
         session_id: command.session_id.map(SessionId),
+        worktree_id: None,
+        lease_id: None,
+        operation_id: None,
         actor: command.actor,
         evidence_grade: command
             .evidence_grade
@@ -680,6 +683,9 @@ fn synthetic_event(command: &LifecycleCommand, aggregate_version: u64) -> V3Even
         task_id: TaskId(command.task_id.clone()),
         node_id: command.node_id.clone().map(NodeId),
         session_id: command.session_id.clone().map(SessionId),
+        worktree_id: None,
+        lease_id: None,
+        operation_id: None,
         actor: command.actor.clone(),
         evidence_grade: command
             .evidence_grade
@@ -1167,7 +1173,7 @@ mod tests {
                 "session.closed",
                 "project.test",
                 "task.test",
-                version - 1,
+                3,
                 "codex.0.close",
                 json!({"session_id":"session.codex.0","host":"codex"}),
             ),

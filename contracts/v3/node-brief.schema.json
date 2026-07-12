@@ -12,6 +12,21 @@
     "research_summary": { "type": "array", "items": { "type": "string" } }, "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
     "files": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/NativePath" } }, "validation_commands": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "state": { "enum": ["planned", "ready", "active", "blocked", "review", "completed", "cancelled", "superseded"] }, "next_intent": { "type": "string" },
+    "execution": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["session_ids", "worktree", "base_sha", "native_path", "dirty", "integration_state", "conflict_owner", "next_action"],
+      "properties": {
+        "session_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" }, "uniqueItems": true },
+        "worktree": { "anyOf": [{ "$ref": "common.schema.json#/$defs/WorktreeRef" }, { "type": "null" }] },
+        "base_sha": { "anyOf": [{ "$ref": "common.schema.json#/$defs/GitSha" }, { "type": "null" }] },
+        "native_path": { "anyOf": [{ "$ref": "common.schema.json#/$defs/NativePath" }, { "type": "null" }] },
+        "dirty": { "type": ["boolean", "null"] },
+        "integration_state": { "enum": ["not_requested", "queued", "integrating", "integrated", "conflicted", "blocked"] },
+        "conflict_owner": { "type": ["string", "null"] },
+        "next_action": { "type": "string", "minLength": 1 }
+      }
+    },
     "budget": {
       "type": "object", "additionalProperties": false, "required": ["max_tokens", "estimated_tokens", "truncated_sections"],
       "properties": { "max_tokens": { "type": "integer", "minimum": 1 }, "estimated_tokens": { "type": "integer", "minimum": 0 }, "truncated_sections": { "type": "array", "items": { "type": "string" } } }
