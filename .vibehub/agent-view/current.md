@@ -2,10 +2,10 @@
 
 ## Task
 
-- Task ID: T-20260711080143-49b5012c
-- Task path: .vibehub/tasks/T-20260711080143-49b5012c
-- Run ID: R-20260711080143-b14d3ac8
-- Run path: .vibehub/tasks/T-20260711080143-49b5012c/runs/R-20260711080143-b14d3ac8
+- Task ID: T-20260711080144-de5ecb84
+- Task path: .vibehub/tasks/T-20260711080144-de5ecb84
+- Run ID: R-20260711080144-924b5971
+- Run path: .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971
 
 ## Mode
 
@@ -18,13 +18,8 @@
 
 ## Active Tasks
 
-- T-20260711080143-49b5012c (current)
-- T-20260711080143-b1ff21ea
-- T-20260711080143-c3669d9d
-- T-20260711080143-e975f3c8
-- T-20260711080143-fbe94685
 - T-20260711080144-5db160f2
-- T-20260711080144-de5ecb84
+- T-20260711080144-de5ecb84 (current)
 
 ## Intake Queue
 
@@ -41,12 +36,7 @@
 
 ## Neighbor Tasks
 
-- T-20260711080143-b1ff21ea (M2 实现 V3 事件核心与 MCP 控制面): active_capabilities=[align], shared_files=[]
-- T-20260711080143-c3669d9d (M0 冻结 V3 契约、fixtures 与实施基线): active_capabilities=[], shared_files=[]
-- T-20260711080143-e975f3c8 (M3 构建 Project Intelligence 与架构地图): active_capabilities=[align], shared_files=[]
-- T-20260711080143-fbe94685 (M4 完成 Task 计划图、时间线与验收闭环): active_capabilities=[align], shared_files=[]
 - T-20260711080144-5db160f2 (M6 完成 legacy-v2 只读迁移与发布硬化): active_capabilities=[align], shared_files=[]
-- T-20260711080144-de5ecb84 (M5 用稳定 V3 自管理多会话与 worktree 编排): active_capabilities=[align], shared_files=[]
 
 
 ## Observability Note
@@ -63,11 +53,11 @@
 - .vibehub/agent-view/current-context.md
 - .vibehub/agent-view/handoff.md
 - .vibehub/rules/hard-rules.md
-- .vibehub/tasks/T-20260711080143-49b5012c/runs/R-20260711080143-b14d3ac8/context-packs/align.md
+- .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/context-packs/align.md
 
 ## What To Write
 
-- Suggested phase output under .vibehub/tasks/T-20260711080143-49b5012c/runs/R-20260711080143-b14d3ac8/outputs/ if needed.
+- Suggested phase output under .vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/outputs/ if needed.
 - Changed files only within the active task scope.
 - Final response or agent output must include changed files, commands run, tests run or reason not run, unresolved risks, and handoff notes.
 

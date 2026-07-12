@@ -3,6 +3,7 @@
 /target
 /node_modules
 /dist
+/.vibehub/v3/
 
 # Build outputs
 /src-tauri/target
