@@ -1,6 +1,7 @@
 use super::domain::{V3Error, V3ErrorCategory, V3EventEnvelope};
+use super::orchestration::{self, WorktreeProjection, ORCHESTRATION_EVENT_TYPES};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -12,6 +13,7 @@ pub struct V3Projection {
     pub source_event_ids: Vec<String>,
     pub aggregate_versions: BTreeMap<String, u64>,
     pub sessions: BTreeMap<String, SessionProjection>,
+    pub worktrees: BTreeMap<String, WorktreeProjection>,
     pub unknown_event_types: Vec<String>,
 }
 
@@ -31,13 +33,19 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
         source_event_ids: Vec::new(),
         aggregate_versions: BTreeMap::new(),
         sessions: BTreeMap::new(),
+        worktrees: BTreeMap::new(),
         unknown_event_types: Vec::new(),
     };
+    let mut orchestration_task_ids = BTreeSet::new();
     for event in events {
         projection.source_event_ids.push(event.event_id.clone());
         projection
             .aggregate_versions
             .insert(event.aggregate_id.clone(), event.aggregate_version);
+        if ORCHESTRATION_EVENT_TYPES.contains(&event.event_type.as_str()) {
+            orchestration_task_ids.insert(event.task_id.0.clone());
+            continue;
+        }
         let Some(session_id) = event.session_id.as_ref().map(|id| id.0.clone()) else {
             projection
                 .unknown_event_types
@@ -62,6 +70,11 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
                 .unknown_event_types
                 .push(event.event_type.clone()),
         }
+    }
+    for task_id in orchestration_task_ids {
+        projection
+            .worktrees
+            .extend(orchestration::fold_task(&task_id, events).worktrees);
     }
     projection
 }

@@ -1,0 +1,173 @@
+{
+  "expected_schema": "worktree-orchestration-view.schema.json",
+  "expected_keyword": "minimum",
+  "expected_instance_path": "/worktrees/0/lease/generation",
+  "instance": {
+    "schema_version": "1.0",
+    "project_id": "project.vibehub",
+    "generated_at": "2026-07-11T08:00:00.000Z",
+    "model_version": "model.fixture.1",
+    "freshness": "fresh",
+    "completeness": "complete",
+    "evidence_refs": [
+      {
+        "evidence_id": "ev.fixture",
+        "kind": "test",
+        "grade": "hard_observed",
+        "label_key": "evidence.fixture.generated",
+        "locator": "fixtures/v3/ev.fixture",
+        "captured_at": "2026-07-11T08:00:00.000Z"
+      }
+    ],
+    "warnings": [],
+    "errors": [],
+    "task_id": "task.m0",
+    "entry_gate": {
+      "state": "closed",
+      "m4_gate_digest": null,
+      "windows_native_evidence": false,
+      "owner_approved": false,
+      "self_host_writes_allowed": false,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.m5.entry-gate",
+          "kind": "file",
+          "grade": "hard_observed",
+          "label_key": "evidence.m5.entryGate",
+          "locator": "docs/v3/m4-stability-gate.md",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    "policy": {
+      "integration_policy": "merge_no_ff",
+      "unknown_scope_decision": "warn",
+      "denylist": [
+        ".vibehub/state.yaml",
+        ".vibehub/events/**",
+        "migrations/**",
+        "src/v3/contracts/generated/**"
+      ],
+      "case_sensitive": true,
+      "retention_seconds": 86400
+    },
+    "worktrees": [
+      {
+        "worktree_id": "worktree.contracts",
+        "node_id": "node.contracts",
+        "session_ids": [
+          "session.main"
+        ],
+        "display_name": "M0 / contracts",
+        "branch": "vibehub/m0/contracts-a1b2c3d",
+        "base_sha": "d7ece57",
+        "head_sha": "e3a1b90",
+        "native_path": {
+          "platform": "macos",
+          "native": "/Users/alex/.vibehub/worktrees/task-m0/node-contracts",
+          "display": "/Users/alex/.vibehub/worktrees/task-m0/node-contracts",
+          "identity_key": "macos:/Users/alex/.vibehub/worktrees/task-m0/node-contracts",
+          "path_kind": "absolute",
+          "accessible": true
+        },
+        "state": "active",
+        "read_only": false,
+        "eligibility": {
+          "decision": "allow",
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "reason_codes": [],
+          "declared_scope": [
+            "contracts/v3",
+            "scripts/v3-contracts"
+          ],
+          "observed_delta": [
+            "contracts/v3/common.schema.json"
+          ],
+          "override": false,
+          "evidence_refs": [
+            {
+              "evidence_id": "ev.worktree.contracts.eligibility",
+              "kind": "event",
+              "grade": "hard_observed",
+              "label_key": "evidence.worktree.eligibility",
+              "locator": "events/worktree.contracts/eligibility",
+              "captured_at": "2026-07-11T08:00:00.000Z"
+            }
+          ]
+        },
+        "lease": {
+          "lease_id": "lease.contracts",
+          "owner_session_id": "session.main",
+          "owner_host": "macbook-pro",
+          "owner_tool": "codex",
+          "state": "active",
+          "generation": 0,
+          "acquired_at": "2026-07-11T08:20:00.000Z",
+          "heartbeat_at": "2026-07-11T08:25:00.000Z",
+          "expires_at": "2026-07-11T08:35:00.000Z",
+          "reclaim_challenge": null,
+          "evidence_refs": [
+            {
+              "evidence_id": "ev.lease.contracts",
+              "kind": "event",
+              "grade": "hard_observed",
+              "label_key": "evidence.lease.active",
+              "locator": "events/lease.contracts",
+              "captured_at": "2026-07-11T08:00:00.000Z"
+            }
+          ]
+        },
+        "git": {
+          "presence": "present",
+          "locked": false,
+          "dirty": false,
+          "detached": false,
+          "unborn": false,
+          "base_drift": false,
+          "changed_files": [],
+          "observed_at": "2026-07-11T08:25:00.000Z",
+          "evidence_refs": [
+            {
+              "evidence_id": "ev.worktree.contracts.git",
+              "kind": "git",
+              "grade": "hard_observed",
+              "label_key": "evidence.worktree.git",
+              "locator": "git/worktree.contracts",
+              "captured_at": "2026-07-11T08:00:00.000Z"
+            }
+          ]
+        },
+        "integration": {
+          "operation_id": null,
+          "policy": "merge_no_ff",
+          "state": "not_requested",
+          "queue_position": null,
+          "target_branch": "main",
+          "evidence_refs": []
+        },
+        "conflict": null,
+        "recovery": {
+          "state": "none",
+          "operation_id": null,
+          "attempts": 0,
+          "last_error": null,
+          "owner_process_state": "alive",
+          "evidence_refs": []
+        },
+        "next_action": "Continue the assigned node",
+        "evidence_refs": [
+          {
+            "evidence_id": "ev.worktree.contracts",
+            "kind": "event",
+            "grade": "hard_observed",
+            "label_key": "evidence.worktree.projected",
+            "locator": "events/worktree.contracts",
+            "captured_at": "2026-07-11T08:00:00.000Z"
+          }
+        ]
+      }
+    ],
+    "integration_queue": [],
+    "orphan_candidates": []
+  }
+}

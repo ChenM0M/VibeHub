@@ -1,11 +1,11 @@
 # RFC Backlog 005: Worktree Orchestration
 
-- Status: M0 non-scope frozen; M4/M5 decision backlog
+- Status: M5 implementation in progress; D1-D7 frozen
 - Owner: Worktree Orchestration owner
 - Decision milestone: M4 planning; M5 implementation
 - Implementation milestone: M5
 - Related task: `T-20260711080144-de5ecb84`
-- Entry gate: RFC-004 M4 stability gate passed
+- Entry gate: automated and macOS M4 evidence passed; Windows native evidence and owner approval pending
 - Evidence: `.vibehub/research/current/research-pack.md` F005, F006, F007
 
 ## Problem
@@ -85,3 +85,37 @@ During M5, V3 records its own Task/PlanNode/Session/Worktree events while V2 ret
   no dirty worktree cleanup may be inferred from a fixture.
 - Evidence/exit: FX-PARALLEL and FX-WIN-PATHS provide stress inputs only; no
   host/platform execution claim is made before the required native spikes.
+
+## M5 Implementation Checkpoint (2026-07-12)
+
+- `implemented`: Added the versioned `WorktreeOrchestrationView` contract for
+  entry-gate, policy, eligibility, lease, Git observation, integration queue,
+  conflict ownership, recovery, orphan candidates, and next action.
+- `implemented`: Extended application commands and event/view references with
+  worktree, lease, operation, and integration identities. Generated TypeScript
+  types and all 12 deterministic fixture bundles now include the sixth view.
+- `implemented`: FX-PARALLEL blocks overlapping/generated scope without a
+  lease; FX-REWORK preserves conflict owner and retry operation identity;
+  FX-WIN-PATHS requires process inspection and refuses dirty cleanup.
+- `implemented`: Added pure core domain rules for lifecycle transitions, scope
+  normalization, case-fold and observed-file collision, denylist matching,
+  evidence-backed owner override, stable eligibility digest, branch identity,
+  and challenged lease reclaim with generation increments.
+- `implemented`: Added an injectable Git runner using argv plus explicit cwd,
+  stable worktree/status porcelain parsers, prepare/execute/inspect/result
+  operation records, and clean/remove refusal when dirty or ownership is not
+  confirmed.
+- `implemented`: Extended the Rust event envelope and idempotency scope with
+  worktree, lease, and operation identities. Added event-backed worktree and
+  lease handlers with optimistic versions, idempotent retry, eligibility
+  digest checks, explicit transitions, challenged reclaim generations,
+  writable activation lease enforcement, and an explicit read-only exception.
+- `implemented`: Project rebuild now folds orchestration events into a stable
+  worktree projection; deleting and rebuilding the projection preserves state
+  and no longer reports recognized orchestration events as unknown.
+- `validated`: Contract check passes 423 assertions across 12 scenarios and 6
+  views. Core passes 251 tests. The production TypeScript build passes.
+- `not_yet_done`: Git side-effect reconciliation, complete contract-view
+  projection, launcher ownership, MCP/Tauri control plane, production UI
+  mapping, native harnesses, and self-host shadow remain. No real M5 self-host
+  event has been written.

@@ -19,6 +19,10 @@ stable_id!(ProjectId);
 stable_id!(TaskId);
 stable_id!(NodeId);
 stable_id!(SessionId);
+stable_id!(WorktreeId);
+stable_id!(LeaseId);
+stable_id!(IntegrationId);
+stable_id!(OperationId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -44,6 +48,12 @@ pub struct V3EventEnvelope {
     pub node_id: Option<NodeId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<SessionId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_id: Option<WorktreeId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lease_id: Option<LeaseId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<OperationId>,
     pub actor: String,
     pub evidence_grade: EvidenceGrade,
     pub occurred_at: String,
@@ -63,6 +73,9 @@ pub struct EventDraft {
     pub task_id: TaskId,
     pub node_id: Option<NodeId>,
     pub session_id: Option<SessionId>,
+    pub worktree_id: Option<WorktreeId>,
+    pub lease_id: Option<LeaseId>,
+    pub operation_id: Option<OperationId>,
     pub actor: String,
     pub evidence_grade: EvidenceGrade,
     pub occurred_at: Option<String>,
