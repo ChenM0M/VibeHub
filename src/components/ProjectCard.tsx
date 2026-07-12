@@ -170,13 +170,13 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: Pro
             <ContextMenuTrigger>
                 <div
                     data-project-card
-                    className={`group relative flex flex-col justify-between min-h-[180px] h-full bg-card hover:bg-accent/5 border rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 overflow-hidden`}
+                    className={`group relative flex flex-col justify-between min-h-[180px] h-full bg-card hover:bg-accent/5 border rounded-xl transition-all duration-200 hover:shadow-lg hover:-translate-y-1 overflow-hidden`}
                     style={customStyle}
                     onClick={handleCardClick}
                 >
                     {/* Header / Banner Area */}
                     <div
-                        className={`h-20 relative overflow-hidden transition-all duration-500 ${!project.theme_color && !project.cover_image ? `bg-gradient-to-br ${typeInfo.gradient}` : ''}`}
+                        className={`h-20 relative overflow-hidden transition-all duration-200 ${!project.theme_color && !project.cover_image ? `bg-gradient-to-br ${typeInfo.gradient}` : ''}`}
                         style={project.cover_image ? {
                             backgroundImage: `url(${project.cover_image})`,
                             backgroundSize: 'cover',
