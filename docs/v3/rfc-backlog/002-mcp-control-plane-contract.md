@@ -83,3 +83,40 @@ Define binary discovery, argument-array launch, environment allowlist, project s
   mandatory; a local HTTP daemon and remote MCP remain explicit non-scope.
 - Evidence/exit: the fixture repository proves all five view reads behind one
   transport-neutral boundary; M2 exit criteria above remain unchanged.
+
+## M2 Initial Implementation Record (2026-07-12)
+
+- `hard_observed`: the first typed `V3ApplicationService` now owns
+  `session_open`, `event_log`, `session_close`, and `rebuild`; adapters do not
+  write the event store directly.
+- `hard_observed`: a CLI fallback routes those commands to the same service and
+  returns the same serialized append/duplicate result or structured V3 error.
+- `not_tested`: stdio MCP SDK selection, resource/tool catalog, Inspector, host
+  matrix, stdout purity, cancellation, shutdown, and Windows launch remain
+  pending. This record does not promote RFC-002 beyond backlog status.
+
+## M2 Control Plane Update (2026-07-12)
+
+- `hard_observed`: the native and CLI binaries share an `rmcp 2.2.0` adapter
+  implementing MCP `2025-11-25`; build order no longer determines whether the
+  packaged `vibehub` binary contains `mcp-stdio`.
+- `hard_observed`: seven JSON resources use the
+  `vibehub://v3/1.0/` namespace. Five are schema-valid production views;
+  projection and diagnostics complete the recovery catalog.
+- `hard_observed`: `session_open`, `event_log`, and `session_close` expose
+  generated JSON Schema inputs and preserve Application Service append,
+  duplicate, scope mismatch, and optimistic conflict semantics.
+- `hard_observed`: `npm run v3:mcp:check` passed initialize, resources/list,
+  resources/read, tools/list, four tools/call requests, cancellation
+  notification, stdout/stderr purity, and EOF shutdown in 912 ms; every
+  post-initialize response was under 10 ms in the recorded run.
+- `hard_observed`: Codex 0.132.0 accepted and reproduced the argument-array
+  config in an isolated home. Claude Code 2.1.197 accepted the config, but its
+  health check could not run in the isolated home because the CLI was not
+  logged in. OpenCode was not installed.
+- `not_tested`: official MCP Inspector execution was rejected by the local
+  security reviewer because it would execute downloaded npm code against the
+  workspace without explicit user approval. OpenCode, authenticated Claude,
+  authenticated Codex recovery calls, and all Windows host behavior remain
+  explicit compatibility blockers.
+- Evidence and configuration templates: `docs/v3/mcp-host-compatibility.md`.
