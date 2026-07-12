@@ -1,0 +1,18 @@
+phase: "review"
+task_id: "T-20260711080143-fbe94685"
+run_id: "R-20260711080143-1866a605"
+known_missing_context: []
+stop_condition: Write output.md and return to VibeHub for validation.
+entries:
+  - path: .vibehub/tasks/T-20260711080143-fbe94685/task.yaml
+    type: file
+    reason: active task metadata and goal
+    required: true
+  - path: .vibehub/tasks/T-20260711080143-fbe94685/runs/R-20260711080143-1866a605/run.yaml
+    type: file
+    reason: active run metadata
+    required: true
+  - path: .vibehub/rules/hard-rules.md
+    type: file
+    reason: protocol hard rules
+    required: true
