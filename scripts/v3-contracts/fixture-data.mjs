@@ -67,13 +67,13 @@ function path(platform, native, display = native, extras = {}) {
   };
 }
 
-function evidence(id = "ev.fixture") {
+function evidence(id = "ev.fixture", kind = "test", grade = "hard_observed", label = "evidence.fixture.generated", locator) {
   return [{
     evidence_id: id,
-    kind: "test",
-    grade: "hard_observed",
-    label_key: "evidence.fixture.generated",
-    locator: `fixtures/v3/${id}`,
+    kind,
+    grade,
+    label_key: label,
+    locator: locator ?? `fixtures/v3/${id}`,
     captured_at: GENERATED_AT,
   }];
 }
@@ -82,12 +82,12 @@ function warning(code, severity = "warning", id = "ev.fixture") {
   return { code, severity, message_key: `warning.${code.toLowerCase()}`, evidence_refs: evidence(id) };
 }
 
-function error(code, recoverable, category = "internal") {
+function err(code, recoverable, category = "internal") {
   return { code, category, recoverable, message_key: `error.${code.toLowerCase()}`, evidence_refs: evidence("ev.error") };
 }
 
-function criterion(id = "criterion.m0.c07", status = "passed") {
-  return { criterion_id: id, title: "Fixture repository consumer proof", status, required: true, evidence_refs: evidence("ev.criterion") };
+function criterion(id, title, status = "passed", required = true) {
+  return { criterion_id: id, title, status, required, evidence_refs: evidence(`ev.${id}`) };
 }
 
 function baseViews() {
@@ -103,57 +103,177 @@ function baseViews() {
     warnings: [],
     errors: [],
   };
+
   const structureNodes = [
     { node_id: "file.root", parent_id: null, name: "VibeHub", kind: "root", path: root, git_state: "clean", module_id: null, ide_target: "vscode://file/VibeHub", evidence_refs: evidence("ev.root") },
+    { node_id: "dir.src", parent_id: "file.root", name: "src", kind: "directory", path: path("macos", "/Users/alex/Projects/VibeHub/src"), git_state: "clean", module_id: null, ide_target: null, evidence_refs: evidence("ev.src") },
+    { node_id: "dir.contracts", parent_id: "dir.src", name: "v3", kind: "directory", path: path("macos", "/Users/alex/Projects/VibeHub/src/v3"), git_state: "added", module_id: null, ide_target: null, evidence_refs: evidence("ev.v3") },
+    { node_id: "file.contracts.index", parent_id: "dir.contracts", name: "index.ts", kind: "file", path: path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/index.ts"), git_state: "added", module_id: "module.contracts", ide_target: null, evidence_refs: evidence("ev.contracts.index") },
+    { node_id: "file.fixtureRepo", parent_id: "dir.contracts", name: "fixtureRepository.ts", kind: "file", path: path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/fixtureRepository.ts"), git_state: "added", module_id: "module.contracts", ide_target: null, evidence_refs: evidence("ev.fixtureRepo") },
     { node_id: "module.core", parent_id: "file.root", name: "vibehub-core", kind: "module", path: path("macos", "/Users/alex/Projects/VibeHub/crates/vibehub-core"), git_state: "clean", module_id: "module.core", ide_target: null, evidence_refs: evidence("ev.manifest") },
     { node_id: "file.lib", parent_id: "module.core", name: "lib.rs", kind: "file", path: path("macos", "/Users/alex/Projects/VibeHub/crates/vibehub-core/src/lib.rs"), git_state: "modified", module_id: "module.core", ide_target: null, evidence_refs: evidence("ev.git") },
+    { node_id: "module.ui", parent_id: "dir.src", name: "ui", kind: "module", path: path("macos", "/Users/alex/Projects/VibeHub/src/components/ui"), git_state: "clean", module_id: "module.ui", ide_target: null, evidence_refs: evidence("ev.ui") },
+    { node_id: "file.card", parent_id: "module.ui", name: "card.tsx", kind: "file", path: path("macos", "/Users/alex/Projects/VibeHub/src/components/ui/card.tsx"), git_state: "clean", module_id: "module.ui", ide_target: null, evidence_refs: evidence("ev.card") },
+    { node_id: "dir.fixtures", parent_id: "file.root", name: "fixtures", kind: "directory", path: path("macos", "/Users/alex/Projects/VibeHub/fixtures"), git_state: "added", module_id: null, ide_target: null, evidence_refs: evidence("ev.fixtures") },
+    { node_id: "dir.fixtures.v3", parent_id: "dir.fixtures", name: "v3", kind: "directory", path: path("macos", "/Users/alex/Projects/VibeHub/fixtures/v3"), git_state: "added", module_id: null, ide_target: null, evidence_refs: evidence("ev.fxv3") },
+    { node_id: "file.fx.happy", parent_id: "dir.fixtures.v3", name: "FX-HAPPY", kind: "directory", path: path("macos", "/Users/alex/Projects/VibeHub/fixtures/v3/FX-HAPPY"), git_state: "added", module_id: null, ide_target: null, evidence_refs: evidence("ev.fxhappy") },
+    { node_id: "file.fx.overview", parent_id: "file.fx.happy", name: "project-overview.json", kind: "file", path: path("macos", "/Users/alex/Projects/VibeHub/fixtures/v3/FX-HAPPY/project-overview.json"), git_state: "added", module_id: null, ide_target: null, evidence_refs: evidence("ev.fxoverview") },
+    { node_id: "dir.scripts", parent_id: "file.root", name: "scripts", kind: "directory", path: path("macos", "/Users/alex/Projects/VibeHub/scripts"), git_state: "clean", module_id: null, ide_target: null, evidence_refs: evidence("ev.scripts") },
+    { node_id: "file.check.mjs", parent_id: "dir.scripts", name: "check.mjs", kind: "file", path: path("macos", "/Users/alex/Projects/VibeHub/scripts/v3-contracts/check.mjs"), git_state: "modified", module_id: null, ide_target: null, evidence_refs: evidence("ev.check") },
   ];
+
+  const structureEdges = [
+    { edge_id: "edge.root.src", from_node_id: "file.root", to_node_id: "dir.src", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.root") },
+    { edge_id: "edge.src.v3", from_node_id: "dir.src", to_node_id: "dir.contracts", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.src") },
+    { edge_id: "edge.v3.index", from_node_id: "dir.contracts", to_node_id: "file.contracts.index", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.v3") },
+    { edge_id: "edge.v3.fixtureRepo", from_node_id: "dir.contracts", to_node_id: "file.fixtureRepo", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.v3") },
+    { edge_id: "edge.root.core", from_node_id: "file.root", to_node_id: "module.core", kind: "contains", source_kind: "manifest", confidence: 1, evidence_refs: evidence("ev.manifest") },
+    { edge_id: "edge.core.lib", from_node_id: "module.core", to_node_id: "file.lib", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.manifest") },
+    { edge_id: "edge.src.ui", from_node_id: "dir.src", to_node_id: "module.ui", kind: "contains", source_kind: "filesystem", confidence: 0.9, evidence_refs: evidence("ev.ui") },
+    { edge_id: "edge.ui.card", from_node_id: "module.ui", to_node_id: "file.card", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.ui") },
+    { edge_id: "edge.root.fixtures", from_node_id: "file.root", to_node_id: "dir.fixtures", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.root") },
+    { edge_id: "edge.fixtures.v3", from_node_id: "dir.fixtures", to_node_id: "dir.fixtures.v3", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.fixtures") },
+    { edge_id: "edge.fxv3.happy", from_node_id: "dir.fixtures.v3", to_node_id: "file.fx.happy", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.fxv3") },
+    { edge_id: "edge.happy.overview", from_node_id: "file.fx.happy", to_node_id: "file.fx.overview", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.fxhappy") },
+    { edge_id: "edge.root.scripts", from_node_id: "file.root", to_node_id: "dir.scripts", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.root") },
+    { edge_id: "edge.scripts.check", from_node_id: "dir.scripts", to_node_id: "file.check.mjs", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.scripts") },
+    { edge_id: "edge.ui.depends.contracts", from_node_id: "module.ui", to_node_id: "module.contracts", kind: "depends_on", source_kind: "parser", confidence: 0.85, evidence_refs: evidence("ev.parser", "file", "hard_observed", "evidence.parser.depends", "src/components/ui/card.tsx") },
+    { edge_id: "edge.core.depends.contracts", from_node_id: "module.core", to_node_id: "module.contracts", kind: "imports", source_kind: "parser", confidence: 0.7, evidence_refs: evidence("ev.parser2", "file", "inferred", "evidence.parser.imports", "crates/vibehub-core/src/lib.rs") },
+  ];
+
   const timelineEvents = [
-    { timeline_event_id: "timeline.session.open", kind: "session", occurred_at: GENERATED_AT, recorded_at: GENERATED_AT, order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.session.opened", details: {}, evidence_refs: evidence("ev.session") },
-    { timeline_event_id: "timeline.validation.pass", kind: "validation", occurred_at: "2026-07-11T08:10:00.000Z", recorded_at: "2026-07-11T08:10:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "npm", node_id: "node.contracts", session_id: "session.main", commit_sha: "d7ece57", summary_key: "timeline.validation.passed", details: { command: "npm run v3:contracts:check" }, evidence_refs: evidence("ev.validation") },
+    { timeline_event_id: "evt.session.open", kind: "session", occurred_at: "2026-07-11T07:30:00.000Z", recorded_at: "2026-07-11T07:30:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.session.opened", details: {}, evidence_refs: evidence("ev.session.open", "event", "hard_observed", "evidence.session.opened", "events/session.open") },
+    { timeline_event_id: "evt.plan.created", kind: "plan", occurred_at: "2026-07-11T07:35:00.000Z", recorded_at: "2026-07-11T07:35:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.plan.created", details: { nodes: 3, edges: 2 }, evidence_refs: evidence("ev.plan", "event", "agent_reported", "evidence.plan.created", "events/plan.created") },
+    { timeline_event_id: "evt.decision.schema", kind: "decision", occurred_at: "2026-07-11T07:42:00.000Z", recorded_at: "2026-07-11T07:42:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: null, node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.decision.schema2020", details: { decision: "JSON Schema 2020-12 as canonical" }, evidence_refs: evidence("ev.decision", "event", "user_confirmed", "evidence.decision.schema", "events/decision.schema") },
+    { timeline_event_id: "evt.evidence.contract", kind: "evidence", occurred_at: "2026-07-11T07:50:00.000Z", recorded_at: "2026-07-11T07:50:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.evidence.contractDrafted", details: { files: ["contracts/v3/common.schema.json", "contracts/v3/project-overview-view.schema.json"] }, evidence_refs: evidence("ev.evidence", "file", "hard_observed", "evidence.evidence.drafted", "contracts/v3/common.schema.json") },
+    { timeline_event_id: "evt.attempt.generate", kind: "attempt", occurred_at: "2026-07-11T07:58:00.000Z", recorded_at: "2026-07-11T07:58:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "node", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.attempt.generateFixtures", details: { command: "node scripts/v3-contracts/generate-fixtures.mjs" }, evidence_refs: evidence("ev.attempt", "command", "hard_observed", "evidence.attempt.generate", "commands/generate-fixtures") },
+    { timeline_event_id: "evt.validation.check", kind: "validation", occurred_at: "2026-07-11T08:05:00.000Z", recorded_at: "2026-07-11T08:05:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "npm", node_id: "node.contracts", session_id: "session.main", commit_sha: "d7ece57", summary_key: "timeline.validation.passed", details: { command: "npm run v3:contracts:check", assertions: 342 }, evidence_refs: evidence("ev.validation", "command", "hard_observed", "evidence.validation.passed", "commands/v3-contracts-check") },
+    { timeline_event_id: "evt.confirmation.commit", kind: "confirmation", occurred_at: "2026-07-11T08:10:00.000Z", recorded_at: "2026-07-11T08:10:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "git", node_id: "node.contracts", session_id: "session.main", commit_sha: "d7ece57", summary_key: "timeline.confirmation.committed", details: { sha: "d7ece57", message: "M0: freeze V3 contracts and fixtures" }, evidence_refs: evidence("ev.commit", "git", "hard_observed", "evidence.confirmation.commit", "git/d7ece57") },
+    { timeline_event_id: "evt.session.close", kind: "session", occurred_at: "2026-07-11T08:15:00.000Z", recorded_at: "2026-07-11T08:15:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.session.closed", details: {}, evidence_refs: evidence("ev.session.close", "event", "hard_observed", "evidence.session.closed", "events/session.close") },
   ];
+
+  const c0 = criterion("criterion.m0.c01", "Schema hash stability", "passed");
+  const c1 = criterion("criterion.m0.c02", "All views validate against schema", "passed");
+  const c2 = criterion("criterion.m0.c07", "Fixture repository consumer proof", "passed");
+
   return {
     project_overview: {
       ...shared,
       name: "VibeHub",
       root,
       repository: { state: "available", branch: "feature/v3", head: "d7ece57", dirty: false, worktree_count: 1 },
-      model: { state: "ready", last_evidence_at: GENERATED_AT, generator_version: "fixture-1.0", indexed_files: 128 },
-      architecture: { declared_docs: 2, modules: 3, relationships: 4, confidence: 0.95, evidence_refs: evidence("ev.architecture") },
-      active_tasks: [{ task_id: "task.m0", title: "Freeze V3 contracts", state: "active", risk_level: "low", criteria: [criterion()], active_sessions: 1 }],
-      protocol_coverage: { state: "complete", opened_sessions: 1, closed_sessions: 1, gaps: 0 },
+      model: { state: "ready", last_evidence_at: "2026-07-11T08:15:00.000Z", generator_version: "fixture-1.0", indexed_files: 128 },
+      architecture: { declared_docs: 2, modules: 3, relationships: 4, confidence: 0.95, evidence_refs: evidence("ev.architecture", "file", "hard_observed", "evidence.architecture.generated", "contracts/v3/README.md") },
+      active_tasks: [
+        {
+          task_id: "task.m0", title: "Freeze V3 contracts and fixtures", state: "active", risk_level: "low",
+          criteria: [c0, c1, c2], active_sessions: 1,
+        },
+        {
+          task_id: "task.m1", title: "Build V3 high-fidelity frontend from fixtures", state: "active", risk_level: "medium",
+          criteria: [
+            criterion("criterion.m1.c01", "State coverage across 12 scenarios", "accepted"),
+            criterion("criterion.m1.c02", "Field traceability to contracts", "proposed"),
+            criterion("criterion.m1.c03", "Cross-platform no-overflow", "proposed"),
+          ], active_sessions: 2,
+        },
+        {
+          task_id: "task.m2", title: "Implement V3 event core and MCP control plane", state: "planned", risk_level: "medium",
+          criteria: [
+            criterion("criterion.m2.c01", "Event store persistence", "proposed"),
+          ], active_sessions: 0,
+        },
+      ],
+      protocol_coverage: { state: "complete", opened_sessions: 3, closed_sessions: 2, gaps: 0 },
     },
     project_structure: {
       ...shared,
       index_state: "ready",
       nodes: structureNodes,
-      edges: [
-        { edge_id: "edge.root.core", from_node_id: "file.root", to_node_id: "module.core", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.root") },
-        { edge_id: "edge.core.lib", from_node_id: "module.core", to_node_id: "file.lib", kind: "contains", source_kind: "filesystem", confidence: 1, evidence_refs: evidence("ev.manifest") },
-      ],
+      edges: structureEdges,
       unsupported_analyzers: [],
-      page: { cursor: null, next_cursor: null, limit: 100, returned: 3, total_estimate: 3, truncated: false, truncation_reason: "none", model_version: "model.fixture.1" },
+      page: { cursor: null, next_cursor: null, limit: 100, returned: structureNodes.length, total_estimate: structureNodes.length, truncated: false, truncation_reason: "none", model_version: "model.fixture.1" },
     },
     task_timeline: {
       ...shared,
-      task_id: "task.m0", title: "Freeze V3 contracts", state: "active", criteria: [criterion()],
-      lanes: [{ lane_id: "lane.session.main", kind: "session", label: "Codex main", state: "closed" }],
+      task_id: "task.m0", title: "Freeze V3 contracts and fixtures", state: "active", criteria: [c0, c1, c2],
+      completion: { proposal_event_id: null, proposed_at_version: null, digest: null, valid: false, confirmed: false, confirmed_at_version: null, confirmed_by: null, channel: null },
+      lanes: [
+        { lane_id: "lane.session.main", kind: "session", label: "Codex 主会话", state: "closed" },
+        { lane_id: "lane.node.contracts", kind: "node", label: "节点：冻结契约", state: "repaired" },
+      ],
       events: timelineEvents,
       window: { cursor: null, next_cursor: null, limit: 100, returned: timelineEvents.length, total_estimate: timelineEvents.length, truncated: false, truncation_reason: "none", model_version: "model.fixture.1" },
     },
     plan_graph: {
       ...shared,
-      task_id: "task.m0", plan_version: 1, graph_state: "valid",
-      nodes: [{ node_id: "node.contracts", title: "Freeze contracts", goal: "Create M1-ready contracts", state: "active", readiness: "ready", block_reasons: [], scope: ["contracts/v3", "fixtures/v3"], criterion_ids: ["criterion.m0.c07"] }],
-      scheduling_edges: [], trace_relations: [],
-      execution: { planned_sessions: 1, observed_sessions: 1, planned_worktrees: 0, observed_worktrees: 0 },
+      task_id: "task.m0", plan_version: 2, graph_state: "valid",
+      nodes: [
+        { node_id: "node.schema", title: "定义 JSON Schema", goal: "编写 5 个视图的 JSON Schema 2020-12 定义", state: "completed", readiness: "ready", block_reasons: [], scope: ["contracts/v3/*.schema.json"], criterion_ids: ["criterion.m0.c01"] },
+        { node_id: "node.fixtures", title: "生成 Fixture 数据", goal: "生成 12 场景 × 5 视图的确定性 fixture", state: "completed", readiness: "ready", block_reasons: [], scope: ["fixtures/v3", "scripts/v3-contracts/fixture-data.mjs"], criterion_ids: ["criterion.m0.c02"] },
+        { node_id: "node.contracts", title: "冻结契约与 TS 类型", goal: "生成 TypeScript 类型并冻结契约版本", state: "active", readiness: "ready", block_reasons: [], scope: ["src/v3/contracts/generated", "src/v3/contracts/fixtureRepository.ts"], criterion_ids: ["criterion.m0.c07"] },
+        { node_id: "node.check", title: "验证管线", goal: "342 项断言全通过", state: "completed", readiness: "ready", block_reasons: [], scope: ["scripts/v3-contracts/check.mjs"], criterion_ids: ["criterion.m0.c02"] },
+        { node_id: "node.repo", title: "Fixture 仓库接口", goal: "实现 createV3FixtureRepository 和 JsonLoader", state: "completed", readiness: "ready", block_reasons: [], scope: ["src/v3/contracts/fixtureRepository.ts"], criterion_ids: ["criterion.m0.c07"] },
+        { node_id: "node.ui.common", title: "通用 UI 组件", goal: "StateBadge / EvidenceLink / WarningList 等 6 个通用组件", state: "active", readiness: "ready", block_reasons: [], scope: ["src/v3/components/common"], criterion_ids: ["criterion.m1.c01"] },
+        { node_id: "node.ui.project", title: "Project 视图", goal: "ProjectOverview / StructureExplorer / ArchitectureMap / GlobalTimeline", state: "active", readiness: "ready", block_reasons: [], scope: ["src/v3/components/project"], criterion_ids: ["criterion.m1.c01", "criterion.m1.c03"] },
+        { node_id: "node.ui.task", title: "Task 视图", goal: "TaskTimeline / PlanGraph / AcceptanceProgress / NodeBriefPanel", state: "blocked", readiness: "blocked", block_reasons: ["scope_overlap"], scope: ["src/v3/components/task"], criterion_ids: ["criterion.m1.c01"] },
+        { node_id: "node.ui.layout", title: "Cockpit 布局整合", goal: "V3Cockpit 单页面 + 标签面板 + 侧滑详情", state: "planned", readiness: "unknown", block_reasons: [], scope: ["src/v3/app/V3Cockpit.tsx"], criterion_ids: ["criterion.m1.c02"] },
+        { node_id: "node.ui.coverage", title: "12 场景全覆盖", goal: "逐场景验证降级状态渲染", state: "planned", readiness: "blocked", block_reasons: ["depends_on_ui_task"], scope: ["fixtures/v3/*"], criterion_ids: ["criterion.m1.c01"] },
+      ],
+      scheduling_edges: [
+        { edge_id: "edge.schema.fixtures", from_node_id: "node.schema", to_node_id: "node.fixtures", kind: "depends_on" },
+        { edge_id: "edge.fixtures.contracts", from_node_id: "node.fixtures", to_node_id: "node.contracts", kind: "depends_on" },
+        { edge_id: "edge.fixtures.repo", from_node_id: "node.fixtures", to_node_id: "node.repo", kind: "depends_on" },
+        { edge_id: "edge.contracts.check", from_node_id: "node.contracts", to_node_id: "node.check", kind: "depends_on" },
+        { edge_id: "edge.repo.ui.common", from_node_id: "node.repo", to_node_id: "node.ui.common", kind: "depends_on" },
+        { edge_id: "edge.ui.common.ui.project", from_node_id: "node.ui.common", to_node_id: "node.ui.project", kind: "depends_on" },
+        { edge_id: "edge.ui.common.ui.task", from_node_id: "node.ui.common", to_node_id: "node.ui.task", kind: "depends_on" },
+        { edge_id: "edge.ui.project.ui.layout", from_node_id: "node.ui.project", to_node_id: "node.ui.layout", kind: "depends_on" },
+        { edge_id: "edge.ui.task.ui.layout", from_node_id: "node.ui.task", to_node_id: "node.ui.layout", kind: "depends_on" },
+        { edge_id: "edge.ui.layout.ui.coverage", from_node_id: "node.ui.layout", to_node_id: "node.ui.coverage", kind: "depends_on" },
+      ],
+      trace_relations: [
+        { relation_id: "trace.check.validates.fixtures", from_id: "node.check", to_id: "node.fixtures", kind: "validates", evidence_refs: evidence("ev.trace1", "test", "hard_observed", "evidence.trace.validates", "scripts/v3-contracts/check.mjs") },
+        { relation_id: "trace.contracts.addresses.schema", from_id: "node.contracts", to_id: "node.schema", kind: "addresses", evidence_refs: evidence("ev.trace2", "test", "hard_observed", "evidence.trace.addresses", "src/v3/contracts/generated") },
+        { relation_id: "trace.repo.validates.fixtures", from_id: "node.repo", to_id: "node.fixtures", kind: "validates", evidence_refs: evidence("ev.trace3", "test", "hard_observed", "evidence.trace.repo", "src/v3/contracts/fixtureRepository.ts") },
+      ],
+      execution: { planned_sessions: 3, observed_sessions: 2, planned_worktrees: 1, observed_worktrees: 0 },
     },
     node_brief: {
       ...shared,
-      task_id: "task.m0", node_id: "node.contracts", goal: "Create M1-ready contracts", scope: ["contracts/v3", "fixtures/v3"], non_scope: ["V3 event store", "M1 UI"], dependencies: [],
-      accepted_decisions: ["JSON Schema 2020-12 is canonical"], research_summary: ["Fixture-first isolates M1 from V2"], criteria: [criterion()], files: [root],
-      validation_commands: ["npm run v3:contracts:check"], state: "active", next_intent: "Validate generated fixtures",
-      budget: { max_tokens: 4000, estimated_tokens: 900, truncated_sections: [] }, source_versions: { contract: CONTRACT_VERSION, model: "model.fixture.1" }, protocol_coverage: "complete",
+      task_id: "task.m0", node_id: "node.contracts", goal: "冻结契约与 TypeScript 类型",
+      scope: ["src/v3/contracts/generated/*.ts", "src/v3/contracts/fixtureRepository.ts", "src/v3/contracts/index.ts"],
+      non_scope: ["V3 event store", "M1 UI 组件", "M2 MCP 控制面"],
+      dependencies: ["node.schema", "node.fixtures"],
+      accepted_decisions: [
+        "JSON Schema 2020-12 作为规范格式",
+        "Fixture-first 策略隔离 M1 与 V2",
+        "确定性种子 20260711 保证可复现",
+      ],
+      research_summary: [
+        "调查了 JSON Schema 2020-12 vs OpenAPI 3.1，选择前者因为 AJV2020 支持更好",
+        "Fixture-first 隔离 M1 前端开发与 V2 后端耦合",
+        "12 场景覆盖正常/异常/边界/大数据/跨平台路径",
+      ],
+      criteria: [c0, c1, c2],
+      files: [
+        path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/index.ts"),
+        path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/fixtureRepository.ts"),
+        path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/index.ts"),
+        path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/project-overview-view.ts"),
+        path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/project-structure-view.ts"),
+        path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/task-timeline-view.ts"),
+        path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/plan-graph-view.ts"),
+        path("macos", "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/node-brief.ts"),
+      ],
+      validation_commands: [
+        "npm run v3:contracts:check",
+        "npm run v3:contracts:generate",
+      ],
+      state: "active", next_intent: "完成 M0 交付物冻结，进入 M1 fixture-driven 前端开发",
+      budget: { max_tokens: 8000, estimated_tokens: 3200, truncated_sections: [] },
+      source_versions: { contract: CONTRACT_VERSION, model: "model.fixture.1", "json-schema": "2020-12" },
+      protocol_coverage: "complete",
     },
   };
 }
@@ -171,7 +291,7 @@ function applyScenario(kind, views) {
     views.project_structure.page.returned = 0;
     views.project_structure.page.total_estimate = 0;
     views.task_timeline.task_id = "task.none";
-    views.task_timeline.title = "No task selected";
+    views.task_timeline.title = "未选择任务";
     views.task_timeline.state = "planned";
     views.task_timeline.criteria = [];
     views.task_timeline.lanes = [];
@@ -185,13 +305,13 @@ function applyScenario(kind, views) {
     views.plan_graph.execution = { planned_sessions: 0, observed_sessions: 0, planned_worktrees: 0, observed_worktrees: 0 };
     views.node_brief.task_id = "task.none";
     views.node_brief.node_id = "node.none";
-    views.node_brief.goal = "No task selected";
+    views.node_brief.goal = "未选择任务";
     views.node_brief.scope = [];
     views.node_brief.non_scope = [];
     views.node_brief.criteria = [];
     views.node_brief.files = [];
     views.node_brief.validation_commands = [];
-    views.node_brief.next_intent = "Create or select a task";
+    views.node_brief.next_intent = "创建或选择一个任务";
     views.node_brief.protocol_coverage = "unknown";
     for (const view of allViews) {
       view.completeness = "unknown";
@@ -204,35 +324,41 @@ function applyScenario(kind, views) {
     views.project_overview.warnings.push(warning("NO_DECLARED_ARCHITECTURE"));
   }
   if (kind === "parallel") {
-    views.project_overview.active_tasks.push({ task_id: "task.m1", title: "Build fixture UI", state: "active", risk_level: "medium", criteria: [criterion("criterion.m1.visual", "accepted")], active_sessions: 2 });
+    views.task_timeline.lanes.push(
+      { lane_id: "lane.session.ui", kind: "session", label: "UI 会话", state: "active" },
+      { lane_id: "lane.session.types", kind: "session", label: "类型会话", state: "idle" },
+    );
+    views.task_timeline.events.push(
+      { timeline_event_id: "evt.parallel.ui.open", kind: "session", occurred_at: "2026-07-11T08:20:00.000Z", recorded_at: "2026-07-11T08:20:00.000Z", order_state: "ordered", lane_id: "lane.session.ui", actor: "codex", tool: "codex", node_id: "node.ui", session_id: "session.ui", commit_sha: null, summary_key: "timeline.session.parallel", details: { scope: "src/v3/components" }, evidence_refs: evidence("ev.session.ui", "event", "hard_observed", "evidence.session.ui", "events/session.ui") },
+      { timeline_event_id: "evt.parallel.types.open", kind: "session", occurred_at: "2026-07-11T08:22:00.000Z", recorded_at: "2026-07-11T08:22:00.000Z", order_state: "ordered", lane_id: "lane.session.types", actor: "opencode", tool: "opencode", node_id: "node.shared", session_id: "session.types", commit_sha: null, summary_key: "timeline.session.overlap", details: { scope: "src/v3/contracts" }, evidence_refs: evidence("ev.session.types", "event", "hard_observed", "evidence.session.types", "events/session.types") },
+      { timeline_event_id: "evt.parallel.finding", kind: "finding", occurred_at: "2026-07-11T08:25:00.000Z", recorded_at: "2026-07-11T08:25:00.000Z", order_state: "ordered", lane_id: "lane.session.ui", actor: "reviewer", tool: null, node_id: "node.ui", session_id: "session.ui", commit_sha: null, summary_key: "timeline.finding.scopeOverlap", details: { severity: "medium", overlap: "src/v3/contracts" }, evidence_refs: evidence("ev.finding.parallel", "event", "agent_reported", "evidence.finding.overlap", "events/finding.scope") },
+    );
+    views.task_timeline.window.returned = views.task_timeline.events.length;
+    views.task_timeline.window.total_estimate = views.task_timeline.events.length;
     views.plan_graph.nodes.push(
-      { node_id: "node.ui", title: "Build Project view", goal: "Render fixtures", state: "active", readiness: "ready", block_reasons: [], scope: ["src/v3/project"], criterion_ids: ["criterion.m1.visual"] },
-      { node_id: "node.shared", title: "Update shared types", goal: "Resolve overlap", state: "blocked", readiness: "blocked", block_reasons: ["scope_overlap"], scope: ["src/v3/contracts"], criterion_ids: ["criterion.m1.visual"] },
+      { node_id: "node.ui", title: "构建 Project 视图", goal: "渲染 fixture 数据到 UI 组件", state: "active", readiness: "ready", block_reasons: [], scope: ["src/v3/components/project"], criterion_ids: ["criterion.m1.c01"] },
+      { node_id: "node.shared", title: "解决类型重叠", goal: "消除 UI 与契约模块的 scope 重叠", state: "blocked", readiness: "blocked", block_reasons: ["scope_overlap"], scope: ["src/v3/contracts"], criterion_ids: ["criterion.m1.c01"] },
+    );
+    views.plan_graph.scheduling_edges.push(
+      { edge_id: "edge.contracts.ui", from_node_id: "node.contracts", to_node_id: "node.ui", kind: "depends_on" },
+      { edge_id: "edge.contracts.shared", from_node_id: "node.contracts", to_node_id: "node.shared", kind: "depends_on" },
     );
     views.plan_graph.execution = { planned_sessions: 3, observed_sessions: 3, planned_worktrees: 2, observed_worktrees: 2 };
     views.plan_graph.warnings.push(warning("SCOPE_OVERLAP"));
-    views.task_timeline.lanes.push(
-      { lane_id: "lane.session.ui", kind: "session", label: "UI session", state: "active" },
-      { lane_id: "lane.session.types", kind: "session", label: "Types session", state: "idle" },
-    );
-    views.task_timeline.events.push(
-      { timeline_event_id: "timeline.session.ui", kind: "session", occurred_at: "2026-07-11T08:11:00.000Z", recorded_at: "2026-07-11T08:11:00.000Z", order_state: "ordered", lane_id: "lane.session.ui", actor: "codex", tool: "codex", node_id: "node.ui", session_id: "session.ui", commit_sha: null, summary_key: "timeline.session.parallel", details: { scope: "src/v3/project" }, evidence_refs: evidence("ev.session.ui") },
-      { timeline_event_id: "timeline.session.types", kind: "session", occurred_at: "2026-07-11T08:12:00.000Z", recorded_at: "2026-07-11T08:12:00.000Z", order_state: "ordered", lane_id: "lane.session.types", actor: "opencode", tool: "opencode", node_id: "node.shared", session_id: "session.types", commit_sha: null, summary_key: "timeline.session.overlap", details: { scope: "src/v3/contracts" }, evidence_refs: evidence("ev.session.types") },
-    );
-    views.task_timeline.window.returned = views.task_timeline.events.length;
-    views.task_timeline.window.total_estimate = views.task_timeline.events.length;
   }
   if (kind === "rework") {
     views.task_timeline.events.push(
-      { timeline_event_id: "timeline.finding.one", kind: "finding", occurred_at: "2026-07-11T08:20:00.000Z", recorded_at: "2026-07-11T08:20:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "reviewer", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.finding.schema_gap", details: { severity: "high" }, evidence_refs: evidence("ev.finding") },
-      { timeline_event_id: "timeline.attempt.one", kind: "attempt", occurred_at: "2026-07-11T08:30:00.000Z", recorded_at: "2026-07-11T08:30:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.attempt.remediation", details: { attempt: 1 }, evidence_refs: evidence("ev.attempt") },
-      { timeline_event_id: "timeline.attempt.two", kind: "attempt", occurred_at: "2026-07-11T08:35:00.000Z", recorded_at: "2026-07-11T08:35:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.attempt.remediation", details: { attempt: 2 }, evidence_refs: evidence("ev.attempt.two") },
-      { timeline_event_id: "timeline.validation.repass", kind: "validation", occurred_at: "2026-07-11T08:40:00.000Z", recorded_at: "2026-07-11T08:40:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "reviewer", tool: "npm", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.validation.repassed", details: { attempt: 2 }, evidence_refs: evidence("ev.repass") },
+      { timeline_event_id: "evt.rework.finding", kind: "finding", occurred_at: "2026-07-11T08:30:00.000Z", recorded_at: "2026-07-11T08:30:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "reviewer", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.finding.schemaGap", details: { severity: "high", gap: "common.schema.json 缺少 EvidenceGrade 枚举" }, evidence_refs: evidence("ev.finding.rework", "event", "agent_reported", "evidence.finding.schema", "events/finding.schema") },
+      { timeline_event_id: "evt.rework.attempt1", kind: "attempt", occurred_at: "2026-07-11T08:35:00.000Z", recorded_at: "2026-07-11T08:35:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.attempt.remediation", details: { attempt: 1, action: "添加 EvidenceGrade 枚举到 common.schema.json" }, evidence_refs: evidence("ev.attempt1", "event", "hard_observed", "evidence.attempt.first", "events/attempt.1") },
+      { timeline_event_id: "evt.rework.attempt2", kind: "attempt", occurred_at: "2026-07-11T08:42:00.000Z", recorded_at: "2026-07-11T08:42:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: "e3a1b90", summary_key: "timeline.attempt.remediation", details: { attempt: 2, action: "修正 EvidenceRef.grade 引用为 $ref" }, evidence_refs: evidence("ev.attempt2", "event", "hard_observed", "evidence.attempt.second", "events/attempt.2") },
+      { timeline_event_id: "evt.rework.revalidation", kind: "validation", occurred_at: "2026-07-11T08:48:00.000Z", recorded_at: "2026-07-11T08:48:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "reviewer", tool: "npm", node_id: "node.contracts", session_id: "session.main", commit_sha: "e3a1b90", summary_key: "timeline.validation.repassed", details: { attempt: 2, assertions: 342 }, evidence_refs: evidence("ev.revalidation", "command", "hard_observed", "evidence.validation.repass", "commands/v3-contracts-check") },
     );
     views.task_timeline.window.returned = views.task_timeline.events.length;
     views.task_timeline.window.total_estimate = views.task_timeline.events.length;
-    views.plan_graph.trace_relations.push({ relation_id: "trace.attempt.finding", from_id: "timeline.attempt.one", to_id: "timeline.finding.one", kind: "addresses", evidence_refs: evidence("ev.attempt") });
-    views.plan_graph.trace_relations.push({ relation_id: "trace.attempt.two.finding", from_id: "timeline.attempt.two", to_id: "timeline.finding.one", kind: "repairs", evidence_refs: evidence("ev.attempt.two") });
+    views.plan_graph.trace_relations.push(
+      { relation_id: "trace.attempt1.addresses.finding", from_id: "evt.rework.attempt1", to_id: "evt.rework.finding", kind: "addresses", evidence_refs: evidence("ev.trace.attempt1", "event", "hard_observed", "evidence.trace.addresses", "events/attempt.1") },
+      { relation_id: "trace.attempt2.repairs.finding", from_id: "evt.rework.attempt2", to_id: "evt.rework.finding", kind: "repairs", evidence_refs: evidence("ev.trace.attempt2", "event", "hard_observed", "evidence.trace.repairs", "events/attempt.2") },
+    );
   }
   if (kind === "stale") {
     for (const view of allViews) {
@@ -251,7 +377,7 @@ function applyScenario(kind, views) {
     for (const view of allViews) {
       view.freshness = "unavailable";
       view.completeness = "unknown";
-      view.errors.push(error("PROJECTION_UNAVAILABLE", true), error("CONTRACT_TERMINAL", false, "validation"));
+      view.errors.push(err("PROJECTION_UNAVAILABLE", true), err("CONTRACT_TERMINAL", false, "validation"));
     }
   }
   if (kind === "windows_paths") {
@@ -307,7 +433,7 @@ function applyScenario(kind, views) {
     views.project_overview.protocol_coverage = { state: "gapped", opened_sessions: 2, closed_sessions: 1, gaps: 1 };
     views.node_brief.protocol_coverage = "gapped";
     views.task_timeline.lanes[0].state = "repaired";
-    views.task_timeline.events.push({ timeline_event_id: "timeline.gap.recovered", kind: "gap", occurred_at: "2026-07-11T08:15:00.000Z", recorded_at: "2026-07-11T08:45:00.000Z", order_state: "late", lane_id: "lane.session.main", actor: "doctor", tool: "vibehub", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.gap.recovered", details: { missing: ["session_close"], host_capability: "unknown" }, evidence_refs: evidence("ev.gap") });
+    views.task_timeline.events.push({ timeline_event_id: "evt.gap.recovered", kind: "gap", occurred_at: "2026-07-11T08:15:00.000Z", recorded_at: "2026-07-11T08:45:00.000Z", order_state: "late", lane_id: "lane.session.main", actor: "doctor", tool: "vibehub", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.gap.recovered", details: { missing: ["session_close"], host_capability: "unknown" }, evidence_refs: evidence("ev.gap", "event", "inferred", "evidence.gap.recovered", "events/gap.recovered") });
     views.task_timeline.window.returned = views.task_timeline.events.length;
     views.task_timeline.window.total_estimate = views.task_timeline.events.length;
     views.task_timeline.warnings.push(warning("PROTOCOL_COVERAGE_GAP"));

@@ -19,23 +19,64 @@
   "errors": [],
   "task_id": "task.m0",
   "node_id": "node.contracts",
-  "goal": "Create M1-ready contracts",
+  "goal": "冻结契约与 TypeScript 类型",
   "scope": [
-    "contracts/v3",
-    "fixtures/v3"
+    "src/v3/contracts/generated/*.ts",
+    "src/v3/contracts/fixtureRepository.ts",
+    "src/v3/contracts/index.ts"
   ],
   "non_scope": [
     "V3 event store",
-    "M1 UI"
+    "M1 UI 组件",
+    "M2 MCP 控制面"
   ],
-  "dependencies": [],
+  "dependencies": [
+    "node.schema",
+    "node.fixtures"
+  ],
   "accepted_decisions": [
-    "JSON Schema 2020-12 is canonical"
+    "JSON Schema 2020-12 作为规范格式",
+    "Fixture-first 策略隔离 M1 与 V2",
+    "确定性种子 20260711 保证可复现"
   ],
   "research_summary": [
-    "Fixture-first isolates M1 from V2"
+    "调查了 JSON Schema 2020-12 vs OpenAPI 3.1，选择前者因为 AJV2020 支持更好",
+    "Fixture-first 隔离 M1 前端开发与 V2 后端耦合",
+    "12 场景覆盖正常/异常/边界/大数据/跨平台路径"
   ],
   "criteria": [
+    {
+      "criterion_id": "criterion.m0.c01",
+      "title": "Schema hash stability",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion.m0.c01",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion.m0.c01",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "criterion_id": "criterion.m0.c02",
+      "title": "All views validate against schema",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion.m0.c02",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion.m0.c02",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
     {
       "criterion_id": "criterion.m0.c07",
       "title": "Fixture repository consumer proof",
@@ -43,11 +84,11 @@
       "required": true,
       "evidence_refs": [
         {
-          "evidence_id": "ev.criterion",
+          "evidence_id": "ev.criterion.m0.c07",
           "kind": "test",
           "grade": "hard_observed",
           "label_key": "evidence.fixture.generated",
-          "locator": "fixtures/v3/ev.criterion",
+          "locator": "fixtures/v3/ev.criterion.m0.c07",
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
@@ -56,26 +97,84 @@
   "files": [
     {
       "platform": "macos",
-      "native": "/Users/alex/Projects/VibeHub",
-      "display": "/Users/alex/Projects/VibeHub",
-      "identity_key": "macos:/Users/alex/Projects/VibeHub",
+      "native": "/Users/alex/Projects/VibeHub/src/v3/contracts/index.ts",
+      "display": "/Users/alex/Projects/VibeHub/src/v3/contracts/index.ts",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub/src/v3/contracts/index.ts",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    {
+      "platform": "macos",
+      "native": "/Users/alex/Projects/VibeHub/src/v3/contracts/fixtureRepository.ts",
+      "display": "/Users/alex/Projects/VibeHub/src/v3/contracts/fixtureRepository.ts",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub/src/v3/contracts/fixtureRepository.ts",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    {
+      "platform": "macos",
+      "native": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/index.ts",
+      "display": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/index.ts",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub/src/v3/contracts/generated/index.ts",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    {
+      "platform": "macos",
+      "native": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/project-overview-view.ts",
+      "display": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/project-overview-view.ts",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub/src/v3/contracts/generated/project-overview-view.ts",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    {
+      "platform": "macos",
+      "native": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/project-structure-view.ts",
+      "display": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/project-structure-view.ts",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub/src/v3/contracts/generated/project-structure-view.ts",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    {
+      "platform": "macos",
+      "native": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/task-timeline-view.ts",
+      "display": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/task-timeline-view.ts",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub/src/v3/contracts/generated/task-timeline-view.ts",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    {
+      "platform": "macos",
+      "native": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/plan-graph-view.ts",
+      "display": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/plan-graph-view.ts",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub/src/v3/contracts/generated/plan-graph-view.ts",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    {
+      "platform": "macos",
+      "native": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/node-brief.ts",
+      "display": "/Users/alex/Projects/VibeHub/src/v3/contracts/generated/node-brief.ts",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub/src/v3/contracts/generated/node-brief.ts",
       "path_kind": "absolute",
       "accessible": true
     }
   ],
   "validation_commands": [
-    "npm run v3:contracts:check"
+    "npm run v3:contracts:check",
+    "npm run v3:contracts:generate"
   ],
   "state": "active",
-  "next_intent": "Validate generated fixtures",
+  "next_intent": "完成 M0 交付物冻结，进入 M1 fixture-driven 前端开发",
   "budget": {
-    "max_tokens": 4000,
-    "estimated_tokens": 900,
+    "max_tokens": 8000,
+    "estimated_tokens": 3200,
     "truncated_sections": []
   },
   "source_versions": {
     "contract": "1.0",
-    "model": "model.fixture.1"
+    "model": "model.fixture.1",
+    "json-schema": "2020-12"
   },
   "protocol_coverage": "complete"
 }

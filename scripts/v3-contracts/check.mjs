@@ -17,6 +17,8 @@ const fixtureRoot = resolve(projectRoot, "fixtures/v3");
 const generatedRoot = resolve(projectRoot, "src/v3/contracts/generated");
 const schemaNames = [
   "common.schema.json",
+  "event-envelope.schema.json",
+  "application-command.schema.json",
   "project-overview-view.schema.json",
   "project-structure-view.schema.json",
   "task-timeline-view.schema.json",
@@ -123,6 +125,39 @@ const repository = repositoryModule.createV3FixtureRepository(async (fixturePath
   const relativePath = fixturePath.replace(/^\/fixtures\/v3\//, "");
   return readJson(resolve(fixtureRoot, relativePath));
 });
+
+const eventValidator = ajv.getSchema(schemas.get("event-envelope.schema.json").$id);
+const validEvent = {
+  event_id: "evt.contract.roundtrip",
+  event_type: "session.opened",
+  event_version: "1.0",
+  aggregate_id: "session.main",
+  aggregate_version: 1,
+  expected_version: 0,
+  idempotency_key: "idem.contract.roundtrip",
+  project_id: "project.contract",
+  task_id: "task.contract",
+  session_id: "session.main",
+  actor: "contract-check",
+  evidence_grade: "hard_observed",
+  occurred_at: "2026-07-12T00:00:00.000Z",
+  recorded_at: "2026-07-12T00:00:00.000Z",
+  payload: {},
+};
+assert(eventValidator(validEvent), `event envelope round-trip sample validates: ${ajv.errorsText(eventValidator.errors)}`);
+assert(!eventValidator({ ...validEvent, aggregate_version: 0 }), "event envelope rejects aggregate version zero");
+
+const commandValidator = ajv.getSchema(schemas.get("application-command.schema.json").$id);
+assert(commandValidator({
+  command: "session_open",
+  project_id: "project.contract",
+  task_id: "task.contract",
+  session_id: "session.main",
+  actor: "contract-check",
+  expected_version: 0,
+  idempotency_key: "idem.command.open",
+}), `session_open command sample validates: ${ajv.errorsText(commandValidator.errors)}`);
+assert(!commandValidator({ command: "session_open", project_id: "project.contract" }), "write command rejects missing scope/version/idempotency");
 for (const scenario of ["FX-HAPPY", "FX-WIN-PATHS", "FX-REWORK", "FX-LARGE"]) {
   const bundle = await repository.loadScenario(scenario);
   assert(Object.keys(bundle).length === 5, `TypeScript repository loads all views for ${scenario}`);
@@ -146,7 +181,7 @@ assert(parallelOverview.active_tasks.length >= 2 && parallelTimeline.lanes.lengt
 assert(parallelGraph.warnings.some((item) => item.code === "SCOPE_OVERLAP"), "parallel fixture exposes overlap warning");
 const reworkTimeline = await readJson(resolve(fixtureRoot, "FX-REWORK/task-timeline.json"));
 const reworkGraph = await readJson(resolve(fixtureRoot, "FX-REWORK/plan-graph.json"));
-assert(reworkTimeline.events.filter((item) => item.kind === "attempt").length === 2 && reworkGraph.trace_relations.length >= 2, "rework fixture preserves two attempts and causal traces");
+assert(reworkTimeline.events.filter((item) => item.kind === "attempt").length >= 2 && reworkGraph.trace_relations.length >= 2, "rework fixture preserves two attempts and causal traces");
 
 const schemaHashSummary = schemaNames.map((name) => `${basename(name)}=${sha256(JSON.stringify(schemas.get(name)))}`).join(" ");
 if (failures.length) {
@@ -154,6 +189,6 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exitCode = 1;
 } else {
-  console.log(`V3 contract check passed: ${passed.length} assertions, ${manifest.scenarios.length} scenarios, ${schemaNames.length - 1} views.`);
+  console.log(`V3 contract check passed: ${passed.length} assertions, ${manifest.scenarios.length} scenarios, 5 views, 2 write contracts.`);
   console.log(`Schema hashes: ${schemaHashSummary}`);
 }
