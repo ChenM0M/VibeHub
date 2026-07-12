@@ -1,0 +1,42 @@
+id: review-context-R-20260711080143-b413c29d-v1
+schema_version: 1
+phase: review
+task_id: T-20260711080143-e975f3c8
+run_id: R-20260711080143-b413c29d
+generated_at: 2026-07-12T04:57:42Z
+source_commit: 4359ef6
+budget:
+  max_file_size_bytes: 262144
+  max_tokens: 12000
+  estimated_tokens: 557
+included:
+- path: .vibehub/tasks/T-20260711080143-e975f3c8/task.yaml
+  reason: active task metadata and goal
+  required: true
+  confidence: high
+  bytes: 1272
+  estimated_tokens: 209
+- path: .vibehub/tasks/T-20260711080143-e975f3c8/runs/R-20260711080143-b413c29d/run.yaml
+  reason: active run metadata
+  required: true
+  confidence: high
+  bytes: 234
+  estimated_tokens: 59
+- path: .vibehub/rules/hard-rules.md
+  reason: protocol hard rules
+  required: true
+  confidence: high
+  bytes: 1605
+  estimated_tokens: 289
+missing: []
+excluded: []
+quality:
+  has_goal: true
+  has_plan: false
+  has_relevant_code: false
+  has_test_hint: false
+  stale_sources: []
+  flags: []
+observation:
+  generated_by: vibehub_backend
+  evidence_grade: hard_observed
