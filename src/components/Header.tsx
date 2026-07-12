@@ -61,7 +61,7 @@ export function Header({ onSearch }: HeaderProps) {
 
     return (
         <header
-            className="h-12 border-b border-border/50 flex items-center glass sticky top-0 z-10 select-none"
+            className="h-12 border-b border-border/30 flex items-center glass sticky top-0 z-10 select-none"
             data-tauri-drag-region="deep"
             data-platform={isMac ? 'macos' : 'default'}
         >
