@@ -3,8 +3,8 @@
 Task: T-20260711080144-de5ecb84
 Run: R-20260711080144-924b5971
 Phase: Align
-Generated at: 2026-07-12T05:49:18Z
-Source commit: 4359ef6
+Generated at: 2026-07-12T05:58:48Z
+Source commit: 1b9cd05
 
 ## Instructions
 
@@ -42,7 +42,9 @@ Report files read, commands run, decisions made, and unresolved risks.
   {
     "capability": "align",
     "completed": [
-      "`hard_observed`: 对照 M1 产品基线、M4 stability gate、M5 task metadata、主计划 M5 与 RFC-005，完成 M5 entry/self-host、orchestration、recovery 和 UI 映射验收重写。"
+      "`hard_observed`: 对照 M1 产品基线、M4 stability gate、M5 task metadata、主计划 M5 与 RFC-005，完成 M5 entry/self-host、orchestration、recovery 和 UI 映射验收重写。",
+      "`hard_observed`: 审计并移除 M4 引入的 desktop lifecycle write chain；production cockpit 恢复为只读验收展示，agent/core lifecycle 保留。",
+      "`hard_observed`: 按 M1-M4 归属建立 5 个 Git commits，形成可归因 baseline；`.vibehub/v3/` 本地 event store 已加入忽略。"
     ],
     "full_ref": ".vibehub/tasks/T-20260711080144-de5ecb84/runs/R-20260711080144-924b5971/outputs/output.md",
     "key_decisions": [
