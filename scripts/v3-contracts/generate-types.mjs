@@ -8,6 +8,8 @@ const projectRoot = resolve(scriptDir, "../..");
 const contractRoot = resolve(projectRoot, "contracts/v3");
 const outputRoot = resolve(projectRoot, process.argv[2] ?? "src/v3/contracts/generated");
 const schemas = [
+  ["event-envelope.schema.json", "V3EventEnvelope"],
+  ["application-command.schema.json", "V3ApplicationCommand"],
   ["project-overview-view.schema.json", "ProjectOverviewView"],
   ["project-structure-view.schema.json", "ProjectStructureView"],
   ["task-timeline-view.schema.json", "TaskTimelineView"],

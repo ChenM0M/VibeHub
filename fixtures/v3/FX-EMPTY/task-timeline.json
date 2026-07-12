@@ -94,9 +94,19 @@
   ],
   "errors": [],
   "task_id": "task.none",
-  "title": "No task selected",
+  "title": "未选择任务",
   "state": "planned",
   "criteria": [],
+  "completion": {
+    "proposal_event_id": null,
+    "proposed_at_version": null,
+    "digest": null,
+    "valid": false,
+    "confirmed": false,
+    "confirmed_at_version": null,
+    "confirmed_by": null,
+    "channel": null
+  },
   "lanes": [],
   "events": [],
   "window": {
