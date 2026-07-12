@@ -32,6 +32,7 @@ async-stream = "0.3"
 futures = "0.3"
 bytes = "1"
 vibehub-core = { path = "../crates/vibehub-core" }
+vibehub-adapters = { package = "vibehub-cli", path = "../crates/vibehub-cli" }
 
 [features]
 default = ["custom-protocol"]
