@@ -4,6 +4,11 @@ These JSON Schema 2020-12 documents are the canonical V3 `1.0` wire
 contracts consumed by M1. They describe disposable read models, not V2 YAML,
 domain events, Rust structs, or React props.
 
+M2 adds `event-envelope.schema.json` and `application-command.schema.json` as
+the canonical write-side wire contracts. Rust core types and generated
+TypeScript types must round-trip these schemas; adapters call the same typed
+application service and do not own transition rules.
+
 ## Version Policy
 
 - `schema_version` is `1.0` for this frozen surface.

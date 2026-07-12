@@ -90,3 +90,46 @@ Define stable IDs independently from display names and native paths. Preserve Wi
   generated TypeScript drift test, and the schema hashes in the M0 Task Pack.
 - M0 exit status: passed for the view-contract boundary; native concurrency and
   crash spikes remain required before RFC-001 can become fully accepted.
+
+## M2 Initial Implementation Record (2026-07-12)
+
+- `D1 accepted`: JSON Schema 2020-12 remains canonical. M2 added versioned
+  event-envelope and application-command schemas, generated TypeScript, and
+  contract checks for valid and invalid write samples without changing the five
+  frozen M0 view schemas.
+- `D2 implemented for the first slice`: the Rust envelope carries the frozen
+  identity, version, idempotency, actor, evidence, time, commit, and payload
+  fields. Unknown event type strings and payloads remain serializable and are
+  surfaced by projection diagnostics.
+- `D3 provisional`: the first native adapter uses an atomic `create_new`
+  lock-file lease, append-under-lock, per-aggregate optimistic versions,
+  request-scoped idempotency, `sync_all`, partial-tail quarantine, and atomic
+  projection replacement. A 20-process macOS spike produced 20 valid unique
+  JSONL events with no residual lock; two writers at version zero on the same
+  aggregate produced exactly one append and one structured conflict.
+- `D4 implemented for the first slice`: projection is a deterministic fold over
+  the complete event stream and records source event IDs, aggregate versions,
+  model version, session state, and unknown event types. Deleting the derived
+  projection and rebuilding is covered by a semantic equality test.
+- `D5 retained`: stable IDs remain distinct newtypes in Rust and no path
+  normalization was added to the event identity boundary.
+- `rejected for this slice`: the existing V2 process-local `Mutex` cannot
+  provide cross-process exclusion. A third-party lock crate remains open until
+  Windows crash/lease evidence is available; the current 30-second stale lease
+  is provisional and must not be treated as final durability proof.
+
+## M2 Recovery Update (2026-07-12)
+
+- `hard_observed`: lock leases now record the owner PID. A waiter probes owner
+  liveness and immediately reclaims a dead-process lease; a live owner cannot
+  be displaced and still produces the bounded `V3_LOCK_TIMEOUT` result.
+- `hard_observed`: unit evidence covers dead-owner recovery under one second,
+  live-owner exclusion, partial-tail quarantine, duplicate no-op, scope
+  mismatch, version conflict, deterministic rebuild, and atomic replacement.
+- `inferred`: the PID probe materially closes the normal crash-cleanup gap on
+  Unix and has a Windows implementation using `OpenProcess`; the 30-second age
+  fallback remains for unreadable leases and PID reuse.
+- `not_tested`: this machine has no Windows Rust standard library or Windows
+  runner. Windows compilation stopped before VibeHub code with `target may not
+  be installed`; runtime path, lock, kill, fsync, and rename behavior therefore
+  remain a release blocker rather than an accepted D3/D5 decision.
