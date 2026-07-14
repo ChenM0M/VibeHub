@@ -17,8 +17,7 @@ import {
     Hash,
     Edit,
     Trash2,
-    Copy,
-    LayoutDashboard
+    Copy
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,7 +34,6 @@ import { useAppStore } from '@/stores/appStore';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN, enUS, zhTW } from 'date-fns/locale';
 import { ProjectEditDialog } from './ProjectEditDialog';
-import { VibehubCockpitDialog } from './VibehubCockpitDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslation } from 'react-i18next';
 import { getTechStackById } from '@/lib/techStackData';
@@ -45,13 +43,13 @@ interface ProjectCardProps {
     onLaunch: (project: Project) => void;
     onCustomLaunch: (project: Project) => void;
     onSelect?: (project: Project) => void;
+    dragHandle?: React.ReactNode;
 }
 
-export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: ProjectCardProps) {
+export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragHandle }: ProjectCardProps) {
     const { t, i18n } = useTranslation();
     const { toggleProjectStar, openInExplorer, openTerminal, config, deleteProject, launchTool, launchCustom } = useAppStore();
     const [isEditing, setIsEditing] = useState(false);
-    const [isCockpitOpen, setIsCockpitOpen] = useState(false);
 
     const formatDate = (dateString: string) => {
         try {
@@ -148,14 +146,8 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: Pro
         }
     };
 
-    const handleCardClick = (event: React.MouseEvent<HTMLElement>) => {
-        const target = event.target as HTMLElement;
-        // Note: do NOT match `[role="button"]` here — `@dnd-kit/sortable` adds
-        // role="button" to the SortableProjectCard wrapper, which would otherwise
-        // swallow every click on the card body and break navigation to the cockpit.
-        if (target.closest('button, a, [data-no-card-select]')) {
-            return;
-        }
+    const handleSelectClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
         onSelect?.(originalProject);
     };
 
@@ -167,13 +159,15 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: Pro
 
     return (
         <ContextMenu>
-            <ContextMenuTrigger>
+            <ContextMenuTrigger asChild>
                 <div
                     data-project-card
+                    role="group"
+                    aria-label={`${project.name} 项目卡片`}
                     className={`group relative flex flex-col justify-between min-h-[180px] h-full bg-card hover:bg-accent/5 border rounded-xl transition-all duration-200 hover:shadow-lg hover:-translate-y-1 overflow-hidden`}
                     style={customStyle}
-                    onClick={handleCardClick}
                 >
+                    {dragHandle}
                     {/* Header / Banner Area */}
                     <div
                         className={`h-20 relative overflow-hidden transition-all duration-200 ${!project.theme_color && !project.cover_image ? `bg-gradient-to-br ${typeInfo.gradient}` : ''}`}
@@ -235,37 +229,33 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: Pro
                             </div>
                         </div>
 
-                        <div className="absolute top-3 right-3 z-10">
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className={`h-8 w-8 hover:bg-background/40 ${project.starred ? 'text-yellow-500' : 'text-muted-foreground/50 hover:text-yellow-500'}`}
-                                onClick={(e) => { e.stopPropagation(); toggleProjectStar(project.id); }}
-                            >
-                                <Star className={`h-4 w-4 ${project.starred ? 'fill-current' : ''}`} />
-                            </Button>
-                        </div>
                     </div>
 
                     {/* Content Area */}
                     <div className="p-4 flex flex-col flex-1 justify-between">
-                        <div>
-                            <h3 className="font-semibold text-base tracking-tight truncate group-hover:text-primary transition-colors">
-                                {project.name}
-                            </h3>
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <p className="text-xs text-muted-foreground break-all line-clamp-1 hover:text-foreground transition-colors cursor-help mt-0.5">
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <button
+                                        type="button"
+                                        data-project-open
+                                        aria-label={`打开项目 ${project.name}`}
+                                        className="block w-full text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                        onClick={handleSelectClick}
+                                    >
+                                        <span className="block font-semibold text-base tracking-tight truncate group-hover:text-primary transition-colors">
+                                            {project.name}
+                                        </span>
+                                        <span className="block text-xs text-muted-foreground break-all line-clamp-1 hover:text-foreground transition-colors mt-0.5">
                                             {project.path}
-                                        </p>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="bottom" className="max-w-[300px] break-all">
-                                        {project.path}
-                                    </TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
-                        </div>
+                                        </span>
+                                    </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-[300px] break-all">
+                                    {project.path}
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
 
                         <div className="space-y-3 mt-2">
                             <div className="flex flex-wrap gap-1.5 h-[22px] overflow-hidden">
@@ -304,17 +294,24 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: Pro
                                 </Button>
                             </div>
                         </div>
+                        </div>
+
+                    <div className="absolute top-3 right-3 z-10">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={project.starred ? t('project.unstar') : t('project.star')}
+                            className={`h-8 w-8 hover:bg-background/40 ${project.starred ? 'text-yellow-500' : 'text-muted-foreground/50 hover:text-yellow-500'}`}
+                            onClick={(e) => { e.stopPropagation(); toggleProjectStar(project.id); }}
+                        >
+                            <Star className={`h-4 w-4 ${project.starred ? 'fill-current' : ''}`} />
+                        </Button>
                     </div>
 
                     <ProjectEditDialog
                         isOpen={isEditing}
                         onClose={() => setIsEditing(false)}
                         project={project}
-                    />
-                    <VibehubCockpitDialog
-                        isOpen={isCockpitOpen}
-                        onClose={() => setIsCockpitOpen(false)}
-                        project={originalProject}
                     />
                 </div>
             </ContextMenuTrigger>
@@ -355,10 +352,6 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: Pro
                         {t('project.customLaunch')}
                     </ContextMenuItem>
                 )}
-                <ContextMenuItem onClick={() => setIsCockpitOpen(true)}>
-                    <LayoutDashboard className="mr-2 h-4 w-4" />
-                    VibeHub Cockpit
-                </ContextMenuItem>
                 <ContextMenuSeparator />
                 <ContextMenuItem onClick={() => {
                     const originalPath = config?.projects.find(p => p.id === project.id)?.path || project.path;

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/agent-results-view.schema.json",
+  "title": "AgentResultsView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "task_id", "generated_at", "model_version", "freshness", "completeness", "state", "results", "evidence_refs", "warnings", "errors"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+    "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+    "model_version": { "type": "string", "minLength": 1 },
+    "freshness": { "$ref": "common.schema.json#/$defs/Freshness" },
+    "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
+    "state": { "enum": ["not_executed", "awaiting_result", "available", "failed"] },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["result_id", "kind", "session_id", "node_id", "request", "status", "summary", "body", "evaluation", "artifacts", "started_at", "completed_at", "evidence_refs"],
+        "properties": {
+          "result_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "kind": { "enum": ["execution", "evaluation"] },
+          "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "node_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+          "request": {
+            "type": "object", "additionalProperties": false,
+            "required": ["source", "instruction"],
+            "properties": {
+              "source": { "enum": ["user_request", "evaluation_instruction"] },
+              "instruction": { "type": "string", "minLength": 1 }
+            }
+          },
+          "status": { "enum": ["pending", "running", "succeeded", "failed"] },
+          "summary": { "type": "string" },
+          "body": { "type": ["string", "null"] },
+          "evaluation": {
+            "anyOf": [
+              { "type": "null" },
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["target", "rubric", "verdict", "findings"],
+                "properties": {
+                  "target": { "type": "string", "minLength": 1 },
+                  "rubric": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+                  "verdict": { "enum": ["passed", "needs_revision", "failed", "inconclusive"] },
+                  "findings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object", "additionalProperties": false,
+                      "required": ["title", "detail", "severity", "evidence_refs"],
+                      "properties": {
+                        "title": { "type": "string", "minLength": 1 },
+                        "detail": { "type": "string", "minLength": 1 },
+                        "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+                        "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["label", "path", "uri"],
+              "properties": {
+                "label": { "type": "string", "minLength": 1 },
+                "path": { "anyOf": [{ "$ref": "common.schema.json#/$defs/NativePath" }, { "type": "null" }] },
+                "uri": { "type": ["string", "null"] }
+              }
+            }
+          },
+          "started_at": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Timestamp" }, { "type": "null" }] },
+          "completed_at": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Timestamp" }, { "type": "null" }] },
+          "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+        }
+      }
+    },
+    "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
+    "warnings": { "$ref": "common.schema.json#/$defs/Warnings" },
+    "errors": { "$ref": "common.schema.json#/$defs/Errors" }
+  }
+}

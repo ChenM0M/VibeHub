@@ -755,6 +755,71 @@
             "hourlyActivity": "Hourly Activity"
         }
     },
+    "v3": {
+        "criteria": {
+            "status": {
+                "proposed": "Proposed",
+                "accepted": "Accepted",
+                "passed": "Passed",
+                "failed": "Failed",
+                "blocked": "Blocked",
+                "not_applicable": "Not applicable",
+                "unknown": "Unknown"
+            },
+            "requiredSuffix": " (required)",
+            "ariaLabel": "Acceptance status: {{status}}"
+        },
+        "diagnostics": {
+            "warning": {
+                "group": "{{count}} project notices (click to view)",
+                "unknown": "Unrecognized project notice; raw diagnostic details are shown below."
+            },
+            "error": {
+                "group": "{{count}} errors (click to view)",
+                "unknown": "Unrecognized project error; raw diagnostic details are shown below.",
+                "retry": "Retry"
+            },
+            "collapse": "Collapse notice",
+            "expand": "Expand notice",
+            "messages": {
+                "architectureIndexPending": "The architecture index is still pending; structure information may be incomplete.",
+                "planNotRecorded": "The implementation plan has not been recorded; the execution path may be incomplete.",
+                "agentResultSessionClosed": "The Agent session is closed; the leftover result is shown as pending.",
+                "agentResultStatusInvalid": "The Agent result has an invalid status and is shown as failed.",
+                "projectIndexGap": "The project structure index has a gap.",
+                "projectIndexUnavailable": "The project structure index is temporarily unavailable.",
+                "protocolCoverageGap": "Workflow protocol coverage has a gap; some execution state may be incomplete.",
+                "projectUninitialized": "The project has not been initialized as a V3 workspace.",
+                "modelStale": "The project index is stale; refresh to reflect the latest structure.",
+                "scopeOverlap": "Parallel session scopes overlap.",
+                "subtreeInaccessible": "Some project directories are inaccessible; structure information may be incomplete.",
+                "analyzerUnsupported": "Some project analyzers are not supported yet.",
+                "analyzerDegraded": "A project analyzer was degraded; some architecture relationships were not created.",
+                "architectureUnsupported": "The project does not have a usable architecture index yet.",
+                "analyzerUnsupportedImpact": "The project structure index remains usable, but import relationships for these file types may be incomplete; project execution is not blocked.",
+                "analyzerUnsupportedNextStep": "For a complete dependency graph, add the corresponding analyzer and rebuild the index; other project features remain available.",
+                "analyzerDegradedImpact": "Some architecture relationships were not created, so related module dependency graphs may be incomplete.",
+                "analyzerDegradedNextStep": "Check the path and error reported by the analyzer, fix the cause, and rebuild the index.",
+                "architectureUnsupportedImpact": "The file tree remains browsable, but architecture modules and relationships are not currently available.",
+                "architectureUnsupportedNextStep": "Add a supported manifest, source module, or architecture document and rebuild the index.",
+                "noDeclaredArchitecture": "The project has no declared architecture document; structure information may be incomplete.",
+                "projectionUnavailable": "The V3 projection is temporarily unavailable. Try again later.",
+                "contractTerminal": "V3 contract validation failed; this view cannot continue."
+            },
+            "details": {
+                "code": "Diagnostic code",
+                "messageKey": "Diagnostic type",
+                "analyzer": "Analyzer",
+                "analyzers": "Unsupported analyzers",
+                "path": "Path",
+                "message": "Raw message",
+                "impact": "Impact",
+                "nextStep": "Next step",
+                "rawField": "{{field}}",
+                "noDetails": "The backend did not provide additional details."
+            }
+        }
+    },
     "update": {
         "newVersion": "New Version Available",
         "later": "Remind Later",

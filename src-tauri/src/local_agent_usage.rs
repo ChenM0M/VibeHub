@@ -9,20 +9,33 @@ use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
+use walkdir::WalkDir;
 
 const RECENT_LIMIT: usize = 8;
+const STALE_AFTER_SECONDS: i64 = 900;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalAgentUsageOverview {
     pub project_path: String,
+    pub scope: String,
+    pub task_id: Option<String>,
+    pub requested_session_count: usize,
+    pub matched_session_count: usize,
     pub generated_at: String,
+    pub freshness: String,
+    pub stale_after_seconds: i64,
+    pub completeness: String,
     pub primary_metric: AgentUsagePrimaryMetric,
     pub non_cached_total_tokens: u64,
     pub total_tokens: u64,
     pub source_count: usize,
+    pub claude_code: AgentUsageSourceSummary,
+    pub claude_app: AgentUsageSourceSummary,
     pub codex: AgentUsageSourceSummary,
     pub opencode: AgentUsageSourceSummary,
+    pub cursor: AgentUsageSourceSummary,
     pub warnings: Vec<String>,
 }
 
@@ -42,6 +55,8 @@ pub struct AgentUsagePrimaryMetric {
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentUsageSourceSummary {
     pub source: String,
+    pub status: String,
+    pub freshness: String,
     pub available: bool,
     pub data_path: Option<String>,
     pub records: usize,
@@ -52,6 +67,11 @@ pub struct AgentUsageSourceSummary {
     pub latest_updated_at_ms: Option<i64>,
     pub recent: Vec<AgentUsageRecentItem>,
     pub warnings: Vec<String>,
+    /// Provider records are deduplicated for token totals, but their IDs are
+    /// retained internally so a shared provider session can still match more
+    /// than one V3 workflow session.
+    #[serde(skip)]
+    matched_provider_session_ids: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -70,7 +90,13 @@ pub struct AgentUsageRecentItem {
     pub id: String,
     pub title: String,
     pub model: Option<String>,
+    pub models: Vec<String>,
     pub agent: Option<String>,
+    pub message_count: u64,
+    pub tool_uses: u64,
+    pub started_at_ms: Option<i64>,
+    pub duration_seconds: Option<u64>,
+    pub status: String,
     pub non_cached_total_tokens: u64,
     pub total_tokens: u64,
     pub cost: Option<f64>,
@@ -127,57 +153,352 @@ impl<T> Default for MatchedRows<T> {
     }
 }
 
+/// Maps each V3 workflow session to the provider session identifiers that are
+/// safe to use for local usage attribution. The outer key is kept separate
+/// from provider ids so multiple workflow sessions can share one provider
+/// session without double-counting the provider record.
+pub type TaskSessionProviderLinks = BTreeMap<String, BTreeMap<String, BTreeSet<String>>>;
+
+#[derive(Debug, Clone)]
+struct UsageSessionFilter {
+    task_id: String,
+    session_links: TaskSessionProviderLinks,
+}
+
+impl UsageSessionFilter {
+    fn matches_provider(&self, provider: &str, provider_session_id: &str) -> bool {
+        self.provider_session_ids(provider)
+            .contains(provider_session_id)
+    }
+
+    fn provider_session_ids(&self, provider: &str) -> BTreeSet<String> {
+        self.session_links
+            .iter()
+            .flat_map(|(workflow_id, links)| {
+                self.provider_session_ids_for_workflow(provider, workflow_id, links)
+            })
+            .collect()
+    }
+
+    fn provider_session_ids_for_workflow(
+        &self,
+        provider: &str,
+        workflow_id: &str,
+        links: &BTreeMap<String, BTreeSet<String>>,
+    ) -> BTreeSet<String> {
+        let provider_aliases = provider_aliases(provider);
+        let mut ids = BTreeSet::new();
+        let mut has_explicit_link = false;
+        for key in &provider_aliases {
+            if let Some(provider_ids) = links.get(key) {
+                has_explicit_link |= !provider_ids.is_empty();
+                ids.extend(
+                    provider_ids
+                        .iter()
+                        .filter_map(|id| normalize_provider_session_id(provider, id)),
+                );
+            }
+        }
+        if let Some(provider_ids) = links.get("*") {
+            has_explicit_link |= !provider_ids.is_empty();
+            ids.extend(
+                provider_ids
+                    .iter()
+                    .filter_map(|id| normalize_provider_session_id(provider, id)),
+            );
+        }
+        if has_explicit_link {
+            return ids;
+        }
+
+        for prefix in self.provider_prefixes(provider) {
+            if let Some(provider_id) = workflow_id.strip_prefix(&prefix) {
+                if !provider_id.is_empty() {
+                    ids.insert(provider_id.to_string());
+                }
+                return ids;
+            }
+        }
+        if !workflow_id.starts_with("session.") {
+            ids.insert(workflow_id.to_string());
+        }
+        ids
+    }
+
+    fn matched_workflow_session_count(
+        &self,
+        sources: &[(&str, &AgentUsageSourceSummary)],
+    ) -> usize {
+        self.session_links
+            .iter()
+            .filter(|(workflow_id, links)| {
+                sources.iter().any(|(provider, source)| {
+                    self.provider_session_ids_for_workflow(provider, workflow_id, links)
+                        .iter()
+                        .any(|provider_id| {
+                            source.matched_provider_session_ids.contains(provider_id)
+                        })
+                })
+            })
+            .count()
+    }
+
+    fn provider_prefixes(&self, provider: &str) -> Vec<String> {
+        let providers: &[&str] = match provider {
+            "claude" => &["claude", "claude_code"],
+            "codex" => &["codex"],
+            "opencode" => &["opencode"],
+            _ => &[provider],
+        };
+        providers
+            .iter()
+            .map(|provider| format!("session.{provider}."))
+            .collect()
+    }
+}
+
+fn provider_aliases(provider: &str) -> Vec<String> {
+    match provider {
+        "claude" | "claude_code" => vec!["claude".to_string(), "claude_code".to_string()],
+        "codex" => vec!["codex".to_string()],
+        "opencode" => vec!["opencode".to_string()],
+        other => vec![other.to_string()],
+    }
+}
+
+fn normalize_provider_session_id(provider: &str, value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    for alias in provider_aliases(provider) {
+        let prefix = format!("session.{alias}.");
+        if let Some(id) = value.strip_prefix(&prefix).filter(|id| !id.is_empty()) {
+            return Some(id.to_string());
+        }
+    }
+    Some(value.to_string())
+}
+
 pub fn read_local_agent_usage(project_path: impl AsRef<Path>) -> Result<LocalAgentUsageOverview> {
+    read_local_agent_usage_scoped(project_path.as_ref(), None)
+}
+
+pub fn read_local_agent_usage_for_task(
+    project_path: impl AsRef<Path>,
+    task_id: String,
+    session_links: TaskSessionProviderLinks,
+) -> Result<LocalAgentUsageOverview> {
+    let filter = UsageSessionFilter {
+        task_id,
+        session_links,
+    };
+    read_local_agent_usage_scoped(project_path.as_ref(), Some(&filter))
+}
+
+fn read_local_agent_usage_scoped(
+    project_path: &Path,
+    session_filter: Option<&UsageSessionFilter>,
+) -> Result<LocalAgentUsageOverview> {
     let project_path = ProjectPathMatcher::new(project_path.as_ref());
+    let generated_at = Utc::now();
+    let generated_at_ms = generated_at.timestamp_millis();
     let mut warnings = Vec::new();
-    let codex = read_codex_usage(&project_path);
-    let opencode = read_opencode_usage(&project_path);
+    let mut claude_code = read_claude_code_usage_scoped(&project_path, session_filter);
+    let claude_app = unsupported_source(
+        "claude_app",
+        "Claude App ordinary chat has no stable, documented, project-attributable local usage contract; internal Electron/SQLite/IndexedDB data is not read.",
+    );
+    let mut codex = read_codex_usage_scoped(&project_path, session_filter);
+    let mut opencode = read_opencode_usage_scoped(&project_path, session_filter);
+    let cursor = unsupported_source(
+        "cursor",
+        "Cursor has no stable, documented, project-attributable local usage contract; internal application databases and caches are not read.",
+    );
 
-    if !codex.available {
-        warnings.push(
-            "Codex local usage source is unavailable or has no matching records.".to_string(),
-        );
-    }
-    if !opencode.available {
-        warnings.push(
-            "OpenCode local usage source is unavailable or has no matching records.".to_string(),
-        );
+    for source in [&mut claude_code, &mut codex, &mut opencode] {
+        apply_source_freshness(source, generated_at_ms, STALE_AFTER_SECONDS);
     }
 
-    let non_cached_total_tokens = codex
+    for (label, source) in [
+        ("Claude Code", &claude_code),
+        ("Claude App ordinary chat", &claude_app),
+        ("Codex", &codex),
+        ("OpenCode", &opencode),
+        ("Cursor", &cursor),
+    ] {
+        if !source.available {
+            warnings.push(format!(
+                "{label} local usage source status: {}.",
+                source.status
+            ));
+        }
+        warnings.extend(source.warnings.iter().cloned());
+    }
+
+    let non_cached_total_tokens = claude_code
         .non_cached_total_tokens
+        .saturating_add(codex.non_cached_total_tokens)
         .saturating_add(opencode.non_cached_total_tokens);
-    let total_tokens = codex.total_tokens.saturating_add(opencode.total_tokens);
-    let source_count = [codex.available, opencode.available]
+    let total_tokens = claude_code
+        .total_tokens
+        .saturating_add(codex.total_tokens)
+        .saturating_add(opencode.total_tokens);
+    let source_count = [claude_code.available, codex.available, opencode.available]
         .into_iter()
         .filter(|available| *available)
         .count();
-    let primary_metric = select_primary_metric(&codex, &opencode, total_tokens);
+    let primary_metric = select_primary_metric(&claude_code, &codex, &opencode, total_tokens);
+    let sources = [&claude_code, &codex, &opencode];
+    let freshness = overall_freshness(&sources);
+    let completeness = overall_completeness(&sources, total_tokens);
+    let provider_record_count = sources.iter().map(|source| source.records).sum();
+    let matched_session_count = session_filter.map_or(provider_record_count, |filter| {
+        filter.matched_workflow_session_count(&[
+            ("claude", &claude_code),
+            ("codex", &codex),
+            ("opencode", &opencode),
+        ])
+    });
+    let (scope, task_id, requested_session_count) = match session_filter {
+        Some(filter) => {
+            if filter.session_links.is_empty() {
+                warnings.push(format!(
+                    "Task {} has no V3 sessions; project-wide usage is intentionally excluded.",
+                    filter.task_id
+                ));
+            } else if matched_session_count == 0 {
+                warnings.push(format!(
+                    "No local usage record matched the {} V3 session(s) linked to Task {}; project-wide usage is intentionally excluded.",
+                    filter.session_links.len(),
+                    filter.task_id
+                ));
+            } else if matched_session_count < filter.session_links.len() {
+                warnings.push(format!(
+                    "Only {} of {} V3-linked sessions have local usage records for Task {}.",
+                    matched_session_count,
+                    filter.session_links.len(),
+                    filter.task_id
+                ));
+            }
+            (
+                "task".to_string(),
+                Some(filter.task_id.clone()),
+                filter.session_links.len(),
+            )
+        }
+        None => ("project".to_string(), None, 0),
+    };
 
     Ok(LocalAgentUsageOverview {
+        scope,
+        task_id,
+        requested_session_count,
+        matched_session_count,
         non_cached_total_tokens,
         total_tokens,
         source_count,
         primary_metric,
         project_path: project_path.display_path.clone(),
-        generated_at: Utc::now().to_rfc3339(),
+        generated_at: generated_at.to_rfc3339(),
+        freshness,
+        stale_after_seconds: STALE_AFTER_SECONDS,
+        completeness,
+        claude_code,
+        claude_app,
         codex,
         opencode,
+        cursor,
         warnings,
     })
 }
 
+fn apply_source_freshness(
+    source: &mut AgentUsageSourceSummary,
+    generated_at_ms: i64,
+    stale_after_seconds: i64,
+) {
+    if !source.available {
+        source.freshness = "unknown".to_string();
+        return;
+    }
+    let Some(observed_at_ms) = source.latest_updated_at_ms else {
+        source.freshness = "unknown".to_string();
+        source.warnings.push(format!(
+            "{} freshness is unknown because no observed-through timestamp is available.",
+            source.source
+        ));
+        if source.status == "available" {
+            source.status = "partial".to_string();
+        }
+        return;
+    };
+    let age_ms = generated_at_ms.saturating_sub(observed_at_ms);
+    if age_ms > stale_after_seconds.saturating_mul(1000) {
+        source.freshness = "stale".to_string();
+        source.status = "stale".to_string();
+        source.warnings.push(format!(
+            "{} usage is stale: latest observation is {} seconds old (threshold {} seconds).",
+            source.source,
+            age_ms / 1000,
+            stale_after_seconds
+        ));
+    } else {
+        source.freshness = "fresh".to_string();
+    }
+}
+
+fn overall_freshness(sources: &[&AgentUsageSourceSummary]) -> String {
+    let available = sources
+        .iter()
+        .filter(|source| source.available)
+        .collect::<Vec<_>>();
+    if available.is_empty() {
+        "unknown"
+    } else if available.iter().any(|source| source.freshness == "stale") {
+        "stale"
+    } else if available.iter().any(|source| source.freshness == "unknown") {
+        "unknown"
+    } else {
+        "fresh"
+    }
+    .to_string()
+}
+
+fn overall_completeness(sources: &[&AgentUsageSourceSummary], total_tokens: u64) -> String {
+    if sources.iter().all(|source| source.status == "empty") {
+        return "empty".to_string();
+    }
+    if total_tokens == 0 && sources.iter().all(|source| !source.available) {
+        return "unavailable".to_string();
+    }
+    if sources.iter().any(|source| {
+        matches!(
+            source.status.as_str(),
+            "partial" | "stale" | "permission_denied" | "error"
+        )
+    }) {
+        return "partial".to_string();
+    }
+    "complete".to_string()
+}
+
 fn select_primary_metric(
+    claude_code: &AgentUsageSourceSummary,
     codex: &AgentUsageSourceSummary,
     opencode: &AgentUsageSourceSummary,
     total_tokens: u64,
 ) -> AgentUsagePrimaryMetric {
     if total_tokens > 0 {
-        let source = match (codex.available, opencode.available) {
-            (true, true) => "local_agents",
-            (true, false) => "codex",
-            (false, true) => "opencode",
-            (false, false) => "local_tokens",
+        let available = [claude_code, codex, opencode]
+            .into_iter()
+            .filter(|source| source.available)
+            .map(|source| source.source.as_str())
+            .collect::<Vec<_>>();
+        let source = if available.len() == 1 {
+            available[0]
+        } else {
+            "local_agents"
         };
         return AgentUsagePrimaryMetric {
             kind: "tokens".to_string(),
@@ -188,7 +509,7 @@ fn select_primary_metric(
             source: source.to_string(),
             confidence: "local_recorded".to_string(),
             estimated: false,
-            detail: "Primary usage is local total token usage including cache. Codex uses total_tokens from the local rollout records. OpenCode adds input + output + reasoning + cache_read + cache_write. The non-cache number remains available as a breakdown, and cost fields stay in diagnostics only because they are not reliable enough for the primary display.".to_string(),
+            detail: "Primary usage is local recorded token usage including cache. Claude Code is deduplicated by request/message identity; Codex uses local rollout totals; OpenCode adds its recorded token breakdown. Cost remains unavailable because subscription usage is not an actual bill.".to_string(),
         };
     }
 
@@ -260,17 +581,409 @@ impl ProjectPathMatcher {
     }
 }
 
+#[derive(Debug, Default)]
+struct ClaudeSessionAccumulator {
+    id: String,
+    title: Option<String>,
+    models: BTreeSet<String>,
+    tokens: TokenBreakdown,
+    message_count: u64,
+    tool_uses: u64,
+    started_at_ms: Option<i64>,
+    updated_at_ms: Option<i64>,
+    seen_messages: BTreeSet<String>,
+    warnings: Vec<String>,
+}
+
+fn read_claude_code_usage(project_path: &ProjectPathMatcher) -> AgentUsageSourceSummary {
+    read_claude_code_usage_scoped(project_path, None)
+}
+
+fn read_claude_code_usage_scoped(
+    project_path: &ProjectPathMatcher,
+    session_filter: Option<&UsageSessionFilter>,
+) -> AgentUsageSourceSummary {
+    let config_dir = env::var_os("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".claude")));
+    let Some(config_dir) = config_dir else {
+        return empty_source(
+            "claude_code",
+            "Claude config directory could not be resolved.",
+        );
+    };
+    let encoded = encode_claude_project_path(&project_path.primary);
+    let sessions_dir = config_dir.join("projects").join(encoded);
+    read_claude_code_usage_from_dir_scoped(project_path, &sessions_dir, session_filter)
+}
+
+fn read_claude_code_usage_from_dir(
+    project_path: &ProjectPathMatcher,
+    sessions_dir: &Path,
+) -> AgentUsageSourceSummary {
+    read_claude_code_usage_from_dir_scoped(project_path, sessions_dir, None)
+}
+
+fn read_claude_code_usage_from_dir_scoped(
+    _project_path: &ProjectPathMatcher,
+    sessions_dir: &Path,
+    session_filter: Option<&UsageSessionFilter>,
+) -> AgentUsageSourceSummary {
+    if !sessions_dir.exists() {
+        let mut summary = empty_source(
+            "claude_code",
+            "Claude Code project session directory was not found.",
+        );
+        summary.data_path = Some(sessions_dir.display().to_string());
+        return summary;
+    }
+    let entries = match std::fs::read_dir(sessions_dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            return error_source(
+                "claude_code",
+                Some(sessions_dir.to_path_buf()),
+                error.into(),
+            )
+        }
+    };
+    let mut sessions = Vec::new();
+    let mut source_warnings = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                source_warnings.push(format!(
+                    "Failed to read Claude Code directory entry: {error}"
+                ));
+                continue;
+            }
+        };
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+            continue;
+        }
+        match read_claude_session(&path) {
+            Ok(session)
+                if session_filter.map_or(true, |filter| {
+                    filter.matches_provider("claude", &session.id)
+                }) =>
+            {
+                sessions.push(session)
+            }
+            Err(error) => source_warnings.push(format!("{}: {error:#}", path.display())),
+            Ok(_) => {}
+        }
+    }
+    sessions.sort_by(|a, b| {
+        b.updated_at_ms
+            .cmp(&a.updated_at_ms)
+            .then_with(|| b.id.cmp(&a.id))
+    });
+    let mut tokens = TokenBreakdown::default();
+    let mut recent = Vec::new();
+    let mut latest_updated_at_ms = None;
+    let mut partial = false;
+    for session in &sessions {
+        tokens.input = tokens.input.saturating_add(session.tokens.input);
+        tokens.output = tokens.output.saturating_add(session.tokens.output);
+        tokens.cache_read = tokens.cache_read.saturating_add(session.tokens.cache_read);
+        tokens.cache_write = tokens
+            .cache_write
+            .saturating_add(session.tokens.cache_write);
+        tokens.total = tokens.total.saturating_add(session.tokens.total);
+        latest_updated_at_ms = max_opt_i64(latest_updated_at_ms, session.updated_at_ms);
+        if !session.warnings.is_empty() {
+            partial = true;
+            source_warnings.extend(
+                session
+                    .warnings
+                    .iter()
+                    .map(|warning| format!("{}: {warning}", session.id)),
+            );
+        }
+        if recent.len() < RECENT_LIMIT {
+            let models = session.models.iter().cloned().collect::<Vec<_>>();
+            let duration_seconds = match (session.started_at_ms, session.updated_at_ms) {
+                (Some(start), Some(end)) if end >= start => Some(((end - start) / 1000) as u64),
+                _ => None,
+            };
+            recent.push(AgentUsageRecentItem {
+                id: session.id.clone(),
+                title: safe_title(
+                    session
+                        .title
+                        .as_deref()
+                        .unwrap_or("Untitled Claude Code session"),
+                ),
+                model: models.last().cloned(),
+                models,
+                agent: Some("Claude Code".to_string()),
+                message_count: session.message_count,
+                tool_uses: session.tool_uses,
+                started_at_ms: session.started_at_ms,
+                duration_seconds,
+                status: if session.warnings.is_empty() {
+                    "available"
+                } else {
+                    "partial"
+                }
+                .to_string(),
+                non_cached_total_tokens: session.tokens.non_cached_total(),
+                total_tokens: session.tokens.total,
+                cost: None,
+                updated_at_ms: session.updated_at_ms,
+            });
+        }
+    }
+    let available = !sessions.is_empty();
+    AgentUsageSourceSummary {
+        source: "claude_code".to_string(),
+        status: if !available {
+            "empty"
+        } else if partial || !source_warnings.is_empty() {
+            "partial"
+        } else {
+            "available"
+        }
+        .to_string(),
+        available,
+        freshness: "unknown".to_string(),
+        data_path: Some(sessions_dir.display().to_string()),
+        records: sessions.len(),
+        non_cached_total_tokens: tokens.non_cached_total(),
+        total_tokens: tokens.total,
+        cost: None,
+        tokens,
+        latest_updated_at_ms,
+        recent,
+        warnings: source_warnings,
+        matched_provider_session_ids: sessions
+            .iter()
+            .filter_map(|session| normalize_provider_session_id("claude", &session.id))
+            .collect(),
+    }
+}
+
+fn read_claude_session(path: &Path) -> Result<ClaudeSessionAccumulator> {
+    let file = File::open(path)
+        .with_context(|| format!("Failed to open Claude Code transcript {}", path.display()))?;
+    let fallback_id = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("unknown-session");
+    let mut session = ClaudeSessionAccumulator {
+        id: fallback_id.to_string(),
+        ..Default::default()
+    };
+    for (index, line) in BufReader::new(file).lines().enumerate() {
+        let line = match line {
+            Ok(line) => line,
+            Err(error) => {
+                session
+                    .warnings
+                    .push(format!("line {} read error: {error}", index + 1));
+                continue;
+            }
+        };
+        let value: Value = match serde_json::from_str(&line) {
+            Ok(value) => value,
+            Err(_) => {
+                session
+                    .warnings
+                    .push(format!("line {} contains invalid JSON", index + 1));
+                continue;
+            }
+        };
+        if let Some(id) = value
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+        {
+            session.id = id.to_string();
+        }
+        let timestamp = value.get("timestamp").and_then(parse_timestamp_ms);
+        session.started_at_ms = min_opt_i64(session.started_at_ms, timestamp);
+        session.updated_at_ms = max_opt_i64(session.updated_at_ms, timestamp);
+        match value.get("type").and_then(Value::as_str) {
+            Some("user") => {
+                if session.title.is_none() && !is_tool_result(&value) {
+                    session.title = extract_prompt_title(&value);
+                }
+                if lineage_is_ambiguous(&value) {
+                    session.warnings.push(format!(
+                        "line {} has branch/resume/compaction/subagent lineage metadata",
+                        index + 1
+                    ));
+                }
+            }
+            Some("assistant") => parse_claude_assistant(&value, index + 1, &mut session),
+            Some("summary") | Some("system") if lineage_is_ambiguous(&value) => {
+                session.warnings.push(format!(
+                    "line {} indicates compaction or lineage that cannot be fully attributed",
+                    index + 1
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(session)
+}
+
+fn parse_claude_assistant(
+    value: &Value,
+    line_number: usize,
+    session: &mut ClaudeSessionAccumulator,
+) {
+    let Some(message) = value.get("message") else {
+        return;
+    };
+    let identity = message
+        .get("id")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("requestId").and_then(Value::as_str))
+        .or_else(|| value.get("uuid").and_then(Value::as_str));
+    let Some(identity) = identity.filter(|id| !id.is_empty()) else {
+        if message.get("usage").is_some() {
+            session.warnings.push(format!("line {line_number} has usage without stable message/request identity and was not counted"));
+        }
+        return;
+    };
+    if !session.seen_messages.insert(identity.to_string()) {
+        return;
+    }
+    if let Some(model) = message
+        .get("model")
+        .and_then(Value::as_str)
+        .filter(|model| !model.is_empty())
+    {
+        session.models.insert(model.to_string());
+    }
+    session.message_count = session.message_count.saturating_add(1);
+    session.tool_uses = session.tool_uses.saturating_add(
+        message
+            .get("content")
+            .and_then(Value::as_array)
+            .map(|content| {
+                content
+                    .iter()
+                    .filter(|block| block.get("type").and_then(Value::as_str) == Some("tool_use"))
+                    .count() as u64
+            })
+            .unwrap_or_default(),
+    );
+    let Some(usage) = message.get("usage") else {
+        session
+            .warnings
+            .push(format!("line {line_number} assistant message has no usage"));
+        return;
+    };
+    let input = json_u64(usage, "input_tokens");
+    let output = json_u64(usage, "output_tokens");
+    let cache_read = json_u64(usage, "cache_read_input_tokens");
+    let cache_creation = json_u64(usage, "cache_creation_input_tokens");
+    session.tokens.input = session.tokens.input.saturating_add(input);
+    session.tokens.output = session.tokens.output.saturating_add(output);
+    session.tokens.cache_read = session.tokens.cache_read.saturating_add(cache_read);
+    session.tokens.cache_write = session.tokens.cache_write.saturating_add(cache_creation);
+    session.tokens.total = session.tokens.total.saturating_add(
+        input
+            .saturating_add(output)
+            .saturating_add(cache_read)
+            .saturating_add(cache_creation),
+    );
+}
+
+fn encode_claude_project_path(path: &str) -> String {
+    let normalized = normalize_stored_path(path);
+    normalized
+        .chars()
+        .map(|character| {
+            if character == '/' || character == '\\' || character == ':' {
+                '-'
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
+fn parse_timestamp_ms(value: &Value) -> Option<i64> {
+    value.as_i64().or_else(|| {
+        value.as_str().and_then(|text| {
+            chrono::DateTime::parse_from_rfc3339(text)
+                .ok()
+                .map(|time| time.timestamp_millis())
+        })
+    })
+}
+
+fn min_opt_i64(current: Option<i64>, candidate: Option<i64>) -> Option<i64> {
+    match (current, candidate) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}
+
+fn extract_prompt_title(value: &Value) -> Option<String> {
+    let content = value.pointer("/message/content")?;
+    let text = content.as_str().or_else(|| {
+        content
+            .as_array()?
+            .iter()
+            .find_map(|block| block.get("text").and_then(Value::as_str))
+    })?;
+    let sanitized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!sanitized.is_empty()).then(|| sanitized.chars().take(120).collect())
+}
+
+fn is_tool_result(value: &Value) -> bool {
+    value
+        .pointer("/message/content")
+        .and_then(Value::as_array)
+        .is_some_and(|blocks| {
+            blocks
+                .iter()
+                .any(|block| block.get("type").and_then(Value::as_str) == Some("tool_result"))
+        })
+}
+
+fn lineage_is_ambiguous(value: &Value) -> bool {
+    value
+        .get("isSidechain")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || value
+            .get("isCompactSummary")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || value
+            .get("parentUuid")
+            .is_some_and(|parent| !parent.is_null())
+        || value.get("agentId").is_some()
+}
+
 fn read_codex_usage(project_path: &ProjectPathMatcher) -> AgentUsageSourceSummary {
+    read_codex_usage_scoped(project_path, None)
+}
+
+fn read_codex_usage_scoped(
+    project_path: &ProjectPathMatcher,
+    session_filter: Option<&UsageSessionFilter>,
+) -> AgentUsageSourceSummary {
     let mut warnings = Vec::new();
     let db_paths = existing_paths(codex_state_db_candidates());
-    if db_paths.is_empty() {
+    if db_paths.is_empty() && session_filter.is_none() {
         return empty_source(
             "codex",
             "Codex state database was not found in CODEX_SQLITE_HOME, CODEX_HOME, or ~/.codex.",
         );
     };
 
-    let result = read_codex_usage_from_dbs(project_path, &db_paths, &mut warnings);
+    let result =
+        read_codex_usage_from_dbs_scoped(project_path, &db_paths, &mut warnings, session_filter);
     match result {
         Ok(mut summary) => {
             summary.warnings.append(&mut warnings);
@@ -290,7 +1003,7 @@ fn read_codex_usage_from_db(
     warnings: &mut Vec<String>,
 ) -> Result<AgentUsageSourceSummary> {
     let matcher = ProjectPathMatcher::new(Path::new(project_path));
-    read_codex_usage_from_dbs(&matcher, &[db_path.to_path_buf()], warnings)
+    read_codex_usage_from_dbs_scoped(&matcher, &[db_path.to_path_buf()], warnings, None)
 }
 
 fn read_codex_usage_from_dbs(
@@ -298,12 +1011,21 @@ fn read_codex_usage_from_dbs(
     db_paths: &[PathBuf],
     warnings: &mut Vec<String>,
 ) -> Result<AgentUsageSourceSummary> {
+    read_codex_usage_from_dbs_scoped(project_path, db_paths, warnings, None)
+}
+
+fn read_codex_usage_from_dbs_scoped(
+    project_path: &ProjectPathMatcher,
+    db_paths: &[PathBuf],
+    warnings: &mut Vec<String>,
+    session_filter: Option<&UsageSessionFilter>,
+) -> Result<AgentUsageSourceSummary> {
     let mut best_exact_match: Option<(PathBuf, Vec<CodexThreadRow>)> = None;
     let mut alias_matches = Vec::new();
     let mut errors = Vec::new();
 
     for db_path in db_paths {
-        match read_codex_rows_from_db(project_path, db_path) {
+        match read_codex_rows_from_db_scoped(project_path, db_path, session_filter) {
             Ok(db_rows) => {
                 if should_replace_codex_match(
                     best_exact_match.as_ref().map(|(_, rows)| rows),
@@ -319,13 +1041,37 @@ fn read_codex_usage_from_dbs(
         }
     }
 
-    if best_exact_match.is_none() && alias_matches.is_empty() && errors.len() == db_paths.len() {
+    if session_filter.is_none()
+        && !db_paths.is_empty()
+        && best_exact_match.is_none()
+        && alias_matches.is_empty()
+        && errors.len() == db_paths.len()
+    {
         anyhow::bail!("{}", errors.join("; "));
     }
 
     warnings.extend(errors);
-    let (data_path, alias_root, mut rows) =
+    let (data_path, mut alias_root, mut rows) =
         choose_codex_rows(project_path, best_exact_match, alias_matches, warnings);
+    let mut direct_rollout_paths = Vec::new();
+    if let Some(filter) = session_filter {
+        let (direct_rows, matched_paths) =
+            read_codex_task_rollout_rows(project_path, filter, warnings);
+        if !direct_rows.is_empty() {
+            let mut rows_by_id = rows
+                .into_iter()
+                .map(|row| (row.id.clone(), row))
+                .collect::<BTreeMap<_, _>>();
+            for row in direct_rows {
+                // The rollout is the live source for an active Codex thread and
+                // intentionally replaces a possibly stale SQLite catalog row.
+                rows_by_id.insert(row.id.clone(), row);
+            }
+            rows = rows_by_id.into_values().collect();
+            alias_root = None;
+            direct_rollout_paths = matched_paths;
+        }
+    }
     rows.sort_by(|a, b| {
         b.updated_at_ms
             .cmp(&a.updated_at_ms)
@@ -337,9 +1083,13 @@ fn read_codex_usage_from_dbs(
     let mut latest_updated_at_ms = None;
 
     for row in rows.iter() {
-        tokens.total = tokens.total.saturating_add(row.tokens_used);
         latest_updated_at_ms = max_opt_i64(latest_updated_at_ms, row.updated_at_ms);
         let usage = read_codex_rollout_usage(&row.rollout_path, warnings);
+        let row_total_tokens = usage
+            .as_ref()
+            .map(|usage| usage.total)
+            .unwrap_or(row.tokens_used);
+        tokens.total = tokens.total.saturating_add(row_total_tokens);
         let non_cached_total_tokens = usage
             .as_ref()
             .map(TokenBreakdown::non_cached_total)
@@ -355,9 +1105,20 @@ fn read_codex_usage_from_dbs(
                 id: row.id.clone(),
                 title: safe_title(&row.title),
                 model: row.model.clone().or_else(|| row.model_provider.clone()),
+                models: row
+                    .model
+                    .clone()
+                    .or_else(|| row.model_provider.clone())
+                    .into_iter()
+                    .collect(),
                 agent: Some("Codex".to_string()),
+                message_count: 0,
+                tool_uses: 0,
+                started_at_ms: None,
+                duration_seconds: None,
+                status: "available".to_string(),
                 non_cached_total_tokens,
-                total_tokens: row.tokens_used,
+                total_tokens: row_total_tokens,
                 cost: None,
                 updated_at_ms: row.updated_at_ms,
             });
@@ -365,24 +1126,49 @@ fn read_codex_usage_from_dbs(
     }
 
     if rows.is_empty() {
-        warnings.push(format!(
-            "No Codex records matched {} or its child paths.",
-            project_path.display_path
-        ));
+        warnings.push(if let Some(filter) = session_filter {
+            format!(
+                "No Codex rollout or database record matched a Codex session linked to Task {}.",
+                filter.task_id
+            )
+        } else {
+            format!(
+                "No Codex records matched {} or its child paths.",
+                project_path.display_path
+            )
+        });
     }
 
-    Ok(AgentUsageSourceSummary {
-        source: "codex".to_string(),
-        available: !rows.is_empty(),
-        data_path: Some(if rows.is_empty() {
-            db_paths
+    let summary_data_path = if !direct_rollout_paths.is_empty() {
+        Some(
+            direct_rollout_paths
                 .iter()
                 .map(|path| path.display().to_string())
                 .collect::<Vec<_>>()
-                .join(", ")
+                .join(", "),
+        )
+    } else if rows.is_empty() {
+        let candidates = db_paths
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        (!candidates.is_empty()).then_some(candidates)
+    } else {
+        (!data_path.as_os_str().is_empty()).then(|| data_path.display().to_string())
+    };
+
+    Ok(AgentUsageSourceSummary {
+        source: "codex".to_string(),
+        status: if rows.is_empty() {
+            "empty"
         } else {
-            data_path.display().to_string()
-        }),
+            "available"
+        }
+        .to_string(),
+        available: !rows.is_empty(),
+        freshness: "unknown".to_string(),
+        data_path: summary_data_path,
         records: rows.len(),
         non_cached_total_tokens: tokens.non_cached_total(),
         total_tokens: tokens.total,
@@ -398,12 +1184,25 @@ fn read_codex_usage_from_dbs(
                 )]
             })
             .unwrap_or_default(),
+        matched_provider_session_ids: rows
+            .iter()
+            .map(|row| row.id.clone())
+            .filter_map(|id| normalize_provider_session_id("codex", &id))
+            .collect(),
     })
 }
 
 fn read_codex_rows_from_db(
     project_path: &ProjectPathMatcher,
     db_path: &Path,
+) -> Result<MatchedRows<CodexThreadRow>> {
+    read_codex_rows_from_db_scoped(project_path, db_path, None)
+}
+
+fn read_codex_rows_from_db_scoped(
+    project_path: &ProjectPathMatcher,
+    db_path: &Path,
+    session_filter: Option<&UsageSessionFilter>,
 ) -> Result<MatchedRows<CodexThreadRow>> {
     let conn = open_readonly(db_path)?;
     let mut stmt = conn.prepare(
@@ -423,10 +1222,18 @@ fn read_codex_rows_from_db(
             tokens_used: signed_to_u64(row.get::<_, i64>(5).unwrap_or_default()),
             updated_at_ms: row.get(6).ok(),
         };
-        if project_path.matches(&cwd) {
+        if project_path.matches(&cwd)
+            && session_filter.map_or(true, |filter| {
+                filter.matches_provider("codex", &usage_row.id)
+            })
+        {
             out.exact.push(usage_row);
         } else if let Some(alias_root) = project_path.alias_root(&cwd) {
-            out.aliases.entry(alias_root).or_default().push(usage_row);
+            if session_filter.map_or(true, |filter| {
+                filter.matches_provider("codex", &usage_row.id)
+            }) {
+                out.aliases.entry(alias_root).or_default().push(usage_row);
+            }
         }
     }
     Ok(out)
@@ -489,6 +1296,13 @@ fn max_codex_updated_at(rows: &[CodexThreadRow]) -> Option<i64> {
 }
 
 fn read_opencode_usage(project_path: &ProjectPathMatcher) -> AgentUsageSourceSummary {
+    read_opencode_usage_scoped(project_path, None)
+}
+
+fn read_opencode_usage_scoped(
+    project_path: &ProjectPathMatcher,
+    session_filter: Option<&UsageSessionFilter>,
+) -> AgentUsageSourceSummary {
     let mut warnings = Vec::new();
     let db_paths = existing_paths(opencode_db_candidates());
     if db_paths.is_empty() {
@@ -498,7 +1312,8 @@ fn read_opencode_usage(project_path: &ProjectPathMatcher) -> AgentUsageSourceSum
         );
     };
 
-    let result = read_opencode_usage_from_dbs(project_path, &db_paths, &mut warnings);
+    let result =
+        read_opencode_usage_from_dbs_scoped(project_path, &db_paths, &mut warnings, session_filter);
     match result {
         Ok(mut summary) => {
             summary.warnings.append(&mut warnings);
@@ -518,7 +1333,7 @@ fn read_opencode_usage_from_db(
 ) -> Result<AgentUsageSourceSummary> {
     let matcher = ProjectPathMatcher::new(Path::new(project_path));
     let mut warnings = Vec::new();
-    read_opencode_usage_from_dbs(&matcher, &[db_path.to_path_buf()], &mut warnings)
+    read_opencode_usage_from_dbs_scoped(&matcher, &[db_path.to_path_buf()], &mut warnings, None)
 }
 
 fn read_opencode_usage_from_dbs(
@@ -526,12 +1341,21 @@ fn read_opencode_usage_from_dbs(
     db_paths: &[PathBuf],
     warnings: &mut Vec<String>,
 ) -> Result<AgentUsageSourceSummary> {
+    read_opencode_usage_from_dbs_scoped(project_path, db_paths, warnings, None)
+}
+
+fn read_opencode_usage_from_dbs_scoped(
+    project_path: &ProjectPathMatcher,
+    db_paths: &[PathBuf],
+    warnings: &mut Vec<String>,
+    session_filter: Option<&UsageSessionFilter>,
+) -> Result<AgentUsageSourceSummary> {
     let mut best_exact_match: Option<(PathBuf, Vec<OpenCodeSessionRow>)> = None;
     let mut alias_matches = Vec::new();
     let mut errors = Vec::new();
 
     for db_path in db_paths {
-        match read_opencode_rows_from_db(project_path, db_path) {
+        match read_opencode_rows_from_db_scoped(project_path, db_path, session_filter) {
             Ok(db_rows) => {
                 if should_replace_opencode_match(
                     best_exact_match.as_ref().map(|(_, rows)| rows),
@@ -588,7 +1412,18 @@ fn read_opencode_usage_from_dbs(
                 id: row.id.clone(),
                 title: safe_title(&row.title),
                 model: row.model.as_deref().map(format_opencode_model),
+                models: row
+                    .model
+                    .as_deref()
+                    .map(format_opencode_model)
+                    .into_iter()
+                    .collect(),
                 agent: row.agent.clone(),
+                message_count: 0,
+                tool_uses: 0,
+                started_at_ms: None,
+                duration_seconds: None,
+                status: "available".to_string(),
                 non_cached_total_tokens,
                 total_tokens: total,
                 cost: Some(row.cost),
@@ -606,7 +1441,9 @@ fn read_opencode_usage_from_dbs(
 
     Ok(AgentUsageSourceSummary {
         source: "opencode".to_string(),
+        status: if rows.is_empty() { "empty" } else { "available" }.to_string(),
         available: !rows.is_empty(),
+        freshness: "unknown".to_string(),
         data_path: Some(if rows.is_empty() {
             db_paths
                 .iter()
@@ -631,12 +1468,25 @@ fn read_opencode_usage_from_dbs(
                 )]
             })
             .unwrap_or_default(),
+        matched_provider_session_ids: rows
+            .iter()
+            .map(|row| row.id.clone())
+            .filter_map(|id| normalize_provider_session_id("opencode", &id))
+            .collect(),
     })
 }
 
 fn read_opencode_rows_from_db(
     project_path: &ProjectPathMatcher,
     db_path: &Path,
+) -> Result<MatchedRows<OpenCodeSessionRow>> {
+    read_opencode_rows_from_db_scoped(project_path, db_path, None)
+}
+
+fn read_opencode_rows_from_db_scoped(
+    project_path: &ProjectPathMatcher,
+    db_path: &Path,
+    session_filter: Option<&UsageSessionFilter>,
 ) -> Result<MatchedRows<OpenCodeSessionRow>> {
     let conn = open_readonly(db_path)?;
     let mut stmt = conn.prepare(
@@ -671,14 +1521,22 @@ fn read_opencode_rows_from_db(
             tokens_cache_write: signed_to_u64(row.get::<_, i64>(9).unwrap_or_default()),
             time_updated: row.get(10).ok(),
         };
-        if matches {
+        if matches
+            && session_filter.map_or(true, |filter| {
+                filter.matches_provider("opencode", &usage_row.id)
+            })
+        {
             out.exact.push(usage_row);
         } else if let Some(alias_root) = paths
             .into_iter()
             .flatten()
             .find_map(|path| project_path.alias_root(path))
         {
-            out.aliases.entry(alias_root).or_default().push(usage_row);
+            if session_filter.map_or(true, |filter| {
+                filter.matches_provider("opencode", &usage_row.id)
+            }) {
+                out.aliases.entry(alias_root).or_default().push(usage_row);
+            }
         }
     }
     Ok(out)
@@ -738,6 +1596,209 @@ fn should_replace_opencode_match(
 
 fn max_opencode_updated_at(rows: &[OpenCodeSessionRow]) -> Option<i64> {
     rows.iter().filter_map(|row| row.time_updated).max()
+}
+
+#[derive(Debug)]
+struct CodexRolloutSnapshot {
+    session_id: String,
+    cwd: String,
+    model: Option<String>,
+    usage: Option<TokenBreakdown>,
+}
+
+fn read_codex_task_rollout_rows(
+    project_path: &ProjectPathMatcher,
+    session_filter: &UsageSessionFilter,
+    warnings: &mut Vec<String>,
+) -> (Vec<CodexThreadRow>, Vec<PathBuf>) {
+    let roots = codex_rollout_root_candidates()
+        .into_iter()
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    read_codex_task_rollout_rows_from_roots(project_path, session_filter, &roots, warnings)
+}
+
+fn read_codex_task_rollout_rows_from_roots(
+    project_path: &ProjectPathMatcher,
+    session_filter: &UsageSessionFilter,
+    roots: &[PathBuf],
+    warnings: &mut Vec<String>,
+) -> (Vec<CodexThreadRow>, Vec<PathBuf>) {
+    let requested_ids = session_filter.provider_session_ids("codex");
+    if requested_ids.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
+    let mut rows_by_id = BTreeMap::<String, CodexThreadRow>::new();
+    for root in roots {
+        for entry in WalkDir::new(root)
+            .follow_links(false)
+            .max_depth(4)
+            .into_iter()
+        {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    if warnings.len() < 8 {
+                        warnings.push(format!(
+                            "Failed to scan Codex rollout directory {}: {error}",
+                            root.display()
+                        ));
+                    }
+                    continue;
+                }
+            };
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let Some(file_name) = entry.file_name().to_str() else {
+                continue;
+            };
+            let Some(expected_id) = requested_ids
+                .iter()
+                .find(|session_id| codex_rollout_file_matches(file_name, session_id))
+            else {
+                continue;
+            };
+            let path = entry.path();
+            let snapshot = match read_codex_rollout_snapshot(path) {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    if warnings.len() < 8 {
+                        warnings.push(format!(
+                            "Failed to read Task-linked Codex rollout {}: {error:#}",
+                            path.display()
+                        ));
+                    }
+                    continue;
+                }
+            };
+            if snapshot.session_id != *expected_id {
+                if warnings.len() < 8 {
+                    warnings.push(format!(
+                        "Codex rollout {} metadata session id {} did not match requested session {}.",
+                        path.display(),
+                        snapshot.session_id,
+                        expected_id
+                    ));
+                }
+                continue;
+            }
+            if !project_path.matches(&snapshot.cwd) {
+                if warnings.len() < 8 {
+                    warnings.push(format!(
+                        "Codex rollout {} belongs to cwd {}, not project {}.",
+                        path.display(),
+                        snapshot.cwd,
+                        project_path.display_path
+                    ));
+                }
+                continue;
+            }
+            let Some(usage) = snapshot.usage else {
+                if warnings.len() < 8 {
+                    warnings.push(format!(
+                        "Task-linked Codex rollout {} has no total_token_usage record yet.",
+                        path.display()
+                    ));
+                }
+                continue;
+            };
+            let updated_at_ms = file_updated_at_ms(path);
+            let short_id = snapshot.session_id.chars().take(12).collect::<String>();
+            let row = CodexThreadRow {
+                id: snapshot.session_id.clone(),
+                rollout_path: path.display().to_string(),
+                title: format!("Codex session {short_id}"),
+                model_provider: None,
+                model: snapshot.model,
+                tokens_used: usage.total,
+                updated_at_ms,
+            };
+            let should_replace = rows_by_id
+                .get(&snapshot.session_id)
+                .map_or(true, |current| current.updated_at_ms < row.updated_at_ms);
+            if should_replace {
+                rows_by_id.insert(snapshot.session_id, row);
+            }
+        }
+    }
+
+    let rows = rows_by_id.into_values().collect::<Vec<_>>();
+    let paths = rows
+        .iter()
+        .map(|row| PathBuf::from(&row.rollout_path))
+        .collect();
+    (rows, paths)
+}
+
+fn codex_rollout_file_matches(file_name: &str, session_id: &str) -> bool {
+    file_name == format!("{session_id}.jsonl")
+        || file_name.ends_with(&format!("-{session_id}.jsonl"))
+}
+
+fn read_codex_rollout_snapshot(path: &Path) -> Result<CodexRolloutSnapshot> {
+    let file = File::open(path)
+        .with_context(|| format!("Failed to open Codex rollout {}", path.display()))?;
+    let mut session_id = None;
+    let mut cwd = None;
+    let mut model = None;
+    let mut usage = None;
+    for line in BufReader::new(file).lines() {
+        let Ok(line) = line else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if value.get("type").and_then(Value::as_str) == Some("session_meta") {
+            session_id = value
+                .pointer("/payload/id")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+            cwd = value
+                .pointer("/payload/cwd")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+        }
+        if let Some(next_model) = value
+            .pointer("/payload/model")
+            .and_then(Value::as_str)
+            .filter(|model| !model.trim().is_empty())
+        {
+            model = Some(next_model.to_string());
+        }
+        if let Some(next_usage) = value
+            .pointer("/payload/info/total_token_usage")
+            .and_then(parse_codex_usage_value)
+        {
+            usage = Some(next_usage);
+        }
+    }
+
+    let Some(session_id) = session_id else {
+        anyhow::bail!("session_meta.payload.id is missing");
+    };
+    let Some(cwd) = cwd else {
+        anyhow::bail!("session_meta.payload.cwd is missing");
+    };
+    Ok(CodexRolloutSnapshot {
+        session_id,
+        cwd,
+        model,
+        usage,
+    })
+}
+
+fn file_updated_at_ms(path: &Path) -> Option<i64> {
+    let duration = path
+        .metadata()
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?;
+    i64::try_from(duration.as_millis()).ok()
 }
 
 fn read_codex_rollout_usage(path: &str, warnings: &mut Vec<String>) -> Option<TokenBreakdown> {
@@ -804,6 +1865,21 @@ fn codex_state_db_candidates() -> Vec<PathBuf> {
     dedupe_paths(candidates)
 }
 
+fn codex_rollout_root_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(value) = env::var("CODEX_HOME") {
+        let home = PathBuf::from(value);
+        candidates.push(home.join("sessions"));
+        candidates.push(home.join("archived_sessions"));
+    }
+    if let Some(home) = dirs::home_dir() {
+        let codex_home = home.join(".codex");
+        candidates.push(codex_home.join("sessions"));
+        candidates.push(codex_home.join("archived_sessions"));
+    }
+    dedupe_paths(candidates)
+}
+
 fn opencode_db_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(value) = env::var("OPENCODE_DATA_HOME") {
@@ -863,9 +1939,17 @@ fn existing_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     paths.into_iter().filter(|path| path.is_file()).collect()
 }
 
+fn unsupported_source(source: &str, reason: &str) -> AgentUsageSourceSummary {
+    let mut summary = empty_source(source, reason);
+    summary.status = "unsupported".to_string();
+    summary
+}
+
 fn empty_source(source: &str, warning: &str) -> AgentUsageSourceSummary {
     AgentUsageSourceSummary {
         source: source.to_string(),
+        status: "empty".to_string(),
+        freshness: "unknown".to_string(),
         available: false,
         data_path: None,
         records: 0,
@@ -876,6 +1960,7 @@ fn empty_source(source: &str, warning: &str) -> AgentUsageSourceSummary {
         latest_updated_at_ms: None,
         recent: Vec::new(),
         warnings: vec![warning.to_string()],
+        matched_provider_session_ids: BTreeSet::new(),
     }
 }
 
@@ -885,6 +1970,15 @@ fn error_source(
     error: anyhow::Error,
 ) -> AgentUsageSourceSummary {
     let mut summary = empty_source(source, &format!("{error:#}"));
+    summary.status = if error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::PermissionDenied)
+    }) {
+        "permission_denied".to_string()
+    } else {
+        "error".to_string()
+    };
     summary.data_path = path.map(|path| path.display().to_string());
     summary
 }
@@ -973,6 +2067,18 @@ mod tests {
     };
 
     #[test]
+    fn unsupported_sources_never_fabricate_usage() {
+        let source = unsupported_source("cursor", "no stable project-attributable contract");
+        assert_eq!(source.status, "unsupported");
+        assert!(!source.available);
+        assert_eq!(source.records, 0);
+        assert_eq!(source.total_tokens, 0);
+        assert_eq!(source.cost, None);
+        assert!(source.recent.is_empty());
+        assert!(source.warnings[0].contains("no stable"));
+    }
+
+    #[test]
     fn aggregates_codex_threads_and_rollout_usage() {
         let dir = temp_dir("codex-usage");
         let db_path = dir.join("state_5.sqlite");
@@ -1006,6 +2112,156 @@ mod tests {
         assert_eq!(usage.tokens.cached_input, 7);
         assert_eq!(usage.recent[0].non_cached_total_tokens, 14);
         assert_eq!(usage.recent[0].model.as_deref(), Some("gpt-test"));
+    }
+
+    #[test]
+    fn task_scoped_codex_usage_reads_live_rollout_without_sqlite_catalog_row() {
+        let dir = temp_dir("codex-live-task-rollout");
+        let sessions_root = dir.join("sessions");
+        let day_dir = sessions_root.join("2026/07/14");
+        fs::create_dir_all(&day_dir).expect("create Codex session tree");
+        let thread_id = "019f5f37-d5a6-7b63-b2d3-59e8d872969b";
+        let rollout_path = day_dir.join(format!("rollout-2026-07-14T14-02-02-{thread_id}.jsonl"));
+        write_rollout_with_meta(
+            &rollout_path,
+            thread_id,
+            "/repo/app",
+            28_175_555,
+            27_321_600,
+            57_124,
+            29_086,
+            28_232_679,
+        );
+        let filter = UsageSessionFilter {
+            task_id: "task.task-token".to_string(),
+            session_links: [(format!("session.codex.{thread_id}"), BTreeMap::new())]
+                .into_iter()
+                .collect(),
+        };
+        assert!(filter.matches_provider("codex", thread_id));
+        assert!(!filter.matches_provider("claude", thread_id));
+
+        let matcher = ProjectPathMatcher::new(Path::new("/repo/app"));
+        let mut warnings = Vec::new();
+        let (rows, paths) = read_codex_task_rollout_rows_from_roots(
+            &matcher,
+            &filter,
+            &[sessions_root],
+            &mut warnings,
+        );
+
+        assert_eq!(rows.len(), 1, "warnings: {warnings:?}");
+        assert_eq!(rows[0].id, thread_id);
+        assert_eq!(rows[0].tokens_used, 28_232_679);
+        assert_eq!(paths, vec![rollout_path]);
+        let usage = read_codex_rollout_usage(&rows[0].rollout_path, &mut warnings)
+            .expect("rollout token usage");
+        assert_eq!(usage.total, 28_232_679);
+        assert_eq!(usage.cached_input, 27_321_600);
+    }
+
+    #[test]
+    fn task_scoped_usage_uses_explicit_provider_link_for_synthetic_workflow_id() {
+        let dir = temp_dir("codex-explicit-provider-link");
+        let sessions_root = dir.join("sessions");
+        let day_dir = sessions_root.join("2026/07/14");
+        fs::create_dir_all(&day_dir).expect("create Codex session tree");
+        let provider_session_id = "019f5fea-18e1-7732-ab81-1729fd582f7d";
+        let rollout_path = day_dir.join(format!(
+            "rollout-2026-07-14T17-16-45-{provider_session_id}.jsonl"
+        ));
+        write_rollout_with_meta(
+            &rollout_path,
+            provider_session_id,
+            "/repo/app",
+            100,
+            20,
+            30,
+            40,
+            170,
+        );
+        let workflow_session_id = "session.codex.task.v3.synthetic.diagnostic-20260714".to_string();
+        let session_links = [(
+            workflow_session_id,
+            [(
+                "codex".to_string(),
+                [provider_session_id.to_string()].into_iter().collect(),
+            )]
+            .into_iter()
+            .collect(),
+        )]
+        .into_iter()
+        .collect();
+        let filter = UsageSessionFilter {
+            task_id: "task.synthetic".to_string(),
+            session_links,
+        };
+
+        let matcher = ProjectPathMatcher::new(Path::new("/repo/app"));
+        let mut warnings = Vec::new();
+        let (rows, _) = read_codex_task_rollout_rows_from_roots(
+            &matcher,
+            &filter,
+            &[sessions_root],
+            &mut warnings,
+        );
+
+        assert_eq!(rows.len(), 1, "warnings: {warnings:?}");
+        assert_eq!(rows[0].id, provider_session_id);
+        assert_eq!(
+            filter.provider_session_ids("codex"),
+            [provider_session_id.to_string()].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn matched_session_count_counts_workflow_sessions_not_shared_provider_records() {
+        let provider_session_id = "019f5fea-18e1-7732-ab81-1729fd582f7d";
+        let provider_link = |id: &str| {
+            [(
+                "codex".to_string(),
+                [id.to_string()].into_iter().collect::<BTreeSet<_>>(),
+            )]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>()
+        };
+        let filter = UsageSessionFilter {
+            task_id: "task.shared-provider".to_string(),
+            session_links: [
+                (
+                    "session.codex.workflow-a".to_string(),
+                    provider_link(provider_session_id),
+                ),
+                (
+                    "session.codex.workflow-b".to_string(),
+                    provider_link(provider_session_id),
+                ),
+                (
+                    "session.codex.workflow-unmatched".to_string(),
+                    provider_link("missing-provider-session"),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let mut codex = test_source("codex", true, 0, 170, None);
+        codex.matched_provider_session_ids =
+            [provider_session_id.to_string()].into_iter().collect();
+        let claude = test_source("claude_code", false, 0, 0, None);
+        let opencode = test_source("opencode", false, 0, 0, None);
+
+        assert_eq!(
+            filter.matched_workflow_session_count(&[
+                ("claude", &claude),
+                ("codex", &codex),
+                ("opencode", &opencode),
+            ]),
+            2
+        );
+        assert_eq!(
+            codex.records, 1,
+            "provider Token totals remain deduplicated"
+        );
     }
 
     #[test]
@@ -1162,11 +2418,58 @@ mod tests {
     }
 
     #[test]
+    fn source_freshness_distinguishes_fresh_stale_and_unknown() {
+        let generated_at_ms = 2_000_000;
+        let mut fresh = test_source("fresh", true, 10, 20, None);
+        fresh.latest_updated_at_ms = Some(generated_at_ms - 899_000);
+        apply_source_freshness(&mut fresh, generated_at_ms, 900);
+        assert_eq!(fresh.freshness, "fresh");
+        assert_eq!(fresh.status, "available");
+        assert_eq!(fresh.total_tokens, 20);
+
+        let mut stale = test_source("stale", true, 10, 20, None);
+        stale.latest_updated_at_ms = Some(generated_at_ms - 901_000);
+        apply_source_freshness(&mut stale, generated_at_ms, 900);
+        assert_eq!(stale.freshness, "stale");
+        assert_eq!(stale.status, "stale");
+        assert_eq!(stale.total_tokens, 20);
+        assert!(stale
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("901 seconds old")));
+
+        let mut unknown = test_source("unknown", true, 10, 20, None);
+        apply_source_freshness(&mut unknown, generated_at_ms, 900);
+        assert_eq!(unknown.freshness, "unknown");
+        assert_eq!(unknown.status, "partial");
+        assert_eq!(unknown.total_tokens, 20);
+    }
+
+    #[test]
+    fn one_stale_source_makes_multi_source_overview_stale_and_partial() {
+        let generated_at_ms = 2_000_000;
+        let mut fresh = test_source("claude_code", true, 10, 20, None);
+        fresh.latest_updated_at_ms = Some(generated_at_ms - 100_000);
+        apply_source_freshness(&mut fresh, generated_at_ms, 900);
+
+        let mut stale = test_source("codex", true, 30, 40, None);
+        stale.latest_updated_at_ms = Some(generated_at_ms - 901_000);
+        apply_source_freshness(&mut stale, generated_at_ms, 900);
+
+        let empty = test_source("opencode", false, 0, 0, None);
+        let sources = [&fresh, &stale, &empty];
+        assert_eq!(overall_freshness(&sources), "stale");
+        assert_eq!(overall_completeness(&sources, 60), "partial");
+        assert_eq!(fresh.total_tokens + stale.total_tokens, 60);
+    }
+
+    #[test]
     fn primary_metric_uses_total_tokens_even_when_cost_is_available() {
         let codex = test_source("codex", false, 0, 0, None);
         let opencode = test_source("opencode", true, 15, 24, Some(1.25));
 
-        let metric = select_primary_metric(&codex, &opencode, 24);
+        let claude = test_source("claude_code", false, 0, 0, None);
+        let metric = select_primary_metric(&claude, &codex, &opencode, 24);
 
         assert_eq!(metric.kind, "tokens");
         assert_eq!(metric.source, "opencode");
@@ -1181,7 +2484,8 @@ mod tests {
         let codex = test_source("codex", true, 14, 21, None);
         let opencode = test_source("opencode", false, 0, 0, None);
 
-        let metric = select_primary_metric(&codex, &opencode, 21);
+        let claude = test_source("claude_code", false, 0, 0, None);
+        let metric = select_primary_metric(&claude, &codex, &opencode, 21);
 
         assert_eq!(metric.kind, "tokens");
         assert_eq!(metric.source, "codex");
@@ -1196,13 +2500,54 @@ mod tests {
         let codex = test_source("codex", false, 0, 0, None);
         let opencode = test_source("opencode", false, 0, 0, None);
 
-        let metric = select_primary_metric(&codex, &opencode, 0);
+        let claude = test_source("claude_code", false, 0, 0, None);
+        let metric = select_primary_metric(&claude, &codex, &opencode, 0);
 
         assert_eq!(metric.kind, "unavailable");
         assert_eq!(metric.source, "none");
         assert_eq!(metric.value, None);
         assert_eq!(metric.tokens, None);
         assert!(!metric.estimated);
+    }
+
+    #[test]
+    #[ignore = "reads the developer's local Claude Code transcript directory without exposing content"]
+    fn smoke_reads_real_vibehub_claude_code_usage() {
+        let project = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repository root");
+        let usage = read_local_agent_usage(project).expect("real local usage read");
+        assert_eq!(usage.project_path, normalize_path_string(project));
+        assert_ne!(usage.claude_code.status, "error");
+        assert_ne!(usage.claude_code.status, "permission_denied");
+        assert!(usage.claude_code.records > 0);
+        assert!(usage.claude_code.total_tokens > 0);
+    }
+
+    #[test]
+    #[ignore = "reads the Task-linked Codex rollout named by VIBEHUB_CODEX_SESSION_ID"]
+    fn smoke_reads_real_vibehub_task_codex_usage() {
+        let project = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repository root");
+        let provider_session_id =
+            env::var("VIBEHUB_CODEX_SESSION_ID").expect("VIBEHUB_CODEX_SESSION_ID");
+        let workflow_session_id = format!("session.codex.{provider_session_id}");
+        let usage = read_local_agent_usage_for_task(
+            project,
+            "task.smoke".to_string(),
+            [(workflow_session_id, BTreeMap::new())]
+                .into_iter()
+                .collect(),
+        )
+        .expect("real Task-scoped local usage read");
+
+        assert_eq!(usage.requested_session_count, 1);
+        assert_eq!(usage.matched_session_count, 1, "{:?}", usage.warnings);
+        assert_eq!(usage.codex.records, 1);
+        assert!(usage.codex.total_tokens > 0);
+        assert_eq!(usage.total_tokens, usage.codex.total_tokens);
+        eprintln!("Task-scoped Codex total tokens: {}", usage.total_tokens);
     }
 
     #[test]
@@ -1332,6 +2677,119 @@ mod tests {
         );
     }
 
+    #[test]
+    fn reads_claude_code_sessions_with_dedupe_cache_models_and_partial_warnings() {
+        let dir = temp_dir("claude-code-fixtures");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/claude-code/normal-single-model.jsonl"),
+            dir.join("session-normal.jsonl"),
+        )
+        .expect("copy normal fixture");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/claude-code/model-switch-duplicate-partial.jsonl"),
+            dir.join("session-partial.jsonl"),
+        )
+        .expect("copy partial fixture");
+
+        let matcher = ProjectPathMatcher::new(Path::new("/Users/example/Project One"));
+        let usage = read_claude_code_usage_from_dir(&matcher, &dir);
+
+        assert!(usage.available);
+        assert_eq!(usage.status, "partial");
+        assert_eq!(usage.records, 2);
+        assert_eq!(usage.tokens.input, 200);
+        assert_eq!(usage.tokens.output, 40);
+        assert_eq!(usage.tokens.cache_read, 42);
+        assert_eq!(usage.tokens.cache_write, 15);
+        assert_eq!(usage.total_tokens, 297);
+        let partial = usage
+            .recent
+            .iter()
+            .find(|item| item.id == "session-partial")
+            .expect("partial session");
+        assert_eq!(partial.message_count, 3);
+        assert_eq!(partial.total_tokens, 137);
+        assert_eq!(
+            partial.models,
+            vec!["claude-opus-test", "claude-sonnet-test"]
+        );
+        assert_eq!(partial.tool_uses, 1);
+        assert!(usage
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("invalid JSON")));
+        assert!(usage
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("lineage")));
+        assert!(usage
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("has no usage")));
+    }
+
+    #[test]
+    fn task_usage_filter_excludes_unlinked_claude_sessions() {
+        let dir = temp_dir("claude-task-scope");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/claude-code/normal-single-model.jsonl"),
+            dir.join("session-normal.jsonl"),
+        )
+        .expect("copy normal fixture");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures/claude-code/model-switch-duplicate-partial.jsonl"),
+            dir.join("session-partial.jsonl"),
+        )
+        .expect("copy partial fixture");
+
+        let matcher = ProjectPathMatcher::new(Path::new("/Users/example/Project One"));
+        let filter = UsageSessionFilter {
+            task_id: "task.example".to_string(),
+            session_links: [("session-partial".to_string(), BTreeMap::new())]
+                .into_iter()
+                .collect(),
+        };
+        let usage = read_claude_code_usage_from_dir_scoped(&matcher, &dir, Some(&filter));
+
+        assert_eq!(usage.records, 1);
+        assert_eq!(usage.total_tokens, 137);
+        assert_eq!(usage.recent[0].id, "session-partial");
+    }
+
+    #[test]
+    fn claude_code_empty_and_read_error_statuses_are_explicit() {
+        let matcher = ProjectPathMatcher::new(Path::new(r"C:\Users\Example\Project One"));
+        assert_eq!(
+            encode_claude_project_path(&matcher.primary),
+            "C--Users-Example-Project One"
+        );
+        let empty = temp_dir("claude-empty");
+        let usage = read_claude_code_usage_from_dir(&matcher, &empty);
+        assert_eq!(usage.status, "empty");
+        assert!(!usage.available);
+
+        let not_directory = empty.join("not-a-directory");
+        File::create(&not_directory).expect("file fixture");
+        let error = read_claude_code_usage_from_dir(&matcher, &not_directory);
+        assert_eq!(error.status, "error");
+    }
+
+    #[test]
+    fn encodes_macos_and_windows_claude_project_paths() {
+        assert_eq!(
+            encode_claude_project_path("/Users/example/Project One"),
+            "-Users-example-Project One"
+        );
+        assert_eq!(
+            encode_claude_project_path(r"C:\Users\example\Project One"),
+            "C--Users-example-Project One"
+        );
+    }
+
     fn create_codex_schema(conn: &Connection) {
         conn.execute_batch(
             "create table threads (
@@ -1362,6 +2820,8 @@ mod tests {
     ) -> AgentUsageSourceSummary {
         AgentUsageSourceSummary {
             source: source.to_string(),
+            status: if available { "available" } else { "empty" }.to_string(),
+            freshness: "unknown".to_string(),
             available,
             data_path: None,
             records: usize::from(available),
@@ -1375,6 +2835,7 @@ mod tests {
             latest_updated_at_ms: None,
             recent: Vec::new(),
             warnings: Vec::new(),
+            matched_provider_session_ids: BTreeSet::new(),
         }
     }
 
@@ -1419,6 +2880,48 @@ mod tests {
             input, cached, output, reasoning, total
         )
         .expect("write");
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn write_rollout_with_meta(
+        path: &Path,
+        session_id: &str,
+        cwd: &str,
+        input: u64,
+        cached: u64,
+        output: u64,
+        reasoning: u64,
+        total: u64,
+    ) {
+        let mut file = File::create(path).expect("rollout");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": { "id": session_id, "cwd": cwd }
+            })
+        )
+        .expect("write metadata");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": input,
+                            "cached_input_tokens": cached,
+                            "output_tokens": output,
+                            "reasoning_output_tokens": reasoning,
+                            "total_tokens": total
+                        }
+                    }
+                }
+            })
+        )
+        .expect("write usage");
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {

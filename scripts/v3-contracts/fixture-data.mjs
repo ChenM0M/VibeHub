@@ -7,6 +7,7 @@ export const GENERATED_AT = "2026-07-11T08:00:00.000Z";
 export const CONTRACT_FILES = {
   project_overview: "project-overview.json",
   project_structure: "project-structure.json",
+  agent_results: "agent-results.json",
   task_timeline: "task-timeline.json",
   plan_graph: "plan-graph.json",
   node_brief: "node-brief.json",
@@ -16,6 +17,7 @@ export const CONTRACT_FILES = {
 const schemaFor = {
   project_overview: "project-overview-view.schema.json",
   project_structure: "project-structure-view.schema.json",
+  agent_results: "agent-results-view.schema.json",
   task_timeline: "task-timeline-view.schema.json",
   plan_graph: "plan-graph-view.schema.json",
   node_brief: "node-brief.schema.json",
@@ -199,6 +201,38 @@ function baseViews() {
     { edge_id: "edge.core.depends.contracts", from_node_id: "module.core", to_node_id: "module.contracts", kind: "imports", source_kind: "parser", confidence: 0.7, evidence_refs: evidence("ev.parser2", "file", "inferred", "evidence.parser.imports", "crates/vibehub-core/src/lib.rs") },
   ];
 
+  const architectureNodes = [
+    {
+      node_id: "architecture.workspace", name: root.display.split("/").at(-1), kind: "workspace", path: root,
+      file_count: structureNodes.filter((node) => node.kind === "file").length,
+      source_kind: "manifest", confidence: 1, generator_version: shared.model_version,
+      evidence_refs: evidence("ev.architecture.workspace", "file", "hard_observed", "evidence.architecture.workspace", "package.json"),
+    },
+    ...[...new Set(structureNodes.map((node) => node.module_id).filter(Boolean))].map((moduleId) => {
+      const explicitNode = structureNodes.find((node) => node.node_id === moduleId);
+      const representative = explicitNode ?? structureNodes.find((node) => node.module_id === moduleId);
+      return {
+        node_id: moduleId,
+        name: explicitNode?.name ?? moduleId.split(".").at(-1),
+        kind: explicitNode?.kind === "package" ? "package" : "module",
+        path: representative.path,
+        file_count: structureNodes.filter((node) => node.kind === "file" && node.module_id === moduleId).length,
+        source_kind: explicitNode ? "manifest" : "parser",
+        confidence: explicitNode ? 1 : 0.85,
+        generator_version: shared.model_version,
+        evidence_refs: representative.evidence_refs,
+      };
+    }),
+  ];
+  const architectureEdges = structureEdges
+    .filter((edge) => edge.source_kind !== "filesystem")
+    .map((edge) => ({
+      ...edge,
+      from_node_id: edge.from_node_id.replace("file.root", "architecture.workspace"),
+      to_node_id: edge.to_node_id.replace("file.root", "architecture.workspace"),
+      generator_version: shared.model_version,
+    }));
+
   const timelineEvents = [
     { timeline_event_id: "evt.session.open", kind: "session", occurred_at: "2026-07-11T07:30:00.000Z", recorded_at: "2026-07-11T07:30:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.session.opened", details: {}, evidence_refs: evidence("ev.session.open", "event", "hard_observed", "evidence.session.opened", "events/session.open") },
     { timeline_event_id: "evt.plan.created", kind: "plan", occurred_at: "2026-07-11T07:35:00.000Z", recorded_at: "2026-07-11T07:35:00.000Z", order_state: "ordered", lane_id: "lane.session.main", actor: "codex", tool: "codex", node_id: "node.contracts", session_id: "session.main", commit_sha: null, summary_key: "timeline.plan.created", details: { nodes: 3, edges: 2 }, evidence_refs: evidence("ev.plan", "event", "agent_reported", "evidence.plan.created", "events/plan.created") },
@@ -221,7 +255,7 @@ function baseViews() {
       root,
       repository: { state: "available", branch: "feature/v3", head: "d7ece57", dirty: false, worktree_count: 1 },
       model: { state: "ready", last_evidence_at: "2026-07-11T08:15:00.000Z", generator_version: "fixture-1.0", indexed_files: 128 },
-      architecture: { declared_docs: 2, modules: 3, relationships: 4, confidence: 0.95, evidence_refs: evidence("ev.architecture", "file", "hard_observed", "evidence.architecture.generated", "contracts/v3/README.md") },
+      architecture: { declared_docs: 2, modules: architectureNodes.filter((node) => node.kind !== "workspace").length, relationships: architectureEdges.length, confidence: 0.95, evidence_refs: evidence("ev.architecture", "file", "hard_observed", "evidence.architecture.generated", "contracts/v3/README.md") },
       active_tasks: [
         {
           task_id: "task.m0", title: "Freeze V3 contracts and fixtures", state: "active", risk_level: "low",
@@ -247,10 +281,26 @@ function baseViews() {
     project_structure: {
       ...shared,
       index_state: "ready",
+      workspace: { root: path("macos", "/Users/alex/.vibehub/worktrees/task-m0/node-contracts"), source: "session_worktree", session_id: "session.main", worktree_id: "worktree.contracts", fallback_reason: null, ignored_directories: [".git", "dist", "node_modules", "target"] },
       nodes: structureNodes,
       edges: structureEdges,
+      architecture_nodes: architectureNodes,
+      architecture_edges: architectureEdges,
       unsupported_analyzers: [],
       page: { cursor: null, next_cursor: null, limit: 100, returned: structureNodes.length, total_estimate: structureNodes.length, truncated: false, truncation_reason: "none", model_version: "model.fixture.1" },
+    },
+    agent_results: {
+      ...shared,
+      task_id: "task.m0",
+      state: "available",
+      results: [{
+        result_id: "result.m0.evaluation", kind: "evaluation", session_id: "session.main", node_id: "node.contracts",
+        request: { source: "evaluation_instruction", instruction: "按 V3 契约验证全部 fixture 并报告不一致" }, status: "succeeded",
+        summary: "全部契约与 fixture 校验通过", body: "契约、引用、生成类型和场景覆盖均通过。",
+        evaluation: { target: "V3 contract corpus", rubric: ["JSON Schema 合法", "Fixture 全覆盖", "生成类型无漂移"], verdict: "passed", findings: [{ title: "契约一致", detail: "所有场景均通过对应 schema。", severity: "info", evidence_refs: evidence("ev.validation") }] },
+        artifacts: [{ label: "契约检查报告", path: path("macos", "/Users/alex/Projects/VibeHub/contracts/v3/README.md"), uri: null }],
+        started_at: "2026-07-11T07:58:00.000Z", completed_at: "2026-07-11T08:05:00.000Z", evidence_refs: evidence("ev.validation")
+      }]
     },
     task_timeline: {
       ...shared,
@@ -362,7 +412,12 @@ function applyScenario(kind, views) {
     views.project_overview.active_tasks = [];
     views.project_structure.nodes = [];
     views.project_structure.edges = [];
+    views.project_structure.architecture_nodes = [];
+    views.project_structure.architecture_edges = [];
     views.project_structure.index_state = "uninitialized";
+    views.agent_results.task_id = "task.none";
+    views.agent_results.state = "not_executed";
+    views.agent_results.results = [];
     views.project_structure.page.returned = 0;
     views.project_structure.page.total_estimate = 0;
     views.task_timeline.task_id = "task.none";
