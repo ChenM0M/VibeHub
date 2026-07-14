@@ -1,6 +1,7 @@
 /* Generated from contracts/v3. Do not edit directly. */
 
 export type EvidenceRefs = EvidenceRef[];
+export type BlockerDetails = BlockerDetail[];
 export type Warnings = Warning[];
 export type Errors = StructuredError[];
 
@@ -15,6 +16,7 @@ export interface TaskTimelineView {
   freshness: "fresh" | "stale" | "rebuilding" | "unavailable";
   completeness: "complete" | "partial" | "unsupported" | "unknown";
   criteria: CriterionSummary[];
+  blocker_details?: BlockerDetails;
   completion: {
     proposal_event_id: string | null;
     proposed_at_version: number | null;
@@ -86,6 +88,18 @@ export interface EvidenceRef {
   locator: string;
   captured_at?: string;
   excerpt?: string;
+}
+export interface BlockerDetail {
+  blocker_id: string;
+  reason_code: string;
+  summary: string;
+  kind: "external_precondition" | "permission" | "evidence_gap" | "dependency" | "conflict" | "workflow" | "unknown";
+  owner: string;
+  precondition: string;
+  resume_action: string;
+  criterion_id?: string;
+  node_id?: string;
+  evidence_refs: EvidenceRefs;
 }
 export interface Page {
   cursor: string | null;

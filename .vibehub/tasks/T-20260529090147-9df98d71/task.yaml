@@ -1,9 +1,0 @@
-schema_version: 1
-kind: vibehub_task
-task_id: T-20260529090147-9df98d71
-title: 收口 v2.0 发布前状态并归档旧 VibeHub 结构
-mode: evidence_drive
-phase: review
-phase_status: completed
-created_at: 2026-05-29T09:01:47Z
-created_by: vibehub

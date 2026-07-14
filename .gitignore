@@ -3,12 +3,19 @@
 /target
 /node_modules
 /dist
-/.vibehub/v3/
+/.vibehub/
+/.mcp.json
 
 # Build outputs
 /src-tauri/target
 /src-tauri/target-*
 /src-tauri/gen/schemas/macOS-schema.json
+/release-assets/
+.cache/
+.vite/
+coverage/
+*.tsbuildinfo
+.eslintcache
 *.exe
 *.dmg
 *.deb

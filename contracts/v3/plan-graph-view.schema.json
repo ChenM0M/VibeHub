@@ -6,7 +6,7 @@
   "required": ["schema_version", "project_id", "task_id", "plan_version", "generated_at", "model_version", "freshness", "completeness", "graph_state", "nodes", "scheduling_edges", "trace_relations", "execution", "evidence_refs", "warnings", "errors"],
   "properties": {
     "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" }, "project_id": { "$ref": "common.schema.json#/$defs/StableId" }, "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
-    "plan_version": { "type": "integer", "minimum": 1 }, "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "model_version": { "type": "string", "minLength": 1 },
+    "plan_version": { "type": "integer", "minimum": 0 }, "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "model_version": { "type": "string", "minLength": 1 },
     "freshness": { "$ref": "common.schema.json#/$defs/Freshness" }, "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
     "graph_state": { "enum": ["valid", "cycle", "unknown_node", "changed", "stale"] },
     "nodes": {
@@ -17,6 +17,7 @@
           "node_id": { "$ref": "common.schema.json#/$defs/StableId" }, "title": { "type": "string", "minLength": 1 }, "goal": { "type": "string", "minLength": 1 },
           "state": { "enum": ["planned", "ready", "active", "blocked", "review", "completed", "cancelled", "superseded"] },
           "readiness": { "enum": ["ready", "blocked", "unknown"] }, "block_reasons": { "type": "array", "items": { "type": "string" } },
+          "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
           "scope": { "type": "array", "items": { "type": "string" } }, "criterion_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } },
           "session_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" }, "uniqueItems": true },
           "worktree": { "anyOf": [{ "$ref": "common.schema.json#/$defs/WorktreeRef" }, { "type": "null" }] }

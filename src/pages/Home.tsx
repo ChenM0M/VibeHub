@@ -30,7 +30,24 @@ import { SortableProjectCard } from '@/components/SortableProjectCard';
 import { V3Cockpit } from '@/v3/app/V3Cockpit';
 import { isV3PlaygroundRequested, V3_DEBUG_ENABLED } from '@/v3/debug';
 import { loadV3ProductionViews } from '@/services/v3ProductionViews';
+import { loadLegacyV2Archive } from '@/services/legacyV2';
 import { useV3Store } from '@/v3/stores/v3Store';
+import { tauriApi } from '@/services/tauri';
+import type { V3LifecycleApi, V3ProjectSettingsApi } from '@/v3/stores/v3Store';
+
+const productionProjectSettingsApi: V3ProjectSettingsApi = {
+    get: tauriApi.v3GetProjectSettings,
+    update: tauriApi.v3UpdateProjectSettings,
+    inspectSpecs: tauriApi.v3AgentSpecsStatus,
+    syncSpecs: (projectPath, forceManagedRegion) => tauriApi.v3AgentSpecsSync(projectPath, { force_managed_region: forceManagedRegion }),
+};
+
+const productionLifecycleApi: V3LifecycleApi = {
+    inspect: tauriApi.v3InspectProjectLayout,
+    initialize: tauriApi.v3InitializeProject,
+    migrate: tauriApi.v3MigrateProject,
+    recover: tauriApi.v3RecoverProjectMigration,
+};
 
 interface HomeProps {
     searchQuery: string;
@@ -102,6 +119,7 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
     if (showV3Playground) {
         return (
             <V3Cockpit
+                initialSourceMode="fixture"
                 debugMode
                 onBack={() => {
                     const url = new URL(window.location.href);
@@ -167,8 +185,22 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
     if (selectedProject) {
         return (
             <V3Cockpit
+                initialSourceMode="production"
                 projectPath={selectedProject.path}
                 productionLoader={loadV3ProductionViews}
+                legacyLoader={loadLegacyV2Archive}
+                usageLoader={tauriApi.vibehubReadLocalAgentUsage}
+                lifecycleApi={productionLifecycleApi}
+                projectSettingsApi={productionProjectSettingsApi}
+                planApi={{
+                    addNode: tauriApi.v3PlanAddNode,
+                    setDependencies: tauriApi.v3PlanSetDependencies,
+                    setState: tauriApi.v3PlanSetState,
+                }}
+                openLegacyFile={tauriApi.vibehubOpenVibehubFile}
+                revealProjectFile={tauriApi.vibehubRevealProjectFile}
+                openProjectFile={tauriApi.vibehubOpenProjectFile}
+                createTask={tauriApi.v3CreateTask}
                 debugMode={V3_DEBUG_ENABLED}
                 onBack={() => {
                     leaveV3Project();

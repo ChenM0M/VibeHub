@@ -1,9 +1,0 @@
-schema_version: 1
-kind: vibehub_task
-task_id: T-20260711062223-6f07315c
-title: 完善 VibeHub V3 重设计方案与 Agent 集成架构
-mode: evidence_drive
-phase: plan
-phase_status: completed
-created_at: 2026-07-11T06:22:23Z
-created_by: vibehub
