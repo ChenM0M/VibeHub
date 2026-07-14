@@ -24,13 +24,19 @@
       "contract": "project_overview",
       "schema": "project-overview-view.schema.json",
       "file": "project-overview.json",
-      "sha256": "6117ede5773ac8a0502b97ab95d881782916476c52da8401e2715ccba558ef8e"
+      "sha256": "f960cd690d56b70eb562fb251132fce941892cced5a3a6ed590a9e5388c055ee"
     },
     {
       "contract": "project_structure",
       "schema": "project-structure-view.schema.json",
       "file": "project-structure.json",
-      "sha256": "d9ff55640f367ca2c2b49d14a4b758a170a481d477bfe98fe5632c295d6e5b17"
+      "sha256": "367b6f73a20e819c603f6ba1ad6d7c550d4908f2a351e9e6f150585335cfe825"
+    },
+    {
+      "contract": "agent_results",
+      "schema": "agent-results-view.schema.json",
+      "file": "agent-results.json",
+      "sha256": "2a5c6d4d1726ca157190e789ea65ee3fa302834e6cb83400c61df041f569ec41"
     },
     {
       "contract": "task_timeline",

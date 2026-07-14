@@ -10,10 +10,13 @@ use std::sync::{Arc, RwLock};
 
 pub const DEFAULT_PAGE_SIZE: usize = 200;
 pub const MAX_PAGE_SIZE: usize = 500;
+pub const PROJECT_MODEL_INDEX_PATH: &str = ".vibehub/indexes/project-model.json";
 const SNAPSHOT_SCHEMA: u32 = 1;
-const ANALYZER_REGISTRY_VERSION: &str = "project-intelligence-1";
+const ANALYZER_REGISTRY_VERSION: &str = "project-intelligence-2";
+const ANALYZER_FINDING_VERSION: &str = "2";
 const IGNORED_DIRS: &[&str] = &[
     ".git",
+    ".vibehub",
     ".next",
     ".turbo",
     ".vite",
@@ -43,13 +46,23 @@ pub struct ProjectModelSnapshot {
     pub warnings: Vec<IndexWarning>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AnalyzerFinding {
     pub analyzer: String,
     pub version: String,
+    /// Stable finding category. Relationship findings use `target` and, when
+    /// the target is local, `target_path` to identify the other endpoint.
     pub kind: String,
+    /// Project-relative evidence/source path for this observation.
     pub path: String,
     pub label: String,
+    /// Canonical package, crate, module, or import identifier when one exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// Resolved project-relative target path. Missing means external or not
+    /// safely resolvable; old snapshots deserialize it as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,6 +113,7 @@ pub enum InvalidationUnit {
 
 pub fn invalidation_units(path: &str) -> BTreeSet<InvalidationUnit> {
     let normalized = path.replace('\\', "/");
+    let lower = normalized.to_ascii_lowercase();
     let name = Path::new(&normalized)
         .file_name()
         .and_then(|value| value.to_str())
@@ -112,15 +126,24 @@ pub fn invalidation_units(path: &str) -> BTreeSet<InvalidationUnit> {
     ) {
         units.insert(InvalidationUnit::ManifestWorkspace);
     }
-    if normalized.starts_with("docs/adr/") || name.starts_with("readme") {
+    let document_extension = Path::new(&lower)
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| matches!(value, "md" | "mdx" | "rst" | "txt" | "adoc"));
+    if is_under_path(&lower, "docs/adr")
+        || is_under_path(&lower, "docs/rfc")
+        || is_under_path(&lower, "docs/v3/rfc-backlog")
+        || name.starts_with("readme")
+        || (document_extension && (lower.contains("architecture") || lower.contains("redesign")))
+    {
         units.insert(InvalidationUnit::DeclaredDocumentation);
     }
-    if matches!(
-        Path::new(&normalized)
-            .extension()
-            .and_then(|value| value.to_str()),
-        Some("rs" | "ts" | "tsx" | "js" | "jsx" | "py")
-    ) {
+    if Path::new(&lower)
+        .extension()
+        .and_then(|value| value.to_str())
+        .and_then(source_capability)
+        .is_some()
+    {
         units.insert(InvalidationUnit::ImportsSymbols);
     }
     units
@@ -153,6 +176,40 @@ impl ProjectIndexService {
         self.page(".", None, DEFAULT_PAGE_SIZE)
     }
 
+    pub fn snapshot_path(&self) -> PathBuf {
+        self.root.join(PROJECT_MODEL_INDEX_PATH)
+    }
+
+    /// Load the current JSON project model or rebuild and atomically publish it
+    /// when the persisted fingerprint no longer matches the working tree.
+    pub fn current_snapshot(&self) -> std::io::Result<ProjectModelSnapshot> {
+        let head = git_output(&self.root, &["rev-parse", "HEAD"]);
+        let status = git_status(&self.root);
+        let expected_model_version = model_version(&self.root, head.as_deref(), &status);
+        let destination = self.snapshot_path();
+
+        if let Ok(snapshot) = self.load_snapshot(&destination) {
+            if snapshot.model_version == expected_model_version {
+                *self
+                    .cached_index
+                    .write()
+                    .map_err(|_| std::io::Error::other("project index cache poisoned"))? =
+                    Some(snapshot.clone());
+                return Ok(snapshot);
+            }
+        }
+
+        let snapshot = self.full_index()?;
+        self.publish_snapshot(&snapshot, &destination)?;
+        let persisted = self.load_snapshot(&destination)?;
+        *self
+            .cached_index
+            .write()
+            .map_err(|_| std::io::Error::other("project index cache poisoned"))? =
+            Some(persisted.clone());
+        Ok(persisted)
+    }
+
     pub fn search(&self, query: &str, limit: usize) -> std::io::Result<ProjectPage> {
         let query = query.trim().to_ascii_lowercase();
         if query.is_empty() {
@@ -171,14 +228,8 @@ impl ProjectIndexService {
         let status = git_status(&self.root);
         let model_version = model_version(&self.root, head.as_deref(), &status);
         let git_states = git_states_from_status(&status);
-        let files = git_output(
-            &self.root,
-            &["ls-files", "--cached", "--others", "--exclude-standard"],
-        )
-        .unwrap_or_default();
-        let matches: Vec<String> = files
-            .lines()
-            .map(|path| path.replace('\\', "/"))
+        let matches: Vec<String> = project_files(&self.root)
+            .into_iter()
             .filter(|path| path.to_ascii_lowercase().contains(&query))
             .take(limit)
             .collect();
@@ -218,7 +269,7 @@ impl ProjectIndexService {
                 root: self.root.to_string_lossy().into_owned(),
                 source_head: head,
                 indexed_files: git_tracked_count(&self.root),
-                analyzer_findings: analyze_declared_project(&self.root),
+                analyzer_findings: analyze_project(&self.root),
                 nodes,
                 warnings: Vec::new(),
             },
@@ -234,16 +285,7 @@ impl ProjectIndexService {
         let status = git_status(&self.root);
         let model_version = model_version(&self.root, head.as_deref(), &status);
         let git_states = git_states_from_status(&status);
-        let listing = git_output(
-            &self.root,
-            &["ls-files", "--cached", "--others", "--exclude-standard"],
-        )
-        .unwrap_or_default();
-        let files: Vec<String> = listing
-            .lines()
-            .map(|path| path.replace('\\', "/"))
-            .filter(|path| !path.is_empty())
-            .collect();
+        let files = project_files(&self.root);
         let mut directories = BTreeSet::new();
         for file in &files {
             let mut parent = Path::new(file).parent();
@@ -425,7 +467,7 @@ impl ProjectIndexService {
                 root: self.root.to_string_lossy().into_owned(),
                 source_head: head,
                 indexed_files: git_tracked_count(&self.root),
-                analyzer_findings: analyze_declared_project(&self.root),
+                analyzer_findings: analyze_project(&self.root),
                 nodes,
                 warnings,
             },
@@ -616,25 +658,28 @@ fn model_version(root: &Path, head: Option<&str>, status: &str) -> String {
 }
 
 fn analyze_project(root: &Path) -> Vec<AnalyzerFinding> {
-    let mut findings = analyze_declared_project(root);
-    let source_files = git_output(
-        root,
-        &["ls-files", "--cached", "--others", "--exclude-standard"],
-    )
-    .unwrap_or_default();
-    let mut capabilities = BTreeSet::new();
-    for path in source_files.lines() {
+    let files = project_files(root);
+    let mut findings = analyze_declared_project(root, &files);
+    let local_targets = local_target_paths(&findings);
+    let mut capabilities = BTreeMap::<String, bool>::new();
+
+    for path in &files {
         let extension = Path::new(path)
             .extension()
             .and_then(|value| value.to_str())
-            .unwrap_or("");
-        let analyzer = match extension {
-            "rs" => "rust_imports",
-            "ts" | "tsx" | "js" | "jsx" => "javascript_imports",
-            "py" => "python_imports",
-            _ => continue,
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let Some((analyzer, supported)) = source_capability(&extension) else {
+            continue;
         };
-        capabilities.insert(analyzer);
+        capabilities
+            .entry(analyzer.to_owned())
+            .and_modify(|value| *value |= supported)
+            .or_insert(supported);
+        if !supported {
+            continue;
+        }
+
         let full_path = root.join(path);
         let Ok(metadata) = fs::metadata(&full_path) else {
             continue;
@@ -648,84 +693,1104 @@ fn analyze_project(root: &Path) -> Vec<AnalyzerFinding> {
         for line in content
             .lines()
             .map(str::trim)
-            .filter(|line| static_import_line(analyzer, line))
-            .take(128)
+            .filter(|line| !line.is_empty())
         {
-            findings.push(AnalyzerFinding {
-                analyzer: analyzer.into(),
-                version: "1".into(),
-                kind: "static_import".into(),
-                path: path.replace('\\', "/"),
-                label: line.chars().take(240).collect(),
-            });
+            let Some((target, target_path)) =
+                resolve_static_import(root, path, analyzer, line, &local_targets)
+            else {
+                continue;
+            };
+            findings.push(analyzer_finding(
+                analyzer,
+                "static_import",
+                path,
+                line.chars().take(240).collect::<String>(),
+                Some(target),
+                target_path,
+            ));
         }
     }
-    findings.extend(capabilities.into_iter().map(|analyzer| AnalyzerFinding {
-        analyzer: analyzer.into(),
-        version: "1".into(),
-        kind: "capability".into(),
-        path: ".".into(),
-        label: "Static import extraction available".into(),
+
+    findings.extend(capabilities.into_iter().map(|(analyzer, supported)| {
+        analyzer_finding(
+            &analyzer,
+            "capability",
+            ".",
+            if supported {
+                "Static import extraction available"
+            } else {
+                "Static import extraction unsupported"
+            },
+            Some(
+                if supported {
+                    "supported"
+                } else {
+                    "unsupported"
+                }
+                .to_owned(),
+            ),
+            None,
+        )
     }));
+    findings.sort();
+    findings.dedup();
     findings
 }
 
-fn analyze_declared_project(root: &Path) -> Vec<AnalyzerFinding> {
-    const CANDIDATES: &[(&str, &str, &str)] = &[
-        ("Cargo.toml", "cargo", "manifest"),
-        ("package.json", "npm", "manifest"),
-        ("pyproject.toml", "python", "manifest"),
-        ("README.md", "documentation", "readme"),
-        ("README", "documentation", "readme"),
-    ];
+fn analyzer_finding(
+    analyzer: &str,
+    kind: &str,
+    path: &str,
+    label: impl Into<String>,
+    target: Option<String>,
+    target_path: Option<String>,
+) -> AnalyzerFinding {
+    AnalyzerFinding {
+        analyzer: analyzer.to_owned(),
+        version: ANALYZER_FINDING_VERSION.to_owned(),
+        kind: kind.to_owned(),
+        path: path.replace('\\', "/"),
+        label: label.into(),
+        target,
+        target_path,
+    }
+}
+
+fn analyze_declared_project(root: &Path, files: &[String]) -> Vec<AnalyzerFinding> {
     let mut findings = Vec::new();
-    for (path, analyzer, kind) in CANDIDATES {
-        if root.join(path).is_file() {
-            findings.push(AnalyzerFinding {
-                analyzer: (*analyzer).into(),
-                version: "1".into(),
-                kind: (*kind).into(),
-                path: (*path).into(),
-                label: root
-                    .file_name()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or("project")
-                    .into(),
-            });
+    analyze_cargo_manifests(root, files, &mut findings);
+    analyze_npm_manifests(root, files, &mut findings);
+    analyze_python_manifests(root, files, &mut findings);
+    analyze_architecture_documents(root, files, &mut findings);
+    findings
+}
+
+fn analyze_cargo_manifests(root: &Path, files: &[String], findings: &mut Vec<AnalyzerFinding>) {
+    let mut manifests = BTreeMap::<String, toml::Value>::new();
+    for path in files.iter().filter(|path| {
+        Path::new(path).file_name().and_then(|value| value.to_str()) == Some("Cargo.toml")
+    }) {
+        match fs::read_to_string(root.join(path))
+            .map_err(|error| error.to_string())
+            .and_then(|content| {
+                toml::from_str::<toml::Value>(&content).map_err(|error| error.to_string())
+            }) {
+            Ok(value) => {
+                manifests.insert(path.clone(), value);
+            }
+            Err(error) => findings.push(analyzer_finding(
+                "cargo",
+                "analyzer_error",
+                path,
+                format!("Manifest parse failed: {}", truncate(&error, 240)),
+                None,
+                None,
+            )),
         }
     }
-    let adr = root.join("docs/adr");
-    if adr.is_dir() {
-        findings.push(AnalyzerFinding {
-            analyzer: "documentation".into(),
-            version: "1".into(),
-            kind: "adr_directory".into(),
-            path: "docs/adr".into(),
-            label: "Architecture decisions".into(),
-        });
+
+    let mut packages_by_dir = BTreeMap::<String, String>::new();
+    let mut packages_by_name = BTreeMap::<String, String>::new();
+    for (path, value) in &manifests {
+        let directory = manifest_directory(path);
+        if let Some(name) = cargo_package_name(value) {
+            packages_by_dir.insert(directory.clone(), name.clone());
+            packages_by_name
+                .entry(name.clone())
+                .or_insert(directory.clone());
+            findings.push(analyzer_finding(
+                "cargo",
+                "package_manifest",
+                path,
+                &name,
+                Some(name.clone()),
+                Some(directory.clone()),
+            ));
+        }
+        if value
+            .get("workspace")
+            .and_then(toml::Value::as_table)
+            .is_some()
+        {
+            let label =
+                cargo_package_name(value).unwrap_or_else(|| project_label(root, &directory));
+            findings.push(analyzer_finding(
+                "cargo",
+                "workspace_manifest",
+                path,
+                label,
+                None,
+                Some(directory),
+            ));
+        }
     }
-    findings
+
+    for (path, value) in &manifests {
+        let Some(workspace) = value.get("workspace").and_then(toml::Value::as_table) else {
+            continue;
+        };
+        let workspace_dir = manifest_directory(path);
+        let members = string_array(workspace.get("members"));
+        let excludes = string_array(workspace.get("exclude"));
+        for (directory, name) in &packages_by_dir {
+            if directory == &workspace_dir {
+                continue;
+            }
+            let relative = relative_to_directory(&workspace_dir, directory);
+            if matches_any_path_pattern(&members, &relative)
+                && !matches_any_path_pattern(&excludes, &relative)
+            {
+                findings.push(analyzer_finding(
+                    "cargo",
+                    "workspace_member",
+                    path,
+                    name,
+                    Some(name.clone()),
+                    Some(directory.clone()),
+                ));
+            }
+        }
+    }
+
+    for (path, value) in &manifests {
+        let directory = manifest_directory(path);
+        for (name, dependency) in cargo_dependencies(value) {
+            let (dependency_directory, effective_dependency) = if dependency
+                .as_table()
+                .and_then(|table| table.get("workspace"))
+                .and_then(toml::Value::as_bool)
+                == Some(true)
+            {
+                nearest_workspace_dependency(&manifests, &directory, name)
+                    .unwrap_or_else(|| (directory.clone(), dependency))
+            } else {
+                (directory.clone(), dependency)
+            };
+            let declared_target = effective_dependency
+                .as_table()
+                .and_then(|table| table.get("package"))
+                .and_then(toml::Value::as_str)
+                .unwrap_or(name)
+                .to_owned();
+            let declared_path = effective_dependency
+                .as_table()
+                .and_then(|table| table.get("path"))
+                .and_then(toml::Value::as_str);
+            let mut target_path = declared_path
+                .and_then(|path| resolve_relative_path(&dependency_directory, path))
+                .and_then(|path| cargo_package_directory(&path, &packages_by_dir));
+            if target_path.is_none() {
+                target_path = packages_by_name
+                    .get(&declared_target)
+                    .or_else(|| packages_by_name.get(name))
+                    .cloned();
+            }
+            let target = target_path
+                .as_ref()
+                .and_then(|path| packages_by_dir.get(path))
+                .cloned()
+                .unwrap_or(declared_target);
+            findings.push(analyzer_finding(
+                "cargo",
+                "dependency",
+                path,
+                name,
+                Some(target),
+                target_path,
+            ));
+        }
+    }
 }
 
+fn analyze_npm_manifests(root: &Path, files: &[String], findings: &mut Vec<AnalyzerFinding>) {
+    let mut manifests = BTreeMap::<String, serde_json::Value>::new();
+    for path in files.iter().filter(|path| {
+        Path::new(path).file_name().and_then(|value| value.to_str()) == Some("package.json")
+    }) {
+        match fs::read_to_string(root.join(path))
+            .map_err(|error| error.to_string())
+            .and_then(|content| serde_json::from_str(&content).map_err(|error| error.to_string()))
+        {
+            Ok(value) => {
+                manifests.insert(path.clone(), value);
+            }
+            Err(error) => findings.push(analyzer_finding(
+                "npm",
+                "analyzer_error",
+                path,
+                format!("Manifest parse failed: {}", truncate(&error, 240)),
+                None,
+                None,
+            )),
+        }
+    }
+
+    let mut packages_by_dir = BTreeMap::<String, String>::new();
+    let mut packages_by_name = BTreeMap::<String, String>::new();
+    for (path, value) in &manifests {
+        let directory = manifest_directory(path);
+        let name = value
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .unwrap_or_else(|| project_label(root, &directory));
+        packages_by_dir.insert(directory.clone(), name.clone());
+        packages_by_name
+            .entry(name.clone())
+            .or_insert(directory.clone());
+        findings.push(analyzer_finding(
+            "npm",
+            "package_manifest",
+            path,
+            &name,
+            Some(name.clone()),
+            Some(directory.clone()),
+        ));
+        if value.get("workspaces").is_some() {
+            findings.push(analyzer_finding(
+                "npm",
+                "workspace_manifest",
+                path,
+                value
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_else(|| packages_by_dir[&directory].as_str()),
+                None,
+                Some(directory),
+            ));
+        }
+    }
+
+    for (path, value) in &manifests {
+        let workspace_dir = manifest_directory(path);
+        let members = npm_workspace_patterns(value);
+        if members.is_empty() {
+            continue;
+        }
+        for (directory, name) in &packages_by_dir {
+            if directory == &workspace_dir {
+                continue;
+            }
+            let relative = relative_to_directory(&workspace_dir, directory);
+            if matches_any_path_pattern(&members, &relative) {
+                findings.push(analyzer_finding(
+                    "npm",
+                    "workspace_member",
+                    path,
+                    name,
+                    Some(name.clone()),
+                    Some(directory.clone()),
+                ));
+            }
+        }
+    }
+
+    for (path, value) in &manifests {
+        let directory = manifest_directory(path);
+        for section in [
+            "dependencies",
+            "devDependencies",
+            "peerDependencies",
+            "optionalDependencies",
+        ] {
+            let Some(dependencies) = value.get(section).and_then(serde_json::Value::as_object)
+            else {
+                continue;
+            };
+            for (name, requirement) in dependencies {
+                let requirement = requirement.as_str().unwrap_or("");
+                let mut target = npm_alias_target(requirement).unwrap_or_else(|| name.clone());
+                let mut target_path = npm_local_path(requirement)
+                    .and_then(|path| resolve_relative_path(&directory, path))
+                    .and_then(|path| npm_package_directory(&path, &packages_by_dir));
+                if target_path.is_none() {
+                    target_path = packages_by_name
+                        .get(&target)
+                        .or_else(|| packages_by_name.get(name))
+                        .cloned();
+                }
+                if let Some(package_name) = target_path
+                    .as_ref()
+                    .and_then(|path| packages_by_dir.get(path))
+                {
+                    target = package_name.clone();
+                }
+                findings.push(analyzer_finding(
+                    "npm",
+                    "dependency",
+                    path,
+                    name,
+                    Some(target),
+                    target_path,
+                ));
+            }
+        }
+    }
+}
+
+fn analyze_python_manifests(root: &Path, files: &[String], findings: &mut Vec<AnalyzerFinding>) {
+    for path in files.iter().filter(|path| {
+        Path::new(path).file_name().and_then(|value| value.to_str()) == Some("pyproject.toml")
+    }) {
+        let value = match fs::read_to_string(root.join(path))
+            .map_err(|error| error.to_string())
+            .and_then(|content| {
+                toml::from_str::<toml::Value>(&content).map_err(|error| error.to_string())
+            }) {
+            Ok(value) => value,
+            Err(error) => {
+                findings.push(analyzer_finding(
+                    "python",
+                    "analyzer_error",
+                    path,
+                    format!("Manifest parse failed: {}", truncate(&error, 240)),
+                    None,
+                    None,
+                ));
+                continue;
+            }
+        };
+        let directory = manifest_directory(path);
+        let name = value
+            .get("project")
+            .and_then(|value| value.get("name"))
+            .or_else(|| {
+                value
+                    .get("tool")
+                    .and_then(|value| value.get("poetry"))
+                    .and_then(|value| value.get("name"))
+            })
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned)
+            .unwrap_or_else(|| project_label(root, &directory));
+        findings.push(analyzer_finding(
+            "python",
+            "package_manifest",
+            path,
+            &name,
+            Some(name.clone()),
+            Some(directory),
+        ));
+    }
+}
+
+fn analyze_architecture_documents(
+    root: &Path,
+    files: &[String],
+    findings: &mut Vec<AnalyzerFinding>,
+) {
+    for path in files {
+        let lower = path.to_ascii_lowercase();
+        let is_readme = !lower.contains('/')
+            && matches!(
+                lower.as_str(),
+                "readme" | "readme.md" | "readme.rst" | "readme.txt" | "readme.adoc"
+            );
+        let extension = Path::new(&lower)
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        let document = matches!(extension, "md" | "mdx" | "rst" | "txt" | "adoc");
+        let declared_architecture = document
+            && (is_under_path(&lower, "docs/adr")
+                || is_under_path(&lower, "docs/rfc")
+                || is_under_path(&lower, "docs/v3/rfc-backlog")
+                || lower.contains("architecture")
+                || lower.contains("redesign"));
+        let kind = if is_readme {
+            "readme"
+        } else if declared_architecture {
+            "architecture_document"
+        } else {
+            continue;
+        };
+        findings.push(analyzer_finding(
+            "documentation",
+            kind,
+            path,
+            document_label(root, path),
+            None,
+            Some(path.clone()),
+        ));
+    }
+}
+
+fn cargo_package_name(value: &toml::Value) -> Option<String> {
+    value
+        .get("package")?
+        .get("name")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn cargo_dependencies(value: &toml::Value) -> Vec<(&str, &toml::Value)> {
+    fn append_table<'a>(
+        value: Option<&'a toml::Value>,
+        output: &mut Vec<(&'a str, &'a toml::Value)>,
+    ) {
+        if let Some(table) = value.and_then(toml::Value::as_table) {
+            output.extend(table.iter().map(|(name, value)| (name.as_str(), value)));
+        }
+    }
+
+    let mut dependencies = Vec::new();
+    for key in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        append_table(value.get(key), &mut dependencies);
+    }
+    if let Some(workspace) = value.get("workspace") {
+        append_table(workspace.get("dependencies"), &mut dependencies);
+    }
+    if let Some(targets) = value.get("target").and_then(toml::Value::as_table) {
+        for target in targets.values() {
+            for key in ["dependencies", "dev-dependencies", "build-dependencies"] {
+                append_table(target.get(key), &mut dependencies);
+            }
+        }
+    }
+    dependencies
+}
+
+fn nearest_workspace_dependency<'a>(
+    manifests: &'a BTreeMap<String, toml::Value>,
+    package_directory: &str,
+    dependency: &str,
+) -> Option<(String, &'a toml::Value)> {
+    manifests
+        .iter()
+        .filter_map(|(path, value)| {
+            let workspace_directory = manifest_directory(path);
+            let contains_package = workspace_directory == "."
+                || package_directory == workspace_directory
+                || package_directory.starts_with(&format!("{workspace_directory}/"));
+            contains_package
+                .then(|| {
+                    value
+                        .get("workspace")?
+                        .get("dependencies")?
+                        .get(dependency)
+                        .map(|value| {
+                            (
+                                workspace_directory.len(),
+                                workspace_directory.clone(),
+                                value,
+                            )
+                        })
+                })
+                .flatten()
+        })
+        .max_by_key(|(depth, _, _)| *depth)
+        .map(|(_, directory, value)| (directory, value))
+}
+
+fn string_array(value: Option<&toml::Value>) -> Vec<String> {
+    value
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_str)
+        .map(|value| value.replace('\\', "/").trim_end_matches('/').to_owned())
+        .collect()
+}
+
+fn npm_workspace_patterns(value: &serde_json::Value) -> Vec<String> {
+    let workspaces = value.get("workspaces");
+    let packages = workspaces
+        .and_then(serde_json::Value::as_array)
+        .or_else(|| {
+            workspaces
+                .and_then(serde_json::Value::as_object)
+                .and_then(|value| value.get("packages"))
+                .and_then(serde_json::Value::as_array)
+        });
+    packages
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(|value| value.replace('\\', "/").trim_end_matches('/').to_owned())
+        .collect()
+}
+
+fn npm_alias_target(requirement: &str) -> Option<String> {
+    let alias = requirement.strip_prefix("npm:")?;
+    if alias.starts_with('@') {
+        let slash = alias.find('/')?;
+        let version = alias[slash + 1..]
+            .find('@')
+            .map(|offset| slash + 1 + offset)
+            .unwrap_or(alias.len());
+        Some(alias[..version].to_owned())
+    } else {
+        Some(alias.split('@').next().unwrap_or(alias).to_owned())
+    }
+}
+
+fn npm_local_path(requirement: &str) -> Option<&str> {
+    for prefix in ["file:", "link:", "portal:"] {
+        if let Some(path) = requirement.strip_prefix(prefix) {
+            return Some(path);
+        }
+    }
+    if requirement.starts_with("./") || requirement.starts_with("../") {
+        Some(requirement)
+    } else {
+        requirement
+            .strip_prefix("workspace:")
+            .filter(|value| value.starts_with("./") || value.starts_with("../"))
+    }
+}
+
+fn cargo_package_directory(
+    path: &str,
+    packages_by_dir: &BTreeMap<String, String>,
+) -> Option<String> {
+    let directory = if path.ends_with("/Cargo.toml") {
+        manifest_directory(path)
+    } else {
+        path.trim_end_matches('/').to_owned()
+    };
+    packages_by_dir
+        .contains_key(&directory)
+        .then_some(directory)
+}
+
+fn npm_package_directory(path: &str, packages_by_dir: &BTreeMap<String, String>) -> Option<String> {
+    let directory = if path.ends_with("/package.json") {
+        manifest_directory(path)
+    } else {
+        path.trim_end_matches('/').to_owned()
+    };
+    packages_by_dir
+        .contains_key(&directory)
+        .then_some(directory)
+}
+
+fn local_target_paths(findings: &[AnalyzerFinding]) -> BTreeMap<String, String> {
+    let mut targets = BTreeMap::new();
+    for finding in findings {
+        let Some(path) = finding.target_path.as_ref() else {
+            continue;
+        };
+        if let Some(target) = finding.target.as_ref() {
+            targets
+                .entry(target.clone())
+                .or_insert_with(|| path.clone());
+            targets
+                .entry(target.replace('-', "_"))
+                .or_insert_with(|| path.clone());
+        }
+        if finding.kind == "dependency" {
+            targets
+                .entry(finding.label.clone())
+                .or_insert_with(|| path.clone());
+            targets
+                .entry(finding.label.replace('-', "_"))
+                .or_insert_with(|| path.clone());
+        }
+    }
+    targets
+}
+
+fn source_capability(extension: &str) -> Option<(&'static str, bool)> {
+    Some(match extension {
+        "rs" => ("rust_imports", true),
+        "ts" | "tsx" | "js" | "jsx" | "mts" | "cts" | "mjs" | "cjs" => ("javascript_imports", true),
+        "py" | "pyi" => ("python_imports", true),
+        "go" => ("go_imports", false),
+        "java" => ("java_imports", false),
+        "kt" | "kts" => ("kotlin_imports", false),
+        "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" => ("c_cpp_imports", false),
+        "cs" => ("csharp_imports", false),
+        "rb" => ("ruby_imports", false),
+        "php" => ("php_imports", false),
+        "swift" => ("swift_imports", false),
+        "scala" => ("scala_imports", false),
+        "dart" => ("dart_imports", false),
+        "ex" | "exs" => ("elixir_imports", false),
+        "lua" => ("lua_imports", false),
+        "vue" => ("vue_imports", false),
+        "svelte" => ("svelte_imports", false),
+        "m" | "mm" => ("objective_c_imports", false),
+        "fs" | "fsx" => ("fsharp_imports", false),
+        "hs" | "lhs" => ("haskell_imports", false),
+        "zig" => ("zig_imports", false),
+        "sh" | "bash" | "zsh" => ("shell_imports", false),
+        "r" => ("r_imports", false),
+        "groovy" => ("groovy_imports", false),
+        "sol" => ("solidity_imports", false),
+        "pl" | "pm" => ("perl_imports", false),
+        "ml" | "mli" => ("ocaml_imports", false),
+        "clj" | "cljs" => ("clojure_imports", false),
+        "erl" | "hrl" => ("erlang_imports", false),
+        _ => return None,
+    })
+}
+
+fn resolve_static_import(
+    root: &Path,
+    source_path: &str,
+    analyzer: &str,
+    line: &str,
+    local_targets: &BTreeMap<String, String>,
+) -> Option<(String, Option<String>)> {
+    match analyzer {
+        "javascript_imports" => {
+            let specifier = javascript_import_target(line)?;
+            if specifier.starts_with('.') {
+                let base = manifest_directory(source_path);
+                let candidate = resolve_relative_path(&base, &specifier)?;
+                let target_path = resolve_source_file(
+                    root,
+                    &candidate,
+                    &["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs", "json"],
+                );
+                Some((specifier, target_path))
+            } else {
+                let package = javascript_package_name(&specifier);
+                let target_path = local_targets
+                    .get(&package)
+                    .cloned()
+                    .and_then(|package_path| {
+                        let suffix = specifier
+                            .strip_prefix(&package)
+                            .unwrap_or("")
+                            .trim_start_matches('/');
+                        if suffix.is_empty() {
+                            Some(package_path)
+                        } else {
+                            let candidate = resolve_relative_path(&package_path, suffix)?;
+                            resolve_source_file(
+                                root,
+                                &candidate,
+                                &["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs", "json"],
+                            )
+                            .or(Some(package_path))
+                        }
+                    });
+                Some((package, target_path))
+            }
+        }
+        "rust_imports" => {
+            let (target, is_module_declaration) = rust_import_target(line)?;
+            let first = target
+                .trim_start_matches("::")
+                .split("::")
+                .next()
+                .unwrap_or("")
+                .trim_start_matches("r#");
+            let target_path =
+                if matches!(first, "crate" | "self" | "super") || is_module_declaration {
+                    resolve_rust_target(root, source_path, &target, is_module_declaration)
+                } else {
+                    local_targets.get(first).cloned()
+                };
+            Some((target, target_path))
+        }
+        "python_imports" => {
+            let target = python_import_target(line)?;
+            let target_path = resolve_python_target(root, source_path, &target);
+            Some((target, target_path))
+        }
+        _ => None,
+    }
+}
+
+fn javascript_import_target(line: &str) -> Option<String> {
+    let line = line.trim();
+    let relevant = if line.starts_with("import ") && !line.starts_with("import(") {
+        line
+    } else if line.starts_with("export ") && line.contains(" from ") {
+        line.split_once(" from ").map(|(_, value)| value)?
+    } else if line.contains("require(") {
+        line.split_once("require(").map(|(_, value)| value)?
+    } else {
+        return None;
+    };
+    first_quoted(relevant).map(str::to_owned)
+}
+
+fn javascript_package_name(specifier: &str) -> String {
+    let specifier = specifier.split(['?', '#']).next().unwrap_or(specifier);
+    if specifier.starts_with('@') {
+        specifier.split('/').take(2).collect::<Vec<_>>().join("/")
+    } else {
+        specifier.split('/').next().unwrap_or(specifier).to_owned()
+    }
+}
+
+fn rust_import_target(line: &str) -> Option<(String, bool)> {
+    let mut line = line.trim();
+    if let Some(visible) = line.strip_prefix("pub ") {
+        line = visible;
+    } else if let Some(restricted) = line.strip_prefix("pub(") {
+        line = restricted.split_once(") ")?.1;
+    }
+    if let Some(module) = line.strip_prefix("mod ") {
+        let module = module
+            .trim_end_matches(';')
+            .split_whitespace()
+            .next()?
+            .trim_start_matches("r#");
+        return (!module.is_empty()).then(|| (module.to_owned(), true));
+    }
+    let import = line.strip_prefix("use ")?.trim_end_matches(';').trim();
+    let import = import.split(" as ").next().unwrap_or(import).trim();
+    let import = import
+        .split('{')
+        .next()
+        .unwrap_or(import)
+        .trim_end_matches(':')
+        .trim();
+    (!import.is_empty()).then(|| (import.to_owned(), false))
+}
+
+fn python_import_target(line: &str) -> Option<String> {
+    let line = line.trim();
+    if let Some(import) = line.strip_prefix("import ") {
+        let target = import.split(',').next()?.split_whitespace().next()?.trim();
+        return (!target.is_empty()).then(|| target.to_owned());
+    }
+    let target = line.strip_prefix("from ")?.split_whitespace().next()?;
+    (!target.is_empty()).then(|| target.to_owned())
+}
+
+fn resolve_rust_target(
+    root: &Path,
+    source_path: &str,
+    target: &str,
+    is_module_declaration: bool,
+) -> Option<String> {
+    let source = Path::new(source_path);
+    let source_dir = manifest_directory(source_path);
+    let mut segments: Vec<&str> = target
+        .trim_start_matches("::")
+        .split("::")
+        .map(|value| value.trim_start_matches("r#"))
+        .filter(|value| !value.is_empty())
+        .collect();
+    let base = if is_module_declaration {
+        let stem = source
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        if matches!(stem, "lib" | "main" | "mod") {
+            source_dir
+        } else {
+            resolve_relative_path(&source_dir, stem)?
+        }
+    } else {
+        match segments.first().copied()? {
+            "crate" => {
+                segments.remove(0);
+                nearest_cargo_source_root(root, source_path)?
+            }
+            "self" => {
+                segments.remove(0);
+                source_dir
+            }
+            "super" => {
+                let mut base = source_dir;
+                while segments.first() == Some(&"super") {
+                    segments.remove(0);
+                    base = manifest_directory(&base);
+                }
+                base
+            }
+            _ => return None,
+        }
+    };
+    while !segments.is_empty() {
+        let candidate = resolve_relative_path(&base, &segments.join("/"))?;
+        if let Some(path) = resolve_source_file(root, &candidate, &["rs"]) {
+            return Some(path);
+        }
+        segments.pop();
+    }
+    resolve_source_file(root, &base, &["rs"])
+}
+
+fn nearest_cargo_source_root(root: &Path, source_path: &str) -> Option<String> {
+    let mut directory = Path::new(source_path).parent()?;
+    loop {
+        let relative = relative_display(directory);
+        if root.join(&relative).join("Cargo.toml").is_file() {
+            return resolve_relative_path(&relative, "src");
+        }
+        directory = directory.parent()?;
+    }
+}
+
+fn resolve_python_target(root: &Path, source_path: &str, target: &str) -> Option<String> {
+    let leading = target.chars().take_while(|value| *value == '.').count();
+    let module = target.trim_start_matches('.').replace('.', "/");
+    let base = if leading == 0 {
+        ".".to_owned()
+    } else {
+        let mut base = manifest_directory(source_path);
+        for _ in 1..leading {
+            base = manifest_directory(&base);
+        }
+        base
+    };
+    let candidate = resolve_relative_path(&base, &module)?;
+    resolve_source_file(root, &candidate, &["py", "pyi"])
+}
+
+fn resolve_source_file(root: &Path, candidate: &str, extensions: &[&str]) -> Option<String> {
+    let candidate = candidate.trim_end_matches('/');
+    if root.join(candidate).is_file() {
+        return Some(candidate.to_owned());
+    }
+    for extension in extensions {
+        let file = format!("{candidate}.{extension}");
+        if root.join(&file).is_file() {
+            return Some(file);
+        }
+    }
+    for extension in extensions {
+        let index = format!("{candidate}/index.{extension}");
+        if root.join(&index).is_file() {
+            return Some(index);
+        }
+        let module = format!("{candidate}/mod.{extension}");
+        if root.join(&module).is_file() {
+            return Some(module);
+        }
+        let init = format!("{candidate}/__init__.{extension}");
+        if root.join(&init).is_file() {
+            return Some(init);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
 fn static_import_line(analyzer: &str, line: &str) -> bool {
     match analyzer {
-        "rust_imports" => {
-            line.starts_with("use ")
-                || line.starts_with("pub use ")
-                || line.starts_with("mod ")
-                || line.starts_with("pub mod ")
-        }
-        "javascript_imports" => {
-            (line.starts_with("import ") && !line.starts_with("import("))
-                || line.starts_with("export ") && line.contains(" from ")
-        }
-        "python_imports" => line.starts_with("import ") || line.starts_with("from "),
+        "rust_imports" => rust_import_target(line).is_some(),
+        "javascript_imports" => javascript_import_target(line).is_some(),
+        "python_imports" => python_import_target(line).is_some(),
         _ => false,
     }
 }
 
+fn first_quoted(value: &str) -> Option<&str> {
+    let start = value.find(['\'', '"'])?;
+    let quote = value.as_bytes()[start] as char;
+    let rest = &value[start + 1..];
+    let end = rest.find(quote)?;
+    Some(&rest[..end])
+}
+
+fn project_files(root: &Path) -> Vec<String> {
+    let mut files = BTreeSet::new();
+    if let Some(listing) = git_output(
+        root,
+        &["ls-files", "--cached", "--others", "--exclude-standard"],
+    ) {
+        for path in listing.lines().map(|path| path.replace('\\', "/")) {
+            if !ignored_project_path(&path) && root.join(&path).is_file() {
+                files.insert(path);
+            }
+        }
+    }
+    if files.is_empty() {
+        collect_project_files(root, root, &mut files);
+    }
+    files.into_iter().collect()
+}
+
+fn ignored_project_path(path: &str) -> bool {
+    Path::new(path).components().any(|component| {
+        matches!(component, std::path::Component::Normal(value) if IGNORED_DIRS.contains(&value.to_string_lossy().as_ref()))
+    })
+}
+
+fn collect_project_files(root: &Path, directory: &Path, files: &mut BTreeSet<String>) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    let mut entries: Vec<_> = entries.filter_map(Result::ok).collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
+            let name = entry.file_name();
+            if IGNORED_DIRS.contains(&name.to_string_lossy().as_ref()) {
+                continue;
+            }
+            collect_project_files(root, &path, files);
+        } else if metadata.is_file() {
+            if let Ok(relative) = path.strip_prefix(root) {
+                files.insert(relative_display(relative));
+            }
+        }
+    }
+}
+
+fn manifest_directory(manifest: &str) -> String {
+    Path::new(manifest)
+        .parent()
+        .map(relative_display)
+        .unwrap_or_else(|| ".".to_owned())
+}
+
+fn project_label(root: &Path, directory: &str) -> String {
+    if directory == "." {
+        root.file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("project")
+            .to_owned()
+    } else {
+        Path::new(directory)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("package")
+            .to_owned()
+    }
+}
+
+fn relative_to_directory(base: &str, path: &str) -> String {
+    if base == "." {
+        path.to_owned()
+    } else {
+        path.strip_prefix(&format!("{base}/"))
+            .unwrap_or(path)
+            .to_owned()
+    }
+}
+
+fn resolve_relative_path(base: &str, value: &str) -> Option<String> {
+    let value = value.split(['?', '#']).next().unwrap_or(value);
+    let path = if base == "." {
+        PathBuf::from(value)
+    } else {
+        Path::new(base).join(value)
+    };
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(value) => parts.push(value.to_string_lossy().into_owned()),
+            std::path::Component::ParentDir => {
+                parts.pop()?;
+            }
+            std::path::Component::Prefix(_) | std::path::Component::RootDir => return None,
+        }
+    }
+    Some(if parts.is_empty() {
+        ".".to_owned()
+    } else {
+        parts.join("/")
+    })
+}
+
+fn matches_any_path_pattern(patterns: &[String], path: &str) -> bool {
+    patterns
+        .iter()
+        .any(|pattern| path_pattern_matches(pattern, path))
+}
+
+fn path_pattern_matches(pattern: &str, path: &str) -> bool {
+    fn segment_matches(pattern: &str, value: &str) -> bool {
+        let pattern: Vec<char> = pattern.chars().collect();
+        let value: Vec<char> = value.chars().collect();
+        let (mut p, mut v, mut star, mut retry) = (0, 0, None, 0);
+        while v < value.len() {
+            if p < pattern.len() && (pattern[p] == '?' || pattern[p] == value[v]) {
+                p += 1;
+                v += 1;
+            } else if p < pattern.len() && pattern[p] == '*' {
+                star = Some(p);
+                p += 1;
+                retry = v;
+            } else if let Some(star_index) = star {
+                p = star_index + 1;
+                retry += 1;
+                v = retry;
+            } else {
+                return false;
+            }
+        }
+        while p < pattern.len() && pattern[p] == '*' {
+            p += 1;
+        }
+        p == pattern.len()
+    }
+
+    fn matches(pattern: &[&str], path: &[&str]) -> bool {
+        if pattern.is_empty() {
+            return path.is_empty();
+        }
+        if pattern[0] == "**" {
+            return matches(&pattern[1..], path)
+                || (!path.is_empty() && matches(pattern, &path[1..]));
+        }
+        !path.is_empty()
+            && segment_matches(pattern[0], path[0])
+            && matches(&pattern[1..], &path[1..])
+    }
+
+    let pattern = pattern.trim_start_matches("./").trim_end_matches('/');
+    let path = path.trim_start_matches("./").trim_end_matches('/');
+    matches(
+        &pattern
+            .split('/')
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>(),
+        &path
+            .split('/')
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn is_under_path(path: &str, directory: &str) -> bool {
+    path == directory || path.starts_with(&format!("{directory}/"))
+}
+
+fn document_label(root: &Path, path: &str) -> String {
+    fs::read_to_string(root.join(path))
+        .ok()
+        .and_then(|content| {
+            content.lines().find_map(|line| {
+                let heading = line
+                    .trim()
+                    .strip_prefix('#')?
+                    .trim_start_matches('#')
+                    .trim();
+                (!heading.is_empty()).then(|| heading.chars().take(160).collect())
+            })
+        })
+        .unwrap_or_else(|| {
+            Path::new(path)
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or("Architecture document")
+                .to_owned()
+        })
+}
+
+fn truncate(value: &str, limit: usize) -> String {
+    value.chars().take(limit).collect()
+}
+
 fn git_status(root: &Path) -> String {
-    git_output(root, &["status", "--porcelain=v1", "--untracked-files=all"]).unwrap_or_default()
+    git_output(root, &["status", "--porcelain=v1", "--untracked-files=all"])
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| {
+            line.get(3..)
+                .and_then(|path| path.split(" -> ").last())
+                .is_none_or(|path| !ignored_project_path(path))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn git_states_from_status(status: &str) -> BTreeMap<String, GitState> {
@@ -771,9 +1836,7 @@ fn directory_git_state(path: &str, states: &BTreeMap<String, GitState>) -> GitSt
 }
 
 fn git_tracked_count(root: &Path) -> usize {
-    git_output(root, &["ls-files"])
-        .map(|v| v.lines().count())
-        .unwrap_or(0)
+    project_files(root).len()
 }
 fn git_output(root: &Path, args: &[&str]) -> Option<String> {
     let output = silent_command("git")
@@ -850,6 +1913,14 @@ mod tests {
         let path = std::env::temp_dir().join(format!("vibehub-pi-{}", Uuid::new_v4()));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    fn write(root: &Path, path: &str, content: &str) {
+        let destination = root.join(path);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(destination, content).unwrap();
     }
 
     #[test]
@@ -958,6 +2029,53 @@ mod tests {
     }
 
     #[test]
+    fn persists_reuses_and_invalidates_the_default_json_project_model() {
+        let root = project();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(
+            root.join("package.json"),
+            r#"{"name":"json-index-fixture"}"#,
+        )
+        .unwrap();
+        fs::write(root.join("src/index.ts"), "export const first = 1;\n").unwrap();
+        silent_command("git")
+            .arg("-C")
+            .arg(&root)
+            .arg("init")
+            .output()
+            .unwrap();
+
+        let service = ProjectIndexService::open(&root).unwrap();
+        let first = service.current_snapshot().unwrap();
+        let destination = service.snapshot_path();
+        assert_eq!(
+            destination
+                .strip_prefix(root.canonicalize().unwrap())
+                .unwrap(),
+            Path::new(PROJECT_MODEL_INDEX_PATH)
+        );
+        let persisted: ProjectModelSnapshot =
+            serde_json::from_slice(&fs::read(&destination).unwrap()).unwrap();
+        assert_eq!(persisted, first);
+
+        let second = service.current_snapshot().unwrap();
+        assert_eq!(second.model_version, first.model_version);
+        assert!(second
+            .nodes
+            .iter()
+            .all(|node| !node.relative_path.starts_with(".vibehub/")));
+
+        fs::write(root.join("src/second.ts"), "export const second = 2;\n").unwrap();
+        let third = service.current_snapshot().unwrap();
+        assert_ne!(third.model_version, first.model_version);
+        assert!(third
+            .nodes
+            .iter()
+            .any(|node| node.relative_path == "src/second.ts"));
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn rejects_corrupt_or_foreign_snapshot() {
         let root = project();
         let service = ProjectIndexService::open(&root).unwrap();
@@ -1055,6 +2173,11 @@ mod tests {
         assert!(invalidation_units("src/lib.rs").contains(&InvalidationUnit::ImportsSymbols));
         assert!(invalidation_units("docs/adr/001.md")
             .contains(&InvalidationUnit::DeclaredDocumentation));
+        assert!(invalidation_units("docs/v3/rfc-backlog/003-index.md")
+            .contains(&InvalidationUnit::DeclaredDocumentation));
+        assert!(invalidation_units("docs/project-architecture.md")
+            .contains(&InvalidationUnit::DeclaredDocumentation));
+        assert!(invalidation_units("cmd/server.go").contains(&InvalidationUnit::ImportsSymbols));
     }
 
     #[test]
@@ -1072,5 +2195,307 @@ mod tests {
             "python_imports",
             "from app import model"
         ));
+    }
+
+    #[test]
+    fn old_analyzer_findings_deserialize_without_targets() {
+        let finding: AnalyzerFinding = serde_json::from_str(
+            r#"{"analyzer":"cargo","version":"1","kind":"manifest","path":"Cargo.toml","label":"demo"}"#,
+        )
+        .unwrap();
+        assert_eq!(finding.target, None);
+        assert_eq!(finding.target_path, None);
+    }
+
+    #[test]
+    fn models_mixed_root_manifests_and_cargo_alias_path_dependencies() {
+        let root = project();
+        write(
+            &root,
+            "Cargo.toml",
+            r#"
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.dependencies]
+core_alias = { package = "core-real", path = "crates/core" }
+"#,
+        );
+        write(
+            &root,
+            "package.json",
+            r#"{"name":"web-root","private":true}"#,
+        );
+        write(
+            &root,
+            "crates/core/Cargo.toml",
+            r#"[package]
+name = "core-real"
+version = "0.1.0"
+"#,
+        );
+        write(
+            &root,
+            "crates/cli/Cargo.toml",
+            r#"[package]
+name = "demo-cli"
+version = "0.1.0"
+
+[dependencies]
+core_alias = { workspace = true }
+"#,
+        );
+
+        let findings = analyze_project(&root);
+        assert!(findings.iter().any(|finding| {
+            finding.analyzer == "cargo"
+                && finding.kind == "workspace_manifest"
+                && finding.path == "Cargo.toml"
+                && finding.target_path.as_deref() == Some(".")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.analyzer == "npm"
+                && finding.kind == "package_manifest"
+                && finding.target.as_deref() == Some("web-root")
+                && finding.target_path.as_deref() == Some(".")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "workspace_member"
+                && finding.target.as_deref() == Some("core-real")
+                && finding.target_path.as_deref() == Some("crates/core")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "dependency"
+                && finding.path == "crates/cli/Cargo.toml"
+                && finding.label == "core_alias"
+                && finding.target.as_deref() == Some("core-real")
+                && finding.target_path.as_deref() == Some("crates/core")
+        }));
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn models_npm_workspace_and_workspace_or_file_dependencies() {
+        let root = project();
+        write(
+            &root,
+            "package.json",
+            r#"{
+  "name": "monorepo",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "dependencies": {"@demo/ui": "workspace:*"}
+}"#,
+        );
+        write(
+            &root,
+            "packages/ui/package.json",
+            r#"{"name":"@demo/ui","version":"1.0.0"}"#,
+        );
+        write(
+            &root,
+            "packages/web/package.json",
+            r#"{
+  "name": "@demo/web",
+  "version": "1.0.0",
+  "dependencies": {"ui-local": "file:../ui"}
+}"#,
+        );
+
+        let findings = analyze_project(&root);
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "workspace_member"
+                && finding.target.as_deref() == Some("@demo/ui")
+                && finding.target_path.as_deref() == Some("packages/ui")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "dependency"
+                && finding.path == "package.json"
+                && finding.target.as_deref() == Some("@demo/ui")
+                && finding.target_path.as_deref() == Some("packages/ui")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "dependency"
+                && finding.path == "packages/web/package.json"
+                && finding.label == "ui-local"
+                && finding.target.as_deref() == Some("@demo/ui")
+                && finding.target_path.as_deref() == Some("packages/ui")
+        }));
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn resolves_javascript_rust_and_python_static_import_targets() {
+        let root = project();
+        write(
+            &root,
+            "Cargo.toml",
+            r#"[package]
+name = "demo"
+version = "0.1.0"
+"#,
+        );
+        write(
+            &root,
+            "package.json",
+            r#"{"name":"frontend","workspaces":["packages/*"]}"#,
+        );
+        write(&root, "packages/ui/package.json", r#"{"name":"@demo/ui"}"#);
+        write(&root, "packages/ui/button.ts", "export const button = 1;");
+        write(
+            &root,
+            "frontend/main.ts",
+            "import { helper } from './helper';\nimport { button } from '@demo/ui/button';\n",
+        );
+        write(&root, "frontend/helper.ts", "export const helper = 1;");
+        write(
+            &root,
+            "src/lib.rs",
+            "mod model;\nuse crate::model::Model;\n",
+        );
+        write(&root, "src/model.rs", "pub struct Model;");
+        write(&root, "python/main.py", "from app.model import Model\n");
+        write(&root, "app/model.py", "class Model: pass\n");
+
+        let findings = analyze_project(&root);
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "static_import"
+                && finding.path == "frontend/main.ts"
+                && finding.target.as_deref() == Some("./helper")
+                && finding.target_path.as_deref() == Some("frontend/helper.ts")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "static_import"
+                && finding.target.as_deref() == Some("@demo/ui")
+                && finding.target_path.as_deref() == Some("packages/ui/button.ts")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "static_import"
+                && finding.path == "src/lib.rs"
+                && finding.target_path.as_deref() == Some("src/model.rs")
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "static_import"
+                && finding.path == "python/main.py"
+                && finding.target.as_deref() == Some("app.model")
+                && finding.target_path.as_deref() == Some("app/model.py")
+        }));
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn records_declared_architecture_documents() {
+        let root = project();
+        write(&root, "README.md", "# Demo\n");
+        write(&root, "docs/adr/0001-store.md", "# Store decision\n");
+        write(&root, "docs/rfc/0002-api.md", "# API RFC\n");
+        write(&root, "docs/v3/rfc-backlog/0003-index.md", "# Index RFC\n");
+        write(
+            &root,
+            "docs/project-architecture.md",
+            "# Project architecture\n",
+        );
+        write(&root, "docs/product-redesign.md", "# Product redesign\n");
+
+        let findings = analyze_project(&root);
+        assert!(findings
+            .iter()
+            .any(|finding| finding.kind == "readme" && finding.path == "README.md"));
+        for path in [
+            "docs/adr/0001-store.md",
+            "docs/rfc/0002-api.md",
+            "docs/v3/rfc-backlog/0003-index.md",
+            "docs/project-architecture.md",
+            "docs/product-redesign.md",
+        ] {
+            assert!(findings.iter().any(|finding| {
+                finding.kind == "architecture_document"
+                    && finding.path == path
+                    && finding.target_path.as_deref() == Some(path)
+            }));
+        }
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn reports_only_source_capabilities_that_are_present() {
+        let root = project();
+        write(&root, "cmd/main.go", "package main\n");
+
+        let findings = analyze_project(&root);
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "capability"
+                && finding.analyzer == "go_imports"
+                && finding.target.as_deref() == Some("unsupported")
+        }));
+        assert!(!findings
+            .iter()
+            .any(|finding| finding.analyzer == "python_imports"));
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn manifest_parse_errors_degrade_explicitly() {
+        let root = project();
+        write(&root, "Cargo.toml", "[workspace\n");
+        write(&root, "package.json", "{not-json}");
+
+        let findings = analyze_project(&root);
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "analyzer_error"
+                && finding.analyzer == "cargo"
+                && finding.path == "Cargo.toml"
+        }));
+        assert!(findings.iter().any(|finding| {
+            finding.kind == "analyzer_error"
+                && finding.analyzer == "npm"
+                && finding.path == "package.json"
+        }));
+        assert!(!findings.iter().any(|finding| {
+            finding.kind == "workspace_manifest" || finding.kind == "package_manifest"
+        }));
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn analyzer_findings_are_sorted_deduplicated_and_deterministic() {
+        let root = project();
+        write(
+            &root,
+            "Cargo.toml",
+            r#"[package]
+name = "demo"
+version = "0.1.0"
+
+[dependencies]
+serde = "1"
+
+[dev-dependencies]
+serde = "1"
+"#,
+        );
+        write(
+            &root,
+            "src/lib.rs",
+            "use serde::Serialize;\nuse serde::Serialize;\n",
+        );
+
+        let first = analyze_project(&root);
+        let second = analyze_project(&root);
+        assert_eq!(first, second);
+        assert!(first.windows(2).all(|items| items[0] < items[1]));
+        assert_eq!(
+            first
+                .iter()
+                .filter(|finding| {
+                    finding.kind == "dependency"
+                        && finding.path == "Cargo.toml"
+                        && finding.label == "serde"
+                })
+                .count(),
+            1
+        );
+        fs::remove_dir_all(root).ok();
     }
 }

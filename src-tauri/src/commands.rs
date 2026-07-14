@@ -7,58 +7,183 @@ use crate::{
         GatewayConfigPath, GatewayState,
     },
     launcher::Launcher,
-    local_agent_usage::{self, LocalAgentUsageOverview},
+    local_agent_usage::{self, LocalAgentUsageOverview, TaskSessionProviderLinks},
     models::*,
     scanner::Scanner,
     storage::Storage,
     updater,
-    vibehub::agent_adapter::{
-        self, AgentAdapterConfig, AgentAdapterConfigPatch, AgentAdapterStatus,
-        AgentAdapterSyncResult, AgentTool,
-    },
-    vibehub::agent_view::{self, AgentViewGenerateResult},
-    vibehub::capability::{self, CapabilityClaimResult, CapabilityGateReport},
-    vibehub::cockpit::{self, VibehubFileReadResult},
-    vibehub::context::{self, ContextPackBuildResult},
-    vibehub::debug_dump::{self, DebugDumpOptions, DebugDumpResult},
-    vibehub::drift::{self, WorkspaceDriftReport},
-    vibehub::events::{self, PendingReplayResult},
-    vibehub::handoff::{self, HandoffBuildResult},
-    vibehub::init::{self, VibehubInitOptions, VibehubInitResult},
-    vibehub::journal::{self, JournalAppendResult},
-    vibehub::knowledge::{self, KnowledgeAppendResult},
-    vibehub::neighbors::{self, TaskNeighborReport},
-    vibehub::notes::{self, ProjectDigest},
-    vibehub::overview::{self, CockpitOverview},
-    vibehub::ownership::{
-        self, FileOwnershipClassificationReport, FileOwnershipRecordRequest,
-        FileOwnershipRecordResult,
-    },
-    vibehub::phase::{self, PhaseAdvanceResult, PhaseSetResult, PhaseValidationResult},
+    vibehub::cockpit,
     vibehub::project_structure,
-    vibehub::prompts::{self, PromptRenderResult, PromptTemplateOption},
-    vibehub::research::{self, ResearchPackArchiveResult, ResearchPackBuildResult},
-    vibehub::review::{self, ReviewEvidenceGenerateResult},
-    vibehub::schema_check::{self, CapabilityOutputWriteResult, CapabilityValidationReport},
-    vibehub::start_task::{
-        self, VibehubStartTaskIntakeRequest, VibehubStartTaskIntakeResult, VibehubStartTaskResult,
-    },
-    vibehub::state_migration::{self, StateMigrationReport},
-    vibehub::sync::{self, SyncReport},
-    vibehub::task_switch::{self, TaskSwitchResult},
-    vibehub::workflow::{self, WorkflowExplainResult},
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fs;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::process::Command;
 use std::sync::Mutex;
-use tauri::{Emitter, State};
-use vibehub_core::v3::{V3ViewBundle, V3ViewRepository};
+use tauri::State;
+use vibehub_core::{
+    legacy_v2::{self, LegacyV2Archive},
+    v3::{
+        self, AgentSpecInspection, AgentSpecSyncRequest, AgentSpecSyncResult, AppendResult,
+        PlanAddNodeCommand, PlanSetDependenciesCommand, PlanSetStateCommand, ProjectLayoutStatus,
+        V3ApplicationService, V3BootstrapResult, V3ProjectSettingsInspection,
+        V3ProjectSettingsUpdateRequest, V3TaskCreateRequest, V3TaskCreateResult, V3ViewBundle,
+        V3ViewRepository,
+    },
+};
 
 pub struct AppState {
     pub storage: Mutex<Storage>,
+}
+
+#[tauri::command]
+pub async fn legacy_v2_load_archive(project_path: String) -> Result<LegacyV2Archive, String> {
+    tokio::task::spawn_blocking(move || {
+        legacy_v2::load_archive(project_path).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("LEGACY_V2_ARCHIVE_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_inspect_project_layout(
+    project_path: String,
+) -> Result<ProjectLayoutStatus, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::inspect_project_layout(project_path).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_LAYOUT_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_initialize_project(project_path: String) -> Result<V3BootstrapResult, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::initialize_v3(project_path).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_INIT_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_migrate_project(project_path: String) -> Result<V3BootstrapResult, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::migrate_v2_to_v3(project_path).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_MIGRATION_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_recover_project_migration(
+    project_path: String,
+) -> Result<V3BootstrapResult, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::recover_interrupted_migration(project_path).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_MIGRATION_RECOVERY_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_get_project_settings(
+    project_path: String,
+) -> Result<V3ProjectSettingsInspection, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::read_project_settings(project_path).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_PROJECT_SETTINGS_READ_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_update_project_settings(
+    project_path: String,
+    request: V3ProjectSettingsUpdateRequest,
+) -> Result<v3::V3ProjectSettings, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::update_project_settings(project_path, request).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_PROJECT_SETTINGS_UPDATE_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_agent_specs_status(project_path: String) -> Result<AgentSpecInspection, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::inspect_agent_specs(project_path).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_AGENT_SPECS_STATUS_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_agent_specs_sync(
+    project_path: String,
+    request: AgentSpecSyncRequest,
+) -> Result<AgentSpecSyncResult, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::sync_agent_specs(project_path, request).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_AGENT_SPECS_SYNC_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_create_task(
+    project_path: String,
+    request: V3TaskCreateRequest,
+) -> Result<V3TaskCreateResult, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::create_v3_task(project_path, request).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_TASK_CREATE_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_plan_add_node(
+    project_path: String,
+    command: PlanAddNodeCommand,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| application.plan_add_node(command))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_PLAN_ADD_NODE_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_plan_set_dependencies(
+    project_path: String,
+    command: PlanSetDependenciesCommand,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| application.plan_set_dependencies(command))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_PLAN_SET_DEPENDENCIES_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_plan_set_state(
+    project_path: String,
+    command: PlanSetStateCommand,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| application.plan_set_state(command))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_PLAN_SET_STATE_TASK_FAILED: {error}"))?
 }
 
 #[tauri::command]
@@ -95,6 +220,7 @@ pub async fn v3_load_view_bundle(
 #[tauri::command]
 pub async fn v3_query_project_structure(
     project_path: String,
+    task_id: String,
     relative_dir: String,
     cursor: Option<String>,
     limit: Option<usize>,
@@ -103,9 +229,10 @@ pub async fn v3_query_project_structure(
     tokio::task::spawn_blocking(move || {
         let repository = V3ViewRepository::open(project_path).map_err(|error| error.to_string())?;
         if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
-            repository.search_project_structure(&query, limit.unwrap_or(200))
+            repository.search_project_structure(&task_id, &query, limit.unwrap_or(200))
         } else {
             repository.load_project_structure_page(
+                &task_id,
                 &relative_dir,
                 cursor.as_deref(),
                 limit.unwrap_or(200),
@@ -115,36 +242,6 @@ pub async fn v3_query_project_structure(
     })
     .await
     .map_err(|error| format!("V3_PROJECT_INDEX_TASK_FAILED: {error}"))?
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct VibehubStatusChangedEvent {
-    project_path: String,
-    source: String,
-}
-
-fn emit_vibehub_status_changed(app: &tauri::AppHandle, project_path: &str, source: &str) {
-    let _ = app.emit(
-        "vibehub://status-changed",
-        VibehubStatusChangedEvent {
-            project_path: project_path.to_string(),
-            source: source.to_string(),
-        },
-    );
-}
-
-fn emit_on_success<T>(
-    app: &tauri::AppHandle,
-    project_path: &str,
-    source: &str,
-    result: anyhow::Result<T>,
-) -> Result<T, String> {
-    result
-        .map(|value| {
-            emit_vibehub_status_changed(app, project_path, source);
-            value
-        })
-        .map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1064,386 +1161,94 @@ pub async fn check_for_updates() -> Result<updater::UpdateCheckResult, String> {
 }
 
 #[tauri::command]
-pub async fn vibehub_init(
-    app: tauri::AppHandle,
-    project_path: String,
-    options: Option<VibehubInitOptions>,
-) -> Result<VibehubInitResult, String> {
-    emit_on_success(
-        &app,
-        &project_path,
-        "vibehub_init",
-        init::init_project_with_options(project_path.clone(), options),
-    )
-}
-
-#[tauri::command]
-pub async fn vibehub_start_task(
-    app: tauri::AppHandle,
-    project_path: String,
-    title: Option<String>,
-    mode: Option<String>,
-    phase: Option<String>,
-) -> Result<VibehubStartTaskResult, String> {
-    emit_on_success(
-        &app,
-        &project_path,
-        "vibehub_start_task",
-        start_task::start_task(project_path.clone(), title, mode, phase),
-    )
-}
-
-#[tauri::command]
-pub async fn vibehub_start_task_intake(
-    app: tauri::AppHandle,
-    project_path: String,
-    request: VibehubStartTaskIntakeRequest,
-) -> Result<VibehubStartTaskIntakeResult, String> {
-    emit_on_success(
-        &app,
-        &project_path,
-        "vibehub_start_task_intake",
-        start_task::start_task_intake(project_path.clone(), request),
-    )
-}
-
-#[tauri::command]
-pub async fn vibehub_build_context_pack(
-    project_path: String,
-    task_id: String,
-    run_id: String,
-    phase: String,
-) -> Result<ContextPackBuildResult, String> {
-    context::build_context_pack(project_path, task_id, run_id, phase).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_generate_agent_view(
-    project_path: String,
-) -> Result<AgentViewGenerateResult, String> {
-    agent_view::generate_agent_view(project_path).map_err(|e| e.to_string())
-}
-
-// ─── Adapter sync ─────────────────────────────────────────────────────────
-//
-// `vibehub_sync_agent_adapter` (singular) is DEPRECATED: callers should use
-// `vibehub_sync_agent_adapters` (plural) which accepts an explicit tool list.
-// The wrapper is retained for back-compat with frontend code that has not
-// migrated yet.
-
-#[tauri::command]
-pub async fn vibehub_sync_agent_adapter(
-    project_path: String,
-    dry_run: Option<bool>,
-) -> Result<AgentAdapterSyncResult, String> {
-    agent_adapter::sync_agent_adapter(project_path, dry_run.unwrap_or(false))
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_get_agent_adapter_status(
-    project_path: String,
-) -> Result<AgentAdapterStatus, String> {
-    agent_adapter::get_agent_adapter_status(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_update_agent_adapter_config(
-    project_path: String,
-    patch: AgentAdapterConfigPatch,
-) -> Result<AgentAdapterConfig, String> {
-    agent_adapter::update_agent_adapter_config(project_path, patch).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_sync_agent_adapters(
-    app: tauri::AppHandle,
-    project_path: String,
-    tools: Option<Vec<AgentTool>>,
-    dry_run: Option<bool>,
-) -> Result<AgentAdapterSyncResult, String> {
-    let dry_run = dry_run.unwrap_or(false);
-    let result = agent_adapter::sync_agent_adapters(project_path.clone(), tools, dry_run)
-        .map_err(|e| e.to_string());
-    if result.is_ok() && !dry_run {
-        emit_vibehub_status_changed(&app, &project_path, "vibehub_sync_agent_adapters");
-    }
-    result
-}
-
-// ─── Workspace drift / sync ───────────────────────────────────────────────
-//
-// `vibehub_check_workspace_drift` is DEPRECATED in favour of
-// `vibehub_sync_workspace_state` (which produces the same drift report and
-// can also write a recovery report). Both retained for now.
-
-#[tauri::command]
-pub async fn vibehub_check_workspace_drift(
-    project_path: String,
-    locale: Option<String>,
-) -> Result<WorkspaceDriftReport, String> {
-    drift::check_workspace_drift_with_locale(project_path, locale.as_deref())
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_sync_workspace_state(
-    project_path: String,
-    locale: Option<String>,
-) -> Result<WorkspaceDriftReport, String> {
-    drift::sync_workspace_state_with_locale(project_path, locale.as_deref())
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_sync_workspace(
-    project_path: String,
-    locale: Option<String>,
-) -> Result<SyncReport, String> {
-    sync::sync_workspace_with_locale(project_path, locale.as_deref()).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_workflow_explain(
-    project_path: String,
-) -> Result<WorkflowExplainResult, String> {
-    workflow::explain_workflow(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_switch_task(
-    project_path: String,
-    task_id: String,
-) -> Result<TaskSwitchResult, String> {
-    task_switch::switch_task(project_path, task_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_classify_file_ownership(
-    project_path: String,
-    changed_files: Option<Vec<String>>,
-) -> Result<FileOwnershipClassificationReport, String> {
-    ownership::classify_workspace_ownership(project_path, changed_files).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_record_file_ownership(
-    project_path: String,
-    request: FileOwnershipRecordRequest,
-) -> Result<FileOwnershipRecordResult, String> {
-    ownership::record_file_ownership(project_path, request).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_query_task_neighbors(
-    project_path: String,
-) -> Result<TaskNeighborReport, String> {
-    neighbors::query_current_task_neighbors(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_claim_capability(
-    project_path: String,
-    capability: String,
-) -> Result<CapabilityClaimResult, String> {
-    capability::claim_capability(project_path, capability).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_evaluate_capability_gates(
-    project_path: String,
-    requested_capability: Option<String>,
-) -> Result<CapabilityGateReport, String> {
-    capability::evaluate_capability_gates(project_path, requested_capability.as_deref())
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_validate_capability_output(
-    project_path: String,
-    capability: String,
-    output: serde_json::Value,
-) -> Result<CapabilityValidationReport, String> {
-    schema_check::validate_capability_output_for_project(project_path, capability, &output)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_write_capability_output(
-    project_path: String,
-    capability: String,
-    output: serde_json::Value,
-) -> Result<CapabilityOutputWriteResult, String> {
-    schema_check::write_current_capability_output(project_path, capability, output)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_replay_pending_events(
-    app: tauri::AppHandle,
-    project_path: String,
-) -> Result<PendingReplayResult, String> {
-    emit_on_success(
-        &app,
-        &project_path,
-        "vibehub_replay_pending_events",
-        events::replay_pending_events(project_path.clone()),
-    )
-}
-
-#[tauri::command]
-pub async fn vibehub_debug_dump(
-    project_path: String,
-    options: Option<DebugDumpOptions>,
-) -> Result<DebugDumpResult, String> {
-    debug_dump::create_debug_dump(project_path, options).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_build_handoff(project_path: String) -> Result<HandoffBuildResult, String> {
-    handoff::build_handoff(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_generate_review_evidence(
-    project_path: String,
-    locale: Option<String>,
-) -> Result<ReviewEvidenceGenerateResult, String> {
-    review::generate_review_evidence_with_locale(project_path, locale.as_deref())
-        .map_err(|e| e.to_string())
-}
-
-// ─── Aggregated overview ──────────────────────────────────────────────────
-//
-// Returns status + context + review + handoff + diff + research in ONE call,
-// with a single `git` invocation. This REPLACES the per-tab read commands
-// (`vibehub_read_cockpit_status`, `vibehub_read_context_view`,
-// `vibehub_read_review_view`, `vibehub_read_handoff_view`,
-// `vibehub_read_diff_view`, `vibehub_read_research_status`).
-
-#[tauri::command]
-pub async fn vibehub_read_overview(project_path: String) -> Result<CockpitOverview, String> {
-    overview::read_overview(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub async fn vibehub_read_local_agent_usage(
     project_path: String,
+    task_id: Option<String>,
 ) -> Result<LocalAgentUsageOverview, String> {
-    local_agent_usage::read_local_agent_usage(project_path).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        let task_id = task_id.filter(|value| !value.trim().is_empty());
+        let usage = if let Some(task_id) = task_id {
+            let repository =
+                V3ViewRepository::open(&project_path).map_err(|error| error.to_string())?;
+            let bundle = repository
+                .load_bundle(&task_id)
+                .map_err(|error| error.to_string())?;
+            let session_links = task_session_links(&bundle.task_timeline);
+            local_agent_usage::read_local_agent_usage_for_task(project_path, task_id, session_links)
+        } else {
+            local_agent_usage::read_local_agent_usage(project_path)
+        };
+        usage.map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("LOCAL_AGENT_USAGE_TASK_FAILED: {error}"))?
 }
 
-/// Read the agent-written project-level digest (`.vibehub/notes/summary.md`
-/// and `.vibehub/notes/status.md`). Pure read; never writes. The frontend
-/// already gets the same data via `vibehub_read_overview`, but this command
-/// lets a panel reload only the digest cheaply.
-#[tauri::command]
-pub async fn vibehub_read_project_digest(project_path: String) -> Result<ProjectDigest, String> {
-    notes::read_project_digest(project_path).map_err(|e| e.to_string())
+fn task_session_links(task_timeline: &Value) -> TaskSessionProviderLinks {
+    let mut links = task_timeline
+        .get("lanes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|lane| lane.get("kind").and_then(Value::as_str) == Some("session"))
+        .filter_map(|lane| lane.get("lane_id").and_then(Value::as_str))
+        .map(|session_id| (session_id.to_owned(), BTreeMap::new()))
+        .collect::<TaskSessionProviderLinks>();
+
+    for event in task_timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(session_id) = event.get("session_id").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(details) = event.get("details").and_then(Value::as_object) else {
+            continue;
+        };
+        let provider = details
+            .get("provider")
+            .and_then(Value::as_str)
+            .or_else(|| event.get("actor").and_then(Value::as_str))
+            .map(normalize_usage_provider);
+        let provider_key = provider.as_deref().unwrap_or("*");
+        let entry = links.entry(session_id.to_owned()).or_default();
+        if let Some(provider_session_id) =
+            details.get("provider_session_id").and_then(Value::as_str)
+        {
+            if !provider_session_id.trim().is_empty() {
+                entry
+                    .entry(provider_key.to_owned())
+                    .or_default()
+                    .insert(provider_session_id.trim().to_owned());
+            }
+        }
+        if let Some(provider_session_ids) = details
+            .get("provider_session_ids")
+            .and_then(Value::as_array)
+        {
+            for provider_session_id in provider_session_ids.iter().filter_map(Value::as_str) {
+                if !provider_session_id.trim().is_empty() {
+                    entry
+                        .entry(provider_key.to_owned())
+                        .or_default()
+                        .insert(provider_session_id.trim().to_owned());
+                }
+            }
+        }
+    }
+
+    links
 }
 
-#[tauri::command]
-pub async fn vibehub_list_prompt_templates() -> Result<Vec<PromptTemplateOption>, String> {
-    Ok(prompts::list_prompt_templates())
-}
-
-#[tauri::command]
-pub async fn vibehub_render_prompt(
-    project_path: String,
-    template_id: String,
-) -> Result<PromptRenderResult, String> {
-    prompts::render_prompt(project_path, &template_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_append_journal_entry(
-    project_path: String,
-    title: Option<String>,
-    body: Option<String>,
-) -> Result<JournalAppendResult, String> {
-    journal::append_journal_entry(project_path, title, body).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_append_knowledge_note(
-    project_path: String,
-    note: Option<String>,
-) -> Result<KnowledgeAppendResult, String> {
-    knowledge::append_knowledge_note(project_path, note).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_validate_phase(project_path: String) -> Result<PhaseValidationResult, String> {
-    phase::validate_phase(project_path).map_err(|e| e.to_string())
-}
-
-// ─── Phase transitions ────────────────────────────────────────────────────
-//
-// `vibehub_set_phase_result` is the explicit setter (mostly used for marking
-// a phase blocked / needs_action). `vibehub_complete_phase` validates the
-// current phase and marks it completed without auto-advancing.
-// `vibehub_advance_phase` validates AND moves to the next phase. The three
-// commands intentionally have distinct semantics; do not collapse them.
-
-#[tauri::command]
-pub async fn vibehub_set_phase_result(
-    project_path: String,
-    target_phase: String,
-    status: String,
-) -> Result<PhaseSetResult, String> {
-    phase::set_phase_result(project_path, &target_phase, &status).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_complete_phase(project_path: String) -> Result<PhaseAdvanceResult, String> {
-    phase::complete_phase(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_advance_phase(
-    project_path: String,
-    force: Option<bool>,
-) -> Result<PhaseAdvanceResult, String> {
-    phase::advance_phase_with_force(project_path, force.unwrap_or(false)).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_pause_phase(project_path: String) -> Result<PhaseSetResult, String> {
-    phase::pause_current_phase(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_build_research_pack(
-    project_path: String,
-    title: Option<String>,
-) -> Result<ResearchPackBuildResult, String> {
-    research::build_research_pack(project_path, title).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_archive_research(
-    project_path: String,
-) -> Result<Option<ResearchPackArchiveResult>, String> {
-    research::archive_current_research(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_read_vibehub_file(
-    project_path: String,
-    relative_path: String,
-) -> Result<VibehubFileReadResult, String> {
-    cockpit::read_vibehub_file(project_path, relative_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_reveal_vibehub_file(
-    project_path: String,
-    relative_path: String,
-) -> Result<(), String> {
-    let (_, path, _) = cockpit::resolve_vibehub_file_path(project_path, relative_path)
-        .map_err(|e| e.to_string())?;
-    let target = path.parent().unwrap_or(&path).to_string_lossy().to_string();
-    open_in_explorer(target).await
+fn normalize_usage_provider(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "claude" | "claude-code" | "claude_code" => "claude".to_string(),
+        "codex" => "codex".to_string(),
+        "opencode" | "open-code" | "open_code" => "opencode".to_string(),
+        _ => "*".to_string(),
+    }
 }
 
 #[tauri::command]
@@ -1459,9 +1264,14 @@ pub async fn vibehub_open_vibehub_file(
 #[tauri::command]
 pub async fn vibehub_reveal_project_file(
     project_path: String,
+    task_id: String,
     relative_path: String,
 ) -> Result<(), String> {
-    let (_, path, _) = project_structure::resolve_project_file_path(project_path, relative_path)
+    let repository = V3ViewRepository::open(&project_path).map_err(|error| error.to_string())?;
+    let workspace_root = repository
+        .workspace_root(&task_id)
+        .map_err(|error| error.to_string())?;
+    let (_, path, _) = project_structure::resolve_project_file_path(workspace_root, relative_path)
         .map_err(|e| e.to_string())?;
     let target = if path.is_dir() {
         path
@@ -1474,41 +1284,16 @@ pub async fn vibehub_reveal_project_file(
 #[tauri::command]
 pub async fn vibehub_open_project_file(
     project_path: String,
+    task_id: String,
     relative_path: String,
 ) -> Result<(), String> {
-    let (_, path, _) = project_structure::resolve_project_file_path(project_path, relative_path)
+    let repository = V3ViewRepository::open(&project_path).map_err(|error| error.to_string())?;
+    let workspace_root = repository
+        .workspace_root(&task_id)
+        .map_err(|error| error.to_string())?;
+    let (_, path, _) = project_structure::resolve_project_file_path(workspace_root, relative_path)
         .map_err(|e| e.to_string())?;
     open_in_explorer(path.to_string_lossy().to_string()).await
-}
-
-// ─── State schema migration ───────────────────────────────────────────────
-//
-// `vibehub_dry_run_state_migration` reports what fields would be added or
-// rewritten if the user opts in. `vibehub_migrate_state` performs the
-// migration in-place and writes a `.bak.r<N>` snapshot of the original.
-
-#[tauri::command]
-pub async fn vibehub_dry_run_state_migration(
-    project_path: String,
-) -> Result<StateMigrationReport, String> {
-    state_migration::dry_run(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_migrate_state(project_path: String) -> Result<StateMigrationReport, String> {
-    state_migration::migrate(project_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn vibehub_set_project_locale(
-    app: tauri::AppHandle,
-    project_path: String,
-    locale: String,
-) -> Result<String, String> {
-    crate::vibehub::locale::persist_project_locale(std::path::Path::new(&project_path), &locale)
-        .map_err(|e| e.to_string())?;
-    emit_vibehub_status_changed(&app, &project_path, "vibehub_set_project_locale");
-    Ok(locale)
 }
 
 #[cfg(test)]
@@ -1587,5 +1372,62 @@ mod tests {
         assert_eq!(existing.len(), 2);
         assert_eq!(existing[0].id, "existing-id");
         assert_eq!(existing[0].color, "#ffffff");
+    }
+
+    #[test]
+    fn task_session_links_extract_provider_identity_from_timeline_details() {
+        let timeline = serde_json::json!({
+            "lanes": [
+                {"kind": "session", "lane_id": "session.codex.task.synthetic"}
+            ],
+            "events": [
+                {
+                    "session_id": "session.codex.task.synthetic",
+                    "actor": "Codex",
+                    "details": {
+                        "provider": "codex",
+                        "provider_session_id": "019f5fea-18e1-7732-ab81-1729fd582f7d"
+                    }
+                }
+            ]
+        });
+
+        let links = task_session_links(&timeline);
+        assert_eq!(links.len(), 1);
+        assert_eq!(
+            links["session.codex.task.synthetic"]["codex"],
+            ["019f5fea-18e1-7732-ab81-1729fd582f7d".to_string()]
+                .into_iter()
+                .collect()
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "reads real local usage and a V3 task; set VIBEHUB_USAGE_TASK_ID"]
+    async fn smoke_reads_task_scoped_usage_with_provider_links() {
+        let project = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repository root")
+            .to_string_lossy()
+            .into_owned();
+        let task_id = std::env::var("VIBEHUB_USAGE_TASK_ID").expect("VIBEHUB_USAGE_TASK_ID");
+        let usage = vibehub_read_local_agent_usage(project, Some(task_id))
+            .await
+            .expect("task-scoped local usage read");
+        assert!(usage.requested_session_count > 0);
+        assert!(
+            usage.matched_session_count > 0,
+            "{}",
+            usage.warnings.join("\n")
+        );
+        assert!(usage.total_tokens > 0);
+        eprintln!(
+            "Task {} usage: matched {}/{} sessions, {} total tokens, Codex {} records",
+            usage.task_id.as_deref().unwrap_or("unknown"),
+            usage.matched_session_count,
+            usage.requested_session_count,
+            usage.total_tokens,
+            usage.codex.records
+        );
     }
 }

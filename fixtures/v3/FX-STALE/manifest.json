@@ -21,37 +21,43 @@
       "contract": "project_overview",
       "schema": "project-overview-view.schema.json",
       "file": "project-overview.json",
-      "sha256": "a478536cdbba70349e183968ddfa7b8f1576debd4ba93e0c2ee250b7f8b6bc5b"
+      "sha256": "956aeb6259113f7c07916a1e13c75d5274653fe1b7af4754dd2b58eeae910943"
     },
     {
       "contract": "project_structure",
       "schema": "project-structure-view.schema.json",
       "file": "project-structure.json",
-      "sha256": "d211c08bbb02e75d5a4642325584617ff24548a775def18e1096d34b51a255bd"
+      "sha256": "271197a39c42cfe65d18d20e4b2bd0aea7e7c51039eb359d9518c8680bb5ec76"
+    },
+    {
+      "contract": "agent_results",
+      "schema": "agent-results-view.schema.json",
+      "file": "agent-results.json",
+      "sha256": "a0c47097bfde22d15efff3e3bd224c830902d0191be2691fa9b8c9c79ff81492"
     },
     {
       "contract": "task_timeline",
       "schema": "task-timeline-view.schema.json",
       "file": "task-timeline.json",
-      "sha256": "c4c837863c6154487f49071f0e8930f616c655231523c63345fb571b6ba9bd3b"
+      "sha256": "e8df4aa19857a051aab61a7b24195a06ed026ff385ca6d6155a712ac1090d1ea"
     },
     {
       "contract": "plan_graph",
       "schema": "plan-graph-view.schema.json",
       "file": "plan-graph.json",
-      "sha256": "a7f4147130b78c26367e6ea2b1bd9b5833237fb26be1aca7b2eda809943c3198"
+      "sha256": "d835f59b7d23ac3911914a3c37a3e33238e99b074e5d1f482e677ccd9c7f018f"
     },
     {
       "contract": "node_brief",
       "schema": "node-brief.schema.json",
       "file": "node-brief.json",
-      "sha256": "91203cef690ca732aff52df5fd9bb17939d2e22455ba9853d676357b0fcd0334"
+      "sha256": "2a83e75c003f8d93dc2125d58bae261ca2cf0fbae281b195f28790c108b527c5"
     },
     {
       "contract": "worktree_orchestration",
       "schema": "worktree-orchestration-view.schema.json",
       "file": "worktree-orchestration.json",
-      "sha256": "061acc4b0b96d616cf8e38c45410ff0482ca9c9571904035d7b0d6b9b4598df7"
+      "sha256": "8de95f2d88a25eaa93bc6b594c2a95756c8d308f10810044359955d230b2aaf5"
     }
   ]
 }

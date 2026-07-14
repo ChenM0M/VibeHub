@@ -1,0 +1,8 @@
+{"type":"user","sessionId":"session-partial","uuid":"u2","timestamp":"2026-07-12T11:00:00Z","message":{"role":"user","content":"Review the implementation"}}
+{"type":"assistant","sessionId":"session-partial","requestId":"req-a","timestamp":"2026-07-12T11:01:00Z","message":{"id":"msg-a","model":"claude-sonnet-test","content":[],"usage":{"input_tokens":40,"output_tokens":8,"cache_read_input_tokens":5,"cache_creation_input_tokens":2}}}
+{"type":"assistant","sessionId":"session-partial","requestId":"req-a-duplicate","timestamp":"2026-07-12T11:01:01Z","message":{"id":"msg-a","model":"claude-sonnet-test","content":[],"usage":{"input_tokens":40,"output_tokens":8,"cache_read_input_tokens":5,"cache_creation_input_tokens":2}}}
+not-valid-json
+{"type":"assistant","sessionId":"session-partial","requestId":"req-b","timestamp":"2026-07-12T11:02:00Z","message":{"id":"msg-b","model":"claude-opus-test","content":[{"type":"tool_use","id":"tool-2","name":"Bash","input":{}}],"usage":{"input_tokens":60,"output_tokens":12,"cache_read_input_tokens":7,"cache_creation_input_tokens":3}}}
+{"type":"assistant","sessionId":"session-partial","requestId":"req-c","timestamp":"2026-07-12T11:03:00Z","message":{"id":"msg-c","model":"claude-opus-test","content":[]}}
+{"type":"user","sessionId":"session-partial","uuid":"branch-1","parentUuid":"u2","isSidechain":true,"timestamp":"2026-07-12T11:04:00Z","message":{"role":"user","content":"Branch follow-up"}}
+{"type":"summary","sessionId":"session-partial","isCompactSummary":true,"timestamp":"2026-07-12T11:05:00Z","summary":"redacted"}

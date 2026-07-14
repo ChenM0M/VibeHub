@@ -23,6 +23,14 @@ export interface ProjectStructureView {
   freshness: "fresh" | "stale" | "rebuilding" | "unavailable";
   completeness: "complete" | "partial" | "unsupported" | "unknown";
   index_state: "uninitialized" | "indexing" | "ready" | "interrupted" | "error";
+  workspace: {
+    root: NativePath;
+    source: "session_worktree" | "session_working_directory" | "project_root_fallback";
+    session_id: string | null;
+    worktree_id: string | null;
+    fallback_reason: string | null;
+    ignored_directories: string[];
+  };
   nodes: {
     node_id: string;
     parent_id: string | null;
@@ -41,6 +49,27 @@ export interface ProjectStructureView {
     kind: "contains" | "imports" | "depends_on" | "declares" | "generates";
     source_kind: "filesystem" | "git" | "manifest" | "parser" | "documentation" | "inference";
     confidence: number;
+    evidence_refs: EvidenceRefs;
+  }[];
+  architecture_nodes: {
+    node_id: string;
+    name: string;
+    kind: "workspace" | "module" | "package";
+    path: NativePath;
+    file_count: number;
+    source_kind: "manifest" | "parser" | "documentation" | "inference";
+    confidence: number;
+    generator_version: string;
+    evidence_refs: EvidenceRefs;
+  }[];
+  architecture_edges: {
+    edge_id: string;
+    from_node_id: string;
+    to_node_id: string;
+    kind: "contains" | "imports" | "depends_on";
+    source_kind: "manifest" | "parser" | "documentation" | "inference";
+    confidence: number;
+    generator_version: string;
     evidence_refs: EvidenceRefs;
   }[];
   unsupported_analyzers: string[];

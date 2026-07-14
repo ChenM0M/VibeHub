@@ -755,6 +755,71 @@
             "hourlyActivity": "時段活動"
         }
     },
+    "v3": {
+        "criteria": {
+            "status": {
+                "proposed": "待提議",
+                "accepted": "已接受",
+                "passed": "已通過",
+                "failed": "失敗",
+                "blocked": "阻塞",
+                "not_applicable": "不適用",
+                "unknown": "未知"
+            },
+            "requiredSuffix": "（必要）",
+            "ariaLabel": "驗收標準狀態：{{status}}"
+        },
+        "diagnostics": {
+            "warning": {
+                "group": "{{count}} 條專案提示資訊（點擊查看）",
+                "unknown": "無法識別專案提示，以下顯示原始診斷資訊。"
+            },
+            "error": {
+                "group": "{{count}} 個錯誤資訊（點擊查看）",
+                "unknown": "無法識別專案錯誤，以下顯示原始診斷資訊。",
+                "retry": "重試"
+            },
+            "collapse": "摺疊提示",
+            "expand": "展開提示",
+            "messages": {
+                "architectureIndexPending": "架構索引尚未完成，結構資訊可能暫時不完整。",
+                "planNotRecorded": "尚未記錄實作計畫，目前任務的執行路徑可能不完整。",
+                "agentResultSessionClosed": "Agent 工作階段已關閉，遺留結果已按待處理狀態顯示。",
+                "agentResultStatusInvalid": "Agent 結果狀態無效，已按失敗狀態顯示。",
+                "projectIndexGap": "專案結構索引存在缺口。",
+                "projectIndexUnavailable": "專案結構索引暫時不可用。",
+                "protocolCoverageGap": "工作流程協定涵蓋存在缺口，部分執行狀態可能不完整。",
+                "projectUninitialized": "專案尚未初始化 V3 工作區。",
+                "modelStale": "專案索引已過期，重新整理後才能反映最新結構。",
+                "scopeOverlap": "平行工作階段的工作範圍存在重疊。",
+                "subtreeInaccessible": "部分專案目錄無法存取，結構資訊可能不完整。",
+                "analyzerUnsupported": "部分專案分析器目前不支援。",
+                "analyzerDegraded": "專案分析器已降級，部分架構關係未建立。",
+                "architectureUnsupported": "專案尚未產生可用的架構索引。",
+                "analyzerUnsupportedImpact": "專案結構索引仍可用，但這些檔案類型的匯入關係可能不完整；這不會阻塞專案執行。",
+                "analyzerUnsupportedNextStep": "如需完整依賴圖，請補充對應分析器後重新索引；目前仍可使用專案的其他功能。",
+                "analyzerDegradedImpact": "部分架構關係未能建立，相關模組依賴圖可能不完整。",
+                "analyzerDegradedNextStep": "檢查對應分析器回報的路徑與錯誤資訊，修復後重新索引。",
+                "architectureUnsupportedImpact": "檔案結構仍可瀏覽，但架構模組與關係暫時無法提供。",
+                "architectureUnsupportedNextStep": "補充受支援的專案清單、原始碼模組或架構文件後重新索引。",
+                "noDeclaredArchitecture": "專案尚未宣告架構文件，結構資訊可能不完整。",
+                "projectionUnavailable": "V3 投影暫時不可用，請稍後再試。",
+                "contractTerminal": "V3 資料契約驗證失敗，目前視圖無法繼續。"
+            },
+            "details": {
+                "code": "診斷碼",
+                "messageKey": "診斷類型",
+                "analyzer": "分析器",
+                "analyzers": "不支援的分析器",
+                "path": "路徑",
+                "message": "原始資訊",
+                "impact": "影響",
+                "nextStep": "下一步",
+                "rawField": "{{field}}",
+                "noDetails": "後端沒有提供更多詳情。"
+            }
+        }
+    },
     "update": {
         "newVersion": "發現新版本",
         "later": "稍後提醒",

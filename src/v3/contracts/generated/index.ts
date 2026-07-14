@@ -1,7 +1,11 @@
 export type { V3EventEnvelope } from "./event-envelope";
-export type { V3ApplicationCommand } from "./application-command";
+export type { V3ApplicationCommand, PlanNodeAdd, PlanDependenciesSet, PlanNodeStateSet, SessionOpen, EventLog, SessionClose, AgentResultRecord, WorktreeCommand, Rebuild } from "./application-command";
+export type { V3TaskCreateContract, V3TaskCreateRequest, V3TaskCreateResult } from "./task-create";
+export type { V3ProjectSettingsContract, V3OutputLanguage, V3AgentSpecTarget, V3ProjectSettings, V3ProjectSettingsInspection, V3ProjectSettingsUpdateRequest } from "./project-settings";
+export type { V3AgentSpecContract, V3AgentSpecArtifactStatus, V3AgentSpecArtifactInspection, V3AgentSpecInspection, V3AgentSpecSyncRequest, V3AgentSpecSyncResult } from "./agent-spec";
 export type { ProjectOverviewView } from "./project-overview-view";
 export type { ProjectStructureView } from "./project-structure-view";
+export type { AgentResultsView } from "./agent-results-view";
 export type { TaskTimelineView } from "./task-timeline-view";
 export type { PlanGraphView } from "./plan-graph-view";
 export type { NodeBrief } from "./node-brief";
