@@ -1,6 +1,7 @@
 /* Generated from contracts/v3. Do not edit directly. */
 
 export type EvidenceRefs = EvidenceRef[];
+export type BlockerDetails = BlockerDetail[];
 export type Warnings = Warning[];
 export type Errors = StructuredError[];
 
@@ -21,6 +22,7 @@ export interface PlanGraphView {
     state: "planned" | "ready" | "active" | "blocked" | "review" | "completed" | "cancelled" | "superseded";
     readiness: "ready" | "blocked" | "unknown";
     block_reasons: string[];
+    blocker_details?: BlockerDetails;
     scope: string[];
     criterion_ids: string[];
     session_ids?: string[];
@@ -49,6 +51,27 @@ export interface PlanGraphView {
   warnings: Warnings;
   errors: Errors;
 }
+export interface BlockerDetail {
+  blocker_id: string;
+  reason_code: string;
+  summary: string;
+  kind: "external_precondition" | "permission" | "evidence_gap" | "dependency" | "conflict" | "workflow" | "unknown";
+  owner: string;
+  precondition: string;
+  resume_action: string;
+  criterion_id?: string;
+  node_id?: string;
+  evidence_refs: EvidenceRefs;
+}
+export interface EvidenceRef {
+  evidence_id: string;
+  kind: "event" | "file" | "git" | "command" | "test" | "user" | "external";
+  grade: "hard_observed" | "agent_reported" | "inferred" | "user_confirmed";
+  label_key: string;
+  locator: string;
+  captured_at?: string;
+  excerpt?: string;
+}
 export interface WorktreeRef {
   worktree_id: string;
   lease_id: string | null;
@@ -66,15 +89,6 @@ export interface WorktreeRef {
     | "abandoned"
     | "repairing"
     | "cleaned";
-}
-export interface EvidenceRef {
-  evidence_id: string;
-  kind: "event" | "file" | "git" | "command" | "test" | "user" | "external";
-  grade: "hard_observed" | "agent_reported" | "inferred" | "user_confirmed";
-  label_key: string;
-  locator: string;
-  captured_at?: string;
-  excerpt?: string;
 }
 export interface Warning {
   code: string;

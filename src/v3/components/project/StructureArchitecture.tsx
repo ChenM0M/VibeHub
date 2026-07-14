@@ -1,10 +1,9 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronRight, ChevronDown, Search, Folder, File, Package, Box, Braces, ArrowRight } from "lucide-react";
+import { ChevronRight, ChevronDown, Search, Folder, File, Package, Box, Braces, ArrowRight, ExternalLink, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { WarningList } from "@/v3/components/common/WarningList";
-import { ErrorList } from "@/v3/components/common/ErrorList";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
+import { WarningList } from "@/v3/components/common/WarningList";
 import { NativePathDisplay } from "@/v3/components/common/NativePathDisplay";
 import type { ProjectStructureView } from "@/v3/contracts/generated/project-structure-view";
 import { queryV3ProjectStructure } from "@/services/v3ProductionViews";
@@ -45,12 +44,15 @@ function flattenTree(roots: TreeNode[], expanded: Set<string>): TreeNode[] {
 
 interface StructureArchitectureProps {
   data: ProjectStructureView;
+  taskId: string;
   projectPath?: string;
   highlightModuleId?: string | null;
   onModuleClick?: (moduleId: string | null) => void;
+  onRevealProjectFile?: (projectPath: string, taskId: string, relativePath: string) => Promise<void>;
+  onOpenProjectFile?: (projectPath: string, taskId: string, relativePath: string) => Promise<void>;
 }
 
-export function StructureArchitecture({ data, projectPath, highlightModuleId, onModuleClick }: StructureArchitectureProps) {
+export function StructureArchitecture({ data, taskId, projectPath, highlightModuleId, onModuleClick, onRevealProjectFile, onOpenProjectFile }: StructureArchitectureProps) {
   const [viewData, setViewData] = useState(data);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -59,6 +61,9 @@ export function StructureArchitecture({ data, projectPath, highlightModuleId, on
   const [queryError, setQueryError] = useState<string | null>(null);
   const [pageDirectory, setPageDirectory] = useState(".");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedArchitectureEdgeId, setSelectedArchitectureEdgeId] = useState<string | null>(null);
+  const [fileActionLoading, setFileActionLoading] = useState<"reveal" | "open" | null>(null);
+  const [fileActionError, setFileActionError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRequestRef = useRef(0);
 
@@ -67,6 +72,10 @@ export function StructureArchitecture({ data, projectPath, highlightModuleId, on
     setViewData(data);
     setRemoteSearch(null);
     setPageDirectory(".");
+    setSelectedNodeId(null);
+    setSelectedArchitectureEdgeId(null);
+    setFileActionLoading(null);
+    setFileActionError(null);
   }, [data]);
 
   const treeRoots = useMemo(() => buildTree(viewData.nodes), [viewData.nodes]);
@@ -100,7 +109,7 @@ export function StructureArchitecture({ data, projectPath, highlightModuleId, on
     const request = window.setTimeout(() => {
       setQueryLoading(true);
       setQueryError(null);
-      void queryV3ProjectStructure(projectPath, ".", null, 200, search)
+      void queryV3ProjectStructure(projectPath, taskId, ".", null, 200, search)
         .then((result) => {
           if (searchRequestRef.current === requestId) setRemoteSearch(result);
         })
@@ -115,7 +124,7 @@ export function StructureArchitecture({ data, projectPath, highlightModuleId, on
       window.clearTimeout(request);
       if (searchRequestRef.current === requestId) searchRequestRef.current += 1;
     };
-  }, [projectPath, search]);
+  }, [projectPath, taskId, search]);
 
   const virtualizer = useVirtualizer({ count: flatNodes?.length ?? 0, getScrollElement: () => scrollRef.current, estimateSize: () => 32, overscan: 10 });
 
@@ -154,7 +163,7 @@ export function StructureArchitecture({ data, projectPath, highlightModuleId, on
       setQueryLoading(true); setQueryError(null);
       const directory = relativePath(node);
       try {
-        mergePage(await queryV3ProjectStructure(projectPath, directory));
+        mergePage(await queryV3ProjectStructure(projectPath, taskId, directory));
         setPageDirectory(directory);
       }
       catch (error) { setQueryError((error as Error).message); }
@@ -166,7 +175,7 @@ export function StructureArchitecture({ data, projectPath, highlightModuleId, on
     if (!projectPath || !viewData.page.next_cursor || queryLoading) return;
     setQueryLoading(true); setQueryError(null);
     try {
-      mergePage(await queryV3ProjectStructure(projectPath, pageDirectory, viewData.page.next_cursor));
+      mergePage(await queryV3ProjectStructure(projectPath, taskId, pageDirectory, viewData.page.next_cursor));
     } catch (error) {
       setQueryError((error as Error).message);
     } finally {
@@ -174,29 +183,50 @@ export function StructureArchitecture({ data, projectPath, highlightModuleId, on
     }
   };
   const selectedNode = viewData.nodes.find((n) => n.node_id === selectedNodeId) ?? null;
+  const runFileAction = async (mode: "reveal" | "open") => {
+    if (!projectPath || !selectedNode) return;
+    const action = mode === "reveal" ? onRevealProjectFile : onOpenProjectFile;
+    if (!action) return;
+    setFileActionLoading(mode);
+    setFileActionError(null);
+    try {
+      await action(projectPath, taskId, relativePath(selectedNode));
+    } catch (error) {
+      setFileActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFileActionLoading(null);
+    }
+  };
 
   // 架构侧：模块列表
   const modules = useMemo(() => {
-    const mods = viewData.nodes.filter((n) => n.kind === "module" || n.kind === "package" || n.kind === "root");
-    const moduleIds = new Set(mods.map((n) => n.node_id));
-    const fileMap = new Map<string, typeof viewData.nodes>();
-    for (const node of viewData.nodes) {
-      const key = node.module_id ?? (moduleIds.has(node.node_id) ? node.node_id : null);
-      if (key) { if (!fileMap.has(key)) fileMap.set(key, []); fileMap.get(key)!.push(node); }
-    }
-    const edges = viewData.edges.filter((e) => moduleIds.has(e.from_node_id) && moduleIds.has(e.to_node_id));
-    return { mods, fileMap, edges };
-  }, [viewData.nodes, viewData.edges]);
+    const mods = viewData.architecture_nodes;
+    const edges = viewData.architecture_edges;
+    return { mods, edges };
+  }, [viewData.architecture_nodes, viewData.architecture_edges]);
+  const selectedArchitectureEdge = modules.edges.find((edge) => edge.edge_id === selectedArchitectureEdgeId) ?? null;
+  const unsupportedWarnings = useMemo<ProjectStructureView["warnings"]>(() => {
+    const warnings = data.warnings.filter((warning) => warning.code === "PI_ANALYZER_UNSUPPORTED");
+    if (warnings.length > 0 || data.unsupported_analyzers.length === 0) return warnings;
+    return [{
+      code: "PI_ANALYZER_UNSUPPORTED",
+      severity: "warning",
+      message_key: "v3.warning.analyzer_unsupported",
+      details: { analyzers: data.unsupported_analyzers },
+      evidence_refs: data.evidence_refs,
+    }];
+  }, [data.evidence_refs, data.unsupported_analyzers, data.warnings]);
 
   return (
-    <div className="flex h-full flex-col gap-2 min-h-0">
-      <WarningList warnings={data.warnings} />
-      <ErrorList errors={data.errors} />
+    <div className="relative flex h-full flex-col gap-2 min-h-0">
       {queryError && <div className="text-xs text-red-600" role="alert">{queryError}</div>}
 
       <div className="flex items-center gap-3 shrink-0">
-        <span className="text-xs text-muted-foreground">{viewData.nodes.length} 节点 · {viewData.edges.length} 边 · 索引：{indexStateLabel[viewData.index_state] ?? viewData.index_state}{viewData.page.truncated && "（已截断）"}{queryLoading && " · 查询中"}</span>
-        {data.unsupported_analyzers.length > 0 && <span className="text-xs text-orange-600">不支持：{data.unsupported_analyzers.join("、")}</span>}
+        <span className="text-xs font-medium">工作目录：{viewData.workspace.root.display}</span>
+        <span className="text-xs text-muted-foreground">来源：{viewData.workspace.source === "session_worktree" ? "Agent worktree" : viewData.workspace.source === "session_working_directory" ? "Agent 会话" : "项目根回退"}</span>
+        <span className="text-xs text-muted-foreground">{viewData.nodes.length} 节点 · {viewData.edges.length} 文件关系 · {viewData.architecture_nodes.length} 架构模块 · 索引：{indexStateLabel[viewData.index_state] ?? viewData.index_state}{viewData.page.truncated && `（已截断：${viewData.page.truncation_reason}）`}{queryLoading && " · 查询中"}</span>
+        {viewData.workspace.fallback_reason && <span className="text-xs text-amber-600">{viewData.workspace.fallback_reason}</span>}
+        {unsupportedWarnings.length > 0 && <WarningList warnings={unsupportedWarnings} className="shrink-0" />}
       </div>
 
       {/* 左右对照 */}
@@ -214,31 +244,52 @@ export function StructureArchitecture({ data, projectPath, highlightModuleId, on
           </div>
           <div className="flex-1 overflow-y-auto scrollbar-auto-hide space-y-1.5 pr-2">
             {modules.mods.map((mod) => {
-              const files = modules.fileMap.get(mod.module_id ?? mod.node_id) ?? [];
+              const files = mod.file_count;
               const incoming = modules.edges.filter((e) => e.to_node_id === mod.node_id);
               const outgoing = modules.edges.filter((e) => e.from_node_id === mod.node_id);
-              const isHighlighted = highlightModuleId === (mod.module_id ?? mod.node_id);
+              const isHighlighted = highlightModuleId === mod.node_id;
               return (
-                <div key={mod.node_id} className={cn("p-3 rounded-xl transition-all border border-transparent", isHighlighted ? "bg-card shadow-sm border-border/50" : "hover:bg-muted/40", onModuleClick && "cursor-pointer")} onClick={() => onModuleClick?.(mod.module_id ?? mod.node_id)}>
+                <div key={mod.node_id} className={cn("p-3 rounded-xl transition-all border border-transparent", isHighlighted ? "bg-card shadow-sm border-border/50" : "hover:bg-muted/40", onModuleClick && "cursor-pointer")} onClick={() => onModuleClick?.(mod.node_id)}>
                   <div className="flex items-center gap-2 mb-1.5">
                     <Package className={cn("h-4 w-4", isHighlighted ? "text-primary" : "text-muted-foreground")} />
                     <span className={cn("text-sm font-medium truncate", isHighlighted ? "text-foreground" : "text-foreground/80")}>{mod.name}</span>
-                    <span className="ml-auto text-xs text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded-md">{files.length} 文件</span>
+                    <span className="ml-auto text-xs text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded-md">{files} 文件</span>
                   </div>
-                  <div className="space-y-1 mt-2 pl-6">
-                    {files.slice(0, 4).map((f) => { const Icon = kindIcons[f.kind] ?? File; return <div key={f.node_id} className="flex items-center gap-2 text-[13px] text-muted-foreground truncate"><Icon className="h-3.5 w-3.5 shrink-0 opacity-70" /><span className="truncate">{f.name}</span></div>; })}
-                    {files.length > 4 && <div className="text-xs text-muted-foreground/50 pt-0.5">还有 {files.length - 4} 个文件…</div>}
+                  <div className="mt-2 pl-6 text-[11px] text-muted-foreground">
+                    <NativePathDisplay path={mod.path} />
                   </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6 text-[10px] text-muted-foreground">
+                    <span className="rounded bg-muted px-1.5 py-0.5" style={{ color: sourceKindColor[mod.source_kind] }}>{sourceKindLabel[mod.source_kind] ?? mod.source_kind}</span>
+                    <span>{(mod.confidence * 100).toFixed(0)}% 置信度</span>
+                    <span className="font-mono" title={mod.generator_version}>{mod.generator_version}</span>
+                  </div>
+                  <EvidenceLink evidenceRefs={mod.evidence_refs} className="mt-2 pl-6" />
                   {(incoming.length > 0 || outgoing.length > 0) && (
                     <div className="mt-3 pt-2 flex flex-wrap gap-1.5 pl-6">
-                      {outgoing.map((e) => { const target = data.nodes.find((n) => n.node_id === e.to_node_id); return <div key={e.edge_id} className="flex items-center gap-1 rounded bg-accent/50 px-1.5 py-0.5 text-[11px] text-muted-foreground" title={edgeKindLabel[e.kind]}><span style={{ color: sourceKindColor[e.source_kind] }}>●</span>{edgeKindLabel[e.kind]} <ArrowRight className="h-3 w-3" /> <span className="font-medium">{target?.name ?? "?"}</span></div>; })}
-                      {incoming.map((e) => { const src = data.nodes.find((n) => n.node_id === e.from_node_id); return <div key={e.edge_id} className="flex items-center gap-1 rounded bg-accent/50 px-1.5 py-0.5 text-[11px] text-muted-foreground" title={edgeKindLabel[e.kind]}><span style={{ color: sourceKindColor[e.source_kind] }}>●</span><span className="font-medium">{src?.name ?? "?"}</span> <ArrowRight className="h-3 w-3" /> {edgeKindLabel[e.kind]}</div>; })}
+                      {outgoing.map((e) => { const target = viewData.architecture_nodes.find((n) => n.node_id === e.to_node_id); return <button key={e.edge_id} type="button" onClick={(event) => { event.stopPropagation(); setSelectedArchitectureEdgeId(e.edge_id); }} className={cn("flex items-center gap-1 rounded bg-accent/50 px-1.5 py-0.5 text-[11px] text-muted-foreground", selectedArchitectureEdgeId === e.edge_id && "ring-1 ring-primary/40")} title={`${sourceKindLabel[e.source_kind] ?? e.source_kind} · ${(e.confidence * 100).toFixed(0)}%`}><span style={{ color: sourceKindColor[e.source_kind] }}>●</span>{edgeKindLabel[e.kind]} <ArrowRight className="h-3 w-3" /> <span className="font-medium">{target?.name ?? "?"}</span></button>; })}
+                      {incoming.map((e) => { const src = viewData.architecture_nodes.find((n) => n.node_id === e.from_node_id); return <button key={e.edge_id} type="button" onClick={(event) => { event.stopPropagation(); setSelectedArchitectureEdgeId(e.edge_id); }} className={cn("flex items-center gap-1 rounded bg-accent/50 px-1.5 py-0.5 text-[11px] text-muted-foreground", selectedArchitectureEdgeId === e.edge_id && "ring-1 ring-primary/40")} title={`${sourceKindLabel[e.source_kind] ?? e.source_kind} · ${(e.confidence * 100).toFixed(0)}%`}><span style={{ color: sourceKindColor[e.source_kind] }}>●</span><span className="font-medium">{src?.name ?? "?"}</span> <ArrowRight className="h-3 w-3" /> {edgeKindLabel[e.kind]}</button>; })}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+          {selectedArchitectureEdge && (
+            <div className="mt-2 shrink-0 rounded-lg border border-border/50 bg-card/60 p-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{modules.mods.find((node) => node.node_id === selectedArchitectureEdge.from_node_id)?.name ?? selectedArchitectureEdge.from_node_id}</span>
+                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="font-medium">{modules.mods.find((node) => node.node_id === selectedArchitectureEdge.to_node_id)?.name ?? selectedArchitectureEdge.to_node_id}</span>
+                <span className="ml-auto text-muted-foreground">{edgeKindLabel[selectedArchitectureEdge.kind]}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                <span style={{ color: sourceKindColor[selectedArchitectureEdge.source_kind] }}>{sourceKindLabel[selectedArchitectureEdge.source_kind] ?? selectedArchitectureEdge.source_kind}</span>
+                <span>{(selectedArchitectureEdge.confidence * 100).toFixed(0)}% 置信度</span>
+                <span className="font-mono">{selectedArchitectureEdge.generator_version}</span>
+              </div>
+              <EvidenceLink evidenceRefs={selectedArchitectureEdge.evidence_refs} className="mt-2" />
+            </div>
+          )}
         </div>
 
         {/* 右：文件树 */}
@@ -281,6 +332,21 @@ export function StructureArchitecture({ data, projectPath, highlightModuleId, on
               </div>
               <div className="mt-3"><NativePathDisplay path={selectedNode.path} showPlatform /></div>
               <div className="mt-2"><EvidenceLink evidenceRefs={selectedNode.evidence_refs} /></div>
+              {projectPath && (onRevealProjectFile || (selectedNode.kind === "file" && onOpenProjectFile)) && (
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-border/40 pt-3">
+                  {onRevealProjectFile && (
+                    <button type="button" onClick={() => void runFileAction("reveal")} disabled={fileActionLoading !== null} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-xs hover:bg-muted/40 disabled:opacity-50">
+                      <FolderOpen className="h-3.5 w-3.5" />{fileActionLoading === "reveal" ? "正在显示…" : "在文件管理器中显示"}
+                    </button>
+                  )}
+                  {selectedNode.kind === "file" && onOpenProjectFile && (
+                    <button type="button" onClick={() => void runFileAction("open")} disabled={fileActionLoading !== null} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-xs hover:bg-muted/40 disabled:opacity-50">
+                      <ExternalLink className="h-3.5 w-3.5" />{fileActionLoading === "open" ? "正在打开…" : "使用默认应用打开"}
+                    </button>
+                  )}
+                </div>
+              )}
+              {fileActionError && <div className="mt-2 text-xs text-red-600" role="alert">{fileActionError}</div>}
             </div>
           )}
         </div>

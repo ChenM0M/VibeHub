@@ -1,9 +1,11 @@
 use super::domain::{
-    AppendResult, EventDraft, EvidenceGrade, ProjectId, SessionId, TaskId, V3Error,
+    AppendResult, EventDraft, EvidenceGrade, NodeId, ProjectId, SessionId, TaskId, V3Error,
+    WorktreeId,
 };
 use super::event_store::V3EventStore;
 use super::lifecycle::{
-    apply_command_with_required_criteria, LifecycleCommand, TaskLifecycleProjection,
+    apply_command_with_required_criteria, LifecycleCommand, PlanAddNodeCommand,
+    PlanSetDependenciesCommand, PlanSetStateCommand, TaskLifecycleProjection,
 };
 use super::orchestration::{self, OrchestrationCommand, OrchestrationProjection};
 use super::projection::{self, V3Projection};
@@ -34,7 +36,75 @@ impl V3ApplicationService {
         expected_version: u64,
         idempotency_key: &str,
     ) -> Result<AppendResult, V3Error> {
-        self.append_session_event(
+        self.session_open_with_context(
+            project_id,
+            task_id,
+            session_id,
+            actor,
+            expected_version,
+            idempotency_key,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn session_open_with_context(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        actor: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+        working_directory: Option<String>,
+        node_id: Option<String>,
+        worktree_id: Option<String>,
+    ) -> Result<AppendResult, V3Error> {
+        self.session_open_with_context_and_provider(
+            project_id,
+            task_id,
+            session_id,
+            actor,
+            expected_version,
+            idempotency_key,
+            working_directory,
+            node_id,
+            worktree_id,
+            None,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn session_open_with_context_and_provider(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        actor: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+        working_directory: Option<String>,
+        node_id: Option<String>,
+        worktree_id: Option<String>,
+        provider: Option<String>,
+        provider_session_id: Option<String>,
+    ) -> Result<AppendResult, V3Error> {
+        let mut payload = json!({});
+        if let Some(path) = working_directory {
+            payload["working_directory"] = Value::String(path);
+        }
+        if let Some(provider) = provider.filter(|value| !value.trim().is_empty()) {
+            payload["provider"] = Value::String(provider);
+        }
+        if let Some(provider_session_id) =
+            provider_session_id.filter(|value| !value.trim().is_empty())
+        {
+            payload["provider_session_id"] = Value::String(provider_session_id);
+        }
+        self.append_session_event_with_context(
             "session.opened",
             project_id,
             task_id,
@@ -42,7 +112,9 @@ impl V3ApplicationService {
             actor,
             expected_version,
             idempotency_key,
-            json!({}),
+            payload,
+            node_id,
+            worktree_id,
         )
     }
 
@@ -74,6 +146,56 @@ impl V3ApplicationService {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn agent_result_record(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        actor: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+        result_id: &str,
+        node_id: Option<String>,
+        details: Value,
+    ) -> Result<AppendResult, V3Error> {
+        for field in ["kind", "request_source", "instruction", "status", "summary"] {
+            if details.get(field).and_then(Value::as_str).is_none() {
+                return Err(V3Error::new(
+                    "V3_AGENT_RESULT_INVALID",
+                    super::domain::V3ErrorCategory::Validation,
+                    false,
+                    format!("agent result requires string field {field}"),
+                ));
+            }
+        }
+        validate_agent_result_value(&details, "kind", &["execution", "evaluation"])?;
+        validate_agent_result_value(
+            &details,
+            "request_source",
+            &["user_request", "evaluation_instruction"],
+        )?;
+        validate_agent_result_value(
+            &details,
+            "status",
+            &["pending", "running", "succeeded", "failed"],
+        )?;
+        let mut payload = details;
+        payload["result_id"] = Value::String(result_id.to_owned());
+        self.append_session_event_with_context(
+            "agent.result_recorded",
+            project_id,
+            task_id,
+            session_id,
+            actor,
+            expected_version,
+            idempotency_key,
+            payload,
+            node_id,
+            None,
+        )
+    }
+
     pub fn session_close(
         &self,
         project_id: &str,
@@ -102,9 +224,35 @@ impl V3ApplicationService {
         Ok(projection)
     }
 
+    pub fn aggregate_version(&self, project_id: &str, aggregate_id: &str) -> Result<u64, V3Error> {
+        Ok(self
+            .store
+            .load_project(project_id)?
+            .into_iter()
+            .filter(|event| event.aggregate_id == aggregate_id)
+            .map(|event| event.aggregate_version)
+            .max()
+            .unwrap_or(0))
+    }
+
     pub fn lifecycle_command(&self, command: LifecycleCommand) -> Result<AppendResult, V3Error> {
         let required_criterion_ids = self.required_criterion_ids(&command.task_id)?;
         apply_command_with_required_criteria(&self.store, command, &required_criterion_ids)
+    }
+
+    pub fn plan_add_node(&self, command: PlanAddNodeCommand) -> Result<AppendResult, V3Error> {
+        self.lifecycle_command(command.into())
+    }
+
+    pub fn plan_set_dependencies(
+        &self,
+        command: PlanSetDependenciesCommand,
+    ) -> Result<AppendResult, V3Error> {
+        self.lifecycle_command(command.into())
+    }
+
+    pub fn plan_set_state(&self, command: PlanSetStateCommand) -> Result<AppendResult, V3Error> {
+        self.lifecycle_command(command.into())
     }
 
     pub fn task_lifecycle(
@@ -169,6 +317,40 @@ impl V3ApplicationService {
             .collect())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn append_session_event_with_context(
+        &self,
+        event_type: &str,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        actor: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+        payload: Value,
+        node_id: Option<String>,
+        worktree_id: Option<String>,
+    ) -> Result<AppendResult, V3Error> {
+        self.store.append(EventDraft {
+            event_type: event_type.to_owned(),
+            aggregate_id: session_id.to_owned(),
+            expected_version,
+            idempotency_key: idempotency_key.to_owned(),
+            project_id: ProjectId::from(project_id),
+            task_id: TaskId::from(task_id),
+            node_id: node_id.map(NodeId),
+            session_id: Some(SessionId::from(session_id)),
+            worktree_id: worktree_id.map(WorktreeId),
+            lease_id: None,
+            operation_id: None,
+            actor: actor.to_owned(),
+            evidence_grade: EvidenceGrade::AgentReported,
+            occurred_at: None,
+            commit_sha: None,
+            payload,
+        })
+    }
+
     fn append_session_event(
         &self,
         event_type: &str,
@@ -180,25 +362,42 @@ impl V3ApplicationService {
         idempotency_key: &str,
         payload: Value,
     ) -> Result<AppendResult, V3Error> {
-        self.store.append(EventDraft {
-            event_type: event_type.to_owned(),
-            aggregate_id: session_id.to_owned(),
+        self.append_session_event_with_context(
+            event_type,
+            project_id,
+            task_id,
+            session_id,
+            actor,
             expected_version,
-            idempotency_key: idempotency_key.to_owned(),
-            project_id: ProjectId::from(project_id),
-            task_id: TaskId::from(task_id),
-            node_id: None,
-            session_id: Some(SessionId::from(session_id)),
-            worktree_id: None,
-            lease_id: None,
-            operation_id: None,
-            actor: actor.to_owned(),
-            evidence_grade: EvidenceGrade::AgentReported,
-            occurred_at: None,
-            commit_sha: None,
+            idempotency_key,
             payload,
-        })
+            None,
+            None,
+        )
     }
+}
+
+fn validate_agent_result_value(
+    details: &Value,
+    field: &str,
+    allowed: &[&str],
+) -> Result<(), V3Error> {
+    let value = details
+        .get(field)
+        .and_then(Value::as_str)
+        .expect("required agent result string fields are checked before enum validation");
+    if allowed.contains(&value) {
+        return Ok(());
+    }
+    Err(V3Error::new(
+        "V3_AGENT_RESULT_INVALID",
+        super::domain::V3ErrorCategory::Validation,
+        false,
+        format!(
+            "agent result field {field} must be one of: {}",
+            allowed.join(", ")
+        ),
+    ))
 }
 
 pub(crate) fn canonical_criterion_id(task_id: &str, index: usize) -> String {
@@ -256,6 +455,64 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(second.sessions["session.main"].state, "closed");
         assert_eq!(second.sessions["session.main"].progress_entries, 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn agent_result_rejects_status_outside_the_contract() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-result-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub")).unwrap();
+        let app = V3ApplicationService::open(&root).unwrap();
+        app.session_open(
+            "project.test",
+            "task.test",
+            "session.test",
+            "codex",
+            0,
+            "open.1",
+        )
+        .unwrap();
+
+        let error = app
+            .agent_result_record(
+                "project.test",
+                "task.test",
+                "session.test",
+                "codex",
+                1,
+                "result.blocked",
+                "result.test",
+                None,
+                json!({
+                    "kind": "execution",
+                    "request_source": "user_request",
+                    "instruction": "Run the task",
+                    "status": "blocked",
+                    "summary": "Blocked"
+                }),
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "V3_AGENT_RESULT_INVALID");
+
+        app.agent_result_record(
+            "project.test",
+            "task.test",
+            "session.test",
+            "codex",
+            1,
+            "result.failed",
+            "result.test",
+            None,
+            json!({
+                "kind": "execution",
+                "request_source": "user_request",
+                "instruction": "Run the task",
+                "status": "failed",
+                "summary": "Blocked by an external prerequisite"
+            }),
+        )
+        .unwrap();
+
         fs::remove_dir_all(root).unwrap();
     }
 

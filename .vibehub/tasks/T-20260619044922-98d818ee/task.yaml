@@ -1,9 +1,0 @@
-schema_version: 1
-kind: vibehub_task
-task_id: T-20260619044922-98d818ee
-title: Display local Codex and OpenCode workspace usage insights
-mode: evidence_drive
-phase: implement
-phase_status: completed
-created_at: 2026-06-19T04:49:22Z
-created_by: vibehub

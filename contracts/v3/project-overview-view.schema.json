@@ -41,6 +41,9 @@
         "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
       }
     },
+    "current_task_id": {
+      "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }]
+    },
     "active_tasks": {
       "type": "array",
       "items": {
@@ -51,9 +54,14 @@
           "state": { "enum": ["planned", "active", "blocked", "review", "completed", "cancelled"] },
           "risk_level": { "enum": ["none", "low", "medium", "high", "critical"] },
           "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
+          "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
           "active_sessions": { "type": "integer", "minimum": 0 }
         }
       }
+    },
+    "archived_tasks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ArchivedTaskSummary" }
     },
     "protocol_coverage": {
       "type": "object", "additionalProperties": false,
@@ -66,5 +74,87 @@
     "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
     "warnings": { "$ref": "common.schema.json#/$defs/Warnings" },
     "errors": { "$ref": "common.schema.json#/$defs/Errors" }
+  },
+  "$defs": {
+    "CompletionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposal_event_id", "proposed_at_version", "digest", "valid", "confirmed", "confirmed_at_version", "confirmed_by", "channel"],
+      "properties": {
+        "proposal_event_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+        "proposed_at_version": { "type": ["integer", "null"], "minimum": 1 },
+        "digest": { "type": ["string", "null"] },
+        "valid": { "type": "boolean" },
+        "confirmed": { "type": "boolean" },
+        "confirmed_at_version": { "type": ["integer", "null"], "minimum": 1 },
+        "confirmed_by": { "type": ["string", "null"] },
+        "channel": { "type": ["string", "null"] }
+      }
+    },
+    "ArchivedTaskSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "title", "intent", "state", "risk_level", "terminal_at", "completion", "criteria", "blocker_details", "plan", "sessions", "findings", "result", "evidence_count", "evidence_refs", "next_action", "source"],
+      "properties": {
+        "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "title": { "type": "string", "minLength": 1 },
+        "intent": { "type": "string" },
+        "state": { "enum": ["completed", "cancelled"] },
+        "risk_level": { "enum": ["none", "low", "medium", "high", "critical"] },
+        "terminal_at": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Timestamp" }, { "type": "null" }] },
+        "completion": { "$ref": "#/$defs/CompletionSummary" },
+        "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
+        "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["total", "completed", "cancelled", "active", "blocked", "planned"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "completed": { "type": "integer", "minimum": 0 },
+            "cancelled": { "type": "integer", "minimum": 0 },
+            "active": { "type": "integer", "minimum": 0 },
+            "blocked": { "type": "integer", "minimum": 0 },
+            "planned": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "sessions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["total", "opened", "closed", "gapped"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "opened": { "type": "integer", "minimum": 0 },
+            "closed": { "type": "integer", "minimum": 0 },
+            "gapped": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "findings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["total", "open", "closed"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "open": { "type": "integer", "minimum": 0 },
+            "closed": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "summary", "artifact_count", "recorded_at"],
+          "properties": {
+            "status": { "type": "string", "minLength": 1 },
+            "summary": { "type": ["string", "null"] },
+            "artifact_count": { "type": "integer", "minimum": 0 },
+            "recorded_at": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Timestamp" }, { "type": "null" }] }
+          }
+        },
+        "evidence_count": { "type": "integer", "minimum": 0 },
+        "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
+        "next_action": { "type": "string", "minLength": 1 },
+        "source": { "const": "v3_projection" }
+      }
+    }
   }
 }

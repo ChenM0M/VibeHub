@@ -17,6 +17,13 @@ export function AcceptanceProgress({ criteria, className }: AcceptanceProgressPr
 
   return (
     <div className={cn("space-y-3", className)}>
+      <div className="flex items-baseline justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">验收门槛</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">这些是完成条件，不是实现步骤。</div>
+        </div>
+        <span className="shrink-0 text-[10px] text-muted-foreground">Acceptance criteria</span>
+      </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium">{passed}/{total} 已通过</span>

@@ -12,6 +12,7 @@ export type NativePath = {
   accessible?: boolean | null;
   symlink_target?: string;
 };
+export type BlockerDetails = BlockerDetail[];
 export type Warnings = Warning[];
 export type Errors = StructuredError[];
 
@@ -19,7 +20,7 @@ export interface NodeBrief {
   schema_version: "1.0";
   project_id: string;
   task_id: string;
-  node_id: string;
+  node_id: string | "";
   generated_at: string;
   model_version: string;
   freshness: "fresh" | "stale" | "rebuilding" | "unavailable";
@@ -35,6 +36,7 @@ export interface NodeBrief {
   validation_commands: string[];
   state: "planned" | "ready" | "active" | "blocked" | "review" | "completed" | "cancelled" | "superseded";
   next_intent: string;
+  blocker_details?: BlockerDetails;
   execution?: {
     session_ids: string[];
     worktree: WorktreeRef | null;
@@ -73,6 +75,18 @@ export interface EvidenceRef {
   locator: string;
   captured_at?: string;
   excerpt?: string;
+}
+export interface BlockerDetail {
+  blocker_id: string;
+  reason_code: string;
+  summary: string;
+  kind: "external_precondition" | "permission" | "evidence_gap" | "dependency" | "conflict" | "workflow" | "unknown";
+  owner: string;
+  precondition: string;
+  resume_action: string;
+  criterion_id?: string;
+  node_id?: string;
+  evidence_refs: EvidenceRefs;
 }
 export interface WorktreeRef {
   worktree_id: string;

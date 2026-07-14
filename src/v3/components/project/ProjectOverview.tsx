@@ -2,6 +2,7 @@ import { WarningList } from "@/v3/components/common/WarningList";
 import { ErrorList } from "@/v3/components/common/ErrorList";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import { CriterionBadge } from "@/v3/components/common/CriterionBadge";
+import { BlockerDetailsPanel } from "@/v3/components/common/BlockerDetailsPanel";
 import { GitBranch, Database, Layers, ShieldCheck, ListTodo, Clock, FolderTree, ChevronRight } from "lucide-react";
 import type { V3View } from "@/v3/stores/v3Store";
 import type { ProjectOverviewView } from "@/v3/contracts/generated/project-overview-view";
@@ -196,11 +197,13 @@ export function ProjectOverview({ data, onDrillIn }: ProjectOverviewProps) {
                     </span>
                   </div>
                   <div className="font-mono text-[11px] text-muted-foreground">{task.task_id}</div>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">验收门槛</div>
                   <div className="flex flex-wrap items-center gap-1">
                     {task.criteria.map((c) => (
                       <CriterionBadge key={c.criterion_id} criterion={c} />
                     ))}
                   </div>
+                  <BlockerDetailsPanel blockers={task.blocker_details} compact />
                 </div>
                 <div className="shrink-0 text-right">
                   <div className="text-xs text-muted-foreground">{task.active_sessions} 个会话</div>

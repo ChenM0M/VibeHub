@@ -105,12 +105,49 @@
           "captured_at": "2026-07-11T08:00:00.000Z"
         }
       ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
     }
   ],
   "errors": [],
   "index_state": "uninitialized",
+  "workspace": {
+    "root": {
+      "platform": "macos",
+      "native": "/Users/alex/.vibehub/worktrees/task-m0/node-contracts",
+      "display": "/Users/alex/.vibehub/worktrees/task-m0/node-contracts",
+      "identity_key": "macos:/Users/alex/.vibehub/worktrees/task-m0/node-contracts",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    "source": "session_worktree",
+    "session_id": "session.main",
+    "worktree_id": "worktree.contracts",
+    "fallback_reason": null,
+    "ignored_directories": [
+      ".git",
+      "dist",
+      "node_modules",
+      "target"
+    ]
+  },
   "nodes": [],
   "edges": [],
+  "architecture_nodes": [],
+  "architecture_edges": [],
   "unsupported_analyzers": [],
   "page": {
     "cursor": null,

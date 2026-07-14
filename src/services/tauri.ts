@@ -1,41 +1,26 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
-    AgentAdapterConfig,
-    AgentAdapterConfigPatch,
-    AgentAdapterStatus,
-    AgentAdapterSyncResult,
-    AgentTool,
     AppConfig,
-    ContextPackBuildResult,
-    DebugDumpOptions,
-    DebugDumpResult,
-    PhaseAdvanceResult,
-    PhaseSetResult,
-    PhaseValidationResult,
-    PendingReplayResult,
-    ResearchPackArchiveResult,
-    ResearchPackBuildResult,
     Project,
     SettingsImportResult,
     StorageInfo,
     Tag,
-    VibehubCockpitOverview,
-    VibehubFileReadResult,
-    LocalAgentUsageOverview,
-    VibehubPromptRenderResult,
-    VibehubPromptTemplateId,
-    VibehubPromptTemplateOption,
-    VibehubProjectDigest,
-    VibehubJournalAppendResult,
-    VibehubKnowledgeAppendResult,
-    VibehubStartTaskIntakeRequest,
-    VibehubStartTaskIntakeResult,
-    VibehubStartTaskResult,
-    VibehubStateMigrationReport,
-    VibehubSyncReport,
     Workspace,
-    WorkspaceDriftReport,
+    LocalAgentUsageOverview,
+    V3BootstrapResult,
+    V3ProjectLayoutStatus,
 } from '../types';
+import type {
+    V3AgentSpecInspection,
+    V3AgentSpecSyncRequest,
+    V3AgentSpecSyncResult,
+    V3ProjectSettings,
+    V3ProjectSettingsInspection,
+    V3ProjectSettingsUpdateRequest,
+    V3TaskCreateRequest,
+    V3TaskCreateResult,
+} from '../v3/contracts/generated';
+import type { V3AppendResult, V3PlanAddNodeCommand, V3PlanSetDependenciesCommand, V3PlanSetStateCommand } from '../types';
 
 export const tauriApi = {
     loadConfig: async (): Promise<AppConfig> => {
@@ -153,252 +138,65 @@ export const tauriApi = {
         return await invoke('check_for_updates');
     },
 
-    vibehubInit: async (
+    v3InspectProjectLayout: async (projectPath: string): Promise<V3ProjectLayoutStatus> => {
+        return await invoke('v3_inspect_project_layout', { projectPath });
+    },
+
+    v3InitializeProject: async (projectPath: string): Promise<V3BootstrapResult> => {
+        return await invoke('v3_initialize_project', { projectPath });
+    },
+
+    v3MigrateProject: async (projectPath: string): Promise<V3BootstrapResult> => {
+        return await invoke('v3_migrate_project', { projectPath });
+    },
+
+    v3RecoverProjectMigration: async (projectPath: string): Promise<V3BootstrapResult> => {
+        return await invoke('v3_recover_project_migration', { projectPath });
+    },
+
+    v3CreateTask: async (
         projectPath: string,
-        agentTools?: AgentTool[],
-        syncAdapters: boolean = false,
-    ): Promise<{
-        project_root: string;
-        vibehub_root: string;
-        created_files: string[];
-        skipped_existing_files: string[];
-        errors: string[];
-    }> => {
-        // Per spec §18.5 manual_by_default: do NOT pass `sync_adapters: true`
-        // unless the user explicitly opts in (first-run prompt or the
-        // "Sync Adapters" button in the AI Instructions panel).
-        return await invoke('vibehub_init', {
-            projectPath,
-            options:
-                agentTools || syncAdapters
-                    ? { agent_tools: agentTools ?? null, sync_adapters: syncAdapters }
-                    : null,
-        });
+        request: V3TaskCreateRequest,
+    ): Promise<V3TaskCreateResult> => {
+        return await invoke('v3_create_task', { projectPath, request });
     },
 
-    vibehubStartTask: async (
+    v3GetProjectSettings: async (projectPath: string): Promise<V3ProjectSettingsInspection> => {
+        return await invoke('v3_get_project_settings', { projectPath });
+    },
+
+    v3UpdateProjectSettings: async (
         projectPath: string,
-        title?: string,
-        mode?: string,
-        phase?: string
-    ): Promise<VibehubStartTaskResult> => {
-        return await invoke('vibehub_start_task', { projectPath, title, mode, phase });
+        request: V3ProjectSettingsUpdateRequest,
+    ): Promise<V3ProjectSettings> => {
+        return await invoke('v3_update_project_settings', { projectPath, request });
     },
 
-    vibehubStartTaskIntake: async (
+    v3AgentSpecsStatus: async (projectPath: string): Promise<V3AgentSpecInspection> => {
+        return await invoke('v3_agent_specs_status', { projectPath });
+    },
+
+    v3AgentSpecsSync: async (
         projectPath: string,
-        request: VibehubStartTaskIntakeRequest
-    ): Promise<VibehubStartTaskIntakeResult> => {
-        return await invoke('vibehub_start_task_intake', { projectPath, request });
+        request: V3AgentSpecSyncRequest,
+    ): Promise<V3AgentSpecSyncResult> => {
+        return await invoke('v3_agent_specs_sync', { projectPath, request });
     },
 
-    vibehubGenerateAgentView: async (projectPath: string): Promise<{
-        current_path: string;
-        current_context_path: string;
-        handoff_path: string;
-        handoff_created: boolean;
-        handoff_complete: boolean;
-        missing_handoff_sections: string[];
-        task_id: string;
-        run_id: string;
-        phase: string;
-    }> => {
-        return await invoke('vibehub_generate_agent_view', { projectPath });
+    v3PlanAddNode: async (projectPath: string, command: V3PlanAddNodeCommand): Promise<V3AppendResult> => {
+        return await invoke('v3_plan_add_node', { projectPath, command });
     },
 
-    vibehubSyncAgentAdapter: async (
-        projectPath: string,
-        dryRun: boolean = false
-    ): Promise<AgentAdapterSyncResult> => {
-        return await invoke('vibehub_sync_agent_adapter', { projectPath, dryRun });
+    v3PlanSetDependencies: async (projectPath: string, command: V3PlanSetDependenciesCommand): Promise<V3AppendResult> => {
+        return await invoke('v3_plan_set_dependencies', { projectPath, command });
     },
 
-    vibehubGetAgentAdapterStatus: async (projectPath: string): Promise<AgentAdapterStatus> => {
-        return await invoke('vibehub_get_agent_adapter_status', { projectPath });
+    v3PlanSetState: async (projectPath: string, command: V3PlanSetStateCommand): Promise<V3AppendResult> => {
+        return await invoke('v3_plan_set_state', { projectPath, command });
     },
 
-    vibehubUpdateAgentAdapterConfig: async (
-        projectPath: string,
-        patch: AgentAdapterConfigPatch
-    ): Promise<AgentAdapterConfig> => {
-        return await invoke('vibehub_update_agent_adapter_config', { projectPath, patch });
-    },
-
-    vibehubSyncAgentAdapters: async (
-        projectPath: string,
-        tools?: AgentTool[],
-        dryRun: boolean = false
-    ): Promise<AgentAdapterSyncResult> => {
-        return await invoke('vibehub_sync_agent_adapters', {
-            projectPath,
-            tools: tools || null,
-            dryRun,
-        });
-    },
-
-    vibehubCheckWorkspaceDrift: async (
-        projectPath: string,
-        locale?: string
-    ): Promise<WorkspaceDriftReport> => {
-        return await invoke('vibehub_check_workspace_drift', { projectPath, locale: locale || null });
-    },
-
-    vibehubSyncWorkspaceState: async (
-        projectPath: string,
-        locale?: string
-    ): Promise<WorkspaceDriftReport> => {
-        return await invoke('vibehub_sync_workspace_state', { projectPath, locale: locale || null });
-    },
-
-    vibehubSyncWorkspace: async (
-        projectPath: string,
-        locale?: string
-    ): Promise<VibehubSyncReport> => {
-        return await invoke('vibehub_sync_workspace', { projectPath, locale: locale || null });
-    },
-
-    vibehubBuildContextPack: async (
-        projectPath: string,
-        taskId: string,
-        runId: string,
-        phase: string
-    ): Promise<ContextPackBuildResult> => {
-        return await invoke('vibehub_build_context_pack', { projectPath, taskId, runId, phase });
-    },
-
-    vibehubBuildHandoff: async (projectPath: string): Promise<{
-        handoff_path: string;
-        source_output_path: string | null;
-        complete: boolean;
-        missing_required_sections: string[];
-        files_changed_evidence: string;
-        task_id: string;
-        run_id: string;
-        session_id: string | null;
-    }> => {
-        return await invoke('vibehub_build_handoff', { projectPath });
-    },
-
-    vibehubReplayPendingEvents: async (projectPath: string): Promise<PendingReplayResult> => {
-        return await invoke('vibehub_replay_pending_events', { projectPath });
-    },
-
-    vibehubDebugDump: async (
-        projectPath: string,
-        options?: DebugDumpOptions
-    ): Promise<DebugDumpResult> => {
-        return await invoke('vibehub_debug_dump', { projectPath, options: options || null });
-    },
-
-    vibehubGenerateReviewEvidence: async (projectPath: string): Promise<{
-        task_id: string;
-        run_id: string;
-        review_path: string;
-        changed_files_path: string;
-        diff_path: string;
-        changed_files_count: number;
-        baseline_ref: string | null;
-        source_output_path: string | null;
-    }> => {
-        return await invoke('vibehub_generate_review_evidence', { projectPath });
-    },
-
-    // Aggregated cockpit overview. Replaces the previous per-tab read
-    // methods (`vibehubReadCockpitStatus`, `vibehubReadContextView`,
-    // `vibehubReadReviewView`, `vibehubReadHandoffView`,
-    // `vibehubReadDiffView`, `vibehubReadResearchStatus`). One IPC round-trip,
-    // one cached `git` invocation per call.
-    vibehubReadOverview: async (projectPath: string): Promise<VibehubCockpitOverview> => {
-        return await invoke('vibehub_read_overview', { projectPath });
-    },
-
-    vibehubReadLocalAgentUsage: async (projectPath: string): Promise<LocalAgentUsageOverview> => {
-        return await invoke('vibehub_read_local_agent_usage', { projectPath });
-    },
-
-    // Project-level digest reader. Read-only. Same data is also available
-    // inside `vibehubReadOverview` under `project_digest`; this method exists
-    // for panels that only need the digest and want to skip the heavier
-    // overview pull.
-    vibehubReadProjectDigest: async (projectPath: string): Promise<VibehubProjectDigest> => {
-        return await invoke('vibehub_read_project_digest', { projectPath });
-    },
-
-    vibehubListPromptTemplates: async (): Promise<VibehubPromptTemplateOption[]> => {
-        return await invoke('vibehub_list_prompt_templates');
-    },
-
-    vibehubRenderPrompt: async (
-        projectPath: string,
-        templateId: VibehubPromptTemplateId
-    ): Promise<VibehubPromptRenderResult> => {
-        return await invoke('vibehub_render_prompt', { projectPath, templateId });
-    },
-
-    vibehubAppendJournalEntry: async (
-        projectPath: string,
-        title?: string,
-        body?: string
-    ): Promise<VibehubJournalAppendResult> => {
-        return await invoke('vibehub_append_journal_entry', { projectPath, title, body });
-    },
-
-    vibehubAppendKnowledgeNote: async (
-        projectPath: string,
-        note?: string
-    ): Promise<VibehubKnowledgeAppendResult> => {
-        return await invoke('vibehub_append_knowledge_note', { projectPath, note });
-    },
-
-    vibehubValidatePhase: async (projectPath: string): Promise<PhaseValidationResult> => {
-        return await invoke('vibehub_validate_phase', { projectPath });
-    },
-
-    vibehubSetPhaseResult: async (
-        projectPath: string,
-        targetPhase: string,
-        status: string
-    ): Promise<PhaseSetResult> => {
-        return await invoke('vibehub_set_phase_result', { projectPath, targetPhase, status });
-    },
-
-    vibehubCompletePhase: async (projectPath: string): Promise<PhaseAdvanceResult> => {
-        return await invoke('vibehub_complete_phase', { projectPath });
-    },
-
-    vibehubAdvancePhase: async (projectPath: string, force: boolean = false): Promise<PhaseAdvanceResult> => {
-        return await invoke('vibehub_advance_phase', { projectPath, force });
-    },
-
-    vibehubPausePhase: async (projectPath: string): Promise<PhaseSetResult> => {
-        return await invoke('vibehub_pause_phase', { projectPath });
-    },
-
-    vibehubBuildResearchPack: async (
-        projectPath: string,
-        title?: string
-    ): Promise<ResearchPackBuildResult> => {
-        return await invoke('vibehub_build_research_pack', { projectPath, title });
-    },
-
-    vibehubArchiveResearch: async (
-        projectPath: string
-    ): Promise<ResearchPackArchiveResult | null> => {
-        return await invoke('vibehub_archive_research', { projectPath });
-    },
-
-    vibehubReadVibehubFile: async (
-        projectPath: string,
-        relativePath: string,
-    ): Promise<VibehubFileReadResult> => {
-        return await invoke('vibehub_read_vibehub_file', { projectPath, relativePath });
-    },
-
-    vibehubRevealVibehubFile: async (
-        projectPath: string,
-        relativePath: string,
-    ): Promise<void> => {
-        return await invoke('vibehub_reveal_vibehub_file', { projectPath, relativePath });
+    vibehubReadLocalAgentUsage: async (projectPath: string, taskId: string | null = null): Promise<LocalAgentUsageOverview> => {
+        return await invoke('vibehub_read_local_agent_usage', { projectPath, taskId });
     },
 
     vibehubOpenVibehubFile: async (
@@ -410,30 +208,17 @@ export const tauriApi = {
 
     vibehubRevealProjectFile: async (
         projectPath: string,
+        taskId: string,
         relativePath: string,
     ): Promise<void> => {
-        return await invoke('vibehub_reveal_project_file', { projectPath, relativePath });
+        return await invoke('vibehub_reveal_project_file', { projectPath, taskId, relativePath });
     },
 
     vibehubOpenProjectFile: async (
         projectPath: string,
+        taskId: string,
         relativePath: string,
     ): Promise<void> => {
-        return await invoke('vibehub_open_project_file', { projectPath, relativePath });
-    },
-
-    // Schema-version migration. `dryRun` reports the diff WITHOUT writing.
-    vibehubDryRunStateMigration: async (
-        projectPath: string,
-    ): Promise<VibehubStateMigrationReport> => {
-        return await invoke('vibehub_dry_run_state_migration', { projectPath });
-    },
-
-    vibehubMigrateState: async (projectPath: string): Promise<VibehubStateMigrationReport> => {
-        return await invoke('vibehub_migrate_state', { projectPath });
-    },
-
-    vibehubSetProjectLocale: async (projectPath: string, locale: string): Promise<string> => {
-        return await invoke('vibehub_set_project_locale', { projectPath, locale });
+        return await invoke('vibehub_open_project_file', { projectPath, taskId, relativePath });
     },
 };

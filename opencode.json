@@ -1,4 +1,14 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": [".vibehub/adapters/protocol.md"]
+  "mcp": {
+    "vibehub": {
+      "type": "local",
+      "command": [
+        "/Users/chenm0m/LocalRepo/VibeHub/target/debug/vibehub",
+        "mcp-stdio",
+        "/Users/chenm0m/LocalRepo/VibeHub"
+      ],
+      "enabled": true
+    }
+  }
 }
