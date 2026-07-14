@@ -10,6 +10,7 @@
     "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "model_version": { "type": "string", "minLength": 1 },
     "freshness": { "$ref": "common.schema.json#/$defs/Freshness" }, "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
     "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
+    "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
     "completion": {
       "type": "object", "additionalProperties": false,
       "required": ["proposal_event_id", "proposed_at_version", "digest", "valid", "confirmed", "confirmed_at_version", "confirmed_by", "channel"],

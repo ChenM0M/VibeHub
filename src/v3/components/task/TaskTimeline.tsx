@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { WarningList } from "@/v3/components/common/WarningList";
 import { ErrorList } from "@/v3/components/common/ErrorList";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
+import { BlockerDetailsPanel } from "@/v3/components/common/BlockerDetailsPanel";
 import { GitGraph, CheckSquare, ChevronRight } from "lucide-react";
 import type { V3View } from "@/v3/stores/v3Store";
 import type { TaskTimelineView } from "@/v3/contracts/generated/task-timeline-view";
@@ -124,6 +125,7 @@ export function TaskTimeline({ data, onDrillIn }: TaskTimelineProps) {
 
       <WarningList warnings={data.warnings} />
       <ErrorList errors={data.errors} />
+      <BlockerDetailsPanel blockers={data.blocker_details} />
 
       {/* 泳道 */}
       <div className="space-y-2">
@@ -193,13 +195,13 @@ export function TaskTimeline({ data, onDrillIn }: TaskTimelineProps) {
       <div className="grid gap-4 lg:grid-cols-2">
         <button
           type="button"
-          onClick={() => onDrillIn("plan-graph", "计划图")}
+          onClick={() => onDrillIn("plan-graph", "实现计划")}
           className="group flex items-center gap-3 border border-border/70 p-4 text-left transition-colors hover:border-foreground/30 hover:bg-muted/20"
         >
           <GitGraph className="h-5 w-5 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold">计划图</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">查看 DAG 节点、调度边和追溯关系</div>
+            <div className="text-sm font-semibold">实现计划</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">查看实现路径、DAG 节点、依赖和追溯关系</div>
           </div>
           <ChevronRight className="h-4 w-4 text-muted-foreground/50 transition group-hover:text-foreground" />
         </button>

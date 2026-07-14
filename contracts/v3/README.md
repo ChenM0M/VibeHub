@@ -5,9 +5,13 @@ contracts consumed by M1. They describe disposable read models, not V2 YAML,
 domain events, Rust structs, or React props.
 
 M2 adds `event-envelope.schema.json` and `application-command.schema.json` as
-the canonical write-side wire contracts. Rust core types and generated
-TypeScript types must round-trip these schemas; adapters call the same typed
-application service and do not own transition rules.
+the canonical write-side wire contracts. Task creation, project settings, and
+agent-spec inspection/sync are defined by `task-create.schema.json`,
+`project-settings.schema.json`, `agent-spec.schema.json`, and
+`agent-results-view.schema.json`. The application command union separates task-scoped writes from session-scoped writes,
+includes the three plan mutations, and records Agent execution/evaluation results as typed session events. Rust core types and generated TypeScript
+types must round-trip these schemas; adapters call the same typed application
+service and do not own transition rules.
 
 ## Version Policy
 
@@ -50,9 +54,10 @@ projection checkpoint, evidence index, and structured validator/adapter result.
 | ProjectOverviewView | `project_id`, `name`, `root` | project switcher/header; registered identity and observed filesystem root |
 | ProjectOverviewView | `repository`, `model`, `architecture` | repository/model health and architecture summary; Git, index lifecycle, docs/manifests/parser evidence |
 | ProjectOverviewView | `active_tasks`, `protocol_coverage` | active work, risk, acceptance, and recovery gaps; task/session event projection |
-| ProjectStructureView | `project_id`, `index_state` | selected project and index progress/degradation; project registry and index lifecycle |
-| ProjectStructureView | `nodes`, `edges`, `unsupported_analyzers` | structure/map browser and evidence drill-down; filesystem, Git, manifests, parsers, docs, explicit inference |
+| ProjectStructureView | `project_id`, `index_state`, `workspace` | selected Agent/session working directory and index progress/degradation; session/worktree events, project fallback, and index lifecycle |
+| ProjectStructureView | `nodes`, `edges`, `architecture_nodes`, `architecture_edges`, `unsupported_analyzers` | paged filesystem browser kept separate from semantic modules and relationships; filesystem, Git, manifests, parsers, docs, explicit inference |
 | ProjectStructureView | `page` | stable large-tree paging/truncation; model-version-scoped index cursor |
+| AgentResultsView | `project_id`, `task_id`, `state`, `results` | actual Agent execution/evaluation outputs and distinct not-executed/awaiting-result states; typed `agent.result_recorded` plus session events |
 | TaskTimelineView | `project_id`, `task_id`, `title`, `state` | task identity/header; task event projection |
 | TaskTimelineView | `criteria`, `lanes`, `events`, `window` | acceptance rollup, session/node swimlanes, ordered history, paging; criterion/session/domain events and evidence refs |
 | PlanGraphView | `project_id`, `task_id`, `plan_version`, `graph_state` | selected version and invalid/stale graph state; plan event projection and validator |

@@ -755,6 +755,71 @@
             "hourlyActivity": "时段活动"
         }
     },
+    "v3": {
+        "criteria": {
+            "status": {
+                "proposed": "待提议",
+                "accepted": "已接受",
+                "passed": "已通过",
+                "failed": "失败",
+                "blocked": "阻塞",
+                "not_applicable": "不适用",
+                "unknown": "未知"
+            },
+            "requiredSuffix": "（必需）",
+            "ariaLabel": "验收标准状态：{{status}}"
+        },
+        "diagnostics": {
+            "warning": {
+                "group": "{{count}} 条项目提示信息（点击查看）",
+                "unknown": "未识别的项目提示，下面显示原始诊断信息。"
+            },
+            "error": {
+                "group": "{{count}} 个错误信息（点击查看）",
+                "unknown": "未识别的项目错误，下面显示原始诊断信息。",
+                "retry": "重试"
+            },
+            "collapse": "折叠提示",
+            "expand": "展开提示",
+            "messages": {
+                "architectureIndexPending": "架构索引尚未完成，结构信息可能暂不完整。",
+                "planNotRecorded": "尚未记录实现计划，当前任务的执行路径可能不完整。",
+                "agentResultSessionClosed": "Agent 会话已关闭，遗留结果已按待处理状态显示。",
+                "agentResultStatusInvalid": "Agent 结果状态无效，已按失败状态显示。",
+                "projectIndexGap": "项目结构索引存在缺口。",
+                "projectIndexUnavailable": "项目结构索引暂时不可用。",
+                "protocolCoverageGap": "工作协议覆盖存在缺口，部分执行状态可能不完整。",
+                "projectUninitialized": "项目尚未初始化 V3 工作区。",
+                "modelStale": "项目索引已过期，刷新后才能反映最新结构。",
+                "scopeOverlap": "并行会话的工作范围存在重叠。",
+                "subtreeInaccessible": "部分项目目录无法访问，结构信息可能不完整。",
+                "analyzerUnsupported": "部分项目分析器暂不支持。",
+                "analyzerDegraded": "项目分析器发生降级，部分架构关系未建立。",
+                "architectureUnsupported": "项目尚未生成可用的架构索引。",
+                "analyzerUnsupportedImpact": "项目结构索引仍可用，但这些文件类型的导入关系可能不完整；这不是项目运行阻塞。",
+                "analyzerUnsupportedNextStep": "如需完整依赖图，请补充对应分析器后重新索引；暂时可以继续使用项目的其他功能。",
+                "analyzerDegradedImpact": "部分架构关系未能建立，相关模块依赖图可能不完整。",
+                "analyzerDegradedNextStep": "检查对应分析器报告的路径和错误信息，修复后重新索引。",
+                "architectureUnsupportedImpact": "文件结构仍可浏览，但架构模块和关系暂时无法提供。",
+                "architectureUnsupportedNextStep": "补充受支持的项目清单、源代码模块或架构文档后重新索引。",
+                "noDeclaredArchitecture": "项目尚未声明架构文档，结构信息可能不完整。",
+                "projectionUnavailable": "V3 投影暂时不可用，请稍后重试。",
+                "contractTerminal": "V3 数据契约校验失败，当前视图无法继续。"
+            },
+            "details": {
+                "code": "诊断码",
+                "messageKey": "诊断类型",
+                "analyzer": "分析器",
+                "analyzers": "不支持的分析器",
+                "path": "路径",
+                "message": "原始信息",
+                "impact": "影响",
+                "nextStep": "下一步",
+                "rawField": "{{field}}",
+                "noDetails": "后端没有提供更多详情。"
+            }
+        }
+    },
     "update": {
         "newVersion": "发现新版本",
         "later": "稍后提醒",

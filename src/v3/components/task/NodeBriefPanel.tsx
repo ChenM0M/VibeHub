@@ -4,6 +4,7 @@ import { ErrorList } from "@/v3/components/common/ErrorList";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import { NativePathDisplay } from "@/v3/components/common/NativePathDisplay";
 import { AcceptanceProgress } from "@/v3/components/task/AcceptanceProgress";
+import { BlockerDetailsPanel } from "@/v3/components/common/BlockerDetailsPanel";
 import { Badge } from "@/components/ui/badge";
 import type { NodeBrief } from "@/v3/contracts/generated/node-brief";
 
@@ -37,6 +38,10 @@ export function NodeBriefPanel({ data }: NodeBriefPanelProps) {
           <div className="mt-1.5 flex items-center gap-2">
             <Badge variant="outline">{stateLabel[data.state] ?? data.state}</Badge>
             <span className="font-mono text-[11px] text-muted-foreground">{data.node_id}</span>
+            <div className="flex items-center gap-1">
+              {data.warnings.length > 0 && <WarningList warnings={data.warnings} />}
+              {data.errors.length > 0 && <ErrorList errors={data.errors} />}
+            </div>
           </div>
         </div>
         <StateBadge freshness={data.freshness} completeness={data.completeness} />
@@ -48,8 +53,7 @@ export function NodeBriefPanel({ data }: NodeBriefPanelProps) {
         </div>
       )}
 
-      <WarningList warnings={data.warnings} />
-      <ErrorList errors={data.errors} />
+      <BlockerDetailsPanel blockers={data.blocker_details} />
 
       <div className="grid grid-cols-2 gap-4">
         <SubSection title="范围"><TextList items={data.scope} /></SubSection>
@@ -89,7 +93,6 @@ export function NodeBriefPanel({ data }: NodeBriefPanelProps) {
       </div>
 
       <div>
-        <div className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">验收进度</div>
         <AcceptanceProgress criteria={data.criteria} />
       </div>
 
