@@ -14,7 +14,7 @@
       "additionalProperties": false,
       "required": ["evidence_id", "kind", "grade", "label_key", "locator"],
       "properties": {
-        "evidence_id": { "$ref": "#/$defs/StableId" },
+        "evidence_id": { "type": "string", "minLength": 1 },
         "kind": { "enum": ["event", "file", "git", "command", "test", "user", "external"] },
         "grade": { "$ref": "#/$defs/EvidenceGrade" },
         "label_key": { "type": "string", "minLength": 1 },
@@ -24,6 +24,24 @@
       }
     },
     "EvidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/EvidenceRef" }, "uniqueItems": true },
+    "BlockerDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blocker_id", "reason_code", "summary", "kind", "owner", "precondition", "resume_action", "evidence_refs"],
+      "properties": {
+        "blocker_id": { "$ref": "#/$defs/StableId" },
+        "reason_code": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["external_precondition", "permission", "evidence_gap", "dependency", "conflict", "workflow", "unknown"] },
+        "owner": { "type": "string", "minLength": 1 },
+        "precondition": { "type": "string", "minLength": 1 },
+        "resume_action": { "type": "string", "minLength": 1 },
+        "criterion_id": { "$ref": "#/$defs/StableId" },
+        "node_id": { "$ref": "#/$defs/StableId" },
+        "evidence_refs": { "$ref": "#/$defs/EvidenceRefs" }
+      }
+    },
+    "BlockerDetails": { "type": "array", "items": { "$ref": "#/$defs/BlockerDetail" }, "uniqueItems": true },
     "Warning": {
       "type": "object",
       "additionalProperties": false,

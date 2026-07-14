@@ -175,6 +175,105 @@ impl TaskLifecycleProjection {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanCommandIdentity {
+    pub project_id: String,
+    pub task_id: String,
+    pub actor: String,
+    pub expected_version: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanAddNodeCommand {
+    #[serde(flatten)]
+    pub identity: PlanCommandIdentity,
+    pub node_id: String,
+    pub title: String,
+    pub goal: String,
+    #[serde(default)]
+    pub scope: Vec<String>,
+    #[serde(default)]
+    pub dependencies: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanSetDependenciesCommand {
+    #[serde(flatten)]
+    pub identity: PlanCommandIdentity,
+    pub node_id: String,
+    pub dependencies: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanSetStateCommand {
+    #[serde(flatten)]
+    pub identity: PlanCommandIdentity,
+    pub node_id: String,
+    pub state: String,
+}
+
+impl PlanCommandIdentity {
+    fn lifecycle_command(
+        self,
+        event_type: &str,
+        node_id: String,
+        payload: Value,
+    ) -> LifecycleCommand {
+        LifecycleCommand {
+            event_type: event_type.to_owned(),
+            project_id: self.project_id,
+            task_id: self.task_id,
+            node_id: Some(node_id),
+            session_id: None,
+            actor: self.actor,
+            expected_version: self.expected_version,
+            idempotency_key: self.idempotency_key,
+            evidence_grade: Some(EvidenceGrade::AgentReported),
+            payload,
+        }
+    }
+}
+
+impl From<PlanAddNodeCommand> for LifecycleCommand {
+    fn from(command: PlanAddNodeCommand) -> Self {
+        let payload = serde_json::json!({
+            "node_id": command.node_id,
+            "title": command.title,
+            "goal": command.goal,
+            "scope": command.scope,
+            "dependencies": command.dependencies,
+        });
+        let node_id = payload["node_id"].as_str().unwrap_or_default().to_owned();
+        command
+            .identity
+            .lifecycle_command("plan.node_added", node_id, payload)
+    }
+}
+
+impl From<PlanSetDependenciesCommand> for LifecycleCommand {
+    fn from(command: PlanSetDependenciesCommand) -> Self {
+        let payload = serde_json::json!({
+            "node_id": command.node_id,
+            "dependencies": command.dependencies,
+        });
+        let node_id = payload["node_id"].as_str().unwrap_or_default().to_owned();
+        command
+            .identity
+            .lifecycle_command("plan.dependency_changed", node_id, payload)
+    }
+}
+
+impl From<PlanSetStateCommand> for LifecycleCommand {
+    fn from(command: PlanSetStateCommand) -> Self {
+        let payload = serde_json::json!({"node_id": command.node_id, "state": command.state});
+        let node_id = payload["node_id"].as_str().unwrap_or_default().to_owned();
+        command
+            .identity
+            .lifecycle_command("plan.node_state_changed", node_id, payload)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LifecycleCommand {
     pub event_type: String,
@@ -271,7 +370,8 @@ pub fn fold_task(task_id: &str, events: &[V3EventEnvelope]) -> TaskLifecycleProj
         }
         projection.event_ids.push(event.event_id.clone());
         if let Some(confirmation) = projection.confirmation.as_mut() {
-            if event.event_type != "task.completion_confirmed"
+            if event.aggregate_id == task_id
+                && event.event_type != "task.completion_confirmed"
                 && event.aggregate_version > confirmation.proposed_at_version
             {
                 confirmation.valid = false;
@@ -335,6 +435,12 @@ fn apply_event(projection: &mut TaskLifecycleProjection, event: &V3EventEnvelope
                     reviewer: None,
                     version: 0,
                 });
+            if let Some(title) = payload.get("title").and_then(Value::as_str) {
+                entry.title = title.to_owned();
+            }
+            if let Some(required) = payload.get("required").and_then(Value::as_bool) {
+                entry.required = required;
+            }
             entry.state = state;
             entry.version += 1;
             entry.evidence_refs = string_vec(payload, "evidence_refs");
@@ -998,6 +1104,43 @@ mod tests {
             vec!["attempt.one", "attempt.two"]
         );
         assert_eq!(rebuilt.attempts.len(), 2);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn later_criterion_review_can_restore_missing_title() {
+        let (root, store) = store();
+        let mut version = 0;
+        apply(
+            &store,
+            &mut version,
+            "criterion.blocked",
+            "criterion.blocked.without-title",
+            json!({
+                "criterion_id":"criterion.one",
+                "reviewer":"reviewer.one",
+                "evidence_refs":["evidence.blocked.1"]
+            }),
+        );
+        apply(
+            &store,
+            &mut version,
+            "criterion.blocked",
+            "criterion.blocked.with-title",
+            json!({
+                "criterion_id":"criterion.one",
+                "title":"Real acceptance criterion",
+                "required":true,
+                "reviewer":"reviewer.one",
+                "evidence_refs":["evidence.blocked.2"]
+            }),
+        );
+        let projection = fold_task("task.test", &store.load_project("project.test").unwrap());
+        assert_eq!(
+            projection.criteria["criterion.one"].title,
+            "Real acceptance criterion"
+        );
+        assert!(projection.criteria["criterion.one"].required);
         fs::remove_dir_all(root).unwrap();
     }
 

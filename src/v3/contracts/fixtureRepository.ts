@@ -1,4 +1,5 @@
 import type {
+  AgentResultsView,
   NodeBrief,
   PlanGraphView,
   ProjectOverviewView,
@@ -27,10 +28,11 @@ export type V3FixtureScenario = (typeof V3_FIXTURE_SCENARIOS)[number];
 export interface V3FixtureBundle {
   projectOverview: ProjectOverviewView;
   projectStructure: ProjectStructureView;
+  agentResults: AgentResultsView;
   taskTimeline: TaskTimelineView;
   planGraph: PlanGraphView;
   nodeBrief: NodeBrief;
-  // Production gains this projection when the M5 core slice lands; fixtures always provide it.
+  // Production bundle exposes the V3 worktree projection when available; fixtures always include it.
   worktreeOrchestration?: WorktreeOrchestrationView;
 }
 
@@ -44,6 +46,7 @@ export interface V3ViewRepository {
 const fixtureFiles = {
   projectOverview: "project-overview.json",
   projectStructure: "project-structure.json",
+  agentResults: "agent-results.json",
   taskTimeline: "task-timeline.json",
   planGraph: "plan-graph.json",
   nodeBrief: "node-brief.json",
@@ -59,16 +62,17 @@ export function createV3FixtureRepository(
     async loadScenario(scenario) {
       const load = <T>(filename: string) =>
         loadJson<T>(`${basePath}/${scenario}/${filename}`);
-      const [projectOverview, projectStructure, taskTimeline, planGraph, nodeBrief, worktreeOrchestration] =
+      const [projectOverview, projectStructure, agentResults, taskTimeline, planGraph, nodeBrief, worktreeOrchestration] =
         await Promise.all([
           load<ProjectOverviewView>(fixtureFiles.projectOverview),
           load<ProjectStructureView>(fixtureFiles.projectStructure),
+          load<AgentResultsView>(fixtureFiles.agentResults),
           load<TaskTimelineView>(fixtureFiles.taskTimeline),
           load<PlanGraphView>(fixtureFiles.planGraph),
           load<NodeBrief>(fixtureFiles.nodeBrief),
           load<WorktreeOrchestrationView>(fixtureFiles.worktreeOrchestration),
         ]);
-      return { projectOverview, projectStructure, taskTimeline, planGraph, nodeBrief, worktreeOrchestration };
+      return { projectOverview, projectStructure, agentResults, taskTimeline, planGraph, nodeBrief, worktreeOrchestration };
     },
   };
 }

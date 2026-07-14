@@ -12,6 +12,7 @@ export type NativePath = {
   symlink_target?: string;
 };
 export type EvidenceRefs = EvidenceRef[];
+export type BlockerDetails = BlockerDetail[];
 export type Warnings = Warning[];
 export type Errors = StructuredError[];
 
@@ -44,14 +45,17 @@ export interface ProjectOverviewView {
     confidence: number;
     evidence_refs: EvidenceRefs;
   };
+  current_task_id?: string | null;
   active_tasks: {
     task_id: string;
     title: string;
     state: "planned" | "active" | "blocked" | "review" | "completed" | "cancelled";
     risk_level: "none" | "low" | "medium" | "high" | "critical";
     criteria: CriterionSummary[];
+    blocker_details?: BlockerDetails;
     active_sessions: number;
   }[];
+  archived_tasks?: ArchivedTaskSummary[];
   protocol_coverage: {
     state: "complete" | "partial" | "gapped" | "unknown";
     opened_sessions: number;
@@ -77,6 +81,68 @@ export interface CriterionSummary {
   status: "proposed" | "accepted" | "passed" | "failed" | "blocked" | "not_applicable";
   required: boolean;
   evidence_refs: EvidenceRefs;
+}
+export interface BlockerDetail {
+  blocker_id: string;
+  reason_code: string;
+  summary: string;
+  kind: "external_precondition" | "permission" | "evidence_gap" | "dependency" | "conflict" | "workflow" | "unknown";
+  owner: string;
+  precondition: string;
+  resume_action: string;
+  criterion_id?: string;
+  node_id?: string;
+  evidence_refs: EvidenceRefs;
+}
+export interface ArchivedTaskSummary {
+  task_id: string;
+  title: string;
+  intent: string;
+  state: "completed" | "cancelled";
+  risk_level: "none" | "low" | "medium" | "high" | "critical";
+  terminal_at: string | null;
+  completion: CompletionSummary;
+  criteria: CriterionSummary[];
+  blocker_details: BlockerDetails;
+  plan: {
+    total: number;
+    completed: number;
+    cancelled: number;
+    active: number;
+    blocked: number;
+    planned: number;
+  };
+  sessions: {
+    total: number;
+    opened: number;
+    closed: number;
+    gapped: number;
+  };
+  findings: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+  result: {
+    status: string;
+    summary: string | null;
+    artifact_count: number;
+    recorded_at: string | null;
+  };
+  evidence_count: number;
+  evidence_refs: EvidenceRefs;
+  next_action: string;
+  source: "v3_projection";
+}
+export interface CompletionSummary {
+  proposal_event_id: string | null;
+  proposed_at_version: number | null;
+  digest: string | null;
+  valid: boolean;
+  confirmed: boolean;
+  confirmed_at_version: number | null;
+  confirmed_by: string | null;
+  channel: string | null;
 }
 export interface Warning {
   code: string;

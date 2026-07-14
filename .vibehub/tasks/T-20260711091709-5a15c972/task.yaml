@@ -1,9 +1,0 @@
-schema_version: 1
-kind: vibehub_task
-task_id: T-20260711091709-5a15c972
-title: M1 基于 fixtures 构建 V3 高保真前端体验
-mode: evidence_drive
-phase: review
-phase_status: completed
-created_at: 2026-07-11T09:17:09Z
-created_by: vibehub

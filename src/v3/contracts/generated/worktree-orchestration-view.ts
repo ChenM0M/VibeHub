@@ -107,7 +107,7 @@ export interface WorktreeOrchestrationView {
       /**
        * @minItems 1
        */
-      files: [string, ...string[]];
+      files: string[];
       base_sha: string;
       head_sha: string;
       target_sha: string;

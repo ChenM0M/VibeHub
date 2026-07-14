@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
 import {
   ReactFlow,
   Background,
@@ -12,11 +13,11 @@ import {
   MarkerType,
   Handle,
   Position,
+  type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { cn } from "@/lib/utils";
-import { WarningList } from "@/v3/components/common/WarningList";
-import { ErrorList } from "@/v3/components/common/ErrorList";
+import { BlockerDetailsPanel } from "@/v3/components/common/BlockerDetailsPanel";
 import type { PlanGraphView } from "@/v3/contracts/generated/plan-graph-view";
 
 const nodeStyle: Record<string, string> = {
@@ -30,7 +31,14 @@ const nodeStyle: Record<string, string> = {
   superseded: "bg-muted/10 border-border/40 text-muted-foreground/50",
 };
 const stateLabel: Record<string, string> = {
-  completed: "已完成", active: "进行中", blocked: "阻塞", review: "审查中", planned: "待执行", ready: "就绪", cancelled: "已取消", superseded: "已替代",
+  completed: "已完成", active: "进行中", blocked: "阻塞", review: "审查中", planned: "待执行", ready: "就绪", failed: "失败", cancelled: "已取消", superseded: "已替代",
+};
+const stateTransitions: Record<string, string[]> = {
+  planned: ["ready", "active", "blocked", "cancelled"],
+  ready: ["active", "blocked", "cancelled"],
+  active: ["completed", "failed", "blocked", "cancelled"],
+  blocked: ["ready", "active", "cancelled"],
+  failed: ["active", "cancelled"],
 };
 
 // 深色模式颜色检测
@@ -38,18 +46,33 @@ const isDark = () => typeof document !== "undefined" && document.documentElement
 const edgeColor = () => (isDark() ? "#64748b" : "#94a3b8");
 const edgeDoneColor = "#10b981";
 const edgeActiveColor = "#3b82f6";
+const minimapNodeColor: Record<string, string> = {
+  completed: "#d1fae5",
+  active: "#3b82f6",
+  blocked: "#fb923c",
+  review: "#c084fc",
+  ready: "#67e8f9",
+  planned: "#cbd5e1",
+  cancelled: "#94a3b8",
+  superseded: "#cbd5e1",
+};
+const minimapNodeStrokeColor: Record<string, string> = {
+  completed: "#10b981",
+  active: "#2563eb",
+  blocked: "#f97316",
+  review: "#a855f7",
+  ready: "#0891b2",
+  planned: "#64748b",
+  cancelled: "#64748b",
+  superseded: "#94a3b8",
+};
 
-type PlanNodeData = { title: string; state: string; readiness: string; block_reasons: string[]; sequence: number; showSessions?: boolean };
+type PlanNodeData = { title: string; state: string; readiness: string; block_reasons: string[]; sequence: number; session_ids: string[]; showSessions?: boolean };
 
 function PlanNode({ data, selected }: NodeProps) {
   const d = data as unknown as PlanNodeData;
   const isDone = d.state === "completed";
   const isActive = d.state === "active";
-  
-  const sessionIdx = d.sequence % 3;
-  const agentNames = ["Codex (代码生成)", "Reviewer (审查)", "Planner (规划)"];
-  const agentColors = ["text-purple-600 dark:text-purple-400 bg-purple-500/15 border-purple-500/30", "text-amber-600 dark:text-amber-400 bg-amber-500/15 border-amber-500/30", "text-pink-600 dark:text-pink-400 bg-pink-500/15 border-pink-500/30"];
-  const hasAgent = isDone || isActive || d.state === "review";
 
   return (
     <div className={cn("relative flex items-center gap-3 border px-3 py-2 min-w-[180px] max-w-[240px] rounded-lg cursor-pointer transition-all", nodeStyle[d.state] ?? nodeStyle.planned, selected && "ring-2 ring-foreground/50 ring-offset-2 ring-offset-background")}>
@@ -60,9 +83,14 @@ function PlanNode({ data, selected }: NodeProps) {
       <div className="flex-1 min-w-0">
         <div className="truncate text-sm font-medium">{d.title}</div>
         {d.block_reasons.length > 0 && <div className="mt-0.5 text-[10px] text-orange-600 truncate">{d.block_reasons.join("、")}</div>}
-        {d.showSessions && (
-          <div className={cn("mt-1.5 w-fit rounded border px-1.5 py-0.5 text-[9px] font-medium shadow-sm", hasAgent ? agentColors[sessionIdx] : "text-muted-foreground bg-muted/50 border-border/50")}>
-            {hasAgent ? agentNames[sessionIdx] : "等待调度"}
+        {d.showSessions && d.session_ids.length > 0 && (
+          <div className="mt-1.5 max-w-full truncate rounded border border-emerald-500/30 bg-emerald-500/5 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-300" title={d.session_ids.join("\n")}>
+            Session × {d.session_ids.length}
+          </div>
+        )}
+        {d.showSessions && d.session_ids.length === 0 && (
+          <div className="mt-1.5 w-fit rounded border border-border/50 bg-muted/50 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+            暂无会话
           </div>
         )}
       </div>
@@ -106,12 +134,52 @@ function computeLayout(nodes: PlanGraphView["nodes"], edges: { from: string; to:
 
 interface PlanGraphProps {
   data: PlanGraphView;
+  taskTitle?: string;
+  taskIntent?: string;
   onNodeClick?: (node: PlanGraphView["nodes"][number]) => void;
+  onAddNode?: (input: { nodeId: string; title: string; goal: string; scope: string[]; dependencies: string[]; idempotencyKey: string }) => Promise<boolean>;
+  onSetDependencies?: (input: { nodeId: string; dependencies: string[]; idempotencyKey: string }) => Promise<boolean>;
+  onSetState?: (input: { nodeId: string; state: string; idempotencyKey: string }) => Promise<boolean>;
+  mutationError?: string | null;
 }
 
-export function PlanGraph({ data, onNodeClick }: PlanGraphProps) {
+function submissionKey(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function PlanGraph({ data, taskTitle = "", taskIntent = "", onNodeClick, onAddNode, onSetDependencies, onSetState, mutationError }: PlanGraphProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showSessions, setShowSessions] = useState(false);
+  const [nodeMeasurements, setNodeMeasurements] = useState<Record<string, { width: number; height: number }>>({});
+  const [editor, setEditor] = useState<"add" | "dependencies" | "state" | null>(null);
+  const [title, setTitle] = useState("");
+  const [goal, setGoal] = useState("");
+  const [scope, setScope] = useState("");
+  const [dependencies, setDependencies] = useState<string[]>([]);
+  const [state, setState] = useState("planned");
+  const [pending, setPending] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState(submissionKey);
+  const [draftNodeId, setDraftNodeId] = useState(submissionKey);
+  const [isMoving, setIsMoving] = useState(false);
+
+  const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    const dimensionChanges = changes.filter((change) => change.type === "dimensions" && change.dimensions) as Extract<NodeChange, { type: "dimensions" }>[];
+    if (dimensionChanges.length === 0) return;
+
+    setNodeMeasurements((previous) => {
+      let next = previous;
+      for (const change of dimensionChanges) {
+        const width = change.dimensions?.width;
+        const height = change.dimensions?.height;
+        if (typeof width !== "number" || typeof height !== "number") continue;
+        const current = previous[change.id];
+        if (current?.width === width && current.height === height) continue;
+        if (next === previous) next = { ...previous };
+        next[change.id] = { width, height };
+      }
+      return next;
+    });
+  }, []);
 
   const { nodes: flowNodes, edges: flowEdges, completedCount, activeCount, blockedCount } = useMemo(() => {
     const activeEdges = data.scheduling_edges.map((e) => ({ from: e.from_node_id, to: e.to_node_id }));
@@ -121,7 +189,8 @@ export function PlanGraph({ data, onNodeClick }: PlanGraphProps) {
       const pos = positions.get(node.node_id) ?? { x: 0, y: 0 };
       return {
         id: node.node_id, type: "planNode", position: pos,
-        data: { title: node.title, state: node.state, readiness: node.readiness, block_reasons: node.block_reasons, sequence: sequence.get(node.node_id) ?? 0, showSessions } as unknown as Record<string, unknown>,
+        measured: nodeMeasurements[node.node_id],
+        data: { title: node.title, state: node.state, readiness: node.readiness, block_reasons: node.block_reasons, sequence: sequence.get(node.node_id) ?? 0, session_ids: node.session_ids ?? [], showSessions } as unknown as Record<string, unknown>,
         selected: selectedNodeId === node.node_id,
       };
     });
@@ -164,7 +233,7 @@ export function PlanGraph({ data, onNodeClick }: PlanGraphProps) {
     const active = data.nodes.filter((n) => n.state === "active").length;
     const blocked = data.nodes.filter((n) => n.state === "blocked").length;
     return { nodes, edges, completedCount: completed, activeCount: active, blockedCount: blocked };
-  }, [data, selectedNodeId, showSessions]);
+  }, [data, nodeMeasurements, selectedNodeId, showSessions]);
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
@@ -174,30 +243,71 @@ export function PlanGraph({ data, onNodeClick }: PlanGraphProps) {
 
   const selectedNode = data.nodes.find((n) => n.node_id === selectedNodeId) ?? null;
   const totalNodes = data.nodes.length;
+  const editable = Boolean(onAddNode || onSetDependencies || onSetState);
+  const graphBlockers = useMemo(() => {
+    const seen = new Set<string>();
+    return data.nodes.flatMap((node) => node.blocker_details ?? []).filter((blocker) => {
+      if (seen.has(blocker.blocker_id)) return false;
+      seen.add(blocker.blocker_id);
+      return true;
+    });
+  }, [data.nodes]);
+
+  const openEditor = (mode: "add" | "dependencies" | "state") => {
+    setEditor(mode);
+    setIdempotencyKey(submissionKey());
+    if (mode === "add") {
+      setDraftNodeId(submissionKey());
+      setTitle(data.nodes.length === 0 ? taskTitle : "");
+      setGoal(data.nodes.length === 0 ? taskIntent : "");
+      setScope("");
+      setDependencies([]);
+    } else if (selectedNode) {
+      setDependencies(data.scheduling_edges.filter((edge) => edge.to_node_id === selectedNode.node_id).map((edge) => edge.from_node_id));
+      setState(stateTransitions[selectedNode.state]?.[0] ?? "");
+    }
+  };
+
+  const submitEdit = async () => {
+    setPending(true);
+    try {
+      let succeeded = false;
+      if (editor === "add" && onAddNode && title.trim() && goal.trim()) succeeded = await onAddNode({ nodeId: draftNodeId, title: title.trim(), goal: goal.trim(), scope: scope.split("\n").map((item) => item.trim()).filter(Boolean), dependencies, idempotencyKey });
+      if (editor === "dependencies" && onSetDependencies && selectedNode) succeeded = await onSetDependencies({ nodeId: selectedNode.node_id, dependencies, idempotencyKey });
+      if (editor === "state" && onSetState && selectedNode) succeeded = await onSetState({ nodeId: selectedNode.node_id, state, idempotencyKey });
+      if (succeeded) setEditor(null);
+    } finally { setPending(false); }
+  };
 
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0 flex items-center gap-3 px-1 py-2">
-        <span className="text-sm font-semibold">执行进度</span>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">实现计划</div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">记录实现路径、依赖、节点状态和执行会话；验收门槛见“验收进度”。</div>
+        </div>
         <div className="flex-1 h-2 bg-muted overflow-hidden flex">
           <div className="h-full bg-emerald-500" style={{ width: `${(completedCount / Math.max(totalNodes, 1)) * 100}%` }} />
           <div className="h-full bg-blue-500" style={{ width: `${(activeCount / Math.max(totalNodes, 1)) * 100}%` }} />
           <div className="h-full bg-orange-500" style={{ width: `${(blockedCount / Math.max(totalNodes, 1)) * 100}%` }} />
         </div>
-        <span className="text-xs text-muted-foreground">{completedCount}/{totalNodes} 完成</span>
+        <span className="text-xs text-muted-foreground">{completedCount}/{totalNodes} 节点完成</span>
         {activeCount > 0 && <span className="text-xs text-blue-600">{activeCount} 进行中</span>}
         {blockedCount > 0 && <span className="text-xs text-orange-600">{blockedCount} 阻塞</span>}
+        {editable && <div className="ml-auto flex gap-2"><Button size="sm" variant="outline" onClick={() => openEditor("add")}>{totalNodes === 0 ? "建立初始实现节点" : "添加实现节点"}</Button>{selectedNode && <><Button size="sm" variant="outline" onClick={() => openEditor("dependencies")}>编辑依赖</Button><Button size="sm" variant="outline" onClick={() => openEditor("state")}>更新状态</Button></>}</div>}
       </div>
 
-      <WarningList warnings={data.warnings} />
-      <ErrorList errors={data.errors} />
+      <BlockerDetailsPanel blockers={graphBlockers} compact />
 
-      <div className="relative flex-1 rounded-md bg-card/50 overflow-hidden shadow-sm border border-border/30 [&_.react-flow\_\_controls]:!bg-background [&_.react-flow\_\_controls-button]:!bg-background [&_.react-flow\_\_controls-button]:!border-border [&_.react-flow\_\_controls-button]:!text-foreground [&_.react-flow\_\_controls-button:hover]:!bg-accent [&_.react-flow\_\_controls-button_svg]:!fill-foreground [&_.react-flow\_\_minimap]:!bg-background [&_.react-flow\_\_minimap]:!border [&_.react-flow\_\_minimap]:!border-border">
+      {data.nodes.length === 0 ? <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border bg-card/30 p-8 text-center"><div><div className="font-medium">暂无已记录的实现路径</div><p className="mt-1 text-sm text-muted-foreground">V3 只有通过计划命令记录的节点才会出现在这里；验收标准不会自动变成计划节点。</p>{onAddNode && <Button className="mt-4" onClick={() => openEditor("add")}>建立初始实现节点</Button>}</div></div> : <div className="relative flex-1 rounded-md bg-card/50 overflow-hidden shadow-sm border border-border/30 [&_.react-flow\_\_controls]:!bg-background [&_.react-flow\_\_controls-button]:!bg-background [&_.react-flow\_\_controls-button]:!border-border [&_.react-flow\_\_controls-button]:!text-foreground [&_.react-flow\_\_controls-button:hover]:!bg-accent [&_.react-flow\_\_controls-button_svg]:!fill-foreground [&_.react-flow\_\_minimap]:!bg-background [&_.react-flow\_\_minimap]:!border [&_.react-flow\_\_minimap]:!border-border">
         <ReactFlow
           nodes={flowNodes}
           edges={flowEdges}
           nodeTypes={nodeTypes}
+          onNodesChange={handleNodesChange}
           onNodeClick={handleNodeClick}
+          onMoveStart={() => setIsMoving(true)}
+          onMoveEnd={() => setIsMoving(false)}
           fitView
           fitViewOptions={{
             nodes: flowNodes.filter(n => (n.data as unknown as PlanNodeData).state === "active").length > 0 
@@ -214,7 +324,7 @@ export function PlanGraph({ data, onNodeClick }: PlanGraphProps) {
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} className="!bg-background" />
           <Controls showInteractive={false} />
 
-          <Panel position="top-right" className="!m-3">
+          <Panel position="top-right" className="!m-3 overflow-y-auto overflow-x-hidden" style={{ maxHeight: "calc(100% - 12rem)" }}>
             <div className="border border-border/70 bg-background/95 p-3.5 backdrop-blur-sm shadow-sm space-y-3 min-w-[220px] max-w-[260px] rounded-lg">
               <div className="flex items-center justify-between gap-3 border-b border-border/50 pb-3">
                 <label className="text-xs font-semibold text-foreground cursor-pointer select-none" onClick={() => setShowSessions(!showSessions)}>
@@ -252,20 +362,24 @@ export function PlanGraph({ data, onNodeClick }: PlanGraphProps) {
             </div>
           </Panel>
 
-          <MiniMap 
+          {/* The overview stays available while the graph has nodes: it is a navigation control, not a transient tooltip. */}
+          <MiniMap
             pannable 
             zoomable
-            className="!bg-card !border-border/50 shadow-md rounded-md"
-            nodeClassName={(node) => {
-              const d = node.data as unknown as PlanNodeData;
-              if (d?.state === "completed") return "!fill-emerald-500 !stroke-emerald-600";
-              if (d?.state === "active") return "!fill-blue-500 !stroke-blue-600";
-              if (d?.state === "blocked") return "!fill-orange-500 !stroke-orange-600";
-              return "!fill-muted !stroke-border";
-            }}
+            style={{ width: 180, height: 120 }}
+            className={cn(
+              "!bg-background/80 !border-border/50 shadow-md rounded-md backdrop-blur-sm transition-all duration-300 max-sm:!w-[100px] max-sm:!h-[70px]",
+              isMoving ? "opacity-60" : "opacity-0 hover:opacity-100"
+            )}
+            nodeColor={(node) => minimapNodeColor[(node.data as unknown as PlanNodeData)?.state] ?? minimapNodeColor.planned}
+            nodeStrokeColor={(node) => minimapNodeStrokeColor[(node.data as unknown as PlanNodeData)?.state] ?? minimapNodeStrokeColor.planned}
+            nodeStrokeWidth={1.5}
+            nodeBorderRadius={3}
+            ariaLabel="实现计划鸟瞰图"
           />
         </ReactFlow>
-      </div>
+      </div>}
+      {editor && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4" onClick={() => !pending && setEditor(null)}><div role="dialog" aria-modal="true" className="w-full max-w-lg space-y-4 rounded-lg border border-border bg-background p-5 shadow-xl" onClick={(event) => event.stopPropagation()}><div><h3 className="font-semibold">{editor === "add" ? (totalNodes === 0 ? "建立初始实现节点" : "添加实现节点") : editor === "dependencies" ? "编辑节点依赖" : "更新节点状态"}</h3>{selectedNode && editor !== "add" && <p className="mt-1 text-sm text-muted-foreground">{selectedNode.title}</p>}</div>{editor === "add" && <><label className="block space-y-1"><span className="text-sm">节点标题</span><input value={title} onChange={(event) => setTitle(event.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label><label className="block space-y-1"><span className="text-sm">实现目标</span><textarea value={goal} onChange={(event) => setGoal(event.target.value)} className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label><label className="block space-y-1"><span className="text-sm">实现范围（每行一项）</span><textarea value={scope} onChange={(event) => setScope(event.target.value)} className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></label></>}{(editor === "add" || editor === "dependencies") && data.nodes.length > 0 && <fieldset className="space-y-2"><legend className="text-sm">依赖节点</legend>{data.nodes.filter((node) => editor === "add" || node.node_id !== selectedNode?.node_id).map((node) => <label key={node.node_id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={dependencies.includes(node.node_id)} onChange={(event) => setDependencies((current) => event.target.checked ? [...current, node.node_id] : current.filter((id) => id !== node.node_id))} />{node.title}</label>)}</fieldset>}{editor === "state" && selectedNode && <label className="block space-y-1"><span className="text-sm">状态</span><select value={state} onChange={(event) => setState(event.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">{(stateTransitions[selectedNode.state] ?? []).map((value) => <option key={value} value={value}>{stateLabel[value] ?? value}</option>)}</select>{(stateTransitions[selectedNode.state] ?? []).length === 0 && <span className="text-xs text-muted-foreground">当前状态没有可用的后续转换。</span>}</label>}{mutationError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{mutationError}</div>}<div className="flex justify-end gap-2"><Button variant="outline" disabled={pending} onClick={() => setEditor(null)}>取消</Button><Button disabled={pending || (editor === "add" && (!title.trim() || !goal.trim())) || (editor === "state" && !state)} onClick={() => void submitEdit()}>{pending ? "提交中…" : "提交实现计划变更"}</Button></div></div></div>}
     </div>
   );
 }
