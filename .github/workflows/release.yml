@@ -175,7 +175,6 @@ jobs:
             echo "FORMAL_APPLE_SIGNING=true" >> "$GITHUB_ENV"
           else
             echo "FORMAL_APPLE_SIGNING=false" >> "$GITHUB_ENV"
-            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
             echo "APPLE_ID=" >> "$GITHUB_ENV"
             echo "APPLE_PASSWORD=" >> "$GITHUB_ENV"
             echo "APPLE_TEAM_ID=" >> "$GITHUB_ENV"
@@ -193,7 +192,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm run tauri -- build ${{ matrix.tauri_args }}
+          log="$RUNNER_TEMP/tauri-macos-build.log"
+          if npm run tauri -- build ${{ matrix.tauri_args }} 2>&1 | tee "$log"; then
+            exit 0
+          fi
+          summary="$(tail -n 40 "$log" | tr '\r\n' ' ' | cut -c1-3800 | sed 's/%/%25/g')"
+          echo "::error title=macOS Tauri build failed::$summary"
+          exit 1
 
       - name: Package, verify, and hash macOS DMG
         if: matrix.platform == 'macos'
@@ -213,6 +218,9 @@ jobs:
             exit 1
           fi
 
+          if [ "$FORMAL_APPLE_SIGNING" = "false" ]; then
+            codesign --force --deep --sign - --timestamp=none "$app_path"
+          fi
           codesign --verify --deep --strict --verbose=4 "$app_path"
           if [ "$FORMAL_APPLE_SIGNING" = "true" ]; then
             xcrun stapler validate "$app_path"
@@ -312,8 +320,12 @@ jobs:
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           mkdir -p release-assets
-          find target src-tauri/target -type f \( -name '*.deb' -o -name '*.AppImage' \) -path '*/bundle/*' -exec cp {} release-assets/ \;
-          binary="$(find target src-tauri/target -type f -path '*/release/vibehub' -perm -111 -print | head -n 1)"
+          search_roots=(target)
+          if [ -d src-tauri/target ]; then
+            search_roots+=(src-tauri/target)
+          fi
+          find "${search_roots[@]}" -type f \( -name '*.deb' -o -name '*.AppImage' \) -path '*/bundle/*' -exec cp {} release-assets/ \;
+          binary="$(find "${search_roots[@]}" -type f -path '*/release/vibehub' -perm -111 -print -quit)"
           if [ -z "$binary" ]; then
             echo "The portable Linux executable was not produced."
             exit 1
