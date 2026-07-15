@@ -180,6 +180,7 @@ impl V3ApplicationService {
             "status",
             &["pending", "running", "succeeded", "failed"],
         )?;
+        validate_agent_result_details(&details)?;
         let mut payload = details;
         payload["result_id"] = Value::String(result_id.to_owned());
         self.append_session_event_with_context(
@@ -400,6 +401,97 @@ fn validate_agent_result_value(
     ))
 }
 
+fn invalid_agent_result(message: impl Into<String>) -> V3Error {
+    V3Error::new(
+        "V3_AGENT_RESULT_INVALID",
+        super::domain::V3ErrorCategory::Validation,
+        false,
+        message,
+    )
+}
+
+fn validate_agent_result_details(details: &Value) -> Result<(), V3Error> {
+    if let Some(evaluation) = details.get("evaluation").filter(|value| !value.is_null()) {
+        let object = evaluation.as_object().ok_or_else(|| {
+            invalid_agent_result("agent result evaluation must be an object or null")
+        })?;
+        if object.get("target").and_then(Value::as_str).is_none() {
+            return Err(invalid_agent_result(
+                "agent result evaluation requires string field target",
+            ));
+        }
+        let rubric = object
+            .get("rubric")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                invalid_agent_result("agent result evaluation requires string array field rubric")
+            })?;
+        if rubric
+            .iter()
+            .any(|item| item.as_str().is_none_or(str::is_empty))
+        {
+            return Err(invalid_agent_result(
+                "agent result evaluation rubric entries must be non-empty strings",
+            ));
+        }
+        let verdict = object
+            .get("verdict")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                invalid_agent_result("agent result evaluation requires string field verdict")
+            })?;
+        if !["passed", "needs_revision", "failed", "inconclusive"].contains(&verdict) {
+            return Err(invalid_agent_result(
+                "agent result evaluation verdict is outside the V3 contract",
+            ));
+        }
+        let findings = object
+            .get("findings")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                invalid_agent_result("agent result evaluation requires array field findings")
+            })?;
+        for finding in findings {
+            let finding = finding.as_object().ok_or_else(|| {
+                invalid_agent_result("agent result evaluation findings must be objects")
+            })?;
+            for field in ["title", "detail", "severity"] {
+                if finding.get(field).and_then(Value::as_str).is_none() {
+                    return Err(invalid_agent_result(format!(
+                        "agent result evaluation finding requires string field {field}"
+                    )));
+                }
+            }
+            let severity = finding
+                .get("severity")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !["info", "low", "medium", "high", "critical"].contains(&severity) {
+                return Err(invalid_agent_result(
+                    "agent result evaluation finding severity is outside the V3 contract",
+                ));
+            }
+            if finding
+                .get("evidence_refs")
+                .and_then(Value::as_array)
+                .is_none()
+            {
+                return Err(invalid_agent_result(
+                    "agent result evaluation finding requires array field evidence_refs",
+                ));
+            }
+        }
+    }
+    for field in ["artifacts", "evidence_refs"] {
+        if details.get(field).is_some_and(|value| !value.is_array()) {
+            return Err(invalid_agent_result(format!(
+                "agent result field {field} must be an array"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn canonical_criterion_id(task_id: &str, index: usize) -> String {
     format!(
         "criterion.{}.c{:02}",
@@ -512,6 +604,51 @@ mod tests {
             }),
         )
         .unwrap();
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn agent_result_rejects_malformed_evaluation_details() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-v3-result-evaluation-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub")).unwrap();
+        let app = V3ApplicationService::open(&root).unwrap();
+        app.session_open(
+            "project.test",
+            "task.test",
+            "session.test",
+            "codex",
+            0,
+            "open.1",
+        )
+        .unwrap();
+
+        let error = app
+            .agent_result_record(
+                "project.test",
+                "task.test",
+                "session.test",
+                "codex",
+                1,
+                "result.invalid-evaluation",
+                "result.test",
+                None,
+                json!({
+                    "kind": "evaluation",
+                    "request_source": "evaluation_instruction",
+                    "instruction": "Review the task",
+                    "status": "succeeded",
+                    "summary": "Review finished",
+                    "evaluation": {
+                        "target": "workspace",
+                        "verdict": "needs_action",
+                        "findings": ["missing rubric"]
+                    }
+                }),
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "V3_AGENT_RESULT_INVALID");
 
         fs::remove_dir_all(root).unwrap();
     }

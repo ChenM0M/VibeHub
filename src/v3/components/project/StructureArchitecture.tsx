@@ -3,7 +3,6 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronRight, ChevronDown, Search, Folder, File, Package, Box, Braces, ArrowRight, ExternalLink, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
-import { WarningList } from "@/v3/components/common/WarningList";
 import { NativePathDisplay } from "@/v3/components/common/NativePathDisplay";
 import type { ProjectStructureView } from "@/v3/contracts/generated/project-structure-view";
 import { queryV3ProjectStructure } from "@/services/v3ProductionViews";
@@ -205,28 +204,33 @@ export function StructureArchitecture({ data, taskId, projectPath, highlightModu
     return { mods, edges };
   }, [viewData.architecture_nodes, viewData.architecture_edges]);
   const selectedArchitectureEdge = modules.edges.find((edge) => edge.edge_id === selectedArchitectureEdgeId) ?? null;
-  const unsupportedWarnings = useMemo<ProjectStructureView["warnings"]>(() => {
-    const warnings = data.warnings.filter((warning) => warning.code === "PI_ANALYZER_UNSUPPORTED");
-    if (warnings.length > 0 || data.unsupported_analyzers.length === 0) return warnings;
-    return [{
-      code: "PI_ANALYZER_UNSUPPORTED",
-      severity: "warning",
-      message_key: "v3.warning.analyzer_unsupported",
-      details: { analyzers: data.unsupported_analyzers },
-      evidence_refs: data.evidence_refs,
-    }];
-  }, [data.evidence_refs, data.unsupported_analyzers, data.warnings]);
-
   return (
     <div className="relative flex h-full flex-col gap-2 min-h-0">
       {queryError && <div className="text-xs text-red-600" role="alert">{queryError}</div>}
 
-      <div className="flex items-center gap-3 shrink-0">
-        <span className="text-xs font-medium">工作目录：{viewData.workspace.root.display}</span>
-        <span className="text-xs text-muted-foreground">来源：{viewData.workspace.source === "session_worktree" ? "Agent worktree" : viewData.workspace.source === "session_working_directory" ? "Agent 会话" : "项目根回退"}</span>
-        <span className="text-xs text-muted-foreground">{viewData.nodes.length} 节点 · {viewData.edges.length} 文件关系 · {viewData.architecture_nodes.length} 架构模块 · 索引：{indexStateLabel[viewData.index_state] ?? viewData.index_state}{viewData.page.truncated && `（已截断：${viewData.page.truncation_reason}）`}{queryLoading && " · 查询中"}</span>
-        {viewData.workspace.fallback_reason && <span className="text-xs text-amber-600">{viewData.workspace.fallback_reason}</span>}
-        {unsupportedWarnings.length > 0 && <WarningList warnings={unsupportedWarnings} className="shrink-0" />}
+      <div className="flex flex-col gap-2 shrink-0 mb-1">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center gap-1 min-w-0 max-w-[300px] xl:max-w-md">
+            <span className="text-xs font-medium whitespace-nowrap text-foreground/90">工作目录：</span>
+            <span className="text-xs text-muted-foreground truncate" title={viewData.workspace.root.display}>{viewData.workspace.root.display}</span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap bg-muted/50 px-2 py-1 rounded-md border border-border/50">
+              来源：{viewData.workspace.source === "session_worktree" ? "Agent worktree" : viewData.workspace.source === "session_working_directory" ? "Agent 会话" : "项目根回退"}
+            </span>
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap bg-muted/50 px-2 py-1 rounded-md border border-border/50">
+              {viewData.nodes.length} 节点 · {viewData.edges.length} 文件关系 · {viewData.architecture_nodes.length} 架构模块
+            </span>
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap bg-muted/50 px-2 py-1 rounded-md border border-border/50">
+              索引：{indexStateLabel[viewData.index_state] ?? viewData.index_state}{viewData.page.truncated && `（已截断：${viewData.page.truncation_reason}）`}{queryLoading && " · 查询中"}
+            </span>
+          </div>
+        </div>
+        {viewData.workspace.fallback_reason && (
+          <div className="text-[11px] text-amber-600 bg-amber-500/10 px-2 py-1 rounded w-fit border border-amber-500/20">
+            {viewData.workspace.fallback_reason}
+          </div>
+        )}
       </div>
 
       {/* 左右对照 */}

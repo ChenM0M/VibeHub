@@ -224,7 +224,7 @@ impl Launcher {
             return Self::launch_macos_app(executable, config, category, project_path);
         }
 
-        let child = {
+        let mut child = {
             let mut cmd = Command::new("/bin/zsh");
             cmd.arg("-lc").arg(shell_command);
             cmd.current_dir(project_path);
@@ -235,8 +235,13 @@ impl Launcher {
             }
             cmd.spawn()?
         };
-
-        Ok(child.id() > 0)
+        thread::sleep(Duration::from_millis(200));
+        match child.try_wait()? {
+            Some(status) if !status.success() => {
+                Err(anyhow!("Launch command exited early with {status}"))
+            }
+            _ => Ok(child.id() > 0),
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -318,8 +323,17 @@ impl Launcher {
             }
         }
 
-        let child = cmd.spawn()?;
-        Ok(child.id() > 0)
+        let output = cmd.output()?;
+        if output.status.success() {
+            Ok(true)
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            Err(anyhow!(if stderr.is_empty() {
+                format!("Failed to open macOS app: {}", output.status)
+            } else {
+                stderr
+            }))
+        }
     }
 
     #[cfg(target_os = "macos")]

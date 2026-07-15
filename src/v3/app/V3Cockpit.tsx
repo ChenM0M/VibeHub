@@ -39,6 +39,10 @@ const taskStateTone: Record<string, string> = {
   blocked: "text-orange-600 dark:text-orange-400", review: "text-purple-600 dark:text-purple-400",
   completed: "text-emerald-600 dark:text-emerald-400", cancelled: "text-red-600 dark:text-red-400",
 };
+const taskStateDot: Record<string, string> = {
+  planned: "bg-muted-foreground/60", active: "bg-blue-500", blocked: "bg-orange-500",
+  review: "bg-purple-500", completed: "bg-emerald-500", cancelled: "bg-red-500",
+};
 const riskLabel: Record<string, string> = { none: "无", low: "低", medium: "中", high: "高", critical: "严重" };
 const eventKindDot: Record<string, string> = {
   decision: "bg-purple-500", evidence: "bg-blue-500", finding: "bg-cyan-500", attempt: "bg-amber-500",
@@ -315,6 +319,31 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   }
   if (!overview || !timeline || !planGraph || !nodeBrief || !structure || !agentResults) return null;
 
+  const syntheticStructureWarnings = structure.unsupported_analyzers.length > 0 && !structure.warnings.some((warning) => warning.code === "PI_ANALYZER_UNSUPPORTED") ? [{
+    code: "PI_ANALYZER_UNSUPPORTED",
+    severity: "warning" as const,
+    message_key: "v3.warning.analyzer_unsupported",
+    details: { analyzers: structure.unsupported_analyzers },
+    evidence_refs: structure.evidence_refs,
+  }] : [];
+  const projectWarnings = Array.from(new Map([
+    ...overview.warnings,
+    ...timeline.warnings,
+    ...planGraph.warnings,
+    ...structure.warnings,
+    ...syntheticStructureWarnings,
+    ...nodeBrief.warnings,
+    ...agentResults.warnings,
+  ].map((warning) => [`${warning.code}:${warning.message_key}`, warning])).values());
+  const projectErrors = Array.from(new Map([
+    ...overview.errors,
+    ...timeline.errors,
+    ...planGraph.errors,
+    ...structure.errors,
+    ...nodeBrief.errors,
+    ...agentResults.errors,
+  ].map((item) => [`${item.code}:${item.message_key}`, item])).values());
+
   const criteria = selectedTask?.criteria ?? timeline.criteria;
   const selectedEvent = timeline.events.find((e) => e.timeline_event_id === selectedEventId) ?? null;
   const eventZh = (key: string) => eventSummaryZh[key] ?? eventSummaryZh[`timeline.${key}`] ?? key;
@@ -445,10 +474,10 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
             <h2 className="text-2xl font-semibold tracking-tight">{overview.name}</h2>
             <span className={cn("text-xs", freshnessTone[overview.freshness])}>{freshnessLabel[overview.freshness] ?? overview.freshness}</span>
           </div>
-          {(overview.warnings.length > 0 || overview.errors.length > 0) && (
+          {(projectWarnings.length > 0 || projectErrors.length > 0) && (
             <div className="flex items-center gap-1.5 ml-1">
-              {overview.warnings.length > 0 && <WarningList warnings={overview.warnings} />}
-              {overview.errors.length > 0 && <ErrorList errors={overview.errors} />}
+              {projectWarnings.length > 0 && <WarningList warnings={projectWarnings} />}
+              {projectErrors.length > 0 && <ErrorList errors={projectErrors} />}
             </div>
           )}
         </div>
@@ -527,13 +556,15 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
                         {overview.current_task_id === task.task_id && <span className="shrink-0 rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">当前</span>}
                       </div>
                       <div className="mt-1.5 flex items-center gap-2 text-xs">
-                        <span className={taskStateTone[task.state]}>{task.state === "active" ? "实施" : task.state === "planned" ? "计划" : task.state === "blocked" ? "阻塞" : task.state === "review" ? "审查" : task.state === "completed" ? "已完成" : task.state === "cancelled" ? "已取消" : task.state}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className={cn("h-2 w-2 shrink-0 rounded-full", taskStateDot[task.state] ?? "bg-muted-foreground/60")} aria-hidden="true" />
+                          <span className={taskStateTone[task.state]}>{task.state === "active" ? "实施" : task.state === "planned" ? "计划" : task.state === "blocked" ? "阻塞" : task.state === "review" ? "审查" : task.state === "completed" ? "已完成" : task.state === "cancelled" ? "已取消" : task.state}</span>
+                        </span>
                         <div className="ml-auto shrink-0 text-[10px] text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded border border-border/40">
                           {task.active_sessions} 会话
                         </div>
                       </div>
                       {task.criteria.length > 0 && <div className="mt-2.5 flex flex-wrap items-center gap-2">{task.criteria.map((c) => <CriterionBadge key={c.criterion_id} criterion={c} compact />)}</div>}
-                      {task.blocker_details?.[0] && <div className="mt-2 line-clamp-2 text-[11px] text-orange-600 dark:text-orange-400">阻塞：{task.blocker_details[0].summary}</div>}
                     </div>
                   </button>
                 );
@@ -612,14 +643,6 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
                 </button>
               );
             })}
-            <div className="ml-2 flex items-center gap-1.5 pb-1 z-50">
-              {activeTab === "timeline" && (timeline?.warnings?.length ?? 0) > 0 && <WarningList warnings={timeline!.warnings} />}
-              {activeTab === "timeline" && (timeline?.errors?.length ?? 0) > 0 && <ErrorList errors={timeline!.errors} />}
-              {activeTab === "plan" && (planGraph?.warnings?.length ?? 0) > 0 && <WarningList warnings={planGraph!.warnings} />}
-              {activeTab === "plan" && (planGraph?.errors?.length ?? 0) > 0 && <ErrorList errors={planGraph!.errors} />}
-              {activeTab === "structure" && (structure?.warnings?.length ?? 0) > 0 && <WarningList warnings={structure!.warnings} />}
-              {activeTab === "structure" && (structure?.errors?.length ?? 0) > 0 && <ErrorList errors={structure!.errors} />}
-            </div>
           </div>
           {selectedTask && (activeTab === "overview" || activeTab === "timeline" || activeTab === "plan") && (
             <div className="mb-3 flex shrink-0 flex-col gap-1.5 pb-1.5 border-b-0">
@@ -650,7 +673,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-hidden">{renderTab()}</div>
+          <div className="min-h-0 flex-1 overflow-hidden">{renderTab()}</div>
         </div>
       </div>
 
@@ -713,7 +736,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
                     </div>
                   </div>
                   {archivedDetail.final_summary && <div className="rounded-lg border border-border/40 bg-card/30 p-4"><h4 className="mb-2 text-sm font-semibold">最终摘要</h4><p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{archivedDetail.final_summary}</p></div>}
-                  {archivedDetail.file_links.length > 0 && <div className="rounded-lg border border-border/40 bg-card/30 p-4"><h4 className="mb-2 text-sm font-semibold">文件</h4><div className="space-y-1">{archivedDetail.file_links.map((relativePath) => <button key={relativePath} type="button" className="block break-all text-left text-xs text-blue-600 hover:underline" onClick={async () => { if (!activeProjectPath) return; setLegacyFileError(null); try { await openLegacyFile?.(activeProjectPath, relativePath); } catch (err) { setLegacyFileError((err as Error).message); } }}>{relativePath}</button>)}</div>{legacyFileError && <div className="mt-2 text-xs text-destructive">{legacyFileError}</div>}</div>}
+                  {archivedDetail.file_links.length > 0 && <div className="rounded-lg border border-border/40 bg-card/30 p-4"><h4 className="mb-2 text-sm font-semibold">文件</h4><div className="space-y-1">{archivedDetail.file_links.map((relativePath) => <button key={relativePath} type="button" className="block break-all text-left text-xs text-blue-600 hover:underline" onClick={async () => { if (!activeProjectPath) return; setLegacyFileError(null); try { await openLegacyFile?.(activeProjectPath, relativePath); } catch (err) { setLegacyFileError(err instanceof Error ? err.message : String(err)); } }}>{relativePath}</button>)}</div>{legacyFileError && <div className="mt-2 text-xs text-destructive">{legacyFileError}</div>}</div>}
                   {archivedDetail.warnings.length > 0 && <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"><h4 className="mb-2 text-sm font-semibold">警告</h4><ul className="list-disc space-y-1 pl-4 text-xs text-amber-700 dark:text-amber-400">{archivedDetail.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
                 </>
               )}
