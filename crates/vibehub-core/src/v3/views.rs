@@ -2474,7 +2474,35 @@ fn native_path(path: &Path) -> Value {
     } else {
         "unknown"
     };
-    json!({"platform": platform, "native": native, "display": native, "identity_key": format!("{platform}:{native}"), "path_kind": "absolute", "accessible": true})
+    let (display, path_kind) = if platform == "windows" {
+        (windows_display_path(&native), windows_path_kind(&native))
+    } else {
+        (native.clone(), "absolute")
+    };
+    json!({"platform": platform, "native": native, "display": display, "identity_key": format!("{platform}:{native}"), "path_kind": path_kind, "accessible": true})
+}
+
+fn windows_display_path(native: &str) -> String {
+    let display = native.replace('\\', "/");
+    if let Some(rest) = display.strip_prefix("//?/UNC/") {
+        format!("//{rest}")
+    } else if let Some(rest) = display.strip_prefix("//?/") {
+        rest.to_owned()
+    } else {
+        display
+    }
+}
+
+fn windows_path_kind(native: &str) -> &'static str {
+    if native.starts_with(r"\\?\") {
+        "extended"
+    } else if native.starts_with(r"\\") {
+        "unc"
+    } else if native.as_bytes().get(1) == Some(&b':') {
+        "drive"
+    } else {
+        "absolute"
+    }
 }
 
 fn page(returned: usize) -> Value {
@@ -2579,6 +2607,29 @@ mod tests {
     use std::collections::BTreeSet;
     use std::fs;
     use uuid::Uuid;
+
+    #[test]
+    fn windows_paths_preserve_native_identity_and_normalize_display() {
+        let cases = [
+            (r"C:\Users\Alex\VibeHub", "C:/Users/Alex/VibeHub", "drive"),
+            (r"\\server\share\VibeHub", "//server/share/VibeHub", "unc"),
+            (
+                r"\\?\C:\Users\Alex\VibeHub",
+                "C:/Users/Alex/VibeHub",
+                "extended",
+            ),
+            (
+                r"\\?\UNC\server\share\VibeHub",
+                "//server/share/VibeHub",
+                "extended",
+            ),
+        ];
+
+        for (native, expected_display, expected_kind) in cases {
+            assert_eq!(windows_display_path(native), expected_display);
+            assert_eq!(windows_path_kind(native), expected_kind);
+        }
+    }
 
     #[test]
     fn task_state_reflects_operational_plan_state_before_completion_confirmation() {
