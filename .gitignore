@@ -49,7 +49,7 @@ npm-debug.log*
 .env.local
 
 # Data (for development)
-data/
+/data/
 *.db
 
 # Local scripts
