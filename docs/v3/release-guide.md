@@ -303,14 +303,15 @@ Developer ID identity, and no timestamp. It is suitable only for the recorded
 prerelease validation boundary. It is **not** a notarized or publicly
 Developer-ID-signed distribution claim.
 
-### Formal-release workflow (configured; evidence requires a successful run)
+### Optional formal-signing path
 
-The Release workflow now requires all Apple Developer ID and notarization
-Secrets for a stable tag. It imports the certificate, builds both macOS
-architectures, verifies the app, notarizes and staples each DMG, and records
-post-notarization hashes. A stable workflow fails instead of silently falling
-back to ad-hoc signing. A tag containing `-` may still generate an explicitly
-non-formal prerelease artifact when credentials are absent.
+When all Apple Developer ID and notarization Secrets are available, the Release
+workflow imports the certificate, builds both macOS architectures, verifies the
+app, notarizes and staples each DMG, and records post-notarization hashes. When
+credentials are absent, the same workflow keeps the tested ad-hoc boundary and
+still produces versioned artifacts and post-build hashes. Formal signing and
+notarization may only be claimed when the corresponding credential-backed steps
+actually ran successfully.
 
 The workflow implements these gates:
 
