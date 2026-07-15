@@ -5,7 +5,8 @@ import { join, resolve } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
-const binary = resolve(process.argv[2] ?? "target/debug/vibehub");
+const defaultBinary = process.platform === "win32" ? "target/debug/vibehub.exe" : "target/debug/vibehub";
+const binary = resolve(process.argv[2] ?? defaultBinary);
 const root = await mkdtemp(join(tmpdir(), "vibehub-v3-mcp-contract-"));
 const taskId = "task.contract";
 const taskYaml = [

@@ -2,6 +2,11 @@
 
 Date: 2026-07-12
 
+Historical note: the native Accessibility gaps recorded in this matrix were
+closed on 2026-07-14 by direct PID-bound isolated-app evidence. See
+`evidence/m9-macos-dry-run/native-accessibility-closure.md`. Later M5/M6 batches
+also superseded this document's pre-removal recommendation for D05–D08.
+
 ## Decision boundary
 
 The project-card body opens the production `V3Cockpit`, while the project-card context menu still opens `VibehubCockpitDialog`. Removing that context-menu entry would remove user-reachable capabilities that production V3 does not currently replace.
@@ -50,4 +55,5 @@ The current macOS host reports:
 - System Events UI automation: disabled.
 - Rust, Node, `osascript`, and `screencapture`: available.
 
-Because trusted UI automation is unavailable, this environment cannot currently produce reliable native interaction evidence for A08, B05–B07, or C05–C06. No real project or transcript should be used to work around this gate.
+This was the observed state on 2026-07-12. Accessibility/System Events became
+available on 2026-07-14, and the isolated native closure supersedes this gate.

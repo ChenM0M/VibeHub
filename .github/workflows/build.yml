@@ -46,17 +46,30 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Validate release metadata
+        run: npm run release:check
+
+      - name: Validate V3 contracts
+        run: npm run v3:contracts:check
+
       - name: Format Rust code
         run: cargo fmt --all -- --check
-        working-directory: ./src-tauri
 
-      - name: Check Rust code
-        run: cargo check --locked
-        working-directory: ./src-tauri
+      - name: Test Rust workspace
+        run: cargo test --locked --workspace
+
+      - name: Build V3 CLI for MCP contract
+        run: cargo build --locked -p vibehub-cli --bin vibehub
+
+      - name: Validate packaged MCP contract
+        run: npm run v3:mcp:check
+
+      - name: Validate patch hygiene
+        run: git diff --check
 
       - name: Build Tauri app
         if: matrix.platform != 'windows-latest'
-        run: npm run tauri build
+        run: npm run tauri -- build
 
       - name: Build Tauri app (Windows)
         if: matrix.platform == 'windows-latest'
@@ -66,5 +79,5 @@ jobs:
           if ($version.Contains("-")) {
             npm run tauri -- build --bundles nsis
           } else {
-            npm run tauri build
+            npm run tauri -- build
           }
