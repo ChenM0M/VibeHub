@@ -389,6 +389,10 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
+    fn absolute_test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(name)
+    }
+
     struct FakeRunner {
         invocations: RefCell<Vec<GitInvocation>>,
         output: GitOutput,
@@ -433,25 +437,23 @@ mod tests {
                 stderr: String::new(),
             },
         };
-        let adapter = GitWorktreeAdapter::new(runner, PathBuf::from("/repo")).unwrap();
+        let project_root = absolute_test_path("vibehub-git-runner-repo");
+        let worktree_path = absolute_test_path("vibehub-git-runner-worktree");
+        let adapter = GitWorktreeAdapter::new(runner, project_root.clone()).unwrap();
         adapter
-            .add(
-                Path::new("/worktrees/node"),
-                "vibehub/m5/node-a1b2c3d",
-                "main",
-            )
+            .add(&worktree_path, "vibehub/m5/node-a1b2c3d", "main")
             .unwrap();
         let invocation = &adapter.runner.invocations.borrow()[0];
-        assert_eq!(invocation.cwd, PathBuf::from("/repo"));
+        assert_eq!(invocation.cwd, project_root);
         assert_eq!(
             invocation.argv,
             vec![
-                "worktree",
-                "add",
-                "-b",
-                "vibehub/m5/node-a1b2c3d",
-                "/worktrees/node",
-                "main"
+                "worktree".to_owned(),
+                "add".to_owned(),
+                "-b".to_owned(),
+                "vibehub/m5/node-a1b2c3d".to_owned(),
+                worktree_path.to_string_lossy().into_owned(),
+                "main".to_owned(),
             ]
         );
     }
@@ -466,7 +468,9 @@ mod tests {
                 stderr: String::new(),
             },
         };
-        let adapter = GitWorktreeAdapter::new(runner, PathBuf::from("/repo")).unwrap();
+        let project_root = absolute_test_path("vibehub-git-runner-repo");
+        let worktree_path = absolute_test_path("vibehub-git-runner-worktree");
+        let adapter = GitWorktreeAdapter::new(runner, project_root).unwrap();
         let mut status = GitStatusObservation {
             dirty: true,
             branch: None,
@@ -475,7 +479,7 @@ mod tests {
         };
         assert_eq!(
             adapter
-                .remove_clean(Path::new("/worktrees/node"), &status, true)
+                .remove_clean(&worktree_path, &status, true)
                 .unwrap_err()
                 .code,
             "V3_DIRTY_WORKTREE_CLEANUP_REFUSED"
@@ -483,7 +487,7 @@ mod tests {
         status.dirty = false;
         assert_eq!(
             adapter
-                .remove_clean(Path::new("/worktrees/node"), &status, false)
+                .remove_clean(&worktree_path, &status, false)
                 .unwrap_err()
                 .code,
             "V3_WORKTREE_OWNER_UNKNOWN"
@@ -496,7 +500,7 @@ mod tests {
         let mut operation = GitOperationRecord::prepare(
             OperationId::from("operation.create"),
             WorktreeId::from("worktree.main"),
-            Path::new("/repo"),
+            &absolute_test_path("vibehub-git-operation-repo"),
             vec!["worktree".to_owned(), "add".to_owned()],
         )
         .unwrap();
@@ -523,7 +527,7 @@ mod tests {
         let mut operation = GitOperationRecord::prepare(
             OperationId::from("operation.create"),
             WorktreeId::from("worktree.main"),
-            Path::new("/repo"),
+            &absolute_test_path("vibehub-git-operation-repo"),
             vec!["worktree".to_owned(), "add".to_owned()],
         )
         .unwrap();
