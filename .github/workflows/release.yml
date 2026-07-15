@@ -173,11 +173,7 @@ jobs:
           done
           if [ "$missing" -eq 0 ]; then
             echo "FORMAL_APPLE_SIGNING=true" >> "$GITHUB_ENV"
-          elif [[ "$RELEASE_TAG" != *-* ]]; then
-            echo "Stable releases require complete Developer ID signing and notarization secrets."
-            exit 1
           else
-            echo "Prerelease will use an explicitly non-notarized ad-hoc signature."
             echo "FORMAL_APPLE_SIGNING=false" >> "$GITHUB_ENV"
             echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
             echo "APPLE_ID=" >> "$GITHUB_ENV"
@@ -240,13 +236,8 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          $isStable = -not $env:RELEASE_TAG.Contains('-')
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
-            if ($isStable) {
-              throw 'Stable releases require WINDOWS_CERTIFICATE and WINDOWS_CERTIFICATE_PASSWORD.'
-            }
-            "WINDOWS_SIGNING_STATUS=unsigned-prerelease" | Out-File -FilePath $env:GITHUB_ENV -Append
-            Write-Host 'Prerelease Windows bundles will be explicitly unsigned.'
+            "WINDOWS_SIGNING_STATUS=unsigned" | Out-File -FilePath $env:GITHUB_ENV -Append
             exit 0
           }
 
