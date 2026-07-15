@@ -1,7 +1,7 @@
 # V3 macOS release operations guide
 
-Date: 2026-07-13
-Scope: macOS arm64 prerelease artifact `2.0.0-pre.22`
+Date: 2026-07-15
+Scope: VibeHub `3.0.0` release workflow and historical macOS validation evidence
 
 This guide is executable only against a **copied or disposable project** until a
 release owner has completed its own backup and approval process. It does not
@@ -24,7 +24,15 @@ layout states and error codes.
 
 ## Release artifact identity and evidence
 
-The following artifact has native macOS evidence:
+The `3.0.0` GitHub Actions workflow validates version equality and the complete
+test gate, then creates one draft Release containing macOS, Windows, and Linux
+assets plus per-platform SHA-256 manifests. Final artifact filenames and hashes
+do not exist until that tagged workflow succeeds; never copy historical hashes
+into a `3.0.0` release record.
+
+### Historical native evidence
+
+The following earlier artifact retains native macOS behavioral evidence:
 
 | Item | Recorded value |
 | --- | --- |
@@ -55,7 +63,7 @@ Set the paths explicitly. Do not substitute an unrelated installed copy from
 `/Applications` for the release artifact.
 
 ```bash
-DMG="/absolute/path/to/VibeHub-2.0.0-pre.22-arm64-apfs.dmg"
+DMG="/absolute/path/to/VibeHub_3.0.0_aarch64.dmg"
 APP="/absolute/path/to/VibeHub.app"
 
 shasum -a 256 "$DMG"
@@ -64,8 +72,8 @@ codesign --verify --strict --verbose=4 "$APP/Contents/MacOS/vibehub"
 "$APP/Contents/MacOS/vibehub" --version
 ```
 
-For the recorded prerelease artifact, compare the output with the hashes and
-version above. `codesign` must report that the bundle is valid on disk and
+For `3.0.0`, compare the DMG with `SHA256SUMS-macos-aarch64.txt` from the same
+draft Release. `codesign` must report that the bundle is valid on disk and
 satisfies its designated requirement. A hash or signature mismatch is a stop
 condition: do not install, launch, or migrate a project with that artifact.
 
@@ -77,7 +85,7 @@ rights; use `/Applications` only when the release owner intentionally wants a
 system-wide install.
 
 ```bash
-DMG="/absolute/path/to/VibeHub-2.0.0-pre.22-arm64-apfs.dmg"
+DMG="/absolute/path/to/VibeHub_3.0.0_aarch64.dmg"
 MOUNT="$(mktemp -d /tmp/vibehub-mount.XXXXXX)"
 DESTINATION="$HOME/Applications/VibeHub.app"
 
@@ -101,9 +109,9 @@ printf 'Replacing only: %s\n' "$DESTINATION"
 
 The recorded M4 smoke used this same attach → verify → `ditto` copy shape in an
 isolated `/tmp` destination. It also ran the copied executable's headless CLI
-and full MCP request matrix. Native interactive GUI/IDE browsing evidence is
-not claimed by this guide because that remains blocked by unavailable host UI
-automation permissions.
+and full MCP request matrix. The later M9 PID-bound Accessibility run closed
+the native GUI/IDE interaction gap; see
+[`native-accessibility-closure.md`](evidence/m9-macos-dry-run/native-accessibility-closure.md).
 
 ## 3. Install by direct app-bundle copy
 
@@ -293,12 +301,16 @@ Developer ID identity, and no timestamp. It is suitable only for the recorded
 prerelease validation boundary. It is **not** a notarized or publicly
 Developer-ID-signed distribution claim.
 
-### Formal-release decision boundary (not performed or claimed)
+### Formal-release workflow (configured; evidence requires a successful run)
 
-A formal external macOS release requires an authorized release owner to make a
-separate decision to use an Apple Developer Program signing identity and
-notarization credentials. Once that decision and credentials are available,
-the release process must, at minimum:
+The Release workflow now requires all Apple Developer ID and notarization
+Secrets for a stable tag. It imports the certificate, builds both macOS
+architectures, verifies the app, notarizes and staples each DMG, and records
+post-notarization hashes. A stable workflow fails instead of silently falling
+back to ad-hoc signing. A tag containing `-` may still generate an explicitly
+non-formal prerelease artifact when credentials are absent.
+
+The workflow implements these gates:
 
 1. build the final, versioned bundle from reviewed source;
 2. sign every required code object with the intended `Developer ID Application`
@@ -310,6 +322,7 @@ the release process must, at minimum:
 6. repeat the clean-copy, CLI, and MCP release checks against that exact final
    artifact.
 
-Do not reuse the ad-hoc SHA-256 values as formal-release hashes. No Developer
-ID signature, notarization submission, staple, Gatekeeper assessment, or
-formal-release claim was enabled by the recorded prerelease evidence.
+Do not reuse the historical ad-hoc SHA-256 values as formal-release hashes.
+Developer ID signature, notarization, staple, Gatekeeper assessment, and final
+hashes may be claimed only from a successful tagged GitHub Actions run and its
+uploaded draft-Release assets.

@@ -7,6 +7,7 @@ const diagnosticTranslationKeys: Record<string, string> = {
   "v3.warning.plan_not_recorded": "v3.diagnostics.messages.planNotRecorded",
   "v3.warning.agent_result_session_closed": "v3.diagnostics.messages.agentResultSessionClosed",
   "v3.warning.agent_result_status_invalid": "v3.diagnostics.messages.agentResultStatusInvalid",
+  "v3.warning.agent_result_details_normalized": "v3.diagnostics.messages.agentResultDetailsNormalized",
   "v3.warning.protocol_coverage_gap": "v3.diagnostics.messages.protocolCoverageGap",
   "v3.warning.project_uninitialized": "v3.diagnostics.messages.projectUninitialized",
   "v3.warning.model_stale": "v3.diagnostics.messages.modelStale",
