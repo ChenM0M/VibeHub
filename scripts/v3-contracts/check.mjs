@@ -39,6 +39,7 @@ const failures = [];
 const passed = [];
 const assert = (condition, message) => condition ? passed.push(message) : failures.push(message);
 const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
+const portableRelative = (root, path) => relative(root, path).replaceAll("\\", "/");
 
 async function listFiles(root) {
   const result = [];
@@ -105,7 +106,7 @@ for (const sentinelPath of manifest.invalid_sentinels) {
 }
 
 const expectedTree = buildFixtureTree();
-const diskFiles = (await listFiles(fixtureRoot)).map((path) => relative(fixtureRoot, path));
+const diskFiles = (await listFiles(fixtureRoot)).map((path) => portableRelative(fixtureRoot, path));
 assert(JSON.stringify(diskFiles) === JSON.stringify([...expectedTree.keys()].sort()), "fixture tree contains only deterministic generator output");
 for (const [relativePath, expected] of expectedTree) {
   const actual = await readFile(resolve(fixtureRoot, relativePath), "utf8");
@@ -115,8 +116,8 @@ for (const [relativePath, expected] of expectedTree) {
 const tempRoot = await mkdtemp(resolve(tmpdir(), "vibehub-v3-types-"));
 try {
   await execFileAsync(process.execPath, [resolve(scriptDir, "generate-types.mjs"), tempRoot], { cwd: projectRoot });
-  const expectedFiles = (await listFiles(tempRoot)).map((path) => relative(tempRoot, path));
-  const generatedFiles = (await listFiles(generatedRoot)).map((path) => relative(generatedRoot, path));
+  const expectedFiles = (await listFiles(tempRoot)).map((path) => portableRelative(tempRoot, path));
+  const generatedFiles = (await listFiles(generatedRoot)).map((path) => portableRelative(generatedRoot, path));
   assert(JSON.stringify(expectedFiles) === JSON.stringify(generatedFiles), "generated TypeScript file set has no drift");
   for (const relativePath of expectedFiles) {
     assert(await readFile(resolve(tempRoot, relativePath), "utf8") === await readFile(resolve(generatedRoot, relativePath), "utf8"), `${relativePath} generated TypeScript has no drift`);
