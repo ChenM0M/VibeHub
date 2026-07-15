@@ -1,6 +1,4 @@
 import { StateBadge } from "@/v3/components/common/StateBadge";
-import { WarningList } from "@/v3/components/common/WarningList";
-import { ErrorList } from "@/v3/components/common/ErrorList";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import { NativePathDisplay } from "@/v3/components/common/NativePathDisplay";
 import { AcceptanceProgress } from "@/v3/components/task/AcceptanceProgress";
@@ -38,10 +36,6 @@ export function NodeBriefPanel({ data }: NodeBriefPanelProps) {
           <div className="mt-1.5 flex items-center gap-2">
             <Badge variant="outline">{stateLabel[data.state] ?? data.state}</Badge>
             <span className="font-mono text-[11px] text-muted-foreground">{data.node_id}</span>
-            <div className="flex items-center gap-1">
-              {data.warnings.length > 0 && <WarningList warnings={data.warnings} />}
-              {data.errors.length > 0 && <ErrorList errors={data.errors} />}
-            </div>
           </div>
         </div>
         <StateBadge freshness={data.freshness} completeness={data.completeness} />

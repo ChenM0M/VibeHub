@@ -1,4 +1,5 @@
-import { AlertTriangle, CircleHelp, ExternalLink, ShieldAlert } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, ChevronDown, ChevronRight, CircleHelp, ExternalLink, ShieldAlert } from "lucide-react";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import type { BlockerDetail } from "@/v3/contracts/generated/project-overview-view";
 
@@ -18,22 +19,30 @@ interface BlockerDetailsPanelProps {
 }
 
 export function BlockerDetailsPanel({ blockers = [], compact = false }: BlockerDetailsPanelProps) {
+  const [expanded, setExpanded] = useState(false);
   if (blockers.length === 0) return null;
 
   return (
     <section
-      className={compact ? "space-y-2" : "space-y-3 rounded-md border border-orange-500/30 bg-orange-500/5 p-4"}
+      className={compact ? "space-y-2" : "rounded-md border border-orange-500/30 bg-orange-500/5"}
       aria-label="阻塞详情"
     >
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className={compact ? "flex w-full min-w-0 items-center gap-2 text-left" : "flex w-full min-w-0 items-center gap-2 p-3 text-left hover:bg-orange-500/5"}
+      >
         <ShieldAlert className="h-4 w-4 text-orange-600 dark:text-orange-400" />
         <h3 className="text-sm font-semibold text-orange-800 dark:text-orange-300">阻塞详情</h3>
         <span className="rounded border border-orange-500/30 px-1.5 py-0.5 text-[10px] text-orange-700 dark:text-orange-300">
           {blockers.length} 项
         </span>
-      </div>
+        {!expanded && <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{blockers[0].summary}</span>}
+        {expanded ? <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />}
+      </button>
 
-      <div className="space-y-2">
+      {expanded && <div className={compact ? "space-y-2" : "space-y-2 px-3 pb-3"}>
         {blockers.map((blocker) => (
           <article key={blocker.blocker_id} className="rounded border border-orange-500/20 bg-background/70 p-3">
             <div className="flex items-start gap-2">
@@ -72,7 +81,7 @@ export function BlockerDetailsPanel({ blockers = [], compact = false }: BlockerD
             <EvidenceLink evidenceRefs={blocker.evidence_refs} className="mt-2" />
           </article>
         ))}
-      </div>
+      </div>}
     </section>
   );
 }

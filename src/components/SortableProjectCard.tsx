@@ -2,7 +2,6 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ProjectCard } from './ProjectCard';
 import { Project } from '@/types';
-import { GripVertical } from 'lucide-react';
 
 interface SortableProjectCardProps {
     project: Project;
@@ -47,17 +46,9 @@ export function SortableProjectCard({ project, onLaunch, onCustomLaunch, onSelec
                 onLaunch={onLaunch}
                 onCustomLaunch={onCustomLaunch}
                 onSelect={onSelect}
-                dragHandle={
-                    <div
-                        ref={setActivatorNodeRef}
-                        data-project-drag-handle
-                        aria-hidden="true"
-                        onPointerDown={(event) => listeners?.onPointerDown?.(event)}
-                        className="absolute top-3 right-12 z-20 flex h-8 w-8 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground/50 hover:bg-background/40 hover:text-foreground active:cursor-grabbing"
-                    >
-                        <GripVertical className="h-4 w-4" />
-                    </div>
-                }
+                dragListeners={listeners as Record<string, any>}
+                dragAttributes={attributes as Record<string, any>}
+                dragRef={setActivatorNodeRef}
             />
         </div>
     );

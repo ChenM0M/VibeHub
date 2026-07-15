@@ -280,7 +280,7 @@ export function PlanGraph({ data, taskTitle = "", taskIntent = "", onNodeClick, 
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 flex items-center gap-3 px-1 py-2">
         <div className="min-w-0">
           <div className="text-sm font-semibold">实现计划</div>
@@ -297,9 +297,13 @@ export function PlanGraph({ data, taskTitle = "", taskIntent = "", onNodeClick, 
         {editable && <div className="ml-auto flex gap-2"><Button size="sm" variant="outline" onClick={() => openEditor("add")}>{totalNodes === 0 ? "建立初始实现节点" : "添加实现节点"}</Button>{selectedNode && <><Button size="sm" variant="outline" onClick={() => openEditor("dependencies")}>编辑依赖</Button><Button size="sm" variant="outline" onClick={() => openEditor("state")}>更新状态</Button></>}</div>}
       </div>
 
-      <BlockerDetailsPanel blockers={graphBlockers} compact />
+      {graphBlockers.length > 0 && (
+        <div className="max-h-[min(32vh,18rem)] shrink-0 overflow-y-auto overscroll-contain pr-1 scrollbar-auto-hide">
+          <BlockerDetailsPanel blockers={graphBlockers} compact />
+        </div>
+      )}
 
-      {data.nodes.length === 0 ? <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border bg-card/30 p-8 text-center"><div><div className="font-medium">暂无已记录的实现路径</div><p className="mt-1 text-sm text-muted-foreground">V3 只有通过计划命令记录的节点才会出现在这里；验收标准不会自动变成计划节点。</p>{onAddNode && <Button className="mt-4" onClick={() => openEditor("add")}>建立初始实现节点</Button>}</div></div> : <div className="relative flex-1 rounded-md bg-card/50 overflow-hidden shadow-sm border border-border/30 [&_.react-flow\_\_controls]:!bg-background [&_.react-flow\_\_controls-button]:!bg-background [&_.react-flow\_\_controls-button]:!border-border [&_.react-flow\_\_controls-button]:!text-foreground [&_.react-flow\_\_controls-button:hover]:!bg-accent [&_.react-flow\_\_controls-button_svg]:!fill-foreground [&_.react-flow\_\_minimap]:!bg-background [&_.react-flow\_\_minimap]:!border [&_.react-flow\_\_minimap]:!border-border">
+      {data.nodes.length === 0 ? <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed border-border bg-card/30 p-8 text-center"><div><div className="font-medium">暂无已记录的实现路径</div><p className="mt-1 text-sm text-muted-foreground">V3 只有通过计划命令记录的节点才会出现在这里；验收标准不会自动变成计划节点。</p>{onAddNode && <Button className="mt-4" onClick={() => openEditor("add")}>建立初始实现节点</Button>}</div></div> : <div className="relative min-h-0 flex-1 rounded-md bg-card/50 overflow-hidden shadow-sm border border-border/30 [&_.react-flow\_\_controls]:!bg-background [&_.react-flow\_\_controls-button]:!bg-background [&_.react-flow\_\_controls-button]:!border-border [&_.react-flow\_\_controls-button]:!text-foreground [&_.react-flow\_\_controls-button:hover]:!bg-accent [&_.react-flow\_\_controls-button_svg]:!fill-foreground [&_.react-flow\_\_minimap]:!bg-background [&_.react-flow\_\_minimap]:!border [&_.react-flow\_\_minimap]:!border-border">
         <ReactFlow
           nodes={flowNodes}
           edges={flowEdges}

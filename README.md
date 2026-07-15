@@ -96,7 +96,7 @@ npm run tauri build
 4. 发布草稿 Release。
 5. `Update Homebrew Cask` workflow 会下载公开的 DMG、计算 SHA256，并用实际发布资产文件名更新 `ChenM0M/homebrew-vibehub` 里的 `Casks/vibehub.rb`，适配正式版和预览版。
 
-Homebrew 自动更新需要先创建 `ChenM0M/homebrew-vibehub` 仓库，并在本仓库 Secrets 里配置 `HOMEBREW_TAP_TOKEN`。如果要让 macOS 用户双击即正常打开，Release workflow 还需要配置 Apple 签名/公证相关 Secrets：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`。
+Homebrew 自动更新需要先创建 `ChenM0M/homebrew-vibehub` 仓库，并在本仓库 Secrets 里配置 `HOMEBREW_TAP_TOKEN`。正式 Release workflow 还要求 Apple 签名/公证 Secrets：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`，以及 Windows Authenticode PFX 的 Base64 内容与密码：`WINDOWS_CERTIFICATE`、`WINDOWS_CERTIFICATE_PASSWORD`。缺少正式签名材料时，稳定版构建会明确失败；带 `-` 的预览版允许生成明确标注为 ad-hoc/unsigned 的测试产物。
 
 ## 项目结构
 

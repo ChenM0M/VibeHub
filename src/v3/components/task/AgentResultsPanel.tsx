@@ -1,6 +1,61 @@
 import { CheckCircle2, Clock3, FileText, SearchCheck, XCircle } from "lucide-react";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
-import type { AgentResultsView } from "@/v3/contracts/generated/agent-results-view";
+import type { AgentResultsView, EvidenceRef } from "@/v3/contracts/generated/agent-results-view";
+
+type SafeEvaluation = {
+  target: string;
+  rubric: string[];
+  verdict: string;
+  findings: { title: string; detail: string; severity: string; evidence_refs: EvidenceRef[] }[];
+};
+
+function safeEvidenceRefs(value: unknown): EvidenceRef[] {
+  if (!Array.isArray(value)) return [];
+  const refs: EvidenceRef[] = [];
+  for (const entry of value) {
+    if (typeof entry === "string") {
+      const kind = entry.startsWith("file:") ? "file" : entry.startsWith("evt.") ? "event" : "external";
+      refs.push({ evidence_id: entry, kind, grade: "agent_reported", label_key: "v3.evidence.agent_result", locator: entry });
+      continue;
+    }
+    if (!entry || typeof entry !== "object") continue;
+    const candidate = entry as Partial<EvidenceRef>;
+    if (typeof candidate.evidence_id !== "string" || typeof candidate.locator !== "string") continue;
+    refs.push({
+      evidence_id: candidate.evidence_id,
+      kind: candidate.kind ?? "external",
+      grade: candidate.grade ?? "agent_reported",
+      label_key: candidate.label_key ?? "v3.evidence.agent_result",
+      locator: candidate.locator,
+      captured_at: candidate.captured_at,
+      excerpt: candidate.excerpt,
+    });
+  }
+  return refs;
+}
+
+function safeEvaluation(value: unknown): SafeEvaluation | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  const rubric = Array.isArray(candidate.rubric) ? candidate.rubric.filter((item): item is string => typeof item === "string") : [];
+  const findings = Array.isArray(candidate.findings) ? candidate.findings.flatMap((entry) => {
+    if (typeof entry === "string") return [{ title: entry, detail: entry, severity: "medium", evidence_refs: [] }];
+    if (!entry || typeof entry !== "object") return [];
+    const finding = entry as Record<string, unknown>;
+    return [{
+      title: typeof finding.title === "string" ? finding.title : "未命名发现",
+      detail: typeof finding.detail === "string" ? finding.detail : "未提供详细说明",
+      severity: typeof finding.severity === "string" ? finding.severity : "medium",
+      evidence_refs: safeEvidenceRefs(finding.evidence_refs),
+    }];
+  }) : [];
+  return {
+    target: typeof candidate.target === "string" ? candidate.target : "未指定评估目标",
+    rubric,
+    verdict: typeof candidate.verdict === "string" ? candidate.verdict : "inconclusive",
+    findings,
+  };
+}
 
 const stateCopy: Record<AgentResultsView["state"], { title: string; detail: string }> = {
   not_executed: { title: "Agent 尚未执行", detail: "当前任务还没有可核验的 Agent 会话。" },
@@ -33,6 +88,9 @@ export function AgentResultsPanel({ data }: { data: AgentResultsView }) {
       {data.results.map((result) => {
         const runtimeStatus = result.status as string;
         const Icon = statusIcon[runtimeStatus as keyof typeof statusIcon] ?? XCircle;
+        const evaluation = safeEvaluation(result.evaluation);
+        const artifacts = Array.isArray(result.artifacts) ? result.artifacts : [];
+        const evidenceRefs = safeEvidenceRefs(result.evidence_refs);
         return (
           <article key={result.result_id} className="rounded-md border border-border/50 bg-card/40 p-4">
             <div className="flex items-start gap-2">
@@ -50,16 +108,21 @@ export function AgentResultsPanel({ data }: { data: AgentResultsView }) {
 
             {result.body && <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground/85">{result.body}</p>}
 
-            {result.evaluation && (
+            {evaluation && (
               <section className="mt-3 rounded border border-border/40 bg-muted/10 p-3">
-                <div className="flex items-center gap-2 text-xs font-semibold"><SearchCheck className="h-3.5 w-3.5" />{result.evaluation.target}<span className="ml-auto uppercase text-muted-foreground">{result.evaluation.verdict}</span></div>
-                <div className="mt-2 text-[11px] text-muted-foreground">标准：{result.evaluation.rubric.join("；")}</div>
-                {result.evaluation.findings.length > 0 && <div className="mt-2 space-y-2">{result.evaluation.findings.map((finding, index) => <div key={`${result.result_id}-${index}`} className="border-l-2 border-border pl-2"><div className="text-xs font-medium">{finding.title} · {finding.severity}</div><p className="text-[11px] text-muted-foreground">{finding.detail}</p><EvidenceLink evidenceRefs={finding.evidence_refs} /></div>)}</div>}
+                <div className="flex items-center gap-2 text-xs font-semibold"><SearchCheck className="h-3.5 w-3.5" />{evaluation.target}<span className="ml-auto uppercase text-muted-foreground">{evaluation.verdict}</span></div>
+                <div className="mt-2 text-[11px] text-muted-foreground">标准：{evaluation.rubric.length > 0 ? evaluation.rubric.join("；") : "未提供评估标准"}</div>
+                {evaluation.findings.length > 0 && <div className="mt-2 space-y-2">{evaluation.findings.map((finding, index) => <div key={`${result.result_id}-${index}`} className="border-l-2 border-border pl-2"><div className="text-xs font-medium">{finding.title} · {finding.severity}</div><p className="text-[11px] text-muted-foreground">{finding.detail}</p><EvidenceLink evidenceRefs={finding.evidence_refs} /></div>)}</div>}
               </section>
             )}
 
-            {result.artifacts.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{result.artifacts.map((artifact, index) => <div key={`${result.result_id}-artifact-${index}`} className="inline-flex items-center gap-1.5 rounded border border-border/50 px-2 py-1 text-[11px]"><FileText className="h-3 w-3" />{artifact.label}{artifact.path && <span className="max-w-48 truncate text-muted-foreground">{artifact.path.display}</span>}</div>)}</div>}
-            <div className="mt-3"><EvidenceLink evidenceRefs={result.evidence_refs} /></div>
+            {artifacts.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{artifacts.map((rawArtifact, index) => {
+              const artifact = rawArtifact as unknown;
+              const label = typeof artifact === "string" ? artifact : artifact && typeof artifact === "object" ? String((artifact as { label?: unknown; kind?: unknown; locator?: unknown }).label ?? (artifact as { kind?: unknown }).kind ?? (artifact as { locator?: unknown }).locator ?? "未命名产物") : "未命名产物";
+              const path = artifact && typeof artifact === "object" && (artifact as { path?: unknown }).path && typeof (artifact as { path?: unknown }).path === "object" ? (artifact as { path: { display?: unknown } }).path : null;
+              return <div key={`${result.result_id}-artifact-${index}`} className="inline-flex items-center gap-1.5 rounded border border-border/50 px-2 py-1 text-[11px]"><FileText className="h-3 w-3" />{label}{typeof path?.display === "string" && <span className="max-w-48 truncate text-muted-foreground">{path.display}</span>}</div>;
+            })}</div>}
+            <div className="mt-3"><EvidenceLink evidenceRefs={evidenceRefs} /></div>
           </article>
         );
       })}
