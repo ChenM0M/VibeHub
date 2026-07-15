@@ -20,6 +20,24 @@ Agent Specification；任务、计划、事件和 session 的事实来源仍然�
 5. 结束时写真实的 `agent_result`，然后 `session_close`。中断后必须新开
    recovery session 并记录 gap/recover，不得复用“看起来仍在运行”的旧 session。
 
+创建或重写 Git 提交前必须设置并核验仓库级身份：
+
+```bash
+git config user.name ChenM0M
+git config user.email 126325292+ChenM0M@users.noreply.github.com
+```
+
+提交后必须检查 author 和 committer：
+
+```bash
+git show -s --format='%an <%ae>%n%cn <%ce>' HEAD
+```
+
+两者都必须是 `ChenM0M <126325292+ChenM0M@users.noreply.github.com>`。不得使用
+`*.local` 主机邮箱、Agent 身份或无法关联 GitHub 用户的临时邮箱；发现历史提交
+归属错误时，在 tag/发布前使用可审计的 rebase/amend 修正，并以
+`--force-with-lease` 安全更新仅受影响的发布分支。
+
 ## 2. 版本与发布前门禁
 
 版本修改后、本地准备 tag 前、以及 GitHub Actions 发布前都必须运行：
@@ -68,7 +86,9 @@ artifact/hash 都不能冒充当前版本证据。
 - `Build and Test` 在 feature、main/dev push 或 PR 上运行前端、contracts、Rust、
   MCP 和 Tauri 构建门槛。
 - `Release` 先 checkout 精确 tag，运行 preflight，再创建一个 draft Release，
-  最后上传 macOS、Windows、Linux 产物和平台 SHA-256 清单。
+  上传 macOS、Windows、Linux 产物和平台 SHA-256 清单。只有全部 matrix job
+  成功且必需产物校验通过后，最终 job 才能把 draft 发布；发布事件随后触发
+  Homebrew cask 更新。任何平台失败时必须保留 draft，不得发布残缺版本。
 - 稳定 tag 缺少 Apple Developer ID/notarization Secrets 或 Windows
   Authenticode PFX Secrets 时必须失败；不得把 ad-hoc/unsigned 产物称为正式签名。
 - 带 `-` 的预览 tag 可以生成明确标注的非正式测试产物，但仍要保留 exact tag、
