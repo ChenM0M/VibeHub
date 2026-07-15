@@ -19,3 +19,9 @@
 - 只有全部必需 criterion 有可核验 evidence、finding 已闭环且用户通过受信渠道确认后，才能提议或确认 task 完成。
 - 只有存在可核验的工具结果、事件或测试证据时才能声称工作完成；缺少证据时必须明确说明未验证。
 <!-- VIBEHUB:AGENT-SPEC:END -->
+
+## 项目级流程补充
+
+- V3 Agent 与发布验收的详细强制流程见 [`docs/v3/agent-release-process.md`](docs/v3/agent-release-process.md)。开始任何 V3 工作前先读本文件和该流程。
+- 发布前必须运行 `npm run release:check`；它校验 package、lockfile、两个 V3 crate、Tauri Cargo 和 `tauri.conf.json` 的版本一致性。若设置 `RELEASE_TAG`，tag 版本也必须匹配。
+- 不得把 GitHub Actions 构建成功或 macOS evidence 当作 Windows 原生验收；Windows 必须使用同一 Release artifact/hash 在发布后手测，并保留 `A07`、`E07`、`F07–F10`、`G05` 的真实状态。
