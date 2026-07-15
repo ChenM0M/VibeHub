@@ -507,7 +507,13 @@ assert(winOrchestration.orphan_candidates[0].process_state === "unknown" && winO
 const schemaHashSummary = schemaNames.map((name) => `${basename(name)}=${sha256(JSON.stringify(schemas.get(name)))}`).join(" ");
 if (failures.length) {
   console.error(`V3 contract check failed (${failures.length}):`);
-  for (const failure of failures) console.error(`- ${failure}`);
+  for (const failure of failures) {
+    console.error(`- ${failure}`);
+    if (process.env.GITHUB_ACTIONS === "true") {
+      const annotation = failure.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+      console.error(`::error file=scripts/v3-contracts/check.mjs,title=V3 contract check::${annotation}`);
+    }
+  }
   process.exitCode = 1;
 } else {
   console.log(`V3 contract check passed: ${passed.length} assertions, ${manifest.scenarios.length} scenarios, 6 views, 5 write contracts.`);
