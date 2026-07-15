@@ -192,6 +192,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$FORMAL_APPLE_SIGNING" = "false" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
           log="$RUNNER_TEMP/tauri-macos-build.log"
           if npm run tauri -- build ${{ matrix.tauri_args }} 2>&1 | tee "$log"; then
             exit 0
