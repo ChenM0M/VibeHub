@@ -38,7 +38,8 @@ export function About() {
             {/* App Info Card */}
             <Card>
                 <CardHeader className="flex flex-row items-center gap-4">
-                    <img src="/app-icon.png" alt="VibeHub" className="w-16 h-16 rounded-xl shadow-lg" />
+                    <img src="/app-icon.png" alt="VibeHub" className="w-16 h-16 rounded-xl shadow-lg dark:hidden" />
+                    <img src="/logo-dark.jpg" alt="VibeHub Dark" className="w-16 h-16 rounded-xl shadow-lg hidden dark:block" />
                     <div>
                         <CardTitle className="text-2xl">{appName}</CardTitle>
                         <CardDescription className="flex items-center gap-2 mt-1">

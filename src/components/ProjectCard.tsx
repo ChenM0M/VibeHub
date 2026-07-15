@@ -43,10 +43,12 @@ interface ProjectCardProps {
     onLaunch: (project: Project) => void;
     onCustomLaunch: (project: Project) => void;
     onSelect?: (project: Project) => void;
-    dragHandle?: React.ReactNode;
+    dragListeners?: Record<string, any>;
+    dragAttributes?: Record<string, any>;
+    dragRef?: (element: HTMLElement | null) => void;
 }
 
-export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragHandle }: ProjectCardProps) {
+export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragListeners, dragAttributes, dragRef }: ProjectCardProps) {
     const { t, i18n } = useTranslation();
     const { toggleProjectStar, openInExplorer, openTerminal, config, deleteProject, launchTool, launchCustom } = useAppStore();
     const [isEditing, setIsEditing] = useState(false);
@@ -146,7 +148,14 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragH
         }
     };
 
-    const handleSelectClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const handleSelectClick = (event: React.MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        onSelect?.(originalProject);
+    };
+
+    const handleSelectKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
         event.stopPropagation();
         onSelect?.(originalProject);
     };
@@ -167,10 +176,12 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragH
                     className={`group relative flex flex-col justify-between min-h-[180px] h-full bg-card hover:bg-accent/5 border rounded-xl transition-all duration-200 hover:shadow-lg hover:-translate-y-1 overflow-hidden`}
                     style={customStyle}
                 >
-                    {dragHandle}
                     {/* Header / Banner Area */}
                     <div
-                        className={`h-20 relative overflow-hidden transition-all duration-200 ${!project.theme_color && !project.cover_image ? `bg-gradient-to-br ${typeInfo.gradient}` : ''}`}
+                        ref={dragRef}
+                        {...dragListeners}
+                        {...dragAttributes}
+                        className={`h-20 relative overflow-hidden transition-all duration-200 ${dragListeners ? 'cursor-grab active:cursor-grabbing touch-none' : ''} ${!project.theme_color && !project.cover_image ? `bg-gradient-to-br ${typeInfo.gradient}` : ''}`}
                         style={project.cover_image ? {
                             backgroundImage: `url(${project.cover_image})`,
                             backgroundSize: 'cover',
@@ -232,24 +243,28 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragH
                     </div>
 
                     {/* Content Area */}
-                    <div className="p-4 flex flex-col flex-1 justify-between">
+                    <div
+                        className="p-4 flex flex-col flex-1 justify-between cursor-pointer group/content"
+                        onClick={handleSelectClick}
+                        onKeyDown={handleSelectKeyDown}
+                        data-project-open
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`打开项目 ${project.name}`}
+                    >
                         <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <button
-                                        type="button"
-                                        data-project-open
-                                        aria-label={`打开项目 ${project.name}`}
-                                        className="block w-full text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                                        onClick={handleSelectClick}
+                                    <div
+                                        className="block w-full text-left rounded-sm"
                                     >
-                                        <span className="block font-semibold text-base tracking-tight truncate group-hover:text-primary transition-colors">
+                                        <span className="block font-semibold text-base tracking-tight truncate group-hover/content:text-primary transition-colors">
                                             {project.name}
                                         </span>
-                                        <span className="block text-xs text-muted-foreground break-all line-clamp-1 hover:text-foreground transition-colors mt-0.5">
+                                        <span className="block text-xs text-muted-foreground break-all line-clamp-1 group-hover/content:text-foreground transition-colors mt-0.5">
                                             {project.path}
                                         </span>
-                                    </button>
+                                    </div>
                                 </TooltipTrigger>
                                 <TooltipContent side="bottom" className="max-w-[300px] break-all">
                                     {project.path}
@@ -272,25 +287,25 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragH
                             </div>
 
                             <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0 flex-1">
                                     {project.metadata.git_branch && (
-                                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-secondary/30">
-                                            <GitBranch className="h-3 w-3" />
-                                            <span>{project.metadata.git_branch}</span>
+                                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-secondary/30 min-w-0">
+                                            <GitBranch className="h-3 w-3 shrink-0" />
+                                            <span className="truncate">{project.metadata.git_branch}</span>
                                         </div>
                                     )}
                                     {project.last_opened && (
-                                        <span className="opacity-70 text-[10px]">{formatDate(project.last_opened)}</span>
+                                        <span className="opacity-70 text-[10px] shrink-0 whitespace-nowrap">{formatDate(project.last_opened)}</span>
                                     )}
                                 </div>
 
                                 <Button
                                     size="sm"
-                                    className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-all shadow-sm hover:shadow-md bg-primary/90 hover:bg-primary text-primary-foreground border-0 px-3"
+                                    className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-all shadow-sm hover:shadow-md bg-primary/90 hover:bg-primary text-primary-foreground border-0 px-3 shrink-0 ml-2"
                                     onClick={handleLaunchClick}
                                 >
-                                    <Play className="h-3 w-3 mr-1.5" />
-                                    {t('project.launch')}
+                                    <Play className="h-3 w-3 mr-1.5 shrink-0" />
+                                    <span className="whitespace-nowrap">{t('project.launch')}</span>
                                 </Button>
                             </div>
                         </div>

@@ -4,7 +4,7 @@ use super::orchestration::fold_task as fold_orchestration;
 use super::project_intelligence::{
     AnalyzerFinding, GitState, NodeKind, ProjectIndexService, ProjectModelSnapshot, ProjectPage,
 };
-use super::{V3Error, V3ErrorCategory, V3EventEnvelope, V3EventStore};
+use super::{EvidenceGrade, V3Error, V3ErrorCategory, V3EventEnvelope, V3EventStore};
 use crate::process_util::silent_command;
 use crate::vibehub::current::resolve_current_task;
 use chrono::{SecondsFormat, Utc};
@@ -1539,6 +1539,167 @@ fn normalize_relative_path(path: &Path) -> Option<String> {
     })
 }
 
+fn normalize_agent_evidence_ref(value: &Value, event: &V3EventEnvelope) -> Option<Value> {
+    if let Some(locator) = value.as_str() {
+        let kind = if locator.starts_with("file:") {
+            "file"
+        } else if locator.starts_with("evt.") || locator.starts_with("vibehub://v3/events/") {
+            "event"
+        } else {
+            "external"
+        };
+        return Some(json!({
+            "evidence_id": locator,
+            "kind": kind,
+            "grade": event.evidence_grade,
+            "label_key": "v3.evidence.agent_result",
+            "locator": locator,
+            "captured_at": event.recorded_at
+        }));
+    }
+    let object = value.as_object()?;
+    let locator = object.get("locator").and_then(Value::as_str)?;
+    let evidence_id = object
+        .get("evidence_id")
+        .and_then(Value::as_str)
+        .unwrap_or(locator);
+    let kind = object
+        .get("kind")
+        .and_then(Value::as_str)
+        .filter(|kind| {
+            [
+                "event", "file", "git", "command", "test", "user", "external",
+            ]
+            .contains(kind)
+        })
+        .unwrap_or("external");
+    let event_grade = match event.evidence_grade {
+        EvidenceGrade::HardObserved => "hard_observed",
+        EvidenceGrade::AgentReported => "agent_reported",
+        EvidenceGrade::Inferred => "inferred",
+        EvidenceGrade::UserConfirmed => "user_confirmed",
+    };
+    let grade = object
+        .get("grade")
+        .and_then(Value::as_str)
+        .filter(|grade| {
+            [
+                "hard_observed",
+                "agent_reported",
+                "inferred",
+                "user_confirmed",
+            ]
+            .contains(grade)
+        })
+        .unwrap_or(event_grade);
+    Some(json!({
+        "evidence_id": evidence_id,
+        "kind": kind,
+        "grade": grade,
+        "label_key": object.get("label_key").and_then(Value::as_str).unwrap_or("v3.evidence.agent_result"),
+        "locator": locator,
+        "captured_at": object.get("captured_at").cloned().unwrap_or_else(|| Value::String(event.recorded_at.clone())),
+        "excerpt": object.get("excerpt").cloned().unwrap_or(Value::Null)
+    }))
+}
+
+fn normalize_agent_evaluation(value: Option<&Value>) -> (Value, bool) {
+    let Some(value) = value.filter(|value| !value.is_null()) else {
+        return (Value::Null, false);
+    };
+    let Some(object) = value.as_object() else {
+        return (Value::Null, true);
+    };
+    let target = object
+        .get("target")
+        .and_then(Value::as_str)
+        .unwrap_or("Evaluation target unavailable");
+    let rubric: Vec<Value> = object
+        .get("rubric")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(|item| json!(item))
+                .collect()
+        })
+        .unwrap_or_default();
+    let raw_verdict = object
+        .get("verdict")
+        .and_then(Value::as_str)
+        .unwrap_or("inconclusive");
+    let verdict = if ["passed", "needs_revision", "failed", "inconclusive"].contains(&raw_verdict) {
+        raw_verdict
+    } else {
+        "inconclusive"
+    };
+    let findings: Vec<Value> = object
+        .get("findings")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|finding| {
+                    if let Some(detail) = finding.as_str() {
+                        return Some(json!({"title": detail, "detail": detail, "severity": "medium", "evidence_refs": []}));
+                    }
+                    let finding = finding.as_object()?;
+                    let title = finding.get("title").and_then(Value::as_str).unwrap_or("Untitled finding");
+                    let detail = finding.get("detail").and_then(Value::as_str).unwrap_or("Finding details unavailable");
+                    let raw_severity = finding.get("severity").and_then(Value::as_str).unwrap_or("medium");
+                    let severity = if ["info", "low", "medium", "high", "critical"].contains(&raw_severity) { raw_severity } else { "medium" };
+                    let evidence_refs = finding.get("evidence_refs").and_then(Value::as_array).cloned().unwrap_or_default();
+                    Some(json!({"title": title, "detail": detail, "severity": severity, "evidence_refs": evidence_refs}))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let normalized =
+        json!({"target": target, "rubric": rubric, "verdict": verdict, "findings": findings});
+    (normalized.clone(), &normalized != value)
+}
+
+fn normalize_agent_artifacts(value: Option<&Value>) -> (Vec<Value>, bool) {
+    let Some(items) = value.and_then(Value::as_array) else {
+        return (Vec::new(), value.is_some_and(|value| !value.is_null()));
+    };
+    let normalized: Vec<Value> = items
+        .iter()
+        .filter_map(|item| {
+            if let Some(label) = item.as_str() {
+                return Some(json!({"label": label, "path": null, "uri": null}));
+            }
+            let object = item.as_object()?;
+            let label = object
+                .get("label")
+                .or_else(|| object.get("kind"))
+                .or_else(|| object.get("locator"))
+                .and_then(Value::as_str)
+                .unwrap_or("Unnamed artifact");
+            let path = object
+                .get("path")
+                .filter(|path| {
+                    path.get("platform").and_then(Value::as_str).is_some()
+                        && path.get("native").and_then(Value::as_str).is_some()
+                        && path.get("display").and_then(Value::as_str).is_some()
+                        && path.get("identity_key").and_then(Value::as_str).is_some()
+                })
+                .cloned()
+                .unwrap_or(Value::Null);
+            let uri = object
+                .get("uri")
+                .cloned()
+                .or_else(|| object.get("locator").cloned())
+                .filter(|uri| uri.is_string())
+                .unwrap_or(Value::Null);
+            Some(json!({"label": label, "path": path, "uri": uri}))
+        })
+        .collect();
+    let changed = normalized != *items;
+    (normalized, changed)
+}
+
 fn agent_results_view(
     project_id: &str,
     task_id: &str,
@@ -1564,7 +1725,8 @@ fn agent_results_view(
     let mut warnings = Vec::new();
     for event in result_events {
         let payload = &event.payload;
-        let result_evidence: Vec<Value> = payload.get("evidence_refs").and_then(Value::as_array).cloned().unwrap_or_else(|| vec![json!({
+        let raw_result_evidence = payload.get("evidence_refs").and_then(Value::as_array);
+        let result_evidence: Vec<Value> = raw_result_evidence.map(|items| items.iter().filter_map(|item| normalize_agent_evidence_ref(item, event)).collect()).filter(|items: &Vec<Value>| !items.is_empty()).unwrap_or_else(|| vec![json!({
             "evidence_id": event.event_id, "kind": "event", "grade": event.evidence_grade, "label_key": "v3.evidence.agent_result", "locator": format!("vibehub://v3/events/{}", event.event_id), "captured_at": event.recorded_at
         })]);
         let result_id = payload
@@ -1603,6 +1765,21 @@ fn agent_results_view(
                 "failed"
             }
         };
+        let (evaluation, evaluation_normalized) =
+            normalize_agent_evaluation(payload.get("evaluation"));
+        let (artifacts, artifacts_normalized) = normalize_agent_artifacts(payload.get("artifacts"));
+        if evaluation_normalized
+            || artifacts_normalized
+            || raw_result_evidence.is_some_and(|items| items.iter().any(|item| !item.is_object()))
+        {
+            warnings.push(json!({
+                "code": "V3_AGENT_RESULT_DETAILS_NORMALIZED",
+                "severity": "warning",
+                "message_key": "v3.warning.agent_result_details_normalized",
+                "details": {"result_id": result_id},
+                "evidence_refs": result_evidence
+            }));
+        }
         let result = json!({
             "result_id": result_id,
             "kind": payload.get("kind").and_then(Value::as_str).unwrap_or("execution"),
@@ -1612,8 +1789,8 @@ fn agent_results_view(
             "status": status,
             "summary": payload.get("summary").and_then(Value::as_str).unwrap_or(""),
             "body": payload.get("body").cloned().unwrap_or(Value::Null),
-            "evaluation": payload.get("evaluation").cloned().unwrap_or(Value::Null),
-            "artifacts": payload.get("artifacts").and_then(Value::as_array).cloned().unwrap_or_default(),
+            "evaluation": evaluation,
+            "artifacts": artifacts,
             "started_at": payload.get("started_at").cloned().unwrap_or(Value::Null),
             "completed_at": payload.get("completed_at").cloned().unwrap_or(Value::Null),
             "evidence_refs": result_evidence
@@ -1874,6 +2051,15 @@ fn blocker_details(
     let node_has_blocked_state = node_id
         .and_then(|id| lifecycle.nodes.get(id))
         .is_some_and(|node| matches!(node.state.as_str(), "blocked" | "failed"));
+
+    // Blocker details describe current workflow truth. Historical risk and blocked
+    // events remain available in the timeline, but must not keep a recovered task
+    // or completed node visually blocked forever.
+    if (node_id.is_some() && !node_has_blocked_state)
+        || (node_id.is_none() && !task_has_blocked_state)
+    {
+        return Vec::new();
+    }
 
     let mut candidates: Vec<&V3EventEnvelope> = events
         .iter()
@@ -2960,6 +3146,69 @@ mod tests {
     }
 
     #[test]
+    fn malformed_historical_agent_result_details_are_normalized() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-v3-result-details-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub/tasks/task.test")).unwrap();
+        fs::write(
+            root.join(".vibehub/tasks/task.test/task.yaml"),
+            "task_id: task.test\ntitle: Result compatibility\nintent: Render historical events\nphase: implement\nphase_status: active\n",
+        )
+        .unwrap();
+        let repository = V3ViewRepository::open(&root).unwrap();
+        let project_id = repository.project_id();
+        V3EventStore::open(&root)
+            .unwrap()
+            .append(EventDraft {
+                event_type: "agent.result_recorded".to_owned(),
+                aggregate_id: "session.test".to_owned(),
+                expected_version: 0,
+                idempotency_key: "result.malformed".to_owned(),
+                project_id: ProjectId(project_id),
+                task_id: TaskId("task.test".to_owned()),
+                node_id: None,
+                session_id: Some(SessionId("session.test".to_owned())),
+                worktree_id: None,
+                lease_id: None,
+                operation_id: None,
+                actor: "legacy-agent".to_owned(),
+                evidence_grade: EvidenceGrade::AgentReported,
+                occurred_at: None,
+                commit_sha: None,
+                payload: json!({
+                    "result_id": "result.test",
+                    "kind": "evaluation",
+                    "request_source": "evaluation_instruction",
+                    "instruction": "Review",
+                    "status": "succeeded",
+                    "summary": "Reviewed",
+                    "evaluation": {"target": "workspace", "verdict": "needs_action", "findings": ["missing rubric"]},
+                    "artifacts": ["src/example.rs"],
+                    "evidence_refs": ["evt.legacy"]
+                }),
+            })
+            .unwrap();
+
+        let bundle = repository.load_bundle("task.test").unwrap();
+        let result = &bundle.agent_results["results"][0];
+        assert_eq!(result["evaluation"]["rubric"], json!([]));
+        assert_eq!(result["evaluation"]["verdict"], "inconclusive");
+        assert_eq!(
+            result["evaluation"]["findings"][0]["title"],
+            "missing rubric"
+        );
+        assert_eq!(result["artifacts"][0]["label"], "src/example.rs");
+        assert_eq!(result["evidence_refs"][0]["evidence_id"], "evt.legacy");
+        assert!(bundle.agent_results["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["code"] == "V3_AGENT_RESULT_DETAILS_NORMALIZED"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn successful_agent_result_evidence_does_not_create_a_false_blocker() {
         let root =
             std::env::temp_dir().join(format!("vibehub-v3-blocker-signal-{}", Uuid::new_v4()));
@@ -3000,6 +3249,47 @@ mod tests {
                 "evidence_refs": [{"evidence_id":"file:m9-accessibility","kind":"file","grade":"hard_observed","label_key":"test","locator":"file:m9-accessibility"}]
             }),
         )
+        .unwrap();
+
+        let bundle = repository.load_bundle("task.test").unwrap();
+        assert_eq!(bundle.task_timeline["blocker_details"], json!([]));
+        assert_eq!(
+            bundle.project_overview["active_tasks"][0]["blocker_details"],
+            json!([])
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn resolved_criterion_does_not_project_historical_blockers() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-v3-resolved-blocker-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub/tasks/task.test")).unwrap();
+        fs::write(
+            root.join(".vibehub/tasks/task.test/task.yaml"),
+            "task_id: task.test\ntitle: Resolved blocker\nintent: Keep history without stale status\nphase: implement\nphase_status: active\nacceptance_criteria:\n- Native flow passes\n",
+        )
+        .unwrap();
+        let repository = V3ViewRepository::open(&root).unwrap();
+        let project_id = repository.project_id();
+        let app = V3ApplicationService::open(&root).unwrap();
+        app.lifecycle_command(super::super::lifecycle::command(
+            "criterion.blocked",
+            &project_id,
+            "task.test",
+            0,
+            "criterion.blocked",
+            json!({"criterion_id":"criterion.task.test.c01","reviewer":"reviewer","evidence_refs":["evt.blocked"],"reason":"macOS Accessibility permission was unavailable"}),
+        ))
+        .unwrap();
+        app.lifecycle_command(super::super::lifecycle::command(
+            "criterion.passed",
+            &project_id,
+            "task.test",
+            1,
+            "criterion.passed",
+            json!({"criterion_id":"criterion.task.test.c01","reviewer":"reviewer","evidence_refs":["test:native-flow"]}),
+        ))
         .unwrap();
 
         let bundle = repository.load_bundle("task.test").unwrap();

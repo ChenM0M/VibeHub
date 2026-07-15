@@ -35,9 +35,11 @@ export function LaunchDialog({ isOpen, onClose, project, isCustomLaunch = false 
     const [showCustomForm, setShowCustomForm] = useState(false);
     const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
     const [availableTags, setAvailableTags] = useState<{ id: string, name: string }[]>([]);
+    const [launchError, setLaunchError] = useState<string | null>(null);
 
     useEffect(() => {
         if (project) {
+            setLaunchError(null);
             // 自定义启动模式或无标签项目都显示所有全局标签，普通模式只显示项目关联的标签
             const shouldShowAllTags = isCustomLaunch || project.tags.length === 0;
             const tagsToShow = shouldShowAllTags
@@ -72,15 +74,16 @@ export function LaunchDialog({ isOpen, onClose, project, isCustomLaunch = false 
 
     const handleLaunch = async () => {
         if (!project) return;
-
-        if (showCustomForm) {
-            // Launch with custom config
-            const configToLaunch = {
-                ...customConfig,
-                args: argsString.split(' ').filter(a => a.length > 0)
-            };
-            await launchCustom(project.id, configToLaunch);
-        } else {
+        setLaunchError(null);
+        try {
+            if (showCustomForm) {
+                // Launch with custom config
+                const configToLaunch = {
+                    ...customConfig,
+                    args: argsString.split(' ').filter(a => a.length > 0)
+                };
+                await launchCustom(project.id, configToLaunch);
+            } else {
             // Launch with selected tags
             // We need a backend command that accepts specific tag IDs to launch
             // Currently launchTool launches ALL tags.
@@ -95,16 +98,19 @@ export function LaunchDialog({ isOpen, onClose, project, isCustomLaunch = false 
             // If we can't change backend easily right now (we can, we are the dev), let's update backend.
             // But wait, I can just iterate and call launchCustom for each selected tag's config!
 
-            const selectedTags = config?.tags.filter(t => selectedTagIds.includes(t.id));
-            if (selectedTags) {
-                for (const tag of selectedTags) {
-                    if (tag.config) {
-                        await launchCustom(project.id, tag.config, tag.category);
+                const selectedTags = config?.tags.filter(t => selectedTagIds.includes(t.id));
+                if (selectedTags) {
+                    for (const tag of selectedTags) {
+                        if (tag.config) {
+                            await launchCustom(project.id, tag.config, tag.category);
+                        }
                     }
                 }
             }
+            onClose();
+        } catch (error) {
+            setLaunchError(error instanceof Error ? error.message : String(error));
         }
-        onClose();
     };
 
     const toggleTag = (tagId: string) => {
@@ -201,6 +207,12 @@ export function LaunchDialog({ isOpen, onClose, project, isCustomLaunch = false 
                         </Button>
                     )}
                 </div>
+
+                {launchError && (
+                    <div role="alert" className="text-sm text-destructive break-words">
+                        {launchError}
+                    </div>
+                )}
 
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose}>

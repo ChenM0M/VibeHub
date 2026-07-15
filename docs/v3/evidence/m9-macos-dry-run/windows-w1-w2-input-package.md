@@ -1,7 +1,13 @@
 # Batch M9 — Windows W1/W2 artifact and input package
 
-Date: 2026-07-13
-Status: preparation only — **no Windows behavior has been tested or claimed**.
+Date: 2026-07-15
+Status: release handoff prepared — **no Windows behavior has been tested or claimed**.
+
+Execution order is intentionally release-first: GitHub Actions produces the
+reviewed `3.0.0` draft-release artifacts and checksum manifest; the project
+owner then downloads that exact Windows artifact and performs W1/W2 manually on
+a Windows machine. CI build success is artifact provenance, not native Windows
+acceptance evidence.
 
 ## Required execution environment
 
@@ -23,28 +29,28 @@ Status: preparation only — **no Windows behavior has been tested or claimed**.
 
 ## Artifact identity to hand to Windows executor
 
-M9 produced only a **macOS arm64** artifact and therefore does not provide a
-Windows installer. The Windows executor must build or receive the Windows
-installer from a reviewed clean source revision. The final macOS reference was
-built at Git HEAD `ed3196588d8cdc153025aff9c593dbee3164e918` with uncommitted
-changes, so it is behavioral reference evidence, not a claim that a Windows
-artifact can be reproduced from that commit alone. Record the exact values
-below before testing:
+The historical M9 native run produced only a **macOS arm64** artifact. The
+current release workflow now builds Windows installers and a portable binary
+from the exact `v3.0.0` tag, uploads them to one draft GitHub Release, and
+uploads `SHA256SUMS-windows-x64.txt`. The Windows executor must use those
+uploaded files rather than rebuilding from an uncommitted checkout. Record the
+exact values below before testing:
 
 | Required record | Required value/evidence |
 | --- | --- |
-| Source revision | Exact Git commit SHA and branch/worktree identity. |
-| Product version | `2.0.0-pre.22` unless the release owner changes it in reviewed configuration. |
+| Source revision | Exact commit resolved by release tag `v3.0.0`; record `git rev-list -n 1 v3.0.0` or the Release provenance. |
+| Product version | `3.0.0`; `package.json`, both Cargo packages, lockfiles, and `tauri.conf.json` are checked for equality by `npm run release:check`. |
 | Windows package paths | Exact `.msi`, `.exe`, or other installer path(s). |
-| SHA-256 | `Get-FileHash -Algorithm SHA256 <artifact>` for every artifact. |
-| Signature | `Get-AuthenticodeSignature <artifact>` plus package/bundle verification output. Do not call unsigned/ad-hoc evidence formal signing. |
+| SHA-256 | Compare `Get-FileHash -Algorithm SHA256 <artifact>` with the uploaded `SHA256SUMS-windows-x64.txt`. |
+| Signature | Stable workflow requires `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD`, then rejects non-`Valid` Authenticode results. Recheck locally with `Get-AuthenticodeSignature`. |
 | Architecture | `x64`/`arm64` and Windows version under test. |
 | Installed executable | Exact resolved path and `--version` output. |
 | IDE | Name, version, executable path, and invocation result. |
 
-The current cross-platform source configuration identifies version
-`2.0.0-pre.22`, but **there is no Windows artifact hash to prefill**. A macOS
-DMG or macOS app hash must never be substituted for a Windows package hash.
+There is intentionally no Windows hash prefilled before GitHub Actions runs.
+The workflow-generated checksum file is authoritative only for the assets in
+that exact draft Release. A macOS DMG hash, a local rebuild, or a hash from a
+different workflow run must never be substituted.
 
 ## Common fixture creation and safety rules
 
@@ -58,7 +64,7 @@ Suggested PowerShell helpers:
 ```powershell
 $Root = Join-Path $env:TEMP 'vibehub-m9-windows'
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
-$Artifact = 'C:\path\to\reviewed\VibeHub-installer.msi' # exact supplied path
+$Artifact = 'C:\path\to\downloaded\VibeHub-installer.msi' # exact draft-Release asset
 Get-FileHash -Algorithm SHA256 $Artifact
 Get-AuthenticodeSignature $Artifact | Format-List *
 ```

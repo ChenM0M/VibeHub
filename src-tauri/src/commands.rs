@@ -951,17 +951,33 @@ pub async fn open_in_explorer(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
+        let output = Command::new("open")
             .arg(&path)
-            .spawn()
+            .output()
             .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            return Err(if stderr.is_empty() {
+                format!("OPEN_FAILED: open exited with {}", output.status)
+            } else {
+                format!("OPEN_FAILED: {stderr}")
+            });
+        }
     }
     #[cfg(target_os = "linux")]
     {
-        Command::new("xdg-open")
+        let output = Command::new("xdg-open")
             .arg(&path)
-            .spawn()
+            .output()
             .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            return Err(if stderr.is_empty() {
+                format!("OPEN_FAILED: xdg-open exited with {}", output.status)
+            } else {
+                format!("OPEN_FAILED: {stderr}")
+            });
+        }
     }
     Ok(())
 }
@@ -1258,6 +1274,9 @@ pub async fn vibehub_open_vibehub_file(
 ) -> Result<(), String> {
     let (_, path, _) = cockpit::resolve_vibehub_file_path(project_path, relative_path)
         .map_err(|e| e.to_string())?;
+    if !path.is_file() {
+        return Err(format!("VIBEHUB_FILE_NOT_FOUND: {}", path.display()));
+    }
     open_in_explorer(path.to_string_lossy().to_string()).await
 }
 
