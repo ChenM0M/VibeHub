@@ -23,5 +23,6 @@
 ## 项目级流程补充
 
 - V3 Agent 与发布验收的详细强制流程见 [`docs/v3/agent-release-process.md`](docs/v3/agent-release-process.md)。开始任何 V3 工作前先读本文件和该流程。
+- 在本仓库创建或重写提交前，必须确认 author 与 committer 都是 GitHub 用户 `ChenM0M <126325292+ChenM0M@users.noreply.github.com>`；提交后用 `git show -s --format='%an <%ae>%n%cn <%ce>' HEAD` 核验，不得使用主机本地域名邮箱或 Agent 身份。
 - 发布前必须运行 `npm run release:check`；它校验 package、lockfile、两个 V3 crate、Tauri Cargo 和 `tauri.conf.json` 的版本一致性。若设置 `RELEASE_TAG`，tag 版本也必须匹配。
 - 不得把 GitHub Actions 构建成功或 macOS evidence 当作 Windows 原生验收；Windows 必须使用同一 Release artifact/hash 在发布后手测，并保留 `A07`、`E07`、`F07–F10`、`G05` 的真实状态。

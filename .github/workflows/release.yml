@@ -346,3 +346,38 @@ jobs:
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           fail_on_unmatched_files: true
           files: release-assets/*
+
+  publish-release:
+    needs: build-and-upload
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Verify release assets and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+
+          for pattern in \
+            'VibeHub_.*_aarch64\.dmg' \
+            'VibeHub_.*_x64\.dmg' \
+            '(.*\.msi|.*-setup\.exe)' \
+            'VibeHub_.*_portable_x64\.exe' \
+            '(.*\.deb|.*\.AppImage)' \
+            'VibeHub_.*_portable_amd64\.tar\.gz' \
+            'SHA256SUMS-macos-aarch64\.txt' \
+            'SHA256SUMS-macos-x64\.txt' \
+            'SHA256SUMS-windows-x64\.txt' \
+            'SHA256SUMS-linux-amd64\.txt'; do
+            if ! grep -Eq "^${pattern}$" <<<"$assets"; then
+              echo "Missing required release asset matching ${pattern}"
+              printf '%s\n' "$assets"
+              exit 1
+            fi
+          done
+
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --latest="${{ !contains(env.RELEASE_TAG, '-') }}"
