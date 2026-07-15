@@ -27,14 +27,17 @@ jobs:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     steps:
-      - name: Validate Homebrew tap token
+      - name: Detect Homebrew tap token
+        id: tap_token
         run: |
           if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
-            echo "Missing HOMEBREW_TAP_TOKEN. Create ChenM0M/homebrew-vibehub and add a token with write access to that tap."
-            exit 1
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download macOS release assets
+        if: steps.tap_token.outputs.available == 'true'
         run: |
           set -euo pipefail
 
@@ -60,12 +63,14 @@ jobs:
           echo "INTEL_SHA=$(shasum -a 256 "$INTEL_DMG" | awk '{print $1}')" >> "$GITHUB_ENV"
 
       - name: Checkout Homebrew tap
+        if: steps.tap_token.outputs.available == 'true'
         run: |
           set -euo pipefail
 
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" homebrew-tap
 
       - name: Update cask
+        if: steps.tap_token.outputs.available == 'true'
         working-directory: homebrew-tap
         run: |
           set -euo pipefail
@@ -105,6 +110,7 @@ jobs:
           ruby -c "Casks/${CASK_TOKEN}.rb"
 
       - name: Commit and push cask
+        if: steps.tap_token.outputs.available == 'true'
         working-directory: homebrew-tap
         run: |
           set -euo pipefail
