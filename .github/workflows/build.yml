@@ -64,7 +64,10 @@ jobs:
             exit 0
           fi
 
-          summary="$(tail -n 120 "$log" | tr '\r\n' ' ' | sed 's/%/%25/g')"
+          summary="$(grep -Ei -C 4 'FAILED|panicked at|failures:|error:' "$log" | tail -n 80 | tr '\r\n' ' ' | cut -c1-3800 | sed 's/%/%25/g')"
+          if [ -z "$summary" ]; then
+            summary="$(tail -n 20 "$log" | tr '\r\n' ' ' | cut -c1-3800 | sed 's/%/%25/g')"
+          fi
           echo "::error title=Rust workspace tests failed::$summary"
           exit 1
 
