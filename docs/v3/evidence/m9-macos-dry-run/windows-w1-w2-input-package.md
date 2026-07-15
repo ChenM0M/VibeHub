@@ -31,8 +31,9 @@ acceptance evidence.
 
 The historical M9 native run produced only a **macOS arm64** artifact. The
 current release workflow now builds Windows installers and a portable binary
-from the exact `v3.0.0` tag, uploads them to one draft GitHub Release, and
-uploads `SHA256SUMS-windows-x64.txt`. The Windows executor must use those
+from the exact `v3.0.0` tag, uploads them to one GitHub Release, publishes it
+only after every platform job succeeds, and uploads
+`SHA256SUMS-windows-x64.txt`. The Windows executor must use those
 uploaded files rather than rebuilding from an uncommitted checkout. Record the
 exact values below before testing:
 
