@@ -56,7 +56,17 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Test Rust workspace
-        run: cargo test --locked --workspace
+        shell: bash
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/cargo-test.log"
+          if cargo test --locked --workspace 2>&1 | tee "$log"; then
+            exit 0
+          fi
+
+          summary="$(tail -n 120 "$log" | tr '\r\n' ' ' | sed 's/%/%25/g')"
+          echo "::error title=Rust workspace tests failed::$summary"
+          exit 1
 
       - name: Build V3 CLI for MCP contract
         run: cargo build --locked -p vibehub-cli --bin vibehub
