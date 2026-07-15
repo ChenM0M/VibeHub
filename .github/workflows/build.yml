@@ -75,7 +75,17 @@ jobs:
         run: cargo build --locked -p vibehub-cli --bin vibehub
 
       - name: Validate packaged MCP contract
-        run: npm run v3:mcp:check
+        shell: bash
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/v3-mcp-contract.log"
+          if npm run v3:mcp:check 2>&1 | tee "$log"; then
+            exit 0
+          fi
+
+          summary="$(tail -n 40 "$log" | tr '\r\n' ' ' | cut -c1-3800 | sed 's/%/%25/g')"
+          echo "::error title=Packaged MCP contract failed::$summary"
+          exit 1
 
       - name: Validate patch hygiene
         run: git diff --check
