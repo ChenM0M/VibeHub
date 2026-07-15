@@ -11,6 +11,7 @@
         "v3:contracts:check": "node scripts/v3-contracts/check.mjs",
     "v3:mcp:check": "node scripts/v3-mcp/contract-test.mjs",
     "v3:m4:stability": "node scripts/v3-task-lifecycle/stability.mjs",
+    "release:check": "node scripts/release/preflight.mjs",
         "preview": "vite preview",
         "tauri": "tauri",
         "startdev": "./start-dev.sh",

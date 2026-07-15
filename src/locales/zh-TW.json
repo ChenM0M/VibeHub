@@ -786,6 +786,7 @@
                 "planNotRecorded": "尚未記錄實作計畫，目前任務的執行路徑可能不完整。",
                 "agentResultSessionClosed": "Agent 工作階段已關閉，遺留結果已按待處理狀態顯示。",
                 "agentResultStatusInvalid": "Agent 結果狀態無效，已按失敗狀態顯示。",
+                "agentResultDetailsNormalized": "歷史 Agent 結果不符合目前契約，已安全正規化後顯示。",
                 "projectIndexGap": "專案結構索引存在缺口。",
                 "projectIndexUnavailable": "專案結構索引暫時不可用。",
                 "protocolCoverageGap": "工作流程協定涵蓋存在缺口，部分執行狀態可能不完整。",

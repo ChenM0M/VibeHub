@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release, for example v2.0.0'
+        description: 'Existing release tag, for example v3.0.0'
         required: true
 
 permissions:
@@ -18,35 +18,123 @@ concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
 jobs:
-  release:
+  preflight:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Verify version and release tag
+        run: npm run release:check
+
+      - name: Validate frontend and V3 contracts
+        run: |
+          npm run build
+          npm run v3:contracts:check
+
+      - name: Validate Rust workspace and MCP contract
+        run: |
+          cargo fmt --all -- --check
+          cargo test --locked --workspace
+          cargo build --locked -p vibehub-cli --bin vibehub
+          npm run v3:mcp:check
+
+      - name: Validate patch hygiene
+        run: git diff --check
+
+  create-draft:
+    needs: preflight
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Create or reuse draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; assets will be replaced by the build jobs."
+            exit 0
+          fi
+          args=(release create "$RELEASE_TAG" --verify-tag --draft --generate-notes --title "VibeHub $RELEASE_TAG")
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            args+=(--prerelease)
+          fi
+          gh "${args[@]}"
+
+  build-and-upload:
+    needs: [preflight, create-draft]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
+          - platform: macos
+            os: macos-latest
             rust_targets: aarch64-apple-darwin
             tauri_args: --target aarch64-apple-darwin --bundles app
-            dmg_arch: aarch64
-          - platform: macos-latest
+            artifact_arch: aarch64
+          - platform: macos
+            os: macos-latest
             rust_targets: x86_64-apple-darwin
             tauri_args: --target x86_64-apple-darwin --bundles app
-            dmg_arch: x64
-          - platform: windows-latest
+            artifact_arch: x64
+          - platform: windows
+            os: windows-latest
             rust_targets: ''
             tauri_args: ''
-            dmg_arch: ''
-          - platform: ubuntu-22.04
+            artifact_arch: x64
+          - platform: linux
+            os: ubuntu-22.04
             rust_targets: ''
             tauri_args: ''
-            dmg_arch: ''
-    runs-on: ${{ matrix.platform }}
+            artifact_arch: amd64
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout tagged source
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -59,8 +147,8 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }}
 
-      - name: Install dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1
@@ -71,152 +159,190 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Build and upload Tauri bundles
-        if: ${{ !startsWith(matrix.platform, 'macos') }}
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Validate Apple signing inputs
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "FORMAL_APPLE_SIGNING=true" >> "$GITHUB_ENV"
+          elif [[ "$RELEASE_TAG" != *-* ]]; then
+            echo "Stable releases require complete Developer ID signing and notarization secrets."
+            exit 1
+          else
+            echo "Prerelease will use an explicitly non-notarized ad-hoc signature."
+            echo "FORMAL_APPLE_SIGNING=false" >> "$GITHUB_ENV"
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            echo "APPLE_ID=" >> "$GITHUB_ENV"
+            echo "APPLE_PASSWORD=" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Import Apple Developer ID certificate
+        if: matrix.platform == 'macos' && env.APPLE_CERTIFICATE != ''
+        uses: apple-actions/import-codesign-certs@v3
         with:
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: VibeHub ${{ inputs.tag || github.ref_name }}
-          args: ${{ matrix.tauri_args }} ${{ matrix.platform == 'windows-latest' && contains(inputs.tag || github.ref_name, '-') && '--bundles nsis' || '' }}
-          releaseDraft: true
-          prerelease: ${{ contains(inputs.tag || github.ref_name, '-') }}
-          releaseBody: |
-            ## 发布前检查 / Before Publishing
-
-            - [ ] macOS Apple Silicon DMG 可以打开并完成首次启动
-            - [ ] macOS Intel DMG 可以打开并完成首次启动
-            - [ ] macOS 签名/公证已通过，双击打开不会被 Gatekeeper 拦截
-            - [ ] Windows / Linux 产物已上传
-            - [ ] README 的安装命令和版本说明仍然准确
-            - [ ] 如果要同步 Homebrew，请先发布本草稿 Release
-
-            ## 更新内容 / What's New
-
-            - macOS: 应用数据迁移到系统 Application Support 目录，避免安装版写入 `.app` 包导致启动失败。
-            - macOS: 修复项目工具、CLI、终端打开方式。
-            - Distribution: 发布后会触发 Homebrew cask 更新工作流。
-
-            ## 下载说明 / Download Guide
-
-            | 文件名 | 系统 | 类型 | 说明 |
-            | --- | --- | --- | --- |
-            | `VibeHub_*_aarch64.dmg` | macOS Apple Silicon | DMG | M1/M2/M3/M4 芯片 |
-            | `VibeHub_*_x64.dmg` | macOS Intel | DMG | Intel 芯片 |
-            | `VibeHub_*_x64-setup.exe` | Windows | 安装包 | 推荐，自动安装到系统 |
-            | `VibeHub_*_x64_en-US.msi` | Windows | MSI | 企业部署，正式版提供 |
-            | `VibeHub_*_amd64.deb` | Linux Debian/Ubuntu | DEB | `sudo dpkg -i xxx.deb` |
-            | `VibeHub_*_amd64.AppImage` | Linux | AppImage | `chmod +x` 后运行 |
-
-            ## Homebrew
-
-            发布本草稿后，`Update Homebrew Cask` 工作流会更新 tap。预览版 / prerelease 也会使用同一套 Homebrew cask 指向当前已发布的 GitHub Release。用户可使用：
-
-            ```bash
-            brew install --cask chenm0m/vibehub/vibehub
-            brew upgrade --cask vibehub
-            ```
-
-            如果 Homebrew workflow 没有运行，请检查 `ChenM0M/homebrew-vibehub` 是否存在，以及本仓库是否配置了 `HOMEBREW_TAP_TOKEN`。
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       - name: Build macOS app bundle
-        if: startsWith(matrix.platform, 'macos')
+        if: matrix.platform == 'macos'
         shell: bash
-        env:
-          APPLE_SIGNING_IDENTITY: "-"
         run: |
           set -euo pipefail
           npm run tauri -- build ${{ matrix.tauri_args }}
 
-      - name: Package macOS APFS DMG
-        if: startsWith(matrix.platform, 'macos')
+      - name: Package, verify, and hash macOS DMG
+        if: matrix.platform == 'macos'
         shell: bash
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          DMG_ARCH: ${{ matrix.dmg_arch }}
+          ARTIFACT_ARCH: ${{ matrix.artifact_arch }}
         run: |
           set -euo pipefail
-
-          VERSION="${RELEASE_TAG#v}"
-          APP_PATH=""
-          for dir in target src-tauri/target; do
-            for subdir in "$dir"/*/release/bundle/macos/VibeHub.app "$dir"/release/bundle/macos/VibeHub.app; do
-              if [ -d "$subdir" ]; then
-                APP_PATH="$subdir"
-                break 2
-              fi
-            done
-          done
-          if [ -z "$APP_PATH" ]; then
-            echo "VibeHub.app was not found under target/ or src-tauri/target/."
-            echo "=== Listing bundle dirs ==="
-            find . -path '*/release/bundle/macos' -type d -print 2>/dev/null || true
-            echo "=== Listing target dirs ==="
-            ls -d target/*/release 2>/dev/null || echo "No target/*/release found"
+          version="${RELEASE_TAG#v}"
+          app_path=""
+          while IFS= read -r candidate; do
+            app_path="$candidate"
+            break
+          done < <(find target src-tauri/target -type d -path '*/release/bundle/macos/VibeHub.app' -print 2>/dev/null)
+          if [ -z "$app_path" ]; then
+            echo "VibeHub.app was not found."
             exit 1
           fi
-          echo "Found app at: $APP_PATH"
+
+          codesign --verify --deep --strict --verbose=4 "$app_path"
+          if [ "$FORMAL_APPLE_SIGNING" = "true" ]; then
+            xcrun stapler validate "$app_path"
+            spctl --assess --type exec --verbose=4 "$app_path"
+          fi
 
           mkdir -p release-assets
-          DMG_PATH="release-assets/VibeHub_${VERSION}_${DMG_ARCH}.dmg"
-          hdiutil create -volname VibeHub -fs APFS -srcfolder "$APP_PATH" "$DMG_PATH"
-          hdiutil verify "$DMG_PATH"
+          dmg="release-assets/VibeHub_${version}_${ARTIFACT_ARCH}.dmg"
+          hdiutil create -volname VibeHub -fs APFS -format UDZO -srcfolder "$app_path" "$dmg"
+          hdiutil verify "$dmg"
 
-      - name: Attach macOS APFS DMG
-        if: startsWith(matrix.platform, 'macos')
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: release-assets/*.dmg
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          draft: true
-          prerelease: ${{ contains(inputs.tag || github.ref_name, '-') }}
-
-      - name: Prepare portable executable (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          if (Test-Path "target\release\vibehub.exe") {
-            Copy-Item "target\release\vibehub.exe" "VibeHub-Portable-Windows.exe"
-          } else {
-            Copy-Item "src-tauri\target\release\vibehub.exe" "VibeHub-Portable-Windows.exe"
-          }
-        shell: pwsh
-
-      - name: Attach portable executable (Windows)
-        if: matrix.platform == 'windows-latest'
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: VibeHub-Portable-Windows.exe
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          draft: true
-
-      - name: Prepare portable executable (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          if [ -f "target/release/vibehub" ]; then
-            cp target/release/vibehub VibeHub-Portable-Linux
-          else
-            cp src-tauri/target/release/vibehub VibeHub-Portable-Linux
+          if [ "$FORMAL_APPLE_SIGNING" = "true" ]; then
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD" --wait
+            xcrun stapler staple "$dmg"
+            xcrun stapler validate "$dmg"
           fi
-          chmod +x VibeHub-Portable-Linux
-          tar -czvf VibeHub-Portable-Linux.tar.gz VibeHub-Portable-Linux
 
-      - name: Attach portable executable (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
+          shasum -a 256 "$dmg" > "release-assets/SHA256SUMS-macos-${ARTIFACT_ARCH}.txt"
+
+      - name: Configure Windows Authenticode signing
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $isStable = -not $env:RELEASE_TAG.Contains('-')
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            if ($isStable) {
+              throw 'Stable releases require WINDOWS_CERTIFICATE and WINDOWS_CERTIFICATE_PASSWORD.'
+            }
+            "WINDOWS_SIGNING_STATUS=unsigned-prerelease" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Host 'Prerelease Windows bundles will be explicitly unsigned.'
+            exit 0
+          }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'vibehub-release.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $securePassword = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $securePassword
+          if ($null -eq $certificate) { throw 'Windows signing certificate import failed.' }
+
+          $configPath = Join-Path $env:RUNNER_TEMP 'tauri.windows-signing.json'
+          @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $certificate.Thumbprint
+                digestAlgorithm = 'sha256'
+                timestampUrl = 'http://timestamp.digicert.com'
+              }
+            }
+          } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $configPath
+          "TAURI_WINDOWS_CONFIG=$configPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "WINDOWS_SIGNING_STATUS=authenticode" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build Windows bundles
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $arguments = @('run', 'tauri', '--', 'build')
+          if ($env:RELEASE_TAG.Contains('-')) { $arguments += @('--bundles', 'nsis') }
+          if (-not [string]::IsNullOrWhiteSpace($env:TAURI_WINDOWS_CONFIG)) { $arguments += @('--config', $env:TAURI_WINDOWS_CONFIG) }
+          & npm @arguments
+          if ($LASTEXITCODE -ne 0) { throw "Tauri build failed with exit code $LASTEXITCODE" }
+
+      - name: Collect, verify, and hash Windows assets
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          $bundleAssets = Get-ChildItem target,src-tauri/target -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\bundle\\' -and ($_.Extension -eq '.msi' -or $_.Name -like '*-setup.exe') }
+          if ($bundleAssets.Count -eq 0) { throw 'No Windows installer bundle was produced.' }
+          foreach ($asset in $bundleAssets) { Copy-Item $asset.FullName (Join-Path 'release-assets' $asset.Name) -Force }
+
+          $portable = Get-ChildItem target,src-tauri/target -Recurse -File -Filter vibehub.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\release\\vibehub\.exe$' } | Select-Object -First 1
+          if ($null -eq $portable) { throw 'The portable Windows executable was not produced.' }
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          Copy-Item $portable.FullName "release-assets/VibeHub_${version}_portable_x64.exe"
+
+          $signatureFailures = @()
+          Get-ChildItem release-assets -File | Where-Object { $_.Extension -in @('.exe', '.msi') } | ForEach-Object {
+            $signature = Get-AuthenticodeSignature $_.FullName
+            if ($env:WINDOWS_SIGNING_STATUS -eq 'authenticode' -and $signature.Status -ne 'Valid') {
+              $signatureFailures += "$($_.Name): $($signature.Status)"
+            }
+            Write-Host "$($_.Name): signature=$($signature.Status)"
+          }
+          if ($signatureFailures.Count -gt 0) { throw "Invalid Authenticode signatures: $($signatureFailures -join ', ')" }
+
+          Get-ChildItem release-assets -File | Where-Object { $_.Name -notlike 'SHA256SUMS-*' } | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content -Encoding ascii release-assets/SHA256SUMS-windows-x64.txt
+
+      - name: Build Linux bundles
+        if: matrix.platform == 'linux'
+        run: npm run tauri -- build
+
+      - name: Collect and hash Linux assets
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          mkdir -p release-assets
+          find target src-tauri/target -type f \( -name '*.deb' -o -name '*.AppImage' \) -path '*/bundle/*' -exec cp {} release-assets/ \;
+          binary="$(find target src-tauri/target -type f -path '*/release/vibehub' -perm -111 -print | head -n 1)"
+          if [ -z "$binary" ]; then
+            echo "The portable Linux executable was not produced."
+            exit 1
+          fi
+          cp "$binary" release-assets/VibeHub-Portable-Linux
+          tar -C release-assets -czf "release-assets/VibeHub_${version}_portable_amd64.tar.gz" VibeHub-Portable-Linux
+          rm release-assets/VibeHub-Portable-Linux
+          if ! find release-assets -maxdepth 1 -type f \( -name '*.deb' -o -name '*.AppImage' \) | grep -q .; then
+            echo "No Linux installer bundle was produced."
+            exit 1
+          fi
+          checksum_file="$RUNNER_TEMP/SHA256SUMS-linux-amd64.txt"
+          (cd release-assets && find . -maxdepth 1 -type f ! -name 'SHA256SUMS-*' -print0 | sort -z | xargs -0 shasum -a 256) > "$checksum_file"
+          mv "$checksum_file" release-assets/SHA256SUMS-linux-amd64.txt
+
+      - name: Upload platform assets to draft release
         uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: VibeHub-Portable-Linux.tar.gz
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: true
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          fail_on_unmatched_files: true
+          files: release-assets/*

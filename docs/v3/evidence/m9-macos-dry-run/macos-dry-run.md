@@ -281,8 +281,11 @@ helpers, stale browser-data notices, and the Vite large-chunk advisory.
 
 ## M9 reconciliation result
 
-The evidence review preserves every checklist status: **43 VERIFIED, 0
-IN_PROGRESS, 1 NOT_STARTED, 14 BLOCKED; 43/58 = 74.1%**. No native-interaction
-or Windows item was closed from non-native evidence. The exact per-ID status
-matrix is recorded in [M9 checklist reconciliation](checklist-reconciliation.md)
-and the Windows handoff is in [the W1/W2 input package](windows-w1-w2-input-package.md).
+The original dry-run evidence review recorded **43 VERIFIED, 0 IN_PROGRESS,
+1 NOT_STARTED, 14 BLOCKED; 43/58 = 74.1%**. On 2026-07-14, direct PID-bound
+Accessibility evidence superseded the eight macOS native blockers without using
+a browser/headless substitute. The current reconciliation is **51 VERIFIED,
+0 IN_PROGRESS, 1 NOT_STARTED, 6 BLOCKED; 51/58 = 87.9%**. See
+[native Accessibility closure](native-accessibility-closure.md), the updated
+[M9 checklist reconciliation](checklist-reconciliation.md), and the remaining
+[W1/W2 input package](windows-w1-w2-input-package.md).

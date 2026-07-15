@@ -786,6 +786,7 @@
                 "planNotRecorded": "The implementation plan has not been recorded; the execution path may be incomplete.",
                 "agentResultSessionClosed": "The Agent session is closed; the leftover result is shown as pending.",
                 "agentResultStatusInvalid": "The Agent result has an invalid status and is shown as failed.",
+                "agentResultDetailsNormalized": "A historical Agent result did not match the current contract and was normalized for safe display.",
                 "projectIndexGap": "The project structure index has a gap.",
                 "projectIndexUnavailable": "The project structure index is temporarily unavailable.",
                 "protocolCoverageGap": "Workflow protocol coverage has a gap; some execution state may be incomplete.",
