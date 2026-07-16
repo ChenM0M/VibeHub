@@ -117,6 +117,8 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   v3 <project> init
   v3 <project> migrate
   v3 <project> migrate-recover
+  v3 <project> repair-candidates
+  v3 <project> repair <task_id>
   v3 <project> task-create <request_json_path|--stdin|->
   v3 <project> agent-specs-status
   v3 <project> agent-specs-sync [--force-managed-region]
@@ -466,6 +468,17 @@ fn run_v3_action(project_root: &str, args: &[String]) {
             ));
             return;
         }
+        "repair" => {
+            let Some(task_id) = args.get(1) else {
+                v3_usage_error(command, "missing task_id");
+            };
+            print_v3_json(vibehub_core::v3::repair_v3_layout(project_root, task_id));
+            return;
+        }
+        "repair-candidates" => {
+            print_v3_json(vibehub_core::v3::inspect_v3_repair_candidates(project_root));
+            return;
+        }
         "task-create" => {
             let Some(json_path) = args.get(1) else {
                 v3_usage_error(
@@ -557,11 +570,11 @@ fn run_v3_action(project_root: &str, args: &[String]) {
         "agent-result" => {
             let (project_id, task_id, session_id, actor, expected_version, idempotency_key) =
                 parse_v3_write_scope(command, &args[1..]);
-            let Some(result_id) = args.get(7) else {
+            let Some(result_id) = args.get(6) else {
                 v3_usage_error(command, "missing result_id");
             };
-            let node_id = optional_v3_value(args.get(8));
-            let Some(details) = args.get(9) else {
+            let node_id = optional_v3_value(args.get(7));
+            let Some(details) = args.get(8) else {
                 v3_usage_error(command, "missing details JSON");
             };
             let details = serde_json::from_str(details).unwrap_or_else(|error| {

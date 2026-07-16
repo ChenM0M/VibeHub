@@ -100,7 +100,7 @@ Calling `migrate-recover` without a staging directory fails with `V3_MIGRATION_N
 
 ## 5. Conflict handling
 
-When `doctor` reports `conflict`, stop. Typical causes include:
+When `doctor` reports `conflict`, stop before initializing or migrating. Typical causes include:
 
 - `.vibehub` exists but is not a directory;
 - `.vibehub/legacy-v2` exists without a valid V3 schema marker;
@@ -108,7 +108,22 @@ When `doctor` reports `conflict`, stop. Typical causes include:
 - recovery would overwrite an existing archive;
 - a protected root or staging path is a symbolic link.
 
-There is intentionally no `--force`, overwrite, automatic archive deletion, or automatic repair. Preserve the project and backup, record the JSON error code/message, inspect filesystem metadata, and resolve the ambiguity on a disposable copy before touching the original.
+There is intentionally no `--force`, overwrite, or automatic archive deletion. V3 provides one bounded repair path for the release-baseline regression where all of the following are independently verified:
+
+- `.vibehub/legacy-v2` is a regular directory;
+- the requested `.vibehub/tasks/<task-id>/task.yaml` is a bounded regular file whose identity matches;
+- the same task has durable V3 lifecycle events under `.vibehub/v3/projects/<project-id>/events.jsonl`;
+- `.vibehub/tasks/current` is absent, so repair cannot overwrite an existing pointer.
+
+Inspect candidates and run the typed repair command only after preserving a backup:
+
+```bash
+vibehub v3 "/absolute/path/to/project" repair-candidates
+vibehub v3 "/absolute/path/to/project" repair <verified-task-id>
+vibehub v3 "/absolute/path/to/project" doctor
+```
+
+The repair command creates only `.vibehub/project.yaml` when the V3 marker is missing and `.vibehub/tasks/current`; it does not rewrite `legacy-v2`, V3 events, projections, task documents, or project settings. The desktop recovery surface exposes the same verified candidates and typed command. Missing/mismatched events, unsafe paths, an existing current pointer, pure V2 state, or any other ambiguous layout still fail closed.
 
 ## Error diagnosis
 

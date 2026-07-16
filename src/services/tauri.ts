@@ -9,6 +9,8 @@ import {
     LocalAgentUsageOverview,
     V3BootstrapResult,
     V3ProjectLayoutStatus,
+    V3RepairCandidate,
+    V3RepairResult,
 } from '../types';
 import type {
     V3AgentSpecInspection,
@@ -152,6 +154,14 @@ export const tauriApi = {
 
     v3RecoverProjectMigration: async (projectPath: string): Promise<V3BootstrapResult> => {
         return await invoke('v3_recover_project_migration', { projectPath });
+    },
+
+    v3InspectProjectRepairCandidates: async (projectPath: string): Promise<V3RepairCandidate[]> => {
+        return await invoke('v3_inspect_project_repair_candidates', { projectPath });
+    },
+
+    v3RepairProject: async (projectPath: string, taskId: string): Promise<V3RepairResult> => {
+        return await invoke('v3_repair_project', { projectPath, taskId });
     },
 
     v3CreateTask: async (

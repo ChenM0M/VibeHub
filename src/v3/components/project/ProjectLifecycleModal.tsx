@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, FolderCog, RefreshCw, Rocket } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { V3BootstrapResult, V3ProjectLayoutStatus } from "@/types";
+import type { V3BootstrapResult, V3ProjectLayoutStatus, V3RepairCandidate, V3RepairResult } from "@/types";
 import type { V3LifecycleAction } from "@/v3/stores/v3Store";
 
 interface ProjectLifecycleModalProps {
@@ -11,9 +11,10 @@ interface ProjectLifecycleModalProps {
   error: string | null;
   action: V3LifecycleAction | null;
   actionError: string | null;
-  result: V3BootstrapResult | null;
+  result: V3BootstrapResult | V3RepairResult | null;
+  repairCandidates: V3RepairCandidate[];
   onInspect: () => void;
-  onRunAction: (action: V3LifecycleAction) => void;
+  onRunAction: (action: V3LifecycleAction, taskId?: string) => void;
   onBack: () => void;
 }
 
@@ -27,13 +28,27 @@ const actionLabel: Record<V3LifecycleAction, string> = {
   initialize: "初始化 V3",
   migrate: "迁移到 V3",
   recover: "恢复迁移",
+  repair: "安全修复 V3",
 };
 
-export function ProjectLifecycleModal({ projectPath, status, loading, error, action, actionError, result, onInspect, onRunAction, onBack }: ProjectLifecycleModalProps) {
+export function ProjectLifecycleModal({ projectPath, status, loading, error, action, actionError, result, repairCandidates, onInspect, onRunAction, onBack }: ProjectLifecycleModalProps) {
   const [migrationConfirmed, setMigrationConfirmed] = useState(false);
-  const nextAction = status ? actionForState[status.state] ?? null : null;
+  const [repairTaskId, setRepairTaskId] = useState("");
+  useEffect(() => {
+    if (!repairCandidates.some((candidate) => candidate.task_id === repairTaskId)) {
+      setRepairTaskId(repairCandidates[0]?.task_id ?? "");
+    }
+  }, [repairCandidates, repairTaskId]);
+  const nextAction = status
+    ? status.state === "conflict" && repairCandidates.length > 0
+      ? "repair"
+      : actionForState[status.state] ?? null
+    : null;
   const busy = loading || action !== null;
-  const canRun = nextAction !== null && !busy && (nextAction !== "migrate" || migrationConfirmed);
+  const canRun = nextAction !== null
+    && !busy
+    && (nextAction !== "migrate" || migrationConfirmed)
+    && (nextAction !== "repair" || repairTaskId.length > 0);
 
   return (
     <div className="absolute inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm">
@@ -68,18 +83,19 @@ export function ProjectLifecycleModal({ projectPath, status, loading, error, act
                 </label>
               )}
               {status.state === "migration_interrupted" && <div className="rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">后端将依据磁盘状态安全地向前完成或回滚；界面不会预判恢复方向。</div>}
-              {status.state === "conflict" && <div className="flex items-start gap-2 rounded border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />检测到冲突布局。为防止覆盖数据，此界面不会提供强制初始化或迁移。</div>}
+              {status.state === "conflict" && repairCandidates.length === 0 && <div className="flex items-start gap-2 rounded border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />检测到不可自动判定的冲突布局。未找到同时具备 task.yaml 与 V3 lifecycle events 的安全修复候选；不会提供强制初始化或迁移。</div>}
+              {status.state === "conflict" && repairCandidates.length > 0 && <div className="space-y-3 rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs"><div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /><div><div className="font-medium">检测到可安全恢复的 V3 控制面</div><p className="mt-1 text-muted-foreground">后端已验证 legacy-v2 归档、V3 task 文档和 lifecycle events。修复只会补建 V3 marker 与 current task pointer，不会覆盖归档、事件或 projection。</p></div></div><label className="block space-y-1"><span className="font-medium">恢复后的当前任务</span><select value={repairTaskId} onChange={(event) => setRepairTaskId(event.target.value)} className="w-full rounded border border-border bg-background px-2 py-2 text-xs">{repairCandidates.map((candidate) => <option key={candidate.task_id} value={candidate.task_id}>{candidate.title || candidate.task_id} · {candidate.state}</option>)}</select></label></div>}
             </div>
           )}
 
           {actionError && <div className="rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{actionError}</div>}
-          {result && <div className="rounded border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs"><div className="font-medium">{result.status}</div><div className="mt-1 text-muted-foreground">归档 legacy-v2：{result.archived_legacy_v2 ? "是" : "否"}</div>{result.created_paths.length > 0 && <div className="mt-1 break-all text-muted-foreground">创建：{result.created_paths.join("、")}</div>}</div>}
+          {result && <div className="rounded border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs"><div className="font-medium">{result.status}</div>{"archived_legacy_v2" in result && <div className="mt-1 text-muted-foreground">归档 legacy-v2：{result.archived_legacy_v2 ? "是" : "否"}</div>}{"task_id" in result && <div className="mt-1 break-all text-muted-foreground">当前任务：{result.task_id}</div>}{result.created_paths.length > 0 && <div className="mt-1 break-all text-muted-foreground">创建：{result.created_paths.join("、")}</div>}</div>}
         </div>
 
         <div className="flex justify-end gap-3 border-t border-border/50 bg-muted/10 px-6 py-4">
           <button type="button" onClick={onBack} disabled={action !== null} className="rounded-md px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50">返回</button>
           <button type="button" onClick={onInspect} disabled={busy} className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"><RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />重新检查</button>
-          {nextAction && <button type="button" onClick={() => onRunAction(nextAction)} disabled={!canRun} className="flex items-center gap-2 rounded-md bg-foreground px-5 py-2 text-sm font-medium text-background shadow-sm hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"><Rocket className="h-4 w-4" />{action === nextAction ? "处理中…" : actionLabel[nextAction]}</button>}
+          {nextAction && <button type="button" onClick={() => onRunAction(nextAction, nextAction === "repair" ? repairTaskId : undefined)} disabled={!canRun} className="flex items-center gap-2 rounded-md bg-foreground px-5 py-2 text-sm font-medium text-background shadow-sm hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"><Rocket className="h-4 w-4" />{action === nextAction ? "处理中…" : actionLabel[nextAction]}</button>}
         </div>
       </div>
     </div>

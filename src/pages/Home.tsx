@@ -47,6 +47,8 @@ const productionLifecycleApi: V3LifecycleApi = {
     initialize: tauriApi.v3InitializeProject,
     migrate: tauriApi.v3MigrateProject,
     recover: tauriApi.v3RecoverProjectMigration,
+    inspectRepairCandidates: tauriApi.v3InspectProjectRepairCandidates,
+    repair: tauriApi.v3RepairProject,
 };
 
 interface HomeProps {
