@@ -1,7 +1,10 @@
-use super::{V3Error, V3ErrorCategory};
+use super::{fold_task_lifecycle, V3Error, V3ErrorCategory, V3EventStore};
+use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 const V3_SCHEMA_VERSION: u32 = 3;
 const VIBEHUB_DIR: &str = ".vibehub";
@@ -33,10 +36,41 @@ pub struct V3BootstrapResult {
     pub created_paths: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct V3RepairResult {
+    pub status: String,
+    pub task_id: String,
+    pub created_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct V3RepairCandidate {
+    pub task_id: String,
+    pub title: String,
+    pub state: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct ProjectMarker {
     schema_version: u32,
     name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepairTaskDocument {
+    task_id: String,
+    #[serde(default)]
+    title: String,
+}
+
+#[derive(Debug, Serialize)]
+struct RepairCurrentTaskPointer<'a> {
+    schema_version: u32,
+    kind: &'a str,
+    task_id: &'a str,
+    path: String,
+    updated_at: String,
+    updated_by: &'a str,
 }
 
 pub fn inspect_project_layout(
@@ -200,6 +234,166 @@ pub fn recover_interrupted_migration(
     })
 }
 
+pub fn repair_v3_layout(
+    project_root: impl AsRef<Path>,
+    task_id: &str,
+) -> Result<V3RepairResult, V3Error> {
+    let project_root = canonical_project_root(project_root.as_ref())?;
+    validate_repair_task_id(task_id)?;
+    let root = project_root.join(VIBEHUB_DIR);
+    let status = inspect_project_layout(&project_root)?;
+    let marker_is_valid = status.state == ProjectLayoutState::V3;
+    let recoverable_conflict = status.state == ProjectLayoutState::Conflict
+        && status.schema_version.is_none()
+        && root.join("legacy-v2").is_dir();
+    if !marker_is_valid && !recoverable_conflict {
+        return Err(layout_error(
+            "V3_REPAIR_STATE_INVALID",
+            format!("cannot repair layout state {:?}", status.state),
+        ));
+    }
+
+    reject_symlink(&root, "V3_REPAIR_ROOT_SYMLINK")?;
+    reject_regular_directory(&root.join("legacy-v2"), "V3_REPAIR_LEGACY_INVALID")?;
+    let task_path = root.join("tasks").join(task_id).join("task.yaml");
+    let task = read_repair_task(&task_path)?;
+    if task.task_id != task_id {
+        return Err(layout_error(
+            "V3_REPAIR_TASK_MISMATCH",
+            "task.yaml identity does not match the requested current task",
+        ));
+    }
+
+    let project_id = project_id(&project_root);
+    reject_regular_file(
+        &repair_events_path(&root, &project_id),
+        "V3_REPAIR_EVENTS_INVALID",
+    )?;
+    let store = V3EventStore::open(&project_root)?;
+    let events = store.load_project(&project_id)?;
+    if !events.iter().any(|event| event.task_id.0 == task_id) {
+        return Err(layout_error(
+            "V3_REPAIR_TASK_EVENTS_MISSING",
+            "requested current task has no V3 lifecycle events",
+        ));
+    }
+
+    let current = root.join("tasks/current");
+    if current.exists() {
+        return Err(layout_error(
+            "V3_REPAIR_CURRENT_EXISTS",
+            "current task pointer already exists; refusing to overwrite it",
+        ));
+    }
+
+    let mut created_paths = Vec::new();
+    let marker = root.join("project.yaml");
+    let created_marker = !marker_is_valid;
+    if created_marker {
+        let marker_content = serde_yaml::to_string(&ProjectMarker {
+            schema_version: V3_SCHEMA_VERSION,
+            name: project_root
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("project")
+                .to_owned(),
+        })
+        .map_err(|error| layout_error("V3_REPAIR_MARKER_FAILED", error.to_string()))?;
+        write_new_synced(
+            &marker,
+            marker_content.as_bytes(),
+            "V3_REPAIR_MARKER_FAILED",
+        )?;
+        created_paths.push(".vibehub/project.yaml".to_owned());
+    }
+
+    let pointer = RepairCurrentTaskPointer {
+        schema_version: 1,
+        kind: "current_task_pointer",
+        task_id,
+        path: format!(".vibehub/tasks/{task_id}"),
+        updated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        updated_by: "vibehub",
+    };
+    let pointer_content = serde_yaml::to_string(&pointer)
+        .map_err(|error| layout_error("V3_REPAIR_CURRENT_FAILED", error.to_string()))?;
+    if let Err(error) = write_new_synced(
+        &current,
+        pointer_content.as_bytes(),
+        "V3_REPAIR_CURRENT_FAILED",
+    ) {
+        if created_marker {
+            let _ = fs::remove_file(&marker);
+        }
+        return Err(error);
+    }
+    created_paths.push(".vibehub/tasks/current".to_owned());
+
+    Ok(V3RepairResult {
+        status: "repaired".to_owned(),
+        task_id: task_id.to_owned(),
+        created_paths,
+    })
+}
+
+pub fn inspect_v3_repair_candidates(
+    project_root: impl AsRef<Path>,
+) -> Result<Vec<V3RepairCandidate>, V3Error> {
+    let project_root = canonical_project_root(project_root.as_ref())?;
+    let root = project_root.join(VIBEHUB_DIR);
+    let status = inspect_project_layout(&project_root)?;
+    let repairable = status.state == ProjectLayoutState::V3
+        || (status.state == ProjectLayoutState::Conflict
+            && status.schema_version.is_none()
+            && root.join("legacy-v2").is_dir());
+    if !repairable {
+        return Ok(Vec::new());
+    }
+
+    let tasks_root = root.join("tasks");
+    reject_regular_directory(&tasks_root, "V3_REPAIR_TASKS_INVALID")?;
+    let project_id = project_id(&project_root);
+    let events_path = repair_events_path(&root, &project_id);
+    if !events_path.exists() {
+        return Ok(Vec::new());
+    }
+    reject_regular_file(&events_path, "V3_REPAIR_EVENTS_INVALID")?;
+    let events = V3EventStore::open(&project_root)?.load_project(&project_id)?;
+    let mut candidates = Vec::new();
+    let entries =
+        fs::read_dir(&tasks_root).map_err(|error| io_error("V3_REPAIR_TASKS_INVALID", error))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| io_error("V3_REPAIR_TASKS_INVALID", error))?;
+        let metadata = entry
+            .file_type()
+            .map_err(|error| io_error("V3_REPAIR_TASKS_INVALID", error))?;
+        if !metadata.is_dir() {
+            continue;
+        }
+        let task = match read_repair_task(&entry.path().join("task.yaml")) {
+            Ok(task) => task,
+            Err(_) => continue,
+        };
+        if !events.iter().any(|event| event.task_id.0 == task.task_id) {
+            continue;
+        }
+        let lifecycle = fold_task_lifecycle(&task.task_id, &events);
+        candidates.push(V3RepairCandidate {
+            task_id: task.task_id,
+            title: task.title,
+            state: lifecycle.state,
+        });
+    }
+    candidates.sort_by(|left, right| {
+        let left_terminal = matches!(left.state.as_str(), "completed" | "cancelled" | "failed");
+        let right_terminal = matches!(right.state.as_str(), "completed" | "cancelled" | "failed");
+        left_terminal
+            .cmp(&right_terminal)
+            .then_with(|| left.task_id.cmp(&right.task_id))
+    });
+    Ok(candidates)
+}
+
 fn create_v3_root(project_root: &Path) -> Result<V3BootstrapResult, V3Error> {
     let root = project_root.join(VIBEHUB_DIR);
     fs::create_dir(&root).map_err(|error| io_error("V3_INIT_CREATE_FAILED", error))?;
@@ -238,6 +432,94 @@ fn create_v3_root(project_root: &Path) -> Result<V3BootstrapResult, V3Error> {
         archived_legacy_v2: false,
         created_paths,
     })
+}
+
+fn validate_repair_task_id(task_id: &str) -> Result<(), V3Error> {
+    if task_id.is_empty()
+        || task_id.len() > 128
+        || task_id.contains("..")
+        || !task_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-'))
+    {
+        return Err(layout_error(
+            "V3_REPAIR_TASK_ID_INVALID",
+            "repair task identifier is unsafe",
+        ));
+    }
+    Ok(())
+}
+
+fn project_id(project_root: &Path) -> String {
+    let name = project_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("project")
+        .to_ascii_lowercase()
+        .replace(|character: char| !character.is_ascii_alphanumeric(), "-");
+    format!("project.{name}")
+}
+
+fn repair_events_path(root: &Path, project_id: &str) -> PathBuf {
+    root.join("v3/projects")
+        .join(project_id.replace(['/', '\\'], "_"))
+        .join("events.jsonl")
+}
+
+fn read_repair_task(path: &Path) -> Result<RepairTaskDocument, V3Error> {
+    let metadata =
+        fs::symlink_metadata(path).map_err(|error| io_error("V3_REPAIR_TASK_INVALID", error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > 1024 * 1024 {
+        return Err(layout_error(
+            "V3_REPAIR_TASK_INVALID",
+            "repair task document must be a regular bounded file",
+        ));
+    }
+    let content =
+        fs::read_to_string(path).map_err(|error| io_error("V3_REPAIR_TASK_INVALID", error))?;
+    serde_yaml::from_str(&content)
+        .map_err(|error| layout_error("V3_REPAIR_TASK_INVALID", error.to_string()))
+}
+
+fn reject_regular_directory(path: &Path, code: &'static str) -> Result<(), V3Error> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| io_error(code, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(layout_error(code, "path must be a regular directory"));
+    }
+    Ok(())
+}
+
+fn reject_regular_file(path: &Path, code: &'static str) -> Result<(), V3Error> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| io_error(code, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(layout_error(code, "path must be a regular file"));
+    }
+    Ok(())
+}
+
+fn write_new_synced(path: &Path, content: &[u8], code: &'static str) -> Result<(), V3Error> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| layout_error(code, "repair path does not have a parent"))?;
+    let temporary = parent.join(format!(".repair.{}.tmp", Uuid::new_v4()));
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| io_error(code, error))?;
+        file.write_all(content)
+            .and_then(|_| file.sync_all())
+            .map_err(|error| io_error(code, error))?;
+        if path.exists() {
+            return Err(layout_error(code, "repair target already exists"));
+        }
+        fs::rename(&temporary, path).map_err(|error| io_error(code, error))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 fn rollback_staged_root(root: &Path, staging: &Path) -> Result<(), V3Error> {
@@ -359,6 +641,100 @@ mod tests {
         let status = inspect_project_layout(&project).unwrap();
         assert_eq!(status.state, ProjectLayoutState::Conflict);
         assert!(migrate_v2_to_v3(&project).is_err());
+        fs::remove_dir_all(project).unwrap();
+    }
+
+    #[test]
+    fn repairs_release_baseline_marker_and_current_pointer_loss() {
+        use crate::v3::{create_v3_task, V3TaskCreateRequest, V3ViewRepository};
+
+        let project = temp_project();
+        initialize_v3(&project).unwrap();
+        fs::create_dir(project.join(".vibehub/legacy-v2")).unwrap();
+        let task = create_v3_task(
+            &project,
+            V3TaskCreateRequest {
+                title: "Repair V3 bootstrap".to_owned(),
+                intent: "Recover valid V3 runtime state".to_owned(),
+                acceptance_criteria: vec!["MCP can resolve current task".to_owned()],
+            },
+        )
+        .unwrap();
+        fs::remove_file(project.join(".vibehub/project.yaml")).unwrap();
+        fs::remove_file(project.join(".vibehub/tasks/current")).unwrap();
+
+        assert_eq!(
+            inspect_project_layout(&project).unwrap().state,
+            ProjectLayoutState::Conflict
+        );
+        let repaired = repair_v3_layout(&project, &task.task_id).unwrap();
+        assert_eq!(repaired.status, "repaired");
+        assert_eq!(
+            inspect_project_layout(&project).unwrap().state,
+            ProjectLayoutState::V3
+        );
+        assert_eq!(
+            V3ViewRepository::open(&project)
+                .unwrap()
+                .current_task_id()
+                .unwrap(),
+            task.task_id
+        );
+        assert!(project.join(".vibehub/legacy-v2").is_dir());
+        fs::remove_dir_all(project).unwrap();
+    }
+
+    #[test]
+    fn repair_refuses_conflict_without_v3_event_store() {
+        let project = temp_project();
+        let root = project.join(".vibehub");
+        fs::create_dir_all(root.join("legacy-v2")).unwrap();
+        fs::create_dir_all(root.join("tasks/task.fake")).unwrap();
+        fs::write(
+            root.join("tasks/task.fake/task.yaml"),
+            "task_id: task.fake\n",
+        )
+        .unwrap();
+
+        let error = repair_v3_layout(&project, "task.fake").unwrap_err();
+        assert_eq!(error.code, "V3_REPAIR_EVENTS_INVALID");
+        assert!(!root.join("project.yaml").exists());
+        assert!(!root.join("tasks/current").exists());
+        fs::remove_dir_all(project).unwrap();
+    }
+
+    #[test]
+    fn repair_candidates_only_include_tasks_with_v3_events() {
+        use crate::v3::{create_v3_task, V3TaskCreateRequest};
+
+        let project = temp_project();
+        initialize_v3(&project).unwrap();
+        fs::create_dir(project.join(".vibehub/legacy-v2")).unwrap();
+        let task = create_v3_task(
+            &project,
+            V3TaskCreateRequest {
+                title: "Repair candidate".to_owned(),
+                intent: "Expose a safe recovery choice".to_owned(),
+                acceptance_criteria: vec!["Candidate is visible".to_owned()],
+            },
+        )
+        .unwrap();
+        let eventless = project.join(".vibehub/tasks/task.eventless");
+        fs::create_dir(&eventless).unwrap();
+        fs::write(
+            eventless.join("task.yaml"),
+            "task_id: task.eventless\ntitle: Eventless\n",
+        )
+        .unwrap();
+        fs::remove_file(project.join(".vibehub/project.yaml")).unwrap();
+        fs::remove_file(project.join(".vibehub/tasks/current")).unwrap();
+
+        let candidates = inspect_v3_repair_candidates(&project).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].task_id, task.task_id);
+        assert_eq!(candidates[0].title, "Repair candidate");
+        let error = repair_v3_layout(&project, "task.eventless").unwrap_err();
+        assert_eq!(error.code, "V3_REPAIR_TASK_EVENTS_MISSING");
         fs::remove_dir_all(project).unwrap();
     }
 

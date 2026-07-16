@@ -72,6 +72,8 @@ fn main() {
             commands::v3_initialize_project,
             commands::v3_migrate_project,
             commands::v3_recover_project_migration,
+            commands::v3_inspect_project_repair_candidates,
+            commands::v3_repair_project,
             commands::v3_get_project_settings,
             commands::v3_update_project_settings,
             commands::v3_agent_specs_status,
