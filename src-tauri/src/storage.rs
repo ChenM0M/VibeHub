@@ -1,3 +1,4 @@
+use crate::app_paths;
 use crate::models::AppConfig;
 use anyhow::{Context, Result};
 use std::fs;
@@ -9,17 +10,15 @@ pub struct Storage {
 
 impl Storage {
     pub fn new() -> Result<Self> {
-        let exe_path = std::env::current_exe()?;
-        let exe_dir = exe_path
-            .parent()
-            .context("Failed to get executable directory")?;
-        
-        // Portable mode: store data next to executable
-        let data_dir = exe_dir.join("data");
-        fs::create_dir_all(&data_dir)?;
-        
+        // Resolution priority (env → custom → portable auto-detect → default)
+        // lives in `app_paths::resolve_active_dir`. Storage is intentionally
+        // dumb here: it just consumes whatever dir was picked. We no longer
+        // copy/migrate files into the default dir — the old logic silently
+        // duplicated portable users' config.json into AppData and then
+        // started ignoring the portable copy, which is exactly the regression
+        // we're fixing.
+        let data_dir = app_paths::app_data_dir()?;
         let config_path = data_dir.join("config.json");
-        
         Ok(Self { config_path })
     }
 
@@ -31,22 +30,20 @@ impl Storage {
             return Ok(config);
         }
 
-        let content = fs::read_to_string(&self.config_path)
-            .context("Failed to read config file")?;
-        
-        let config: AppConfig = serde_json::from_str(&content)
-            .context("Failed to parse config file")?;
-        
+        let content =
+            fs::read_to_string(&self.config_path).context("Failed to read config file")?;
+
+        let config: AppConfig =
+            serde_json::from_str(&content).context("Failed to parse config file")?;
+
         Ok(config)
     }
 
     pub fn save_config(&self, config: &AppConfig) -> Result<()> {
-        let content = serde_json::to_string_pretty(config)
-            .context("Failed to serialize config")?;
-        
-        fs::write(&self.config_path, content)
-            .context("Failed to write config file")?;
-        
+        let content = serde_json::to_string_pretty(config).context("Failed to serialize config")?;
+
+        fs::write(&self.config_path, content).context("Failed to write config file")?;
+
         Ok(())
     }
 }

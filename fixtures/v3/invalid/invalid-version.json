@@ -1,0 +1,210 @@
+{
+  "expected_schema": "project-overview-view.schema.json",
+  "expected_keyword": "const",
+  "expected_instance_path": "/schema_version",
+  "instance": {
+    "schema_version": "2.0",
+    "project_id": "project.vibehub",
+    "generated_at": "2026-07-11T08:00:00.000Z",
+    "model_version": "model.fixture.1",
+    "freshness": "fresh",
+    "completeness": "complete",
+    "evidence_refs": [
+      {
+        "evidence_id": "ev.fixture",
+        "kind": "test",
+        "grade": "hard_observed",
+        "label_key": "evidence.fixture.generated",
+        "locator": "fixtures/v3/ev.fixture",
+        "captured_at": "2026-07-11T08:00:00.000Z"
+      }
+    ],
+    "warnings": [],
+    "errors": [],
+    "name": "VibeHub",
+    "root": {
+      "platform": "macos",
+      "native": "/Users/alex/Projects/VibeHub",
+      "display": "/Users/alex/Projects/VibeHub",
+      "identity_key": "macos:/Users/alex/Projects/VibeHub",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    "repository": {
+      "state": "available",
+      "branch": "feature/v3",
+      "head": "d7ece57",
+      "dirty": false,
+      "worktree_count": 1
+    },
+    "model": {
+      "state": "ready",
+      "last_evidence_at": "2026-07-11T08:15:00.000Z",
+      "generator_version": "fixture-1.0",
+      "indexed_files": 128
+    },
+    "architecture": {
+      "declared_docs": 2,
+      "modules": 3,
+      "relationships": 3,
+      "confidence": 0.95,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.architecture",
+          "kind": "file",
+          "grade": "hard_observed",
+          "label_key": "evidence.architecture.generated",
+          "locator": "contracts/v3/README.md",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    "active_tasks": [
+      {
+        "task_id": "task.m0",
+        "title": "Freeze V3 contracts and fixtures",
+        "state": "active",
+        "risk_level": "low",
+        "criteria": [
+          {
+            "criterion_id": "criterion.m0.c01",
+            "title": "Schema hash stability",
+            "status": "passed",
+            "required": true,
+            "evidence_refs": [
+              {
+                "evidence_id": "ev.criterion.m0.c01",
+                "kind": "test",
+                "grade": "hard_observed",
+                "label_key": "evidence.fixture.generated",
+                "locator": "fixtures/v3/ev.criterion.m0.c01",
+                "captured_at": "2026-07-11T08:00:00.000Z"
+              }
+            ]
+          },
+          {
+            "criterion_id": "criterion.m0.c02",
+            "title": "All views validate against schema",
+            "status": "passed",
+            "required": true,
+            "evidence_refs": [
+              {
+                "evidence_id": "ev.criterion.m0.c02",
+                "kind": "test",
+                "grade": "hard_observed",
+                "label_key": "evidence.fixture.generated",
+                "locator": "fixtures/v3/ev.criterion.m0.c02",
+                "captured_at": "2026-07-11T08:00:00.000Z"
+              }
+            ]
+          },
+          {
+            "criterion_id": "criterion.m0.c07",
+            "title": "Fixture repository consumer proof",
+            "status": "passed",
+            "required": true,
+            "evidence_refs": [
+              {
+                "evidence_id": "ev.criterion.m0.c07",
+                "kind": "test",
+                "grade": "hard_observed",
+                "label_key": "evidence.fixture.generated",
+                "locator": "fixtures/v3/ev.criterion.m0.c07",
+                "captured_at": "2026-07-11T08:00:00.000Z"
+              }
+            ]
+          }
+        ],
+        "active_sessions": 1
+      },
+      {
+        "task_id": "task.m1",
+        "title": "Build V3 high-fidelity frontend from fixtures",
+        "state": "active",
+        "risk_level": "medium",
+        "criteria": [
+          {
+            "criterion_id": "criterion.m1.c01",
+            "title": "State coverage across 12 scenarios",
+            "status": "accepted",
+            "required": true,
+            "evidence_refs": [
+              {
+                "evidence_id": "ev.criterion.m1.c01",
+                "kind": "test",
+                "grade": "hard_observed",
+                "label_key": "evidence.fixture.generated",
+                "locator": "fixtures/v3/ev.criterion.m1.c01",
+                "captured_at": "2026-07-11T08:00:00.000Z"
+              }
+            ]
+          },
+          {
+            "criterion_id": "criterion.m1.c02",
+            "title": "Field traceability to contracts",
+            "status": "proposed",
+            "required": true,
+            "evidence_refs": [
+              {
+                "evidence_id": "ev.criterion.m1.c02",
+                "kind": "test",
+                "grade": "hard_observed",
+                "label_key": "evidence.fixture.generated",
+                "locator": "fixtures/v3/ev.criterion.m1.c02",
+                "captured_at": "2026-07-11T08:00:00.000Z"
+              }
+            ]
+          },
+          {
+            "criterion_id": "criterion.m1.c03",
+            "title": "Cross-platform no-overflow",
+            "status": "proposed",
+            "required": true,
+            "evidence_refs": [
+              {
+                "evidence_id": "ev.criterion.m1.c03",
+                "kind": "test",
+                "grade": "hard_observed",
+                "label_key": "evidence.fixture.generated",
+                "locator": "fixtures/v3/ev.criterion.m1.c03",
+                "captured_at": "2026-07-11T08:00:00.000Z"
+              }
+            ]
+          }
+        ],
+        "active_sessions": 2
+      },
+      {
+        "task_id": "task.m2",
+        "title": "Implement V3 event core and MCP control plane",
+        "state": "planned",
+        "risk_level": "medium",
+        "criteria": [
+          {
+            "criterion_id": "criterion.m2.c01",
+            "title": "Event store persistence",
+            "status": "proposed",
+            "required": true,
+            "evidence_refs": [
+              {
+                "evidence_id": "ev.criterion.m2.c01",
+                "kind": "test",
+                "grade": "hard_observed",
+                "label_key": "evidence.fixture.generated",
+                "locator": "fixtures/v3/ev.criterion.m2.c01",
+                "captured_at": "2026-07-11T08:00:00.000Z"
+              }
+            ]
+          }
+        ],
+        "active_sessions": 0
+      }
+    ],
+    "protocol_coverage": {
+      "state": "complete",
+      "opened_sessions": 3,
+      "closed_sessions": 2,
+      "gaps": 0
+    }
+  }
+}

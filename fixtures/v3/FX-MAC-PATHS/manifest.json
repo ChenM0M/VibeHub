@@ -1,0 +1,60 @@
+{
+  "scenario_id": "FX-MAC-PATHS",
+  "seed": 20260711,
+  "platforms": [
+    "macos"
+  ],
+  "criteria": [
+    "M0-C03",
+    "M0-C07"
+  ],
+  "expected_states": [
+    "fresh/complete"
+  ],
+  "expected_warnings": [],
+  "expected_errors": [],
+  "contracts": [
+    {
+      "contract": "project_overview",
+      "schema": "project-overview-view.schema.json",
+      "file": "project-overview.json",
+      "sha256": "0a226bb0c5a4cbc974ac685d066b670af81201908112d9e3f06376e9e58bf85c"
+    },
+    {
+      "contract": "project_structure",
+      "schema": "project-structure-view.schema.json",
+      "file": "project-structure.json",
+      "sha256": "b4014b7dbd5d1d5bb14e82e9bc5a1220031780006d600eaa883df892bbc5ad48"
+    },
+    {
+      "contract": "agent_results",
+      "schema": "agent-results-view.schema.json",
+      "file": "agent-results.json",
+      "sha256": "24e36a5b4709524eae5270c8aa7b62d18b260c2bc75c22fd601db3b1111a0d87"
+    },
+    {
+      "contract": "task_timeline",
+      "schema": "task-timeline-view.schema.json",
+      "file": "task-timeline.json",
+      "sha256": "71781dcb6aae55721000b2769738ebc9b967962bef77d46e13d40dbf97819202"
+    },
+    {
+      "contract": "plan_graph",
+      "schema": "plan-graph-view.schema.json",
+      "file": "plan-graph.json",
+      "sha256": "87212cf24c58121e85d8ef6f19a3023937e17865274ee628156a29bfa49c9523"
+    },
+    {
+      "contract": "node_brief",
+      "schema": "node-brief.schema.json",
+      "file": "node-brief.json",
+      "sha256": "3fd0078c59683eefc27486369283ae701a481a43d4bb5e0340cf11c057826a81"
+    },
+    {
+      "contract": "worktree_orchestration",
+      "schema": "worktree-orchestration-view.schema.json",
+      "file": "worktree-orchestration.json",
+      "sha256": "69ee81bbdcceb82704a4847444d7b8d5c19477726d1d6c3a96da51f3c6af06af"
+    }
+  ]
+}

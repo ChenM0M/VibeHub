@@ -1,0 +1,159 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "unknown",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "task_id": "task.none",
+  "entry_gate": {
+    "state": "closed",
+    "m4_gate_digest": null,
+    "windows_native_evidence": false,
+    "owner_approved": false,
+    "self_host_writes_allowed": false,
+    "evidence_refs": [
+      {
+        "evidence_id": "ev.m5.entry-gate",
+        "kind": "file",
+        "grade": "hard_observed",
+        "label_key": "evidence.m5.entryGate",
+        "locator": "docs/v3/m4-stability-gate.md",
+        "captured_at": "2026-07-11T08:00:00.000Z"
+      }
+    ]
+  },
+  "policy": {
+    "integration_policy": "merge_no_ff",
+    "unknown_scope_decision": "warn",
+    "denylist": [
+      ".vibehub/state.yaml",
+      ".vibehub/events/**",
+      "migrations/**",
+      "src/v3/contracts/generated/**"
+    ],
+    "case_sensitive": true,
+    "retention_seconds": 86400
+  },
+  "worktrees": [],
+  "integration_queue": [],
+  "orphan_candidates": []
+}

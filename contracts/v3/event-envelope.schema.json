@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/event-envelope.schema.json",
+  "title": "V3EventEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id", "event_type", "event_version", "aggregate_id",
+    "aggregate_version", "expected_version", "idempotency_key", "project_id",
+    "task_id", "actor", "evidence_grade", "occurred_at", "recorded_at", "payload"
+  ],
+  "properties": {
+    "event_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "event_type": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$" },
+    "event_version": { "const": "1.0" },
+    "aggregate_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "aggregate_version": { "type": "integer", "minimum": 1 },
+    "expected_version": { "type": "integer", "minimum": 0 },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/StableId" },
+    "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "worktree_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "lease_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "operation_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "actor": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "evidence_grade": { "$ref": "common.schema.json#/$defs/EvidenceGrade" },
+    "occurred_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+    "recorded_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+    "commit_sha": { "$ref": "common.schema.json#/$defs/GitSha" },
+    "payload": { "type": "object" }
+  }
+}

@@ -1,0 +1,1833 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.large.1",
+  "freshness": "fresh",
+  "completeness": "complete",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [],
+  "errors": [],
+  "task_id": "task.m0",
+  "plan_version": 2,
+  "graph_state": "valid",
+  "nodes": [
+    {
+      "node_id": "node.large.000",
+      "title": "Large node 0",
+      "goal": "Exercise graph node 0",
+      "state": "active",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "src/large/0"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.001",
+      "title": "Large node 1",
+      "goal": "Exercise graph node 1",
+      "state": "planned",
+      "readiness": "ready",
+      "block_reasons": [],
+      "scope": [
+        "src/large/1"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.002",
+      "title": "Large node 2",
+      "goal": "Exercise graph node 2",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/2"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.003",
+      "title": "Large node 3",
+      "goal": "Exercise graph node 3",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/3"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.004",
+      "title": "Large node 4",
+      "goal": "Exercise graph node 4",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/4"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.005",
+      "title": "Large node 5",
+      "goal": "Exercise graph node 5",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/5"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.006",
+      "title": "Large node 6",
+      "goal": "Exercise graph node 6",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/6"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.007",
+      "title": "Large node 7",
+      "goal": "Exercise graph node 7",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/7"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.008",
+      "title": "Large node 8",
+      "goal": "Exercise graph node 8",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/8"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.009",
+      "title": "Large node 9",
+      "goal": "Exercise graph node 9",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/9"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.010",
+      "title": "Large node 10",
+      "goal": "Exercise graph node 10",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/10"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.011",
+      "title": "Large node 11",
+      "goal": "Exercise graph node 11",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/11"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.012",
+      "title": "Large node 12",
+      "goal": "Exercise graph node 12",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/12"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.013",
+      "title": "Large node 13",
+      "goal": "Exercise graph node 13",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/13"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.014",
+      "title": "Large node 14",
+      "goal": "Exercise graph node 14",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/14"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.015",
+      "title": "Large node 15",
+      "goal": "Exercise graph node 15",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/15"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.016",
+      "title": "Large node 16",
+      "goal": "Exercise graph node 16",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/16"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.017",
+      "title": "Large node 17",
+      "goal": "Exercise graph node 17",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/17"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.018",
+      "title": "Large node 18",
+      "goal": "Exercise graph node 18",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/18"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.019",
+      "title": "Large node 19",
+      "goal": "Exercise graph node 19",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/19"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.020",
+      "title": "Large node 20",
+      "goal": "Exercise graph node 20",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/20"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.021",
+      "title": "Large node 21",
+      "goal": "Exercise graph node 21",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/21"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.022",
+      "title": "Large node 22",
+      "goal": "Exercise graph node 22",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/22"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.023",
+      "title": "Large node 23",
+      "goal": "Exercise graph node 23",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/23"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.024",
+      "title": "Large node 24",
+      "goal": "Exercise graph node 24",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/24"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.025",
+      "title": "Large node 25",
+      "goal": "Exercise graph node 25",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/25"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.026",
+      "title": "Large node 26",
+      "goal": "Exercise graph node 26",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/26"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.027",
+      "title": "Large node 27",
+      "goal": "Exercise graph node 27",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/27"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.028",
+      "title": "Large node 28",
+      "goal": "Exercise graph node 28",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/28"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.029",
+      "title": "Large node 29",
+      "goal": "Exercise graph node 29",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/29"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.030",
+      "title": "Large node 30",
+      "goal": "Exercise graph node 30",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/30"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.031",
+      "title": "Large node 31",
+      "goal": "Exercise graph node 31",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/31"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.032",
+      "title": "Large node 32",
+      "goal": "Exercise graph node 32",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/32"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.033",
+      "title": "Large node 33",
+      "goal": "Exercise graph node 33",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/33"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.034",
+      "title": "Large node 34",
+      "goal": "Exercise graph node 34",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/34"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.035",
+      "title": "Large node 35",
+      "goal": "Exercise graph node 35",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/35"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.036",
+      "title": "Large node 36",
+      "goal": "Exercise graph node 36",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/36"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.037",
+      "title": "Large node 37",
+      "goal": "Exercise graph node 37",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/37"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.038",
+      "title": "Large node 38",
+      "goal": "Exercise graph node 38",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/38"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.039",
+      "title": "Large node 39",
+      "goal": "Exercise graph node 39",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/39"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.040",
+      "title": "Large node 40",
+      "goal": "Exercise graph node 40",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/40"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.041",
+      "title": "Large node 41",
+      "goal": "Exercise graph node 41",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/41"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.042",
+      "title": "Large node 42",
+      "goal": "Exercise graph node 42",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/42"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.043",
+      "title": "Large node 43",
+      "goal": "Exercise graph node 43",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/43"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.044",
+      "title": "Large node 44",
+      "goal": "Exercise graph node 44",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/44"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.045",
+      "title": "Large node 45",
+      "goal": "Exercise graph node 45",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/45"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.046",
+      "title": "Large node 46",
+      "goal": "Exercise graph node 46",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/46"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.047",
+      "title": "Large node 47",
+      "goal": "Exercise graph node 47",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/47"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.048",
+      "title": "Large node 48",
+      "goal": "Exercise graph node 48",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/48"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.049",
+      "title": "Large node 49",
+      "goal": "Exercise graph node 49",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/49"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.050",
+      "title": "Large node 50",
+      "goal": "Exercise graph node 50",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/50"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.051",
+      "title": "Large node 51",
+      "goal": "Exercise graph node 51",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/51"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.052",
+      "title": "Large node 52",
+      "goal": "Exercise graph node 52",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/52"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.053",
+      "title": "Large node 53",
+      "goal": "Exercise graph node 53",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/53"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.054",
+      "title": "Large node 54",
+      "goal": "Exercise graph node 54",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/54"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.055",
+      "title": "Large node 55",
+      "goal": "Exercise graph node 55",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/55"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.056",
+      "title": "Large node 56",
+      "goal": "Exercise graph node 56",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/56"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.057",
+      "title": "Large node 57",
+      "goal": "Exercise graph node 57",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/57"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.058",
+      "title": "Large node 58",
+      "goal": "Exercise graph node 58",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/58"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.059",
+      "title": "Large node 59",
+      "goal": "Exercise graph node 59",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/59"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.060",
+      "title": "Large node 60",
+      "goal": "Exercise graph node 60",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/60"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.061",
+      "title": "Large node 61",
+      "goal": "Exercise graph node 61",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/61"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.062",
+      "title": "Large node 62",
+      "goal": "Exercise graph node 62",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/62"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.063",
+      "title": "Large node 63",
+      "goal": "Exercise graph node 63",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/63"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.064",
+      "title": "Large node 64",
+      "goal": "Exercise graph node 64",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/64"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.065",
+      "title": "Large node 65",
+      "goal": "Exercise graph node 65",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/65"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.066",
+      "title": "Large node 66",
+      "goal": "Exercise graph node 66",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/66"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.067",
+      "title": "Large node 67",
+      "goal": "Exercise graph node 67",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/67"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.068",
+      "title": "Large node 68",
+      "goal": "Exercise graph node 68",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/68"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.069",
+      "title": "Large node 69",
+      "goal": "Exercise graph node 69",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/69"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.070",
+      "title": "Large node 70",
+      "goal": "Exercise graph node 70",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/70"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.071",
+      "title": "Large node 71",
+      "goal": "Exercise graph node 71",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/71"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.072",
+      "title": "Large node 72",
+      "goal": "Exercise graph node 72",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/72"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.073",
+      "title": "Large node 73",
+      "goal": "Exercise graph node 73",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/73"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.074",
+      "title": "Large node 74",
+      "goal": "Exercise graph node 74",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/74"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.075",
+      "title": "Large node 75",
+      "goal": "Exercise graph node 75",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/75"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.076",
+      "title": "Large node 76",
+      "goal": "Exercise graph node 76",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/76"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.077",
+      "title": "Large node 77",
+      "goal": "Exercise graph node 77",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/77"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.078",
+      "title": "Large node 78",
+      "goal": "Exercise graph node 78",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/78"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    },
+    {
+      "node_id": "node.large.079",
+      "title": "Large node 79",
+      "goal": "Exercise graph node 79",
+      "state": "planned",
+      "readiness": "blocked",
+      "block_reasons": [
+        "dependency"
+      ],
+      "scope": [
+        "src/large/79"
+      ],
+      "criterion_ids": [
+        "criterion.m0.c07"
+      ]
+    }
+  ],
+  "scheduling_edges": [
+    {
+      "edge_id": "edge.large.000",
+      "from_node_id": "node.large.000",
+      "to_node_id": "node.large.001",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.001",
+      "from_node_id": "node.large.001",
+      "to_node_id": "node.large.002",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.002",
+      "from_node_id": "node.large.002",
+      "to_node_id": "node.large.003",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.003",
+      "from_node_id": "node.large.003",
+      "to_node_id": "node.large.004",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.004",
+      "from_node_id": "node.large.004",
+      "to_node_id": "node.large.005",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.005",
+      "from_node_id": "node.large.005",
+      "to_node_id": "node.large.006",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.006",
+      "from_node_id": "node.large.006",
+      "to_node_id": "node.large.007",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.007",
+      "from_node_id": "node.large.007",
+      "to_node_id": "node.large.008",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.008",
+      "from_node_id": "node.large.008",
+      "to_node_id": "node.large.009",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.009",
+      "from_node_id": "node.large.009",
+      "to_node_id": "node.large.010",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.010",
+      "from_node_id": "node.large.010",
+      "to_node_id": "node.large.011",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.011",
+      "from_node_id": "node.large.011",
+      "to_node_id": "node.large.012",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.012",
+      "from_node_id": "node.large.012",
+      "to_node_id": "node.large.013",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.013",
+      "from_node_id": "node.large.013",
+      "to_node_id": "node.large.014",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.014",
+      "from_node_id": "node.large.014",
+      "to_node_id": "node.large.015",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.015",
+      "from_node_id": "node.large.015",
+      "to_node_id": "node.large.016",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.016",
+      "from_node_id": "node.large.016",
+      "to_node_id": "node.large.017",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.017",
+      "from_node_id": "node.large.017",
+      "to_node_id": "node.large.018",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.018",
+      "from_node_id": "node.large.018",
+      "to_node_id": "node.large.019",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.019",
+      "from_node_id": "node.large.019",
+      "to_node_id": "node.large.020",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.020",
+      "from_node_id": "node.large.020",
+      "to_node_id": "node.large.021",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.021",
+      "from_node_id": "node.large.021",
+      "to_node_id": "node.large.022",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.022",
+      "from_node_id": "node.large.022",
+      "to_node_id": "node.large.023",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.023",
+      "from_node_id": "node.large.023",
+      "to_node_id": "node.large.024",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.024",
+      "from_node_id": "node.large.024",
+      "to_node_id": "node.large.025",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.025",
+      "from_node_id": "node.large.025",
+      "to_node_id": "node.large.026",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.026",
+      "from_node_id": "node.large.026",
+      "to_node_id": "node.large.027",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.027",
+      "from_node_id": "node.large.027",
+      "to_node_id": "node.large.028",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.028",
+      "from_node_id": "node.large.028",
+      "to_node_id": "node.large.029",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.029",
+      "from_node_id": "node.large.029",
+      "to_node_id": "node.large.030",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.030",
+      "from_node_id": "node.large.030",
+      "to_node_id": "node.large.031",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.031",
+      "from_node_id": "node.large.031",
+      "to_node_id": "node.large.032",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.032",
+      "from_node_id": "node.large.032",
+      "to_node_id": "node.large.033",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.033",
+      "from_node_id": "node.large.033",
+      "to_node_id": "node.large.034",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.034",
+      "from_node_id": "node.large.034",
+      "to_node_id": "node.large.035",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.035",
+      "from_node_id": "node.large.035",
+      "to_node_id": "node.large.036",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.036",
+      "from_node_id": "node.large.036",
+      "to_node_id": "node.large.037",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.037",
+      "from_node_id": "node.large.037",
+      "to_node_id": "node.large.038",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.038",
+      "from_node_id": "node.large.038",
+      "to_node_id": "node.large.039",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.039",
+      "from_node_id": "node.large.039",
+      "to_node_id": "node.large.040",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.040",
+      "from_node_id": "node.large.040",
+      "to_node_id": "node.large.041",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.041",
+      "from_node_id": "node.large.041",
+      "to_node_id": "node.large.042",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.042",
+      "from_node_id": "node.large.042",
+      "to_node_id": "node.large.043",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.043",
+      "from_node_id": "node.large.043",
+      "to_node_id": "node.large.044",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.044",
+      "from_node_id": "node.large.044",
+      "to_node_id": "node.large.045",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.045",
+      "from_node_id": "node.large.045",
+      "to_node_id": "node.large.046",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.046",
+      "from_node_id": "node.large.046",
+      "to_node_id": "node.large.047",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.047",
+      "from_node_id": "node.large.047",
+      "to_node_id": "node.large.048",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.048",
+      "from_node_id": "node.large.048",
+      "to_node_id": "node.large.049",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.049",
+      "from_node_id": "node.large.049",
+      "to_node_id": "node.large.050",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.050",
+      "from_node_id": "node.large.050",
+      "to_node_id": "node.large.051",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.051",
+      "from_node_id": "node.large.051",
+      "to_node_id": "node.large.052",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.052",
+      "from_node_id": "node.large.052",
+      "to_node_id": "node.large.053",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.053",
+      "from_node_id": "node.large.053",
+      "to_node_id": "node.large.054",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.054",
+      "from_node_id": "node.large.054",
+      "to_node_id": "node.large.055",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.055",
+      "from_node_id": "node.large.055",
+      "to_node_id": "node.large.056",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.056",
+      "from_node_id": "node.large.056",
+      "to_node_id": "node.large.057",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.057",
+      "from_node_id": "node.large.057",
+      "to_node_id": "node.large.058",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.058",
+      "from_node_id": "node.large.058",
+      "to_node_id": "node.large.059",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.059",
+      "from_node_id": "node.large.059",
+      "to_node_id": "node.large.060",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.060",
+      "from_node_id": "node.large.060",
+      "to_node_id": "node.large.061",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.061",
+      "from_node_id": "node.large.061",
+      "to_node_id": "node.large.062",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.062",
+      "from_node_id": "node.large.062",
+      "to_node_id": "node.large.063",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.063",
+      "from_node_id": "node.large.063",
+      "to_node_id": "node.large.064",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.064",
+      "from_node_id": "node.large.064",
+      "to_node_id": "node.large.065",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.065",
+      "from_node_id": "node.large.065",
+      "to_node_id": "node.large.066",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.066",
+      "from_node_id": "node.large.066",
+      "to_node_id": "node.large.067",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.067",
+      "from_node_id": "node.large.067",
+      "to_node_id": "node.large.068",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.068",
+      "from_node_id": "node.large.068",
+      "to_node_id": "node.large.069",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.069",
+      "from_node_id": "node.large.069",
+      "to_node_id": "node.large.070",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.070",
+      "from_node_id": "node.large.070",
+      "to_node_id": "node.large.071",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.071",
+      "from_node_id": "node.large.071",
+      "to_node_id": "node.large.072",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.072",
+      "from_node_id": "node.large.072",
+      "to_node_id": "node.large.073",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.073",
+      "from_node_id": "node.large.073",
+      "to_node_id": "node.large.074",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.074",
+      "from_node_id": "node.large.074",
+      "to_node_id": "node.large.075",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.075",
+      "from_node_id": "node.large.075",
+      "to_node_id": "node.large.076",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.076",
+      "from_node_id": "node.large.076",
+      "to_node_id": "node.large.077",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.077",
+      "from_node_id": "node.large.077",
+      "to_node_id": "node.large.078",
+      "kind": "depends_on"
+    },
+    {
+      "edge_id": "edge.large.078",
+      "from_node_id": "node.large.078",
+      "to_node_id": "node.large.079",
+      "kind": "depends_on"
+    }
+  ],
+  "trace_relations": [
+    {
+      "relation_id": "trace.check.validates.fixtures",
+      "from_id": "node.check",
+      "to_id": "node.fixtures",
+      "kind": "validates",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.trace1",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.trace.validates",
+          "locator": "scripts/v3-contracts/check.mjs",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "relation_id": "trace.contracts.addresses.schema",
+      "from_id": "node.contracts",
+      "to_id": "node.schema",
+      "kind": "addresses",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.trace2",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.trace.addresses",
+          "locator": "src/v3/contracts/generated",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "relation_id": "trace.repo.validates.fixtures",
+      "from_id": "node.repo",
+      "to_id": "node.fixtures",
+      "kind": "validates",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.trace3",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.trace.repo",
+          "locator": "src/v3/contracts/fixtureRepository.ts",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "execution": {
+    "planned_sessions": 3,
+    "observed_sessions": 2,
+    "planned_worktrees": 1,
+    "observed_worktrees": 0
+  }
+}

@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "unknown",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECT_UNINITIALIZED",
+      "severity": "info",
+      "message_key": "warning.project_uninitialized",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.fixture",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.fixture",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "task_id": "task.none",
+  "node_id": "node.none",
+  "goal": "未选择任务",
+  "scope": [],
+  "non_scope": [],
+  "dependencies": [
+    "node.schema",
+    "node.fixtures"
+  ],
+  "accepted_decisions": [
+    "JSON Schema 2020-12 作为规范格式",
+    "Fixture-first 策略隔离 M1 与 V2",
+    "确定性种子 20260711 保证可复现"
+  ],
+  "research_summary": [
+    "调查了 JSON Schema 2020-12 vs OpenAPI 3.1，选择前者因为 AJV2020 支持更好",
+    "Fixture-first 隔离 M1 前端开发与 V2 后端耦合",
+    "12 场景覆盖正常/异常/边界/大数据/跨平台路径"
+  ],
+  "criteria": [],
+  "files": [],
+  "validation_commands": [],
+  "state": "active",
+  "next_intent": "创建或选择一个任务",
+  "budget": {
+    "max_tokens": 8000,
+    "estimated_tokens": 3200,
+    "truncated_sections": []
+  },
+  "source_versions": {
+    "contract": "1.0",
+    "model": "model.fixture.1",
+    "json-schema": "2020-12"
+  },
+  "protocol_coverage": "unknown"
+}

@@ -1,0 +1,66 @@
+{
+  "scenario_id": "FX-ERROR",
+  "seed": 20260711,
+  "platforms": [
+    "macos",
+    "windows"
+  ],
+  "criteria": [
+    "M0-C02",
+    "M0-C03",
+    "M0-C06",
+    "M0-C07"
+  ],
+  "expected_states": [
+    "unavailable/unknown"
+  ],
+  "expected_warnings": [],
+  "expected_errors": [
+    "CONTRACT_TERMINAL",
+    "PROJECTION_UNAVAILABLE"
+  ],
+  "contracts": [
+    {
+      "contract": "project_overview",
+      "schema": "project-overview-view.schema.json",
+      "file": "project-overview.json",
+      "sha256": "e5503763abcc05d4cd7a5408172029558ab95c4f82442c227beaa7e7765c0d97"
+    },
+    {
+      "contract": "project_structure",
+      "schema": "project-structure-view.schema.json",
+      "file": "project-structure.json",
+      "sha256": "0cd206405a7982879f31b883bc894df457f254196a856dccd552d29159db1d46"
+    },
+    {
+      "contract": "agent_results",
+      "schema": "agent-results-view.schema.json",
+      "file": "agent-results.json",
+      "sha256": "5aecd5fbd9d1fcd99256d8081ae9be20b2d076216b290ded3f3991ba64c06c87"
+    },
+    {
+      "contract": "task_timeline",
+      "schema": "task-timeline-view.schema.json",
+      "file": "task-timeline.json",
+      "sha256": "f1cf3d171a03af81f510336c50b3c3b212955c8e04a986e56c29e1564614aee7"
+    },
+    {
+      "contract": "plan_graph",
+      "schema": "plan-graph-view.schema.json",
+      "file": "plan-graph.json",
+      "sha256": "64fe5435fae4689e9b7c8ad96b60a071cccc450cab802c94c94c4fb4a4066e57"
+    },
+    {
+      "contract": "node_brief",
+      "schema": "node-brief.schema.json",
+      "file": "node-brief.json",
+      "sha256": "5fcdb0dd63cfbf9c823c0ea405fa3543d810313920528ac514a6402738a779e4"
+    },
+    {
+      "contract": "worktree_orchestration",
+      "schema": "worktree-orchestration-view.schema.json",
+      "file": "worktree-orchestration.json",
+      "sha256": "73672698e32700bb42fc7b9d197cc69087ca581e14fd37f74051b6dfeb915e8c"
+    }
+  ]
+}

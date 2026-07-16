@@ -1,10 +1,21 @@
+/dev_docs
 # Target directories
 /target
 /node_modules
 /dist
+/.vibehub/
+/.mcp.json
 
 # Build outputs
 /src-tauri/target
+/src-tauri/target-*
+/src-tauri/gen/schemas/macOS-schema.json
+/release-assets/
+.cache/
+.vite/
+coverage/
+*.tsbuildinfo
+.eslintcache
 *.exe
 *.dmg
 *.deb
@@ -17,6 +28,13 @@
 *.swp
 *.swo
 *~
+
+# Local agent/runtime state
+.agent/
+.agents/
+.claude/
+.codex/
+.opencode/
 
 # OS
 .DS_Store
@@ -31,7 +49,7 @@ npm-debug.log*
 .env.local
 
 # Data (for development)
-data/
+/data/
 *.db
 
 # Local scripts

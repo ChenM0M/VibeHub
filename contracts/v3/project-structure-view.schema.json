@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/project-structure-view.schema.json",
+  "title": "ProjectStructureView",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "project_id", "generated_at", "model_version", "freshness", "completeness", "index_state", "workspace", "nodes", "edges", "architecture_nodes", "architecture_edges", "unsupported_analyzers", "page", "evidence_refs", "warnings", "errors"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" }, "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "model_version": { "type": "string", "minLength": 1 },
+    "freshness": { "$ref": "common.schema.json#/$defs/Freshness" }, "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
+    "index_state": { "enum": ["uninitialized", "indexing", "ready", "interrupted", "error"] },
+    "workspace": {
+      "type": "object", "additionalProperties": false,
+      "required": ["root", "source", "session_id", "worktree_id", "fallback_reason", "ignored_directories"],
+      "properties": {
+        "root": { "$ref": "common.schema.json#/$defs/NativePath" },
+        "source": { "enum": ["session_worktree", "session_working_directory", "project_root_fallback"] },
+        "session_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+        "worktree_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+        "fallback_reason": { "type": ["string", "null"] },
+        "ignored_directories": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "nodes": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["node_id", "parent_id", "name", "kind", "path", "git_state", "module_id", "evidence_refs"],
+        "properties": {
+          "node_id": { "$ref": "common.schema.json#/$defs/StableId" }, "parent_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+          "name": { "type": "string", "minLength": 1 }, "kind": { "enum": ["root", "directory", "file", "module", "package", "symbol"] },
+          "path": { "$ref": "common.schema.json#/$defs/NativePath" }, "git_state": { "enum": ["clean", "modified", "added", "deleted", "ignored", "unknown"] },
+          "module_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
+          "ide_target": { "type": ["string", "null"] }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+        }
+      }
+    },
+    "edges": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["edge_id", "from_node_id", "to_node_id", "kind", "source_kind", "confidence", "evidence_refs"],
+        "properties": {
+          "edge_id": { "$ref": "common.schema.json#/$defs/StableId" }, "from_node_id": { "$ref": "common.schema.json#/$defs/StableId" }, "to_node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "kind": { "enum": ["contains", "imports", "depends_on", "declares", "generates"] }, "source_kind": { "enum": ["filesystem", "git", "manifest", "parser", "documentation", "inference"] },
+          "confidence": { "$ref": "common.schema.json#/$defs/Confidence" }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+        }
+      }
+    },
+    "architecture_nodes": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["node_id", "name", "kind", "path", "file_count", "source_kind", "confidence", "generator_version", "evidence_refs"],
+        "properties": {
+          "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["workspace", "module", "package"] },
+          "path": { "$ref": "common.schema.json#/$defs/NativePath" },
+          "file_count": { "type": "integer", "minimum": 0 },
+          "source_kind": { "enum": ["manifest", "parser", "documentation", "inference"] },
+          "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+          "generator_version": { "type": "string", "minLength": 1 },
+          "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+        }
+      }
+    },
+    "architecture_edges": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["edge_id", "from_node_id", "to_node_id", "kind", "source_kind", "confidence", "generator_version", "evidence_refs"],
+        "properties": {
+          "edge_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "from_node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "to_node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+          "kind": { "enum": ["contains", "imports", "depends_on"] },
+          "source_kind": { "enum": ["manifest", "parser", "documentation", "inference"] },
+          "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+          "generator_version": { "type": "string", "minLength": 1 },
+          "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+        }
+      }
+    },
+    "unsupported_analyzers": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "page": { "$ref": "common.schema.json#/$defs/Page" }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
+    "warnings": { "$ref": "common.schema.json#/$defs/Warnings" }, "errors": { "$ref": "common.schema.json#/$defs/Errors" }
+  }
+}

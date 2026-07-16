@@ -13,6 +13,39 @@ interface TagEditDialogProps {
     onSave: (tag: Tag) => void;
 }
 
+type ClientPlatform = 'macos' | 'windows' | 'linux' | 'unknown';
+
+const detectClientPlatform = (): ClientPlatform => {
+    if (typeof navigator === 'undefined') return 'unknown';
+    const userAgent = navigator.userAgent.toLowerCase();
+    if (userAgent.includes('mac')) return 'macos';
+    if (userAgent.includes('windows')) return 'windows';
+    if (userAgent.includes('linux')) return 'linux';
+    return 'unknown';
+};
+
+const getTerminalOptions = (platform: ClientPlatform) => {
+    if (platform === 'windows') {
+        return [
+            { value: '', label: 'Auto (Windows default)' },
+            { value: 'WindowsTerminal', label: 'Windows Terminal' },
+            { value: 'PowerShell', label: 'PowerShell' },
+            { value: 'CommandPrompt', label: 'Command Prompt' },
+        ];
+    }
+
+    if (platform === 'macos') {
+        return [
+            { value: '', label: 'Auto (Terminal.app)' },
+            { value: 'Terminal', label: 'Terminal.app' },
+            { value: 'iTerm', label: 'iTerm.app' },
+            { value: 'Warp', label: 'Warp.app' },
+        ];
+    }
+
+    return [{ value: '', label: 'Auto' }];
+};
+
 export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialogProps) {
     const { t } = useTranslation();
     const [name, setName] = useState('');
@@ -20,6 +53,11 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
     const [category, setCategory] = useState<TagCategory>('custom');
     const [config, setConfig] = useState<TagConfig>({});
     const [envVars, setEnvVars] = useState<{ key: string; value: string }[]>([]);
+    const platform = detectClientPlatform();
+    const terminalOptions = getTerminalOptions(platform);
+    const terminalValue = terminalOptions.some(option => option.value === (config.terminal || ''))
+        ? config.terminal || ''
+        : '';
 
     useEffect(() => {
         if (tag) {
@@ -57,7 +95,11 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
 
         // Clean up empty fields
         if (!newConfig.executable) delete newConfig.executable;
-        if (newConfig.args && newConfig.args.length === 0) delete newConfig.args;
+        if (newConfig.args) {
+            newConfig.args = newConfig.args.map(arg => arg.trim()).filter(Boolean);
+            if (newConfig.args.length === 0) delete newConfig.args;
+        }
+        if (!newConfig.terminal) delete newConfig.terminal;
 
         onSave({
             id: tag?.id || crypto.randomUUID(),
@@ -119,20 +161,44 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
                         {/* Configuration Fields based on Category */}
                         {(category === 'ide' || category === 'cli' || category === 'startup') && (
                             <>
+                                {category === 'cli' && (
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <label className="text-right text-sm font-medium">Terminal</label>
+                                        <select
+                                            className="col-span-3 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                            value={terminalValue}
+                                            onChange={(e) => {
+                                                const terminal = e.target.value || undefined;
+                                                setConfig({ ...config, terminal });
+                                            }}
+                                        >
+                                            {terminalOptions.map(option => (
+                                                <option key={option.value || 'auto'} value={option.value}>
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {config.terminal && terminalValue === '' && (
+                                            <div className="col-start-2 col-span-3 text-xs text-muted-foreground">
+                                                Current terminal "{config.terminal}" is preserved for another platform.
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <label className="text-right text-sm font-medium">{t('tag.config.executable')}</label>
                                     <Input
                                         value={config.executable || ''}
                                         onChange={(e) => setConfig({ ...config, executable: e.target.value })}
                                         className="col-span-3"
-                                        placeholder="e.g. code, npm, python"
+                                        placeholder={category === 'cli' ? 'e.g. opencode, claude, amp' : 'e.g. code, npm, python'}
                                     />
                                 </div>
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <label className="text-right text-sm font-medium">{t('tag.config.arguments')}</label>
                                     <Input
                                         value={config.args?.join(' ') || ''}
-                                        onChange={(e) => setConfig({ ...config, args: e.target.value.split(' ') })}
+                                        onChange={(e) => setConfig({ ...config, args: e.target.value.split(' ').filter(Boolean) })}
                                         className="col-span-3"
                                         placeholder="Space separated args"
                                     />

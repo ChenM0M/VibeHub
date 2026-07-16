@@ -42,9 +42,13 @@ interface ProjectCardProps {
     project: Project;
     onLaunch: (project: Project) => void;
     onCustomLaunch: (project: Project) => void;
+    onSelect?: (project: Project) => void;
+    dragListeners?: Record<string, any>;
+    dragAttributes?: Record<string, any>;
+    dragRef?: (element: HTMLElement | null) => void;
 }
 
-export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardProps) {
+export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragListeners, dragAttributes, dragRef }: ProjectCardProps) {
     const { t, i18n } = useTranslation();
     const { toggleProjectStar, openInExplorer, openTerminal, config, deleteProject, launchTool, launchCustom } = useAppStore();
     const [isEditing, setIsEditing] = useState(false);
@@ -99,6 +103,7 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
     };
 
     const typeInfo = getProjectTypeInfo(project.project_type);
+    const originalProject = config?.projects.find(p => p.id === project.id) || project;
 
     // Tags that have a launchable config (executable is set)
     const launchableTags = (config?.tags || []).filter(
@@ -143,6 +148,18 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
         }
     };
 
+    const handleSelectClick = (event: React.MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        onSelect?.(originalProject);
+    };
+
+    const handleSelectKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        onSelect?.(originalProject);
+    };
+
     // Get tech stack items to display (max 4, show +N for overflow)
     const techStackItems = project.tech_stack || [];
     const maxTechDisplay = 4;
@@ -151,15 +168,20 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
 
     return (
         <ContextMenu>
-            <ContextMenuTrigger>
+            <ContextMenuTrigger asChild>
                 <div
                     data-project-card
-                    className={`group relative flex flex-col justify-between min-h-[180px] h-full bg-card hover:bg-accent/5 border rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 overflow-hidden`}
+                    role="group"
+                    aria-label={`${project.name} 项目卡片`}
+                    className={`group relative flex flex-col justify-between min-h-[180px] h-full bg-card hover:bg-accent/5 border rounded-xl transition-all duration-200 hover:shadow-lg hover:-translate-y-1 overflow-hidden`}
                     style={customStyle}
                 >
                     {/* Header / Banner Area */}
                     <div
-                        className={`h-20 relative overflow-hidden transition-all duration-500 ${!project.theme_color && !project.cover_image ? `bg-gradient-to-br ${typeInfo.gradient}` : ''}`}
+                        ref={dragRef}
+                        {...dragListeners}
+                        {...dragAttributes}
+                        className={`h-20 relative overflow-hidden transition-all duration-200 ${dragListeners ? 'cursor-grab active:cursor-grabbing touch-none' : ''} ${!project.theme_color && !project.cover_image ? `bg-gradient-to-br ${typeInfo.gradient}` : ''}`}
                         style={project.cover_image ? {
                             backgroundImage: `url(${project.cover_image})`,
                             backgroundSize: 'cover',
@@ -218,37 +240,37 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
                             </div>
                         </div>
 
-                        <div className="absolute top-3 right-3 z-10">
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className={`h-8 w-8 hover:bg-background/40 ${project.starred ? 'text-yellow-500' : 'text-muted-foreground/50 hover:text-yellow-500'}`}
-                                onClick={(e) => { e.stopPropagation(); toggleProjectStar(project.id); }}
-                            >
-                                <Star className={`h-4 w-4 ${project.starred ? 'fill-current' : ''}`} />
-                            </Button>
-                        </div>
                     </div>
 
                     {/* Content Area */}
-                    <div className="p-4 flex flex-col flex-1 justify-between">
-                        <div>
-                            <h3 className="font-semibold text-base tracking-tight truncate group-hover:text-primary transition-colors">
-                                {project.name}
-                            </h3>
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <p className="text-xs text-muted-foreground break-all line-clamp-1 hover:text-foreground transition-colors cursor-help mt-0.5">
+                    <div
+                        className="p-4 flex flex-col flex-1 justify-between cursor-pointer group/content"
+                        onClick={handleSelectClick}
+                        onKeyDown={handleSelectKeyDown}
+                        data-project-open
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`打开项目 ${project.name}`}
+                    >
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div
+                                        className="block w-full text-left rounded-sm"
+                                    >
+                                        <span className="block font-semibold text-base tracking-tight truncate group-hover/content:text-primary transition-colors">
+                                            {project.name}
+                                        </span>
+                                        <span className="block text-xs text-muted-foreground break-all line-clamp-1 group-hover/content:text-foreground transition-colors mt-0.5">
                                             {project.path}
-                                        </p>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="bottom" className="max-w-[300px] break-all">
-                                        {project.path}
-                                    </TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
-                        </div>
+                                        </span>
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-[300px] break-all">
+                                    {project.path}
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
 
                         <div className="space-y-3 mt-2">
                             <div className="flex flex-wrap gap-1.5 h-[22px] overflow-hidden">
@@ -265,28 +287,40 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
                             </div>
 
                             <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0 flex-1">
                                     {project.metadata.git_branch && (
-                                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-secondary/30">
-                                            <GitBranch className="h-3 w-3" />
-                                            <span>{project.metadata.git_branch}</span>
+                                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-secondary/30 min-w-0">
+                                            <GitBranch className="h-3 w-3 shrink-0" />
+                                            <span className="truncate">{project.metadata.git_branch}</span>
                                         </div>
                                     )}
                                     {project.last_opened && (
-                                        <span className="opacity-70 text-[10px]">{formatDate(project.last_opened)}</span>
+                                        <span className="opacity-70 text-[10px] shrink-0 whitespace-nowrap">{formatDate(project.last_opened)}</span>
                                     )}
                                 </div>
 
                                 <Button
                                     size="sm"
-                                    className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-all shadow-sm hover:shadow-md bg-primary/90 hover:bg-primary text-primary-foreground border-0 px-3"
+                                    className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-all shadow-sm hover:shadow-md bg-primary/90 hover:bg-primary text-primary-foreground border-0 px-3 shrink-0 ml-2"
                                     onClick={handleLaunchClick}
                                 >
-                                    <Play className="h-3 w-3 mr-1.5" />
-                                    {t('project.launch')}
+                                    <Play className="h-3 w-3 mr-1.5 shrink-0" />
+                                    <span className="whitespace-nowrap">{t('project.launch')}</span>
                                 </Button>
                             </div>
                         </div>
+                        </div>
+
+                    <div className="absolute top-3 right-3 z-10">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={project.starred ? t('project.unstar') : t('project.star')}
+                            className={`h-8 w-8 hover:bg-background/40 ${project.starred ? 'text-yellow-500' : 'text-muted-foreground/50 hover:text-yellow-500'}`}
+                            onClick={(e) => { e.stopPropagation(); toggleProjectStar(project.id); }}
+                        >
+                            <Star className={`h-4 w-4 ${project.starred ? 'fill-current' : ''}`} />
+                        </Button>
                     </div>
 
                     <ProjectEditDialog
@@ -333,6 +367,7 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch }: ProjectCardPr
                         {t('project.customLaunch')}
                     </ContextMenuItem>
                 )}
+                <ContextMenuSeparator />
                 <ContextMenuItem onClick={() => {
                     const originalPath = config?.projects.find(p => p.id === project.id)?.path || project.path;
                     openInExplorer(originalPath);

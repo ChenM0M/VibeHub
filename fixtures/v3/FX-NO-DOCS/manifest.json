@@ -1,0 +1,63 @@
+{
+  "scenario_id": "FX-NO-DOCS",
+  "seed": 20260711,
+  "platforms": [
+    "neutral"
+  ],
+  "criteria": [
+    "M0-C03",
+    "M0-C06",
+    "M0-C11"
+  ],
+  "expected_states": [
+    "fresh/complete"
+  ],
+  "expected_warnings": [
+    "NO_DECLARED_ARCHITECTURE"
+  ],
+  "expected_errors": [],
+  "contracts": [
+    {
+      "contract": "project_overview",
+      "schema": "project-overview-view.schema.json",
+      "file": "project-overview.json",
+      "sha256": "9eede834c74fce53a1cc51ceb21e3ec3ff1dadd371169f945b015224066cc167"
+    },
+    {
+      "contract": "project_structure",
+      "schema": "project-structure-view.schema.json",
+      "file": "project-structure.json",
+      "sha256": "07e9480b260bed2fad2d47f808f4145403e44ca4324fae6a684a3c5e304aa7c0"
+    },
+    {
+      "contract": "agent_results",
+      "schema": "agent-results-view.schema.json",
+      "file": "agent-results.json",
+      "sha256": "f01086da88a91db72e832b19c3e73766b333f04b71841275247bcea0cb1d4547"
+    },
+    {
+      "contract": "task_timeline",
+      "schema": "task-timeline-view.schema.json",
+      "file": "task-timeline.json",
+      "sha256": "d15a5de0afddf2be1e6bfe0745a94f3525e00c58960fbacc1535e17025e14007"
+    },
+    {
+      "contract": "plan_graph",
+      "schema": "plan-graph-view.schema.json",
+      "file": "plan-graph.json",
+      "sha256": "0021360fce6876b720b98f64c38e5a14ed5db55ec0e1fa821a516c0b183aa4af"
+    },
+    {
+      "contract": "node_brief",
+      "schema": "node-brief.schema.json",
+      "file": "node-brief.json",
+      "sha256": "28646b89847a428b11eb865ec37b2c088c1c9d789e89b89cfba712770366837f"
+    },
+    {
+      "contract": "worktree_orchestration",
+      "schema": "worktree-orchestration-view.schema.json",
+      "file": "worktree-orchestration.json",
+      "sha256": "da79d931f9d98f9dd056d130b4a6be6492866aa6fd226267783734c1b6861d4d"
+    }
+  ]
+}

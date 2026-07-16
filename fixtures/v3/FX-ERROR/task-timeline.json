@@ -1,0 +1,552 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "unavailable",
+  "completeness": "unknown",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [],
+  "errors": [
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "PROJECTION_UNAVAILABLE",
+      "category": "internal",
+      "recoverable": true,
+      "message_key": "error.projection_unavailable",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "code": "CONTRACT_TERMINAL",
+      "category": "validation",
+      "recoverable": false,
+      "message_key": "error.contract_terminal",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.error",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.error",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "task_id": "task.m0",
+  "title": "Freeze V3 contracts and fixtures",
+  "state": "active",
+  "criteria": [
+    {
+      "criterion_id": "criterion.m0.c01",
+      "title": "Schema hash stability",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion.m0.c01",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion.m0.c01",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "criterion_id": "criterion.m0.c02",
+      "title": "All views validate against schema",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion.m0.c02",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion.m0.c02",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "criterion_id": "criterion.m0.c07",
+      "title": "Fixture repository consumer proof",
+      "status": "passed",
+      "required": true,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.criterion.m0.c07",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.criterion.m0.c07",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "completion": {
+    "proposal_event_id": null,
+    "proposed_at_version": null,
+    "digest": null,
+    "valid": false,
+    "confirmed": false,
+    "confirmed_at_version": null,
+    "confirmed_by": null,
+    "channel": null
+  },
+  "lanes": [
+    {
+      "lane_id": "lane.session.main",
+      "kind": "session",
+      "label": "Codex 主会话",
+      "state": "closed"
+    },
+    {
+      "lane_id": "lane.node.contracts",
+      "kind": "node",
+      "label": "节点：冻结契约",
+      "state": "repaired"
+    }
+  ],
+  "events": [
+    {
+      "timeline_event_id": "evt.session.open",
+      "kind": "session",
+      "occurred_at": "2026-07-11T07:30:00.000Z",
+      "recorded_at": "2026-07-11T07:30:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "codex",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.session.opened",
+      "details": {},
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.session.open",
+          "kind": "event",
+          "grade": "hard_observed",
+          "label_key": "evidence.session.opened",
+          "locator": "events/session.open",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.plan.created",
+      "kind": "plan",
+      "occurred_at": "2026-07-11T07:35:00.000Z",
+      "recorded_at": "2026-07-11T07:35:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "codex",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.plan.created",
+      "details": {
+        "nodes": 3,
+        "edges": 2
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.plan",
+          "kind": "event",
+          "grade": "agent_reported",
+          "label_key": "evidence.plan.created",
+          "locator": "events/plan.created",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.decision.schema",
+      "kind": "decision",
+      "occurred_at": "2026-07-11T07:42:00.000Z",
+      "recorded_at": "2026-07-11T07:42:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": null,
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.decision.schema2020",
+      "details": {
+        "decision": "JSON Schema 2020-12 as canonical"
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.decision",
+          "kind": "event",
+          "grade": "user_confirmed",
+          "label_key": "evidence.decision.schema",
+          "locator": "events/decision.schema",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.evidence.contract",
+      "kind": "evidence",
+      "occurred_at": "2026-07-11T07:50:00.000Z",
+      "recorded_at": "2026-07-11T07:50:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "codex",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.evidence.contractDrafted",
+      "details": {
+        "files": [
+          "contracts/v3/common.schema.json",
+          "contracts/v3/project-overview-view.schema.json"
+        ]
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.evidence",
+          "kind": "file",
+          "grade": "hard_observed",
+          "label_key": "evidence.evidence.drafted",
+          "locator": "contracts/v3/common.schema.json",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.attempt.generate",
+      "kind": "attempt",
+      "occurred_at": "2026-07-11T07:58:00.000Z",
+      "recorded_at": "2026-07-11T07:58:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "node",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.attempt.generateFixtures",
+      "details": {
+        "command": "node scripts/v3-contracts/generate-fixtures.mjs"
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.attempt",
+          "kind": "command",
+          "grade": "hard_observed",
+          "label_key": "evidence.attempt.generate",
+          "locator": "commands/generate-fixtures",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.validation.check",
+      "kind": "validation",
+      "occurred_at": "2026-07-11T08:05:00.000Z",
+      "recorded_at": "2026-07-11T08:05:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "npm",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": "d7ece57",
+      "summary_key": "timeline.validation.passed",
+      "details": {
+        "command": "npm run v3:contracts:check",
+        "assertions": 342
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.validation",
+          "kind": "command",
+          "grade": "hard_observed",
+          "label_key": "evidence.validation.passed",
+          "locator": "commands/v3-contracts-check",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.confirmation.commit",
+      "kind": "confirmation",
+      "occurred_at": "2026-07-11T08:10:00.000Z",
+      "recorded_at": "2026-07-11T08:10:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "git",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": "d7ece57",
+      "summary_key": "timeline.confirmation.committed",
+      "details": {
+        "sha": "d7ece57",
+        "message": "M0: freeze V3 contracts and fixtures"
+      },
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.commit",
+          "kind": "git",
+          "grade": "hard_observed",
+          "label_key": "evidence.confirmation.commit",
+          "locator": "git/d7ece57",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "timeline_event_id": "evt.session.close",
+      "kind": "session",
+      "occurred_at": "2026-07-11T08:15:00.000Z",
+      "recorded_at": "2026-07-11T08:15:00.000Z",
+      "order_state": "ordered",
+      "lane_id": "lane.session.main",
+      "actor": "codex",
+      "tool": "codex",
+      "node_id": "node.contracts",
+      "session_id": "session.main",
+      "commit_sha": null,
+      "summary_key": "timeline.session.closed",
+      "details": {},
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.session.close",
+          "kind": "event",
+          "grade": "hard_observed",
+          "label_key": "evidence.session.closed",
+          "locator": "events/session.close",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "window": {
+    "cursor": null,
+    "next_cursor": null,
+    "limit": 100,
+    "returned": 8,
+    "total_estimate": 8,
+    "truncated": false,
+    "truncation_reason": "none",
+    "model_version": "model.fixture.1"
+  }
+}

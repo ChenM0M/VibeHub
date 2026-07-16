@@ -7,9 +7,10 @@ interface SortableProjectCardProps {
     project: Project;
     onLaunch: (project: Project) => void;
     onCustomLaunch: (project: Project) => void;
+    onSelect?: (project: Project) => void;
 }
 
-export function SortableProjectCard({ project, onLaunch, onCustomLaunch }: SortableProjectCardProps) {
+export function SortableProjectCard({ project, onLaunch, onCustomLaunch, onSelect }: SortableProjectCardProps) {
     const {
         attributes,
         listeners,
@@ -17,7 +18,15 @@ export function SortableProjectCard({ project, onLaunch, onCustomLaunch }: Sorta
         transform,
         transition,
         isDragging,
-    } = useSortable({ id: project.id });
+        setActivatorNodeRef,
+    } = useSortable({
+        id: project.id,
+        attributes: {
+            role: 'group',
+            roleDescription: 'project card',
+            tabIndex: -1,
+        },
+    });
 
     const style = {
         transform: CSS.Transform.toString(transform),
@@ -25,10 +34,22 @@ export function SortableProjectCard({ project, onLaunch, onCustomLaunch }: Sorta
         zIndex: isDragging ? 50 : 'auto',
         position: isDragging ? 'relative' as const : undefined,
     };
-
     return (
-        <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="h-full">
-            <ProjectCard project={project} onLaunch={onLaunch} onCustomLaunch={onCustomLaunch} />
+        <div
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            className="relative h-full"
+        >
+            <ProjectCard
+                project={project}
+                onLaunch={onLaunch}
+                onCustomLaunch={onCustomLaunch}
+                onSelect={onSelect}
+                dragListeners={listeners as Record<string, any>}
+                dragAttributes={attributes as Record<string, any>}
+                dragRef={setActivatorNodeRef}
+            />
         </div>
     );
 }

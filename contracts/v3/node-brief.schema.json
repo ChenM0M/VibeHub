@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/node-brief.schema.json",
+  "title": "NodeBrief",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "project_id", "task_id", "node_id", "generated_at", "model_version", "freshness", "completeness", "goal", "scope", "non_scope", "dependencies", "accepted_decisions", "research_summary", "criteria", "files", "validation_commands", "state", "next_intent", "budget", "source_versions", "protocol_coverage", "evidence_refs", "warnings", "errors"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" }, "project_id": { "$ref": "common.schema.json#/$defs/StableId" }, "task_id": { "$ref": "common.schema.json#/$defs/StableId" }, "node_id": { "oneOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "const": "" }] },
+    "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "model_version": { "type": "string", "minLength": 1 }, "freshness": { "$ref": "common.schema.json#/$defs/Freshness" }, "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
+    "goal": { "type": "string", "minLength": 1 }, "scope": { "type": "array", "items": { "type": "string" } }, "non_scope": { "type": "array", "items": { "type": "string" } },
+    "dependencies": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } }, "accepted_decisions": { "type": "array", "items": { "type": "string" } },
+    "research_summary": { "type": "array", "items": { "type": "string" } }, "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
+    "files": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/NativePath" } }, "validation_commands": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "state": { "enum": ["planned", "ready", "active", "blocked", "review", "completed", "cancelled", "superseded"] }, "next_intent": { "type": "string" },
+    "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
+    "execution": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["session_ids", "worktree", "base_sha", "native_path", "dirty", "integration_state", "conflict_owner", "next_action"],
+      "properties": {
+        "session_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" }, "uniqueItems": true },
+        "worktree": { "anyOf": [{ "$ref": "common.schema.json#/$defs/WorktreeRef" }, { "type": "null" }] },
+        "base_sha": { "anyOf": [{ "$ref": "common.schema.json#/$defs/GitSha" }, { "type": "null" }] },
+        "native_path": { "anyOf": [{ "$ref": "common.schema.json#/$defs/NativePath" }, { "type": "null" }] },
+        "dirty": { "type": ["boolean", "null"] },
+        "integration_state": { "enum": ["not_requested", "queued", "integrating", "integrated", "conflicted", "blocked"] },
+        "conflict_owner": { "type": ["string", "null"] },
+        "next_action": { "type": "string", "minLength": 1 }
+      }
+    },
+    "budget": {
+      "type": "object", "additionalProperties": false, "required": ["max_tokens", "estimated_tokens", "truncated_sections"],
+      "properties": { "max_tokens": { "type": "integer", "minimum": 1 }, "estimated_tokens": { "type": "integer", "minimum": 0 }, "truncated_sections": { "type": "array", "items": { "type": "string" } } }
+    },
+    "source_versions": { "type": "object", "additionalProperties": { "type": "string" } },
+    "protocol_coverage": { "enum": ["complete", "partial", "gapped", "unknown"] }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
+    "warnings": { "$ref": "common.schema.json#/$defs/Warnings" }, "errors": { "$ref": "common.schema.json#/$defs/Errors" }
+  }
+}

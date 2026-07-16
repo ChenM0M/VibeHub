@@ -1,0 +1,387 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project.vibehub",
+  "generated_at": "2026-07-11T08:00:00.000Z",
+  "model_version": "model.fixture.1",
+  "freshness": "fresh",
+  "completeness": "complete",
+  "evidence_refs": [
+    {
+      "evidence_id": "ev.fixture",
+      "kind": "test",
+      "grade": "hard_observed",
+      "label_key": "evidence.fixture.generated",
+      "locator": "fixtures/v3/ev.fixture",
+      "captured_at": "2026-07-11T08:00:00.000Z"
+    }
+  ],
+  "warnings": [],
+  "errors": [],
+  "index_state": "ready",
+  "workspace": {
+    "root": {
+      "platform": "macos",
+      "native": "/Users/alex/.vibehub/worktrees/task-m0/node-contracts",
+      "display": "/Users/alex/.vibehub/worktrees/task-m0/node-contracts",
+      "identity_key": "macos:/Users/alex/.vibehub/worktrees/task-m0/node-contracts",
+      "path_kind": "absolute",
+      "accessible": true
+    },
+    "source": "session_worktree",
+    "session_id": "session.main",
+    "worktree_id": "worktree.contracts",
+    "fallback_reason": null,
+    "ignored_directories": [
+      ".git",
+      "dist",
+      "node_modules",
+      "target"
+    ]
+  },
+  "nodes": [
+    {
+      "node_id": "file.mac.0",
+      "parent_id": null,
+      "name": "VibeHub",
+      "kind": "root",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/My Project/VibeHub",
+        "display": "/Users/alex/My Project/VibeHub",
+        "identity_key": "macos:/Users/alex/My Project/VibeHub",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "git_state": "clean",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.mac.0",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.mac.0",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.mac.1",
+      "parent_id": "file.mac.0",
+      "name": "README.md",
+      "kind": "file",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Projects/维贝中心/README.md",
+        "display": "/Users/alex/Projects/维贝中心/README.md",
+        "identity_key": "macos:/Users/alex/Projects/维贝中心/README.md",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "git_state": "clean",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.mac.1",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.mac.1",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.mac.2",
+      "parent_id": "file.mac.0",
+      "name": "current -> VibeHub",
+      "kind": "file",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Projects/current",
+        "display": "/Users/alex/Projects/current -> VibeHub",
+        "identity_key": "macos:/Users/alex/Projects/current",
+        "path_kind": "absolute",
+        "accessible": true,
+        "symlink_target": "/Users/alex/Projects/VibeHub"
+      },
+      "git_state": "clean",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.mac.2",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.mac.2",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.mac.3",
+      "parent_id": "file.mac.0",
+      "name": "vibehub",
+      "kind": "file",
+      "path": {
+        "platform": "macos",
+        "native": "/Applications/VibeHub.app/Contents/MacOS/vibehub",
+        "display": "/Applications/VibeHub.app/Contents/MacOS/vibehub",
+        "identity_key": "macos:/Applications/VibeHub.app/Contents/MacOS/vibehub",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "git_state": "clean",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.mac.3",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.mac.3",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.mac.4",
+      "parent_id": "file.mac.0",
+      "name": "Readme.md",
+      "kind": "file",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Repo/Readme.md",
+        "display": "/Users/alex/Repo/Readme.md",
+        "identity_key": "macos:/Users/alex/Repo/Readme.md",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "git_state": "clean",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.mac.4",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.mac.4",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "file.mac.5",
+      "parent_id": "file.mac.0",
+      "name": "README.md",
+      "kind": "file",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Repo/README.md",
+        "display": "/Users/alex/Repo/README.md",
+        "identity_key": "macos:/Users/alex/Repo/README.md",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "git_state": "clean",
+      "module_id": null,
+      "ide_target": null,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.mac.5",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.mac.5",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "edges": [],
+  "architecture_nodes": [
+    {
+      "node_id": "architecture.workspace",
+      "name": "VibeHub",
+      "kind": "workspace",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Projects/VibeHub",
+        "display": "/Users/alex/Projects/VibeHub",
+        "identity_key": "macos:/Users/alex/Projects/VibeHub",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "file_count": 6,
+      "source_kind": "manifest",
+      "confidence": 1,
+      "generator_version": "model.fixture.1",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.architecture.workspace",
+          "kind": "file",
+          "grade": "hard_observed",
+          "label_key": "evidence.architecture.workspace",
+          "locator": "package.json",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "module.contracts",
+      "name": "contracts",
+      "kind": "module",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Projects/VibeHub/src/v3/contracts/index.ts",
+        "display": "/Users/alex/Projects/VibeHub/src/v3/contracts/index.ts",
+        "identity_key": "macos:/Users/alex/Projects/VibeHub/src/v3/contracts/index.ts",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "file_count": 2,
+      "source_kind": "parser",
+      "confidence": 0.85,
+      "generator_version": "model.fixture.1",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.contracts.index",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.contracts.index",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "module.core",
+      "name": "vibehub-core",
+      "kind": "module",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Projects/VibeHub/crates/vibehub-core",
+        "display": "/Users/alex/Projects/VibeHub/crates/vibehub-core",
+        "identity_key": "macos:/Users/alex/Projects/VibeHub/crates/vibehub-core",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "file_count": 1,
+      "source_kind": "manifest",
+      "confidence": 1,
+      "generator_version": "model.fixture.1",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.manifest",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.manifest",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "node_id": "module.ui",
+      "name": "ui",
+      "kind": "module",
+      "path": {
+        "platform": "macos",
+        "native": "/Users/alex/Projects/VibeHub/src/components/ui",
+        "display": "/Users/alex/Projects/VibeHub/src/components/ui",
+        "identity_key": "macos:/Users/alex/Projects/VibeHub/src/components/ui",
+        "path_kind": "absolute",
+        "accessible": true
+      },
+      "file_count": 1,
+      "source_kind": "manifest",
+      "confidence": 1,
+      "generator_version": "model.fixture.1",
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.ui",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.ui",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "architecture_edges": [
+    {
+      "edge_id": "edge.root.core",
+      "from_node_id": "architecture.workspace",
+      "to_node_id": "module.core",
+      "kind": "contains",
+      "source_kind": "manifest",
+      "confidence": 1,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.manifest",
+          "kind": "test",
+          "grade": "hard_observed",
+          "label_key": "evidence.fixture.generated",
+          "locator": "fixtures/v3/ev.manifest",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ],
+      "generator_version": "model.fixture.1"
+    },
+    {
+      "edge_id": "edge.ui.depends.contracts",
+      "from_node_id": "module.ui",
+      "to_node_id": "module.contracts",
+      "kind": "depends_on",
+      "source_kind": "parser",
+      "confidence": 0.85,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.parser",
+          "kind": "file",
+          "grade": "hard_observed",
+          "label_key": "evidence.parser.depends",
+          "locator": "src/components/ui/card.tsx",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ],
+      "generator_version": "model.fixture.1"
+    },
+    {
+      "edge_id": "edge.core.depends.contracts",
+      "from_node_id": "module.core",
+      "to_node_id": "module.contracts",
+      "kind": "imports",
+      "source_kind": "parser",
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "evidence_id": "ev.parser2",
+          "kind": "file",
+          "grade": "inferred",
+          "label_key": "evidence.parser.imports",
+          "locator": "crates/vibehub-core/src/lib.rs",
+          "captured_at": "2026-07-11T08:00:00.000Z"
+        }
+      ],
+      "generator_version": "model.fixture.1"
+    }
+  ],
+  "unsupported_analyzers": [],
+  "page": {
+    "cursor": null,
+    "next_cursor": null,
+    "limit": 100,
+    "returned": 6,
+    "total_estimate": 6,
+    "truncated": false,
+    "truncation_reason": "none",
+    "model_version": "model.fixture.1"
+  }
+}

@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/application-command.schema.json",
+  "title": "V3ApplicationCommand",
+  "oneOf": [
+    { "$ref": "#/$defs/SessionOpen" },
+    { "$ref": "#/$defs/EventLog" },
+    { "$ref": "#/$defs/SessionClose" },
+    { "$ref": "#/$defs/AgentResultRecord" },
+    { "$ref": "#/$defs/PlanNodeAdd" },
+    { "$ref": "#/$defs/PlanDependenciesSet" },
+    { "$ref": "#/$defs/PlanNodeStateSet" },
+    { "$ref": "#/$defs/WorktreeCommand" },
+    { "$ref": "#/$defs/Rebuild" }
+  ],
+  "$defs": {
+    "TaskWriteScope": {
+      "type": "object",
+      "required": ["project_id", "task_id", "actor", "expected_version", "idempotency_key"],
+      "properties": {
+        "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "actor": { "type": "string", "minLength": 1 },
+        "expected_version": { "type": "integer", "minimum": 0 },
+        "idempotency_key": { "$ref": "common.schema.json#/$defs/StableId" }
+      }
+    },
+    "SessionWriteScope": {
+      "type": "object",
+      "required": ["project_id", "task_id", "session_id", "actor", "expected_version", "idempotency_key"],
+      "properties": {
+        "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "actor": { "type": "string", "minLength": 1 },
+        "expected_version": { "type": "integer", "minimum": 0 },
+        "idempotency_key": { "$ref": "common.schema.json#/$defs/StableId" }
+      }
+    },
+    "SessionOpen": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/SessionWriteScope" },
+        {
+          "type": "object", "required": ["command"],
+          "properties": {
+            "command": { "const": "session_open" },
+            "working_directory": { "type": "string", "minLength": 1 },
+            "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "worktree_id": { "$ref": "common.schema.json#/$defs/StableId" }
+          }
+        }
+      ]
+    },
+    "EventLog": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/SessionWriteScope" },
+        {
+          "type": "object",
+          "required": ["command", "kind", "details"],
+          "properties": {
+            "command": { "const": "event_log" },
+            "kind": { "enum": ["progress", "risk"] },
+            "details": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "SessionClose": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/SessionWriteScope" },
+        { "type": "object", "required": ["command"], "properties": { "command": { "const": "session_close" } } }
+      ]
+    },
+    "AgentResultRecord": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/SessionWriteScope" },
+        {
+          "type": "object",
+          "required": ["command", "result_id", "kind", "request_source", "instruction", "status", "summary"],
+          "properties": {
+            "command": { "const": "agent_result_record" },
+            "result_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "kind": { "enum": ["execution", "evaluation"] },
+            "request_source": { "enum": ["user_request", "evaluation_instruction"] },
+            "instruction": { "type": "string", "minLength": 1 },
+            "status": { "enum": ["pending", "running", "succeeded", "failed"] },
+            "summary": { "type": "string" },
+            "body": { "type": ["string", "null"] },
+            "evaluation": { "type": ["object", "null"] },
+            "artifacts": { "type": "array", "items": { "type": "object" } },
+            "started_at": { "type": ["string", "null"], "format": "date-time" },
+            "completed_at": { "type": ["string", "null"], "format": "date-time" },
+            "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" }
+          }
+        }
+      ]
+    },
+    "PlanNodeAdd": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/TaskWriteScope" },
+        {
+          "type": "object",
+          "required": ["command", "node_id", "title", "goal"],
+          "properties": {
+            "command": { "const": "plan_node_add" },
+            "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "title": { "type": "string", "minLength": 1 },
+            "goal": { "type": "string" },
+            "scope": { "type": "array", "items": { "type": "string" } },
+            "dependencies": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "common.schema.json#/$defs/StableId" }
+            }
+          }
+        }
+      ]
+    },
+    "PlanDependenciesSet": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/TaskWriteScope" },
+        {
+          "type": "object",
+          "required": ["command", "node_id", "dependencies"],
+          "properties": {
+            "command": { "const": "plan_dependencies_set" },
+            "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "dependencies": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "common.schema.json#/$defs/StableId" }
+            }
+          }
+        }
+      ]
+    },
+    "PlanNodeStateSet": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/TaskWriteScope" },
+        {
+          "type": "object",
+          "required": ["command", "node_id", "state"],
+          "properties": {
+            "command": { "const": "plan_node_state_set" },
+            "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "state": { "enum": ["planned", "ready", "active", "blocked", "completed", "failed", "cancelled"] }
+          }
+        }
+      ]
+    },
+    "WorktreeCommand": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/TaskWriteScope" },
+        {
+          "type": "object",
+          "required": ["command", "event_type", "node_id", "worktree_id", "eligibility_digest"],
+          "properties": {
+            "command": { "const": "worktree_event" },
+            "event_type": {
+              "enum": [
+                "worktree.planned", "worktree.create_prepared", "worktree.ready", "worktree.activated",
+                "worktree.dirty", "worktree.submitted", "worktree.integration_prepared", "worktree.integrated",
+                "worktree.conflicted", "worktree.repairing", "worktree.abandoned", "worktree.cleaned",
+                "lease.acquired", "lease.heartbeat", "lease.released", "lease.reclaimed"
+              ]
+            },
+            "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "worktree_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "lease_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "operation_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "eligibility_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "lease_generation": { "type": "integer", "minimum": 1 },
+            "evidence_grade": { "$ref": "common.schema.json#/$defs/EvidenceGrade" },
+            "payload": true
+          }
+        }
+      ]
+    },
+    "Rebuild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "project_id"],
+      "properties": {
+        "command": { "const": "rebuild" },
+        "project_id": { "$ref": "common.schema.json#/$defs/StableId" }
+      }
+    }
+  }
+}

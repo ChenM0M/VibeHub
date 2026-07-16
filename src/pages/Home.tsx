@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { LaunchDialog } from '@/components/LaunchDialog';
 import { Project } from '@/types';
@@ -27,18 +27,49 @@ import {
     rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableProjectCard } from '@/components/SortableProjectCard';
+import { V3Cockpit } from '@/v3/app/V3Cockpit';
+import { isV3PlaygroundRequested, V3_DEBUG_ENABLED } from '@/v3/debug';
+import { loadV3ProductionViews } from '@/services/v3ProductionViews';
+import { loadLegacyV2Archive } from '@/services/legacyV2';
+import { useV3Store } from '@/v3/stores/v3Store';
+import { tauriApi } from '@/services/tauri';
+import type { V3LifecycleApi, V3ProjectSettingsApi } from '@/v3/stores/v3Store';
+
+const productionProjectSettingsApi: V3ProjectSettingsApi = {
+    get: tauriApi.v3GetProjectSettings,
+    update: tauriApi.v3UpdateProjectSettings,
+    inspectSpecs: tauriApi.v3AgentSpecsStatus,
+    syncSpecs: (projectPath, forceManagedRegion) => tauriApi.v3AgentSpecsSync(projectPath, { force_managed_region: forceManagedRegion }),
+};
+
+const productionLifecycleApi: V3LifecycleApi = {
+    inspect: tauriApi.v3InspectProjectLayout,
+    initialize: tauriApi.v3InitializeProject,
+    migrate: tauriApi.v3MigrateProject,
+    recover: tauriApi.v3RecoverProjectMigration,
+    inspectRepairCandidates: tauriApi.v3InspectProjectRepairCandidates,
+    repair: tauriApi.v3RepairProject,
+};
 
 interface HomeProps {
     searchQuery: string;
+    resetKey: number;
 }
 
-export function Home({ searchQuery }: HomeProps) {
+export function Home({ searchQuery, resetKey }: HomeProps) {
     const { t } = useTranslation();
     const { config, reorderProjects, refreshAllWorkspaces, selectedWorkspaceId } = useAppStore();
     const [launchProject, setLaunchProject] = useState<Project | null>(null);
     const [isCustomLaunchMode, setIsCustomLaunchMode] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
+    const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+    const showV3Playground = isV3PlaygroundRequested();
+    const leaveV3Project = useV3Store((state) => state.leaveProject);
 
+    useEffect(() => {
+        leaveV3Project();
+        setSelectedProjectId(null);
+    }, [resetKey, selectedWorkspaceId, leaveV3Project]);
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -87,6 +118,20 @@ export function Home({ searchQuery }: HomeProps) {
         // Drag and drop file logic can be added here
     };
 
+    if (showV3Playground) {
+        return (
+            <V3Cockpit
+                initialSourceMode="fixture"
+                debugMode
+                onBack={() => {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('v3-playground');
+                    window.location.assign(url.toString());
+                }}
+            />
+        );
+    }
+
     if (!config) return null;
 
     const selectedWorkspace = config.workspaces.find(w => w.id === selectedWorkspaceId);
@@ -119,6 +164,9 @@ export function Home({ searchQuery }: HomeProps) {
 
     const starredProjects = filteredProjects.filter(p => p.starred);
     const otherProjects = filteredProjects.filter(p => !p.starred);
+    const selectedProject = selectedProjectId
+        ? config.projects.find((project) => project.id === selectedProjectId) || null
+        : null;
 
     // Helper to get display path
     const getDisplayPath = (projectPath: string) => {
@@ -135,6 +183,34 @@ export function Home({ searchQuery }: HomeProps) {
         }
         return projectPath;
     };
+
+    if (selectedProject) {
+        return (
+            <V3Cockpit
+                initialSourceMode="production"
+                projectPath={selectedProject.path}
+                productionLoader={loadV3ProductionViews}
+                legacyLoader={loadLegacyV2Archive}
+                usageLoader={tauriApi.vibehubReadLocalAgentUsage}
+                lifecycleApi={productionLifecycleApi}
+                projectSettingsApi={productionProjectSettingsApi}
+                planApi={{
+                    addNode: tauriApi.v3PlanAddNode,
+                    setDependencies: tauriApi.v3PlanSetDependencies,
+                    setState: tauriApi.v3PlanSetState,
+                }}
+                openLegacyFile={tauriApi.vibehubOpenVibehubFile}
+                revealProjectFile={tauriApi.vibehubRevealProjectFile}
+                openProjectFile={tauriApi.vibehubOpenProjectFile}
+                createTask={tauriApi.v3CreateTask}
+                debugMode={V3_DEBUG_ENABLED}
+                onBack={() => {
+                    leaveV3Project();
+                    setSelectedProjectId(null);
+                }}
+            />
+        );
+    }
 
     return (
         <ContextMenu>
@@ -196,6 +272,7 @@ export function Home({ searchQuery }: HomeProps) {
                                                     setIsCustomLaunchMode(true);
                                                     setLaunchProject(project);
                                                 }}
+                                                onSelect={() => setSelectedProjectId(project.id)}
                                             />
                                         ))}
                                     </div>
@@ -227,6 +304,7 @@ export function Home({ searchQuery }: HomeProps) {
                                                     setIsCustomLaunchMode(true);
                                                     setLaunchProject(project);
                                                 }}
+                                                onSelect={() => setSelectedProjectId(project.id)}
                                             />
                                         ))}
                                     </div>

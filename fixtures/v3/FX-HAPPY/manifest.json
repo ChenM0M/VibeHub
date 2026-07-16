@@ -1,0 +1,62 @@
+{
+  "scenario_id": "FX-HAPPY",
+  "seed": 20260711,
+  "platforms": [
+    "neutral"
+  ],
+  "criteria": [
+    "M0-C01",
+    "M0-C02",
+    "M0-C07",
+    "M0-C11"
+  ],
+  "expected_states": [
+    "fresh/complete"
+  ],
+  "expected_warnings": [],
+  "expected_errors": [],
+  "contracts": [
+    {
+      "contract": "project_overview",
+      "schema": "project-overview-view.schema.json",
+      "file": "project-overview.json",
+      "sha256": "d49678870aa50fccc082e63d03ae4a48cf96b3e8215ed06a626e37eb44957e81"
+    },
+    {
+      "contract": "project_structure",
+      "schema": "project-structure-view.schema.json",
+      "file": "project-structure.json",
+      "sha256": "7791a3ecf8710f6bc258772ce53f55ee7666773915d241cc7ac7716f2a135de5"
+    },
+    {
+      "contract": "agent_results",
+      "schema": "agent-results-view.schema.json",
+      "file": "agent-results.json",
+      "sha256": "24e36a5b4709524eae5270c8aa7b62d18b260c2bc75c22fd601db3b1111a0d87"
+    },
+    {
+      "contract": "task_timeline",
+      "schema": "task-timeline-view.schema.json",
+      "file": "task-timeline.json",
+      "sha256": "71781dcb6aae55721000b2769738ebc9b967962bef77d46e13d40dbf97819202"
+    },
+    {
+      "contract": "plan_graph",
+      "schema": "plan-graph-view.schema.json",
+      "file": "plan-graph.json",
+      "sha256": "87212cf24c58121e85d8ef6f19a3023937e17865274ee628156a29bfa49c9523"
+    },
+    {
+      "contract": "node_brief",
+      "schema": "node-brief.schema.json",
+      "file": "node-brief.json",
+      "sha256": "719de8ff2d72122d74688ae77fa6d9f15bbe11bf2a368bedb3ae0c367faf5696"
+    },
+    {
+      "contract": "worktree_orchestration",
+      "schema": "worktree-orchestration-view.schema.json",
+      "file": "worktree-orchestration.json",
+      "sha256": "69ee81bbdcceb82704a4847444d7b8d5c19477726d1d6c3a96da51f3c6af06af"
+    }
+  ]
+}

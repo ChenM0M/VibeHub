@@ -4,6 +4,14 @@
 
 html {
   font-size: 16px;
+  height: 100%;
+  @apply overscroll-none;
+}
+
+body,
+#root {
+  min-height: 100%;
+  @apply overscroll-none;
 }
 
 @media (min-width: 1920px) {
@@ -79,7 +87,7 @@ html {
   }
 
   body {
-    @apply bg-gradient-to-br from-background via-background to-secondary/20 text-foreground;
+    @apply bg-gradient-to-br from-background via-background to-secondary/20 text-foreground overscroll-none;
     font-feature-settings: "rlig" 1, "calt" 1;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
   }
@@ -89,12 +97,10 @@ html {
 .glass {
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .dark .glass {
   background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Enhanced card styles */
@@ -138,11 +144,11 @@ html {
   background: linear-gradient(135deg, hsl(var(--notion-orange)) 0%, hsl(var(--notion-red)) 100%);
 }
 
-/* Smooth animations */
+/* Smooth, crisp animations */
 @keyframes slideInFromBottom {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(12px);
   }
 
   to {
@@ -152,7 +158,7 @@ html {
 }
 
 .animate-slide-in {
-  animation: slideInFromBottom 0.4s ease-out;
+  animation: slideInFromBottom 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Custom Scrollbar */

@@ -10,9 +10,10 @@ interface HeaderProps {
 }
 
 export function Header({ onSearch }: HeaderProps) {
-    const { config, setTheme } = useAppStore();
-    const isDark = config?.theme === 'dark';
+    const { effectiveTheme, setTheme } = useAppStore();
+    const isDark = effectiveTheme === 'dark';
     const [searchValue, setSearchValue] = useState('');
+    const [isMac] = useState(() => /\bMacintosh\b|\bMac OS X\b/.test(navigator.userAgent));
     const inputRef = useRef<HTMLInputElement>(null);
     const lastMouseTargetRef = useRef<EventTarget | null>(null);
 
@@ -58,23 +59,11 @@ export function Header({ onSearch }: HeaderProps) {
         }
     };
 
-    const handleDragStart = async (e: React.MouseEvent) => {
-        // Only start drag on left mouse button and not on interactive elements
-        if (e.button !== 0) return;
-        const target = e.target as HTMLElement;
-        if (target.closest('button, input, a')) return;
-
-        try {
-            await getCurrentWindow().startDragging();
-        } catch (err) {
-            console.error('Drag failed:', err);
-        }
-    };
-
     return (
         <header
-            className="h-12 border-b border-border/50 flex items-center glass sticky top-0 z-10 select-none"
-            onMouseDown={handleDragStart}
+            className="h-12 border-b border-border/30 flex items-center glass sticky top-0 z-10 select-none"
+            data-tauri-drag-region="deep"
+            data-platform={isMac ? 'macos' : 'default'}
         >
             <div className="flex-1 max-w-xl relative ml-4">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -124,36 +113,37 @@ export function Header({ onSearch }: HeaderProps) {
                     <Bell className="h-4 w-4" />
                 </Button>
 
-                {/* Window controls */}
-                <div className="flex items-center ml-2 border-l border-border/50 pl-2">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleMinimize}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="h-8 w-8 rounded-md hover:bg-muted transition-colors"
-                    >
-                        <Minus className="h-4 w-4" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleMaximize}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="h-8 w-8 rounded-md hover:bg-muted transition-colors"
-                    >
-                        <Square className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleClose}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="h-8 w-8 rounded-md hover:bg-destructive hover:text-destructive-foreground transition-colors"
-                    >
-                        <X className="h-4 w-4" />
-                    </Button>
-                </div>
+                {!isMac && (
+                    <div className="flex items-center ml-2 border-l border-border/50 pl-2">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={handleMinimize}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="h-8 w-8 rounded-md hover:bg-muted transition-colors"
+                        >
+                            <Minus className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={handleMaximize}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="h-8 w-8 rounded-md hover:bg-muted transition-colors"
+                        >
+                            <Square className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={handleClose}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="h-8 w-8 rounded-md hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                        >
+                            <X className="h-4 w-4" />
+                        </Button>
+                    </div>
+                )}
             </div>
         </header>
     );
