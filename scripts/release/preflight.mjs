@@ -7,6 +7,7 @@ const readJson = async (path) => JSON.parse(await readText(path));
 const packageJson = await readJson("package.json");
 const packageLock = await readJson("package-lock.json");
 const tauriConfig = await readJson("src-tauri/tauri.conf.json");
+const tauriWindowsConfig = await readJson("src-tauri/tauri.windows.conf.json");
 const coreCargo = await readText("crates/vibehub-core/Cargo.toml");
 const cliCargo = await readText("crates/vibehub-cli/Cargo.toml");
 const tauriCargo = await readText("src-tauri/Cargo.toml");
@@ -31,6 +32,32 @@ const versions = new Map([
 for (const [label, version] of versions) {
   if (version !== expected) {
     throw new Error(`version mismatch: ${label}=${version ?? "<missing>"}, expected ${expected}`);
+  }
+}
+
+const baseWindow = tauriConfig.app?.windows?.[0];
+const windowsWindow = tauriWindowsConfig.app?.windows?.[0];
+if (baseWindow?.decorations !== true) {
+  throw new Error("base Tauri window must retain native decorations for non-Windows platforms");
+}
+if (windowsWindow?.decorations !== false) {
+  throw new Error("Windows Tauri window must disable native decorations for the custom title bar");
+}
+
+const sharedWindowFields = [
+  "title",
+  "width",
+  "height",
+  "minWidth",
+  "minHeight",
+  "resizable",
+  "fullscreen",
+  "transparent",
+  "center",
+];
+for (const field of sharedWindowFields) {
+  if (windowsWindow[field] !== baseWindow[field]) {
+    throw new Error(`Windows Tauri window ${field} must match the base window configuration`);
   }
 }
 
