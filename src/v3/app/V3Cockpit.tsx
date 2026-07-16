@@ -145,6 +145,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
     lifecycleAction,
     lifecycleResult,
     lifecycleError,
+    repairCandidates,
     inspectProjectLayout,
     runLifecycleAction,
     projectSettings,
@@ -305,8 +306,9 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
           action={lifecycleAction}
           actionError={lifecycleError}
           result={lifecycleResult}
+          repairCandidates={repairCandidates}
           onInspect={() => void inspectProjectLayout()}
-          onRunAction={(action) => void runLifecycleAction(action)}
+          onRunAction={(action, taskId) => void runLifecycleAction(action, taskId)}
           onBack={onBack}
         />
       </div>

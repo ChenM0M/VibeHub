@@ -30,8 +30,8 @@ use vibehub_core::{
         self, AgentSpecInspection, AgentSpecSyncRequest, AgentSpecSyncResult, AppendResult,
         PlanAddNodeCommand, PlanSetDependenciesCommand, PlanSetStateCommand, ProjectLayoutStatus,
         V3ApplicationService, V3BootstrapResult, V3ProjectSettingsInspection,
-        V3ProjectSettingsUpdateRequest, V3TaskCreateRequest, V3TaskCreateResult, V3ViewBundle,
-        V3ViewRepository,
+        V3ProjectSettingsUpdateRequest, V3RepairCandidate, V3RepairResult, V3TaskCreateRequest,
+        V3TaskCreateResult, V3ViewBundle, V3ViewRepository,
     },
 };
 
@@ -86,6 +86,29 @@ pub async fn v3_recover_project_migration(
     })
     .await
     .map_err(|error| format!("V3_MIGRATION_RECOVERY_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_inspect_project_repair_candidates(
+    project_path: String,
+) -> Result<Vec<V3RepairCandidate>, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::inspect_v3_repair_candidates(project_path).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_REPAIR_INSPECTION_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_repair_project(
+    project_path: String,
+    task_id: String,
+) -> Result<V3RepairResult, String> {
+    tokio::task::spawn_blocking(move || {
+        v3::repair_v3_layout(project_path, &task_id).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_REPAIR_TASK_FAILED: {error}"))?
 }
 
 #[tauri::command]

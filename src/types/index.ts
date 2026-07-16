@@ -13,6 +13,18 @@ export interface V3BootstrapResult {
     created_paths: string[];
 }
 
+export interface V3RepairCandidate {
+    task_id: string;
+    title: string;
+    state: string;
+}
+
+export interface V3RepairResult {
+    status: string;
+    task_id: string;
+    created_paths: string[];
+}
+
 export type {
     V3AgentSpecArtifactInspection,
     V3AgentSpecArtifactStatus,

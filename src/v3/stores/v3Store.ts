@@ -16,16 +16,20 @@ import type {
   LocalAgentUsageOverview,
   V3BootstrapResult,
   V3ProjectLayoutStatus,
+  V3RepairCandidate,
+  V3RepairResult,
 } from "@/types";
 import type { LegacyV2Loader } from "@/services/legacyV2";
 
-export type V3LifecycleAction = "initialize" | "migrate" | "recover";
+export type V3LifecycleAction = "initialize" | "migrate" | "recover" | "repair";
 
 export interface V3LifecycleApi {
   inspect: (projectPath: string) => Promise<V3ProjectLayoutStatus>;
   initialize: (projectPath: string) => Promise<V3BootstrapResult>;
   migrate: (projectPath: string) => Promise<V3BootstrapResult>;
   recover: (projectPath: string) => Promise<V3BootstrapResult>;
+  inspectRepairCandidates: (projectPath: string) => Promise<V3RepairCandidate[]>;
+  repair: (projectPath: string, taskId: string) => Promise<V3RepairResult>;
 }
 
 export interface V3ProjectSettingsApi {
@@ -107,8 +111,9 @@ interface V3State {
   layoutLoading: boolean;
   layoutError: string | null;
   lifecycleAction: V3LifecycleAction | null;
-  lifecycleResult: V3BootstrapResult | null;
+  lifecycleResult: V3BootstrapResult | V3RepairResult | null;
   lifecycleError: string | null;
+  repairCandidates: V3RepairCandidate[];
   projectSettings: V3ProjectSettingsInspection | null;
   settingsLoading: boolean;
   settingsError: string | null;
@@ -120,7 +125,7 @@ interface V3State {
   selectProject: (projectPath: string, loader: V3ProductionLoader, archiveLoader: LegacyV2Loader | undefined, localUsageLoader: V3UsageLoader | undefined, projectLifecycleApi: V3LifecycleApi, settingsApi?: V3ProjectSettingsApi) => void;
   leaveProject: () => void;
   inspectProjectLayout: () => Promise<V3ProjectLayoutStatus | null>;
-  runLifecycleAction: (action: V3LifecycleAction) => Promise<void>;
+  runLifecycleAction: (action: V3LifecycleAction, taskId?: string) => Promise<void>;
   loadCurrentBundle: () => Promise<void>;
   loadLegacyArchive: () => Promise<void>;
   loadUsage: () => Promise<void>;
@@ -161,6 +166,7 @@ export const useV3Store = create<V3State>((set, get) => ({
   lifecycleAction: null,
   lifecycleResult: null,
   lifecycleError: null,
+  repairCandidates: [],
   projectSettings: null,
   settingsLoading: false,
   settingsError: null,
@@ -195,7 +201,7 @@ export const useV3Store = create<V3State>((set, get) => ({
       usage: null, usageLoading: false, usageError: null,
       taskUsage: null, taskUsageLoading: false, taskUsageError: null,
       layoutStatus: null, layoutLoading: false, layoutError: null,
-      lifecycleAction: null, lifecycleResult: null, lifecycleError: null,
+      lifecycleAction: null, lifecycleResult: null, lifecycleError: null, repairCandidates: [],
       projectSettings: null,
       settingsLoading: false, settingsError: null,
       agentSpecs: null,
@@ -230,7 +236,7 @@ export const useV3Store = create<V3State>((set, get) => ({
       usage: null, usageLoading: false, usageError: null,
       taskUsage: null, taskUsageLoading: false, taskUsageError: null,
       layoutStatus: null, layoutLoading: false, layoutError: null,
-      lifecycleAction: null, lifecycleResult: null, lifecycleError: null,
+      lifecycleAction: null, lifecycleResult: null, lifecycleError: null, repairCandidates: [],
       projectSettings: null, settingsLoading: false, settingsError: null,
       agentSpecs: null, specsLoading: false, specsError: null,
       currentView: "project-overview",
@@ -273,6 +279,7 @@ export const useV3Store = create<V3State>((set, get) => ({
       lifecycleAction: null,
       lifecycleResult: null,
       lifecycleError: null,
+      repairCandidates: [],
       projectSettings: null,
       settingsLoading: false,
       settingsError: null,
@@ -293,7 +300,11 @@ export const useV3Store = create<V3State>((set, get) => ({
     try {
       const status = await api.inspect(projectPath);
       if (requestId !== layoutRequestId || get().projectPath !== projectPath || get().currentScenario) return null;
-      set({ layoutStatus: status, layoutLoading: false });
+      const repairCandidates = status.state === "conflict"
+        ? await api.inspectRepairCandidates(projectPath)
+        : [];
+      if (requestId !== layoutRequestId || get().projectPath !== projectPath || get().currentScenario) return null;
+      set({ layoutStatus: status, layoutLoading: false, repairCandidates });
       if (status.state === "v3") {
         void get().loadCurrentBundle();
         if (legacyLoader) void get().loadLegacyArchive();
@@ -308,23 +319,30 @@ export const useV3Store = create<V3State>((set, get) => ({
     }
   },
 
-  runLifecycleAction: async (action) => {
-    const { projectPath, currentScenario, layoutStatus, lifecycleAction } = get();
+  runLifecycleAction: async (action, taskId) => {
+    const { projectPath, currentScenario, layoutStatus, lifecycleAction, repairCandidates } = get();
     const api = lifecycleApi;
     if (!projectPath || currentScenario || !api || lifecycleAction) return;
     const expectedAction: Partial<Record<V3ProjectLayoutStatus["state"], V3LifecycleAction>> = {
       absent: "initialize",
       v2: "migrate",
       migration_interrupted: "recover",
+      conflict: repairCandidates.length > 0 ? "repair" : undefined,
     };
     if (!layoutStatus || expectedAction[layoutStatus.state] !== action) {
       set({ lifecycleError: "V3_LIFECYCLE_STATE_MISMATCH: inspect the project again before continuing" });
       return;
     }
+    if (action === "repair" && (!taskId || !repairCandidates.some((candidate) => candidate.task_id === taskId))) {
+      set({ lifecycleError: "V3_REPAIR_TASK_REQUIRED: select a verified V3 task before repairing" });
+      return;
+    }
     const requestId = ++lifecycleRequestId;
     set({ lifecycleAction: action, lifecycleError: null, lifecycleResult: null });
     try {
-      const result = await api[action](projectPath);
+      const result = action === "repair"
+        ? await api.repair(projectPath, taskId!)
+        : await api[action](projectPath);
       if (requestId !== lifecycleRequestId || get().projectPath !== projectPath || get().currentScenario) return;
       set({ lifecycleAction: null, lifecycleResult: result });
       await get().inspectProjectLayout();
