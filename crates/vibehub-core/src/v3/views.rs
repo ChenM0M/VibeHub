@@ -63,6 +63,12 @@ struct TaskDocument {
     dependencies: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct TaskReadResult {
+    tasks: Vec<TaskDocument>,
+    warnings: Vec<Value>,
+}
+
 impl V3ViewRepository {
     pub fn open(root: impl AsRef<Path>) -> Result<Self, V3Error> {
         let store = V3EventStore::open(&root)?;
@@ -75,7 +81,7 @@ impl V3ViewRepository {
 
     pub fn current_task_id(&self) -> Result<String, V3Error> {
         let pointer_path = self.root.join(".vibehub/tasks/current");
-        if pointer_path.is_dir() {
+        let pointed_task_id = if pointer_path.is_dir() {
             let content = fs::read_to_string(pointer_path.join("task.yaml"))
                 .map_err(internal("V3_CURRENT_TASK_READ_FAILED"))?;
             let task: TaskDocument = serde_yaml::from_str(&content).map_err(|error| {
@@ -86,25 +92,43 @@ impl V3ViewRepository {
                     error.to_string(),
                 )
             })?;
-            return self.effective_current_task_id(task.task_id);
+            Ok(task.task_id)
+        } else {
+            resolve_current_task(&self.root)
+                .map(|pointer| pointer.task_id)
+                .map_err(|error| {
+                    V3Error::new(
+                        "V3_CURRENT_TASK_INVALID",
+                        V3ErrorCategory::CorruptLog,
+                        false,
+                        error.to_string(),
+                    )
+                })
+        };
+        match pointed_task_id.and_then(|task_id| self.effective_current_task_id(task_id)) {
+            Ok(task_id) => Ok(task_id),
+            Err(error) if current_task_fallback_allowed(&error) => {
+                self.fallback_current_task_id().or(Err(error))
+            }
+            Err(error) => Err(error),
         }
-
-        let pointed_task_id = resolve_current_task(&self.root)
-            .map(|pointer| pointer.task_id)
-            .map_err(|error| {
-                V3Error::new(
-                    "V3_CURRENT_TASK_INVALID",
-                    V3ErrorCategory::CorruptLog,
-                    false,
-                    error.to_string(),
-                )
-            })?;
-        self.effective_current_task_id(pointed_task_id)
     }
 
     fn effective_current_task_id(&self, pointed_task_id: String) -> Result<String, V3Error> {
         let events = self.store.load_project(&self.project_id())?;
-        let pointed_task = self.read_task(&pointed_task_id)?;
+        let tasks = self.read_tasks()?.tasks;
+        let Some(pointed_task) = tasks.iter().find(|task| task.task_id == pointed_task_id) else {
+            return self
+                .select_fallback_task_id(&tasks, &events)
+                .ok_or_else(|| {
+                    V3Error::new(
+                        "V3_CURRENT_TASK_INVALID",
+                        V3ErrorCategory::CorruptLog,
+                        false,
+                        "current task is missing or has invalid V3 metadata",
+                    )
+                });
+        };
         let pointed_lifecycle = fold_task(&pointed_task_id, &events);
         let pointed_has_lifecycle = events
             .iter()
@@ -118,21 +142,46 @@ impl V3ViewRepository {
             return Ok(pointed_task_id);
         }
 
-        for task in self.read_tasks()? {
-            let lifecycle = fold_task(&task.task_id, &events);
-            let has_lifecycle = events
-                .iter()
-                .any(|event| event.aggregate_id == task.task_id);
-            let state = if has_lifecycle {
-                projected_task_state(&lifecycle)
-            } else {
-                task_state(&task)
-            };
-            if !is_terminal_task_state(state) {
-                return Ok(task.task_id);
-            }
-        }
-        Ok(pointed_task_id)
+        Ok(self
+            .select_fallback_task_id(&tasks, &events)
+            .unwrap_or(pointed_task_id))
+    }
+
+    fn fallback_current_task_id(&self) -> Result<String, V3Error> {
+        let events = self.store.load_project(&self.project_id())?;
+        let tasks = self.read_tasks()?.tasks;
+        self.select_fallback_task_id(&tasks, &events)
+            .ok_or_else(|| {
+                V3Error::new(
+                    "V3_CURRENT_TASK_INVALID",
+                    V3ErrorCategory::CorruptLog,
+                    false,
+                    "current task is invalid and no valid V3 task is available",
+                )
+            })
+    }
+
+    fn select_fallback_task_id(
+        &self,
+        tasks: &[TaskDocument],
+        events: &[V3EventEnvelope],
+    ) -> Option<String> {
+        tasks
+            .iter()
+            .find(|task| {
+                let lifecycle = fold_task(&task.task_id, events);
+                let has_lifecycle = events
+                    .iter()
+                    .any(|event| event.aggregate_id == task.task_id);
+                let state = if has_lifecycle {
+                    projected_task_state(&lifecycle)
+                } else {
+                    task_state(task)
+                };
+                !is_terminal_task_state(state)
+            })
+            .or_else(|| tasks.first())
+            .map(|task| task.task_id.clone())
     }
 
     pub fn project_id(&self) -> String {
@@ -173,7 +222,9 @@ impl V3ViewRepository {
         } else {
             task_state(&task)
         };
-        let project_tasks = self.read_tasks()?;
+        let task_read = self.read_tasks()?;
+        let task_metadata_warnings = task_read.warnings;
+        let project_tasks = task_read.tasks;
         let active_tasks: Vec<Value> = project_tasks
             .iter()
             .filter_map(|project_task| {
@@ -283,6 +334,8 @@ impl V3ViewRepository {
             .as_array()
             .cloned()
             .unwrap_or_default();
+        let mut overview_warnings = task_metadata_warnings.clone();
+        overview_warnings.extend(architecture_warnings.clone());
         let index_state = project_structure["index_state"].as_str().unwrap_or("error");
         let model_state = match index_state {
             "ready" => "ready",
@@ -296,6 +349,11 @@ impl V3ViewRepository {
         let structure_completeness = project_structure["completeness"]
             .as_str()
             .unwrap_or("unknown");
+        let overview_completeness = if task_metadata_warnings.is_empty() {
+            structure_completeness
+        } else {
+            "partial"
+        };
         let structure_model_version = project_structure["model_version"]
             .as_str()
             .unwrap_or(MODEL_VERSION);
@@ -303,7 +361,7 @@ impl V3ViewRepository {
         let project_overview = json!({
             "schema_version": "1.0", "project_id": project_id, "name": self.root.file_name().and_then(|v| v.to_str()).unwrap_or("Project"),
             "root": native_root, "generated_at": generated_at, "model_version": MODEL_VERSION,
-            "freshness": structure_freshness, "completeness": structure_completeness,
+            "freshness": structure_freshness, "completeness": overview_completeness,
             "repository": {"state": if self.root.join(".git").exists() {"available"} else {"not_repository"}, "branch": Value::Null, "head": Value::Null, "dirty": Value::Null, "worktree_count": 1},
             "model": {"state": model_state, "last_evidence_at": generated_at, "generator_version": structure_model_version, "indexed_files": indexed_files},
             "architecture": {"declared_docs": declared_docs, "modules": architecture_modules, "relationships": architecture_edges.len(), "confidence": architecture_confidence, "evidence_refs": architecture_evidence_refs},
@@ -311,7 +369,7 @@ impl V3ViewRepository {
             "active_tasks": active_tasks,
             "archived_tasks": archived_tasks,
             "protocol_coverage": {"state": protocol_coverage(opened_sessions, closed_sessions, explicit_session_gaps), "opened_sessions": opened_sessions, "closed_sessions": closed_sessions, "gaps": explicit_session_gaps},
-            "evidence_refs": evidence_refs, "warnings": architecture_warnings, "errors": architecture_errors
+            "evidence_refs": evidence_refs, "warnings": overview_warnings, "errors": architecture_errors
         });
         let agent_results =
             agent_results_view(&project_id, task_id, &generated_at, &events, &evidence_refs);
@@ -338,7 +396,7 @@ impl V3ViewRepository {
             "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "title": task.title, "state": current_task_state,
             "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": "fresh", "completeness": "complete",
             "criteria": current_criteria, "blocker_details": current_blocker_details.clone(), "completion": completion_view(&lifecycle), "lanes": lanes, "events": timeline_events, "window": page(events.len()),
-            "evidence_refs": evidence_refs, "warnings": [], "errors": []
+            "evidence_refs": evidence_refs, "warnings": task_metadata_warnings.clone(), "errors": []
         });
 
         let graph_nodes: Vec<Value> = lifecycle.nodes.values().map(|node| {
@@ -373,17 +431,16 @@ impl V3ViewRepository {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_owned();
-        let plan_warnings = if lifecycle.nodes.is_empty() {
-            vec![json!({
+        let mut plan_warnings = task_metadata_warnings.clone();
+        if lifecycle.nodes.is_empty() {
+            plan_warnings.push(json!({
                 "code": "V3_PLAN_NOT_RECORDED",
                 "severity": "warning",
                 "message_key": "v3.warning.plan_not_recorded",
                 "details": {},
                 "evidence_refs": evidence_refs
-            })]
-        } else {
-            Vec::new()
-        };
+            }));
+        }
         let planned_worktrees = orchestration.worktrees.len();
         let observed_worktrees = orchestration
             .worktrees
@@ -399,6 +456,8 @@ impl V3ViewRepository {
             "evidence_refs": evidence_refs, "warnings": plan_warnings, "errors": []
         });
 
+        let mut node_warnings = task_metadata_warnings;
+        node_warnings.extend(architecture_warnings.clone());
         let node_brief = json!({
             "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "node_id": node_id,
             "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": structure_freshness, "completeness": structure_completeness,
@@ -411,7 +470,7 @@ impl V3ViewRepository {
             "blocker_details": current_blocker_details,
             "budget": {"max_tokens": 8000, "estimated_tokens": 1000, "truncated_sections": []},
             "source_versions": {"view_model": MODEL_VERSION, "project_model": structure_model_version}, "protocol_coverage": protocol_coverage(opened_sessions, closed_sessions, explicit_session_gaps),
-            "evidence_refs": evidence_refs, "warnings": architecture_warnings, "errors": architecture_errors
+            "evidence_refs": evidence_refs, "warnings": node_warnings, "errors": architecture_errors
         });
 
         Ok(V3ViewBundle {
@@ -524,18 +583,20 @@ impl V3ViewRepository {
             .join(".vibehub/tasks")
             .join(task_id)
             .join("task.yaml");
-        let content = fs::read_to_string(path).map_err(internal("V3_TASK_NOT_FOUND"))?;
-        serde_yaml::from_str(&content).map_err(|error| {
+        let content = fs::read_to_string(&path).map_err(internal("V3_TASK_NOT_FOUND"))?;
+        let task = serde_yaml::from_str(&content).map_err(|error| {
             V3Error::new(
                 "V3_TASK_INVALID",
                 V3ErrorCategory::CorruptLog,
                 false,
-                error.to_string(),
+                format!("{}: {error}", path.display()),
             )
-        })
+        })?;
+        validate_task_identity(&task, task_id, &path)?;
+        Ok(task)
     }
 
-    fn read_tasks(&self) -> Result<Vec<TaskDocument>, V3Error> {
+    fn read_tasks(&self) -> Result<TaskReadResult, V3Error> {
         let tasks_root = self.root.join(".vibehub/tasks");
         let mut task_paths = fs::read_dir(&tasks_root)
             .map_err(internal("V3_TASKS_READ_FAILED"))?
@@ -550,20 +611,111 @@ impl V3ViewRepository {
             })
             .collect::<Vec<_>>();
         task_paths.sort();
-        task_paths
-            .into_iter()
-            .map(|path| {
-                let content = fs::read_to_string(&path).map_err(internal("V3_TASK_READ_FAILED"))?;
-                serde_yaml::from_str(&content).map_err(|error| {
-                    V3Error::new(
-                        "V3_TASK_INVALID",
-                        V3ErrorCategory::CorruptLog,
-                        false,
-                        format!("{}: {error}", path.display()),
-                    )
-                })
-            })
-            .collect()
+        let mut tasks = Vec::new();
+        let mut warnings = Vec::new();
+        for path in task_paths {
+            let expected_task_id = path
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            match self.read_task_document(&path, expected_task_id) {
+                Ok(task) => tasks.push(task),
+                Err(error) => warnings.push(task_metadata_warning(&self.root, &path, &error)),
+            }
+        }
+        Ok(TaskReadResult { tasks, warnings })
+    }
+
+    fn read_task_document(
+        &self,
+        path: &Path,
+        expected_task_id: &str,
+    ) -> Result<TaskDocument, V3Error> {
+        let content = fs::read_to_string(path).map_err(internal("V3_TASK_READ_FAILED"))?;
+        let task = serde_yaml::from_str(&content).map_err(|error| {
+            V3Error::new(
+                "V3_TASK_INVALID",
+                V3ErrorCategory::CorruptLog,
+                false,
+                format!("{}: {error}", path.display()),
+            )
+        })?;
+        validate_task_identity(&task, expected_task_id, path)?;
+        Ok(task)
+    }
+}
+
+fn current_task_fallback_allowed(error: &V3Error) -> bool {
+    matches!(
+        error.code.as_str(),
+        "V3_CURRENT_TASK_INVALID"
+            | "V3_CURRENT_TASK_READ_FAILED"
+            | "V3_TASK_INVALID"
+            | "V3_TASK_NOT_FOUND"
+            | "V3_TASK_READ_FAILED"
+    )
+}
+
+fn validate_task_identity(
+    task: &TaskDocument,
+    expected_task_id: &str,
+    path: &Path,
+) -> Result<(), V3Error> {
+    if task.task_id != expected_task_id {
+        return Err(V3Error::new(
+            "V3_TASK_INVALID",
+            V3ErrorCategory::CorruptLog,
+            false,
+            format!(
+                "{}: task_id '{}' does not match task directory '{}'",
+                path.display(),
+                task.task_id,
+                expected_task_id
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn task_metadata_warning(root: &Path, path: &Path, error: &V3Error) -> Value {
+    let task_id = path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .unwrap_or("unknown-task");
+    let task_path = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    json!({
+        "code": "V3_TASK_METADATA_INVALID",
+        "severity": "warning",
+        "message_key": "v3.warning.task_metadata_invalid",
+        "details": {
+            "task_id": task_id,
+            "task_path": task_path,
+            "reason_code": error.code,
+            "reason": limited_metadata_error(&error.message),
+            "recommended_action": "Review and preserve the task, then run `vibehub v3 <project> quarantine-task <task_id>`."
+        },
+        "evidence_refs": [{
+            "evidence_id": format!("task-metadata:{task_id}"),
+            "kind": "file",
+            "grade": "hard_observed",
+            "label_key": "v3.evidence.task_metadata",
+            "locator": format!("file:{task_path}")
+        }]
+    })
+}
+
+fn limited_metadata_error(message: &str) -> String {
+    const MAX_CHARS: usize = 512;
+    if message.chars().count() <= MAX_CHARS {
+        message.to_owned()
+    } else {
+        format!("{}…", message.chars().take(MAX_CHARS).collect::<String>())
     }
 }
 
@@ -2699,6 +2851,70 @@ mod tests {
         assert_eq!(bundle.task_timeline["events"].as_array().unwrap().len(), 1);
         assert_eq!(bundle.task_timeline["completion"]["valid"], false);
         assert_eq!(bundle.task_timeline["completion"]["confirmed"], false);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn malformed_task_metadata_does_not_block_valid_v3_task_views() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-v3-malformed-task-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        super::super::initialize_v3(&root).unwrap();
+        let valid = create_v3_task(
+            &root,
+            V3TaskCreateRequest {
+                title: "Valid task".to_owned(),
+                intent: "Keep valid V3 tasks visible".to_owned(),
+                acceptance_criteria: vec!["View bundle remains available".to_owned()],
+            },
+        )
+        .unwrap();
+        let legacy_task_id = "T-20260718191720-ffb8c89a";
+        let legacy_dir = root.join(".vibehub/tasks").join(legacy_task_id);
+        fs::create_dir(&legacy_dir).unwrap();
+        fs::write(
+            legacy_dir.join("task.yaml"),
+            format!(
+                "schema_version: 1\\nkind: vibehub_task\\ntask_id: {legacy_task_id}\\ntitle: Legacy task\\nmode: evidence_drive\\nphase: align\\nphase_status: active\\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            root.join(".vibehub/tasks/current"),
+            format!(
+                "schema_version: 1\\nkind: current_task_pointer\\ntask_id: {legacy_task_id}\\npath: .vibehub/tasks/{legacy_task_id}\\nupdated_at: 2026-07-18T00:00:00Z\\nupdated_by: vibehub\\n"
+            ),
+        )
+        .unwrap();
+
+        let repository = V3ViewRepository::open(&root).unwrap();
+        let bundle = repository.load_bundle(&valid.task_id).unwrap();
+
+        assert_eq!(repository.current_task_id().unwrap(), valid.task_id);
+        assert_eq!(
+            bundle.project_overview["active_tasks"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let warning = bundle.project_overview["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|warning| warning["code"] == "V3_TASK_METADATA_INVALID")
+            .expect("invalid legacy task warning");
+        assert_eq!(warning["details"]["task_id"], legacy_task_id);
+        assert!(warning["details"]["recommended_action"]
+            .as_str()
+            .unwrap()
+            .contains("quarantine-task"));
+        assert!(bundle.task_timeline["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["code"] == "V3_TASK_METADATA_INVALID"));
+
         fs::remove_dir_all(root).unwrap();
     }
 

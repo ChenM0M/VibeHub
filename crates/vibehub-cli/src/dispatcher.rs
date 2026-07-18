@@ -120,6 +120,7 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   v3 <project> repair-candidates
   v3 <project> repair <task_id>
   v3 <project> task-create <request_json_path|--stdin|->
+  v3 <project> quarantine-task <task_id>
   v3 <project> agent-specs-status
   v3 <project> agent-specs-sync [--force-managed-region]
   v3 <project> session-open <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> [working_directory] [node_id|-] [worktree_id|-] [provider] [provider_session_id|-]
@@ -493,6 +494,13 @@ fn run_v3_action(project_root: &str, args: &[String]) {
                     std::process::exit(2);
                 });
             print_v3_json(vibehub_core::v3::create_v3_task(project_root, request));
+            return;
+        }
+        "quarantine-task" => {
+            let Some(task_id) = args.get(1) else {
+                v3_usage_error(command, "missing task_id");
+            };
+            print_v3_json(vibehub_core::v3::quarantine_v3_task(project_root, task_id));
             return;
         }
         "agent-specs-status" => {

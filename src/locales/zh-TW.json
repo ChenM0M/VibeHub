@@ -784,6 +784,7 @@
             "messages": {
                 "architectureIndexPending": "架構索引尚未完成，結構資訊可能暫時不完整。",
                 "planNotRecorded": "尚未記錄實作計畫，目前任務的執行路徑可能不完整。",
+                "taskMetadataInvalid": "存在不合法的 V3 任務中繼資料，已將其排除，其他合法任務仍可繼續使用。",
                 "agentResultSessionClosed": "Agent 工作階段已關閉，遺留結果已按待處理狀態顯示。",
                 "agentResultStatusInvalid": "Agent 結果狀態無效，已按失敗狀態顯示。",
                 "agentResultDetailsNormalized": "歷史 Agent 結果不符合目前契約，已安全正規化後顯示。",

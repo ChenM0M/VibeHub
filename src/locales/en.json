@@ -784,6 +784,7 @@
             "messages": {
                 "architectureIndexPending": "The architecture index is still pending; structure information may be incomplete.",
                 "planNotRecorded": "The implementation plan has not been recorded; the execution path may be incomplete.",
+                "taskMetadataInvalid": "A task has invalid V3 metadata and was excluded so valid tasks remain available.",
                 "agentResultSessionClosed": "The Agent session is closed; the leftover result is shown as pending.",
                 "agentResultStatusInvalid": "The Agent result has an invalid status and is shown as failed.",
                 "agentResultDetailsNormalized": "A historical Agent result did not match the current contract and was normalized for safe display.",

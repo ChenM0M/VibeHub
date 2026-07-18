@@ -10,6 +10,7 @@ pub mod project_intelligence;
 pub mod project_settings;
 pub mod projection;
 pub mod task_creation;
+pub mod task_quarantine;
 pub mod views;
 pub mod worktree;
 
@@ -30,5 +31,6 @@ pub use orchestration::{
 pub use project_intelligence::{ProjectIndexService, ProjectModelSnapshot, ProjectPage};
 pub use project_settings::*;
 pub use task_creation::{create_v3_task, V3TaskCreateRequest, V3TaskCreateResult};
+pub use task_quarantine::{quarantine_v3_task, V3TaskQuarantineResult};
 pub use views::{V3ViewBundle, V3ViewRepository};
 pub use worktree::*;

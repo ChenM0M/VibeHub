@@ -5,6 +5,7 @@ export type Diagnostic = Warning | StructuredError;
 const diagnosticTranslationKeys: Record<string, string> = {
   "v3.warning.architecture_index_pending": "v3.diagnostics.messages.architectureIndexPending",
   "v3.warning.plan_not_recorded": "v3.diagnostics.messages.planNotRecorded",
+  "v3.warning.task_metadata_invalid": "v3.diagnostics.messages.taskMetadataInvalid",
   "v3.warning.agent_result_session_closed": "v3.diagnostics.messages.agentResultSessionClosed",
   "v3.warning.agent_result_status_invalid": "v3.diagnostics.messages.agentResultStatusInvalid",
   "v3.warning.agent_result_details_normalized": "v3.diagnostics.messages.agentResultDetailsNormalized",

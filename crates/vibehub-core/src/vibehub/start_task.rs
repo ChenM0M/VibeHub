@@ -121,6 +121,7 @@ pub fn start_task(
     phase: Option<String>,
 ) -> Result<VibehubStartTaskResult> {
     let project_root = canonical_project_root(project_root.as_ref())?;
+    reject_v3_legacy_task_creation(&project_root)?;
     ensure_initialized(&project_root)?;
 
     let _ = research::archive_current_research(&project_root);
@@ -256,6 +257,7 @@ pub fn start_task_intake(
     request: VibehubStartTaskIntakeRequest,
 ) -> Result<VibehubStartTaskIntakeResult> {
     let project_root = canonical_project_root(project_root.as_ref())?;
+    reject_v3_legacy_task_creation(&project_root)?;
     ensure_initialized(&project_root)?;
 
     let mut drafts = normalize_task_drafts(&request)?;
@@ -889,6 +891,17 @@ fn ensure_initialized(project_root: &Path) -> Result<()> {
     Ok(())
 }
 
+fn reject_v3_legacy_task_creation(project_root: &Path) -> Result<()> {
+    let layout = crate::v3::inspect_project_layout(project_root)
+        .map_err(|error| anyhow!("V3_PROJECT_LAYOUT_INSPECTION_FAILED: {error}"))?;
+    if layout.state == crate::v3::ProjectLayoutState::V3 {
+        return Err(anyhow!(
+            "V3_LEGACY_START_UNSUPPORTED: this project uses schema_version: 3; legacy `vibehub start` cannot create V3 task metadata. Use `vibehub v3 <project> task-create <request_json_path|--stdin|->`."
+        ));
+    }
+    Ok(())
+}
+
 pub fn default_phase_for_mode(mode: &str) -> &'static str {
     match mode {
         "yolo_drive" => "align_lite",
@@ -1322,6 +1335,31 @@ mod tests {
         assert_eq!(handoff.task_id, started.task_id);
         assert_eq!(handoff.run_id, started.run_id);
         assert!(handoff.complete);
+
+        fs::remove_dir_all(project).expect("cleanup");
+    }
+
+    #[test]
+    fn v3_projects_reject_legacy_start_before_writing_legacy_task_metadata() {
+        let project = temp_project();
+        crate::v3::initialize_v3(&project).expect("initialize v3");
+
+        let error = start_task(
+            &project,
+            Some("Must not become a legacy task".to_owned()),
+            Some("evidence_drive".to_owned()),
+            None,
+        )
+        .expect_err("legacy start must be rejected in a V3 project");
+
+        assert!(error.to_string().contains("V3_LEGACY_START_UNSUPPORTED"));
+        assert!(error
+            .to_string()
+            .contains("vibehub v3 <project> task-create"));
+        assert!(
+            !project.join(".vibehub/tasks").exists(),
+            "the rejection must happen before any legacy task path is created"
+        );
 
         fs::remove_dir_all(project).expect("cleanup");
     }
