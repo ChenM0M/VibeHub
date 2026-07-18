@@ -27,8 +27,8 @@ layout states and error codes.
 The `3.0.0` GitHub Actions workflow validates version equality and the complete
 test gate, then creates one draft Release containing macOS, Windows, and Linux
 assets plus per-platform SHA-256 manifests. The workflow publishes that draft
-only after every platform job succeeds and all required manifests are present;
-the published event then triggers the Homebrew cask update. Final artifact
+only after every platform job succeeds and all required manifests are present,
+then directly calls the reusable Homebrew cask workflow. Final artifact
 filenames and hashes do not exist until that tagged workflow succeeds; never
 copy historical hashes into a `3.0.0` release record.
 

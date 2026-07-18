@@ -11,6 +11,8 @@ const tauriWindowsConfig = await readJson("src-tauri/tauri.windows.conf.json");
 const coreCargo = await readText("crates/vibehub-core/Cargo.toml");
 const cliCargo = await readText("crates/vibehub-cli/Cargo.toml");
 const tauriCargo = await readText("src-tauri/Cargo.toml");
+const releaseWorkflow = await readText(".github/workflows/release.yml");
+const homebrewWorkflow = await readText(".github/workflows/homebrew.yml");
 
 const cargoVersion = (content, label) => {
   const match = content.match(/^version\s*=\s*"([^"]+)"/m);
@@ -58,6 +60,28 @@ const sharedWindowFields = [
 for (const field of sharedWindowFields) {
   if (windowsWindow[field] !== baseWindow[field]) {
     throw new Error(`Windows Tauri window ${field} must match the base window configuration`);
+  }
+}
+
+const requiredReleaseWorkflowFragments = [
+  "uses: ./.github/workflows/homebrew.yml",
+  "require_tap_update: true",
+  "secrets: inherit",
+];
+for (const fragment of requiredReleaseWorkflowFragments) {
+  if (!releaseWorkflow.includes(fragment)) {
+    throw new Error(`release workflow must retain the Homebrew recovery contract: ${fragment}`);
+  }
+}
+
+const requiredHomebrewWorkflowFragments = [
+  "workflow_call:",
+  "require_tap_update:",
+  "HOMEBREW_TAP_TOKEN is required for the release-triggered cask update.",
+];
+for (const fragment of requiredHomebrewWorkflowFragments) {
+  if (!homebrewWorkflow.includes(fragment)) {
+    throw new Error(`Homebrew workflow must retain the reusable release contract: ${fragment}`);
   }
 }
 

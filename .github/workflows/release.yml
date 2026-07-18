@@ -388,3 +388,11 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --draft=false \
             --latest="${{ !contains(env.RELEASE_TAG, '-') }}"
+
+  update-homebrew-cask:
+    needs: publish-release
+    uses: ./.github/workflows/homebrew.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+      require_tap_update: true
+    secrets: inherit

@@ -8,6 +8,17 @@ on:
       tag:
         description: 'Published release tag to package, for example v2.0.0'
         required: true
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Published release tag to package, for example v2.0.0'
+        required: true
+        type: string
+      require_tap_update:
+        description: 'Fail instead of skipping when the tap write token is unavailable'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -23,6 +34,7 @@ jobs:
       TAP_REPO: ChenM0M/homebrew-vibehub
       CASK_TOKEN: vibehub
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      REQUIRE_TAP_UPDATE: ${{ inputs.require_tap_update || false }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
@@ -32,6 +44,10 @@ jobs:
         run: |
           if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
+            if [ "$REQUIRE_TAP_UPDATE" = "true" ]; then
+              echo "::error::HOMEBREW_TAP_TOKEN is required for the release-triggered cask update."
+              exit 1
+            fi
           else
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi

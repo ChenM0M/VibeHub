@@ -87,8 +87,9 @@ artifact/hash 都不能冒充当前版本证据。
   MCP 和 Tauri 构建门槛。
 - `Release` 先 checkout 精确 tag，运行 preflight，再创建一个 draft Release，
   上传 macOS、Windows、Linux 产物和平台 SHA-256 清单。只有全部 matrix job
-  成功且必需产物校验通过后，最终 job 才能把 draft 发布；发布事件随后触发
-  Homebrew cask 更新。任何平台失败时必须保留 draft，不得发布残缺版本。
+  成功且必需产物校验通过后，最终 job 才能把 draft 发布；随后直接调用可复用的
+  Homebrew cask workflow，避免由 `GITHUB_TOKEN` 发布事件无法触发下游 workflow。
+  任何平台失败时必须保留 draft，不得发布残缺版本。
 - Apple Developer ID/notarization 与 Windows Authenticode 凭据是可选增强；凭据
   完整时流水线启用正式签名，缺少时继续生成经过完整测试和 SHA-256 校验的
   macOS ad-hoc / Windows unsigned 产物。不得把 fallback 产物称为正式签名。
@@ -102,9 +103,10 @@ artifact/hash 都不能冒充当前版本证据。
 - Windows：`WINDOWS_CERTIFICATE`、`WINDOWS_CERTIFICATE_PASSWORD`；
 - 可选 Homebrew：`HOMEBREW_TAP_TOKEN`。
 
-`HOMEBREW_TAP_TOKEN` 缺少时，Homebrew workflow 跳过跨仓库写入；发布 Agent
-必须使用正式 Release 的双架构 DMG 与真实 SHA-256，通过已授权的 SSH 工作流
-更新 `ChenM0M/homebrew-vibehub`。
+独立触发 Homebrew workflow 时，`HOMEBREW_TAP_TOKEN` 缺少会跳过跨仓库写入；
+Release 通过 reusable workflow 调用时则会明确失败，避免 cask 静默滞后。若 token
+不可用，发布 Agent 必须使用正式 Release 的双架构 DMG 与真实 SHA-256，通过已授权
+的 SSH 工作流更新 `ChenM0M/homebrew-vibehub`。
 
 ## 5. Windows 发布后手测交接
 
