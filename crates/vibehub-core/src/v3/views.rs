@@ -2795,9 +2795,11 @@ fn node_state(task: &TaskDocument) -> &'static str {
 
 fn projected_task_state(lifecycle: &TaskLifecycleProjection) -> &str {
     match lifecycle.state.as_str() {
+        // Explicit terminal lifecycle events win over unresolved plan-node state.
         "completion_pending" => "review",
         "completed" => "completed",
         "cancelled" => "cancelled",
+        "closed_with_exceptions" => "closed_with_exceptions",
         "blocked" => "blocked",
         _ if lifecycle.nodes.values().any(|node| node.state == "active") => "active",
         _ if lifecycle
@@ -2816,11 +2818,7 @@ fn projected_task_state(lifecycle: &TaskLifecycleProjection) -> &str {
             "review"
         }
         _ if lifecycle.nodes.values().any(|node| node.state == "ready") => "planned",
-        _ if matches!(
-            lifecycle.state.as_str(),
-            "planned" | "active" | "review" | "closed_with_exceptions"
-        ) =>
-        {
+        _ if matches!(lifecycle.state.as_str(), "planned" | "active" | "review") => {
             lifecycle.state.as_str()
         }
         _ => "active",
@@ -2876,8 +2874,8 @@ mod tests {
     use crate::v3::lifecycle::PlanNodeProjection;
     use crate::v3::{
         create_v3_task, EventDraft, EvidenceGrade, OrchestrationCommand, PlanAddNodeCommand,
-        PlanCommandIdentity, ProjectId, SessionId, TaskId, V3ApplicationService,
-        V3TaskCreateRequest,
+        PlanCommandIdentity, PlanSetStateCommand, ProjectId, SessionId, TaskId,
+        V3ApplicationService, V3TaskCreateRequest,
     };
     use std::collections::BTreeSet;
     use std::fs;
@@ -2928,6 +2926,9 @@ mod tests {
         assert_eq!(projected_task_state(&lifecycle), "review");
         lifecycle.state = "completed".to_owned();
         assert_eq!(projected_task_state(&lifecycle), "completed");
+        lifecycle.nodes.get_mut("node.test").unwrap().state = "blocked".to_owned();
+        lifecycle.state = "closed_with_exceptions".to_owned();
+        assert_eq!(projected_task_state(&lifecycle), "closed_with_exceptions");
     }
 
     #[test]
@@ -3152,20 +3153,57 @@ mod tests {
         fs::write(project.join(".vibehub/tasks/current/task.yaml"), task).unwrap();
         let repository = V3ViewRepository::open(&project).unwrap();
         let project_id = repository.project_id();
-        V3ApplicationService::open(&project)
-            .unwrap()
-            .close_task_with_exceptions(
-                &project_id,
-                "task.test",
-                "desktop-user",
-                "ChenM0M",
-                "desktop_ui",
-                "User chose to archive before review",
-                "closure.force.1",
-            )
-            .unwrap();
+        let app = V3ApplicationService::open(&project).unwrap();
+        app.plan_add_node(PlanAddNodeCommand {
+            identity: PlanCommandIdentity {
+                project_id: project_id.clone(),
+                task_id: "task.test".to_owned(),
+                actor: "codex".to_owned(),
+                expected_version: 0,
+                idempotency_key: "plan.node.blocked".to_owned(),
+            },
+            node_id: "node.blocked".to_owned(),
+            title: "Blocked validation".to_owned(),
+            goal: "Preserve the unresolved node in the archive".to_owned(),
+            scope: Vec::new(),
+            dependencies: Vec::new(),
+        })
+        .unwrap();
+        app.plan_set_state(PlanSetStateCommand {
+            identity: PlanCommandIdentity {
+                project_id: project_id.clone(),
+                task_id: "task.test".to_owned(),
+                actor: "codex".to_owned(),
+                expected_version: 1,
+                idempotency_key: "plan.node.blocked.state".to_owned(),
+            },
+            node_id: "node.blocked".to_owned(),
+            state: "blocked".to_owned(),
+        })
+        .unwrap();
+
+        let before_closure = repository.load_bundle("task.test").unwrap();
+        assert_eq!(
+            before_closure.project_overview["active_tasks"][0]["state"],
+            "blocked"
+        );
+
+        app.close_task_with_exceptions(
+            &project_id,
+            "task.test",
+            "desktop-user",
+            "ChenM0M",
+            "desktop_ui",
+            "User chose to archive before review",
+            "closure.force.1",
+        )
+        .unwrap();
 
         let bundle = repository.load_bundle("task.test").unwrap();
+        assert!(bundle.project_overview["active_tasks"]
+            .as_array()
+            .unwrap()
+            .is_empty());
         let archived = &bundle.project_overview["archived_tasks"][0];
         assert_eq!(archived["state"], "closed_with_exceptions");
         assert_eq!(archived["closure"]["method"], "with_exceptions");
