@@ -12,8 +12,9 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use vibehub_core::v3::{
-    PlanAddNodeCommand, PlanCommandIdentity, PlanSetDependenciesCommand, PlanSetStateCommand,
-    V3ApplicationService, V3Error, V3ErrorCategory, V3ViewRepository,
+    resolve_project_scopes, PlanAddNodeCommand, PlanCommandIdentity, PlanSetDependenciesCommand,
+    PlanSetStateCommand, ProjectScopeInspection, V3ApplicationService, V3Error, V3ErrorCategory,
+    V3ViewRepository,
 };
 
 const RESOURCE_PREFIX: &str = "vibehub://v3/1.0";
@@ -78,6 +79,51 @@ struct PlanWriteScope {
     project_id: String,
     task_id: String,
     actor: String,
+    #[serde(default)]
+    expected_version: Option<u64>,
+    #[serde(default)]
+    idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskCandidatesRead {
+    project_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskViewRead {
+    task_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct CriterionReviewWrite {
+    #[serde(flatten)]
+    scope: PlanWriteScope,
+    criterion_id: String,
+    #[schemars(description = "Review outcome: passed, failed, or blocked")]
+    outcome: String,
+    reviewer: String,
+    evidence_refs: Vec<String>,
+    #[serde(default)]
+    details: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskCompletionWrite {
+    #[serde(flatten)]
+    scope: PlanWriteScope,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskCompleteWrite {
+    project_id: String,
+    task_id: String,
+    actor: String,
+    confirmed_by: String,
+    #[schemars(
+        description = "Trusted confirmation channel; MCP Agents must use cli only after explicit current-user confirmation"
+    )]
+    channel: String,
     #[serde(default)]
     expected_version: Option<u64>,
     #[serde(default)]
@@ -151,6 +197,7 @@ pub struct V3McpServer {
     app: V3ApplicationService,
     views: V3ViewRepository,
     project_id: String,
+    scopes: ProjectScopeInspection,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -158,7 +205,9 @@ pub struct V3McpServer {
 #[tool_router]
 impl V3McpServer {
     fn open(project_root: impl AsRef<Path>) -> Result<Self, V3Error> {
-        let project_root = project_root.as_ref().to_path_buf();
+        let resolved_scopes = resolve_project_scopes(project_root.as_ref(), None)?;
+        let project_root = resolved_scopes.control_root.clone();
+        let scopes = resolved_scopes.inspection();
         let views = V3ViewRepository::open(&project_root)?;
         let project_id = views.project_id();
         // Validate that a current V3 task exists at startup, but resolve it again
@@ -170,6 +219,7 @@ impl V3McpServer {
             views,
             project_id,
             project_root,
+            scopes,
             tool_router: Self::tool_router(),
         })
     }
@@ -212,6 +262,163 @@ impl V3McpServer {
                     provider_session_id.clone(),
                 )
             },
+        ))
+    }
+
+    #[tool(
+        description = "Discover active V3 task candidates and their workflow, risk, criteria, session, and relation summaries; this is not limited to the current task"
+    )]
+    fn task_candidates(&self, Parameters(input): Parameters<TaskCandidatesRead>) -> CallToolResult {
+        if input.project_id != self.project_id {
+            return tool_error(
+                json!({"code":"V3_PROJECT_MISMATCH","message":"project_id does not match this MCP workspace"}),
+            );
+        }
+        let result = self
+            .views
+            .current_task_id()
+            .and_then(|task_id| self.views.load_bundle(&task_id))
+            .map(|bundle| {
+                bundle
+                    .project_overview
+                    .get("active_tasks")
+                    .cloned()
+                    .unwrap_or_else(|| json!([]))
+            });
+        self.tool_result(result)
+    }
+
+    #[tool(
+        description = "Read a complete V3 view bundle for a specified task candidate, including node_brief.workflow_profile and the server-derived execution_policy"
+    )]
+    fn task_view(&self, Parameters(input): Parameters<TaskViewRead>) -> CallToolResult {
+        self.tool_result(self.views.load_bundle(&input.task_id))
+    }
+
+    #[tool(
+        description = "Record the evidence-backed review outcome for one accepted criterion. Run the real validation first; accepted only means registered, not passed. expected_version and idempotency_key are optional and auto-resolved when omitted"
+    )]
+    fn criterion_review(
+        &self,
+        Parameters(input): Parameters<CriterionReviewWrite>,
+    ) -> CallToolResult {
+        let CriterionReviewWrite {
+            scope,
+            criterion_id,
+            outcome,
+            reviewer,
+            evidence_refs,
+            details,
+        } = input;
+        let PlanWriteScope {
+            project_id,
+            task_id,
+            actor,
+            expected_version,
+            idempotency_key,
+        } = scope;
+        self.tool_result(resolve_and_append(
+            &self.app,
+            &project_id,
+            &task_id,
+            expected_version,
+            idempotency_key,
+            |version, key| {
+                self.app.review_criterion(
+                    &project_id,
+                    &task_id,
+                    &actor,
+                    version,
+                    key,
+                    &criterion_id,
+                    &outcome,
+                    &reviewer,
+                    evidence_refs.clone(),
+                    details.clone(),
+                )
+            },
+        ))
+    }
+
+    #[tool(
+        description = "After every required criterion has passed with evidence and findings are closed, move the task to completion_pending and ask the user for explicit confirmation; do not leave an all-green task in review"
+    )]
+    fn task_completion_propose(
+        &self,
+        Parameters(input): Parameters<TaskCompletionWrite>,
+    ) -> CallToolResult {
+        let PlanWriteScope {
+            project_id,
+            task_id,
+            actor,
+            expected_version,
+            idempotency_key,
+        } = input.scope;
+        self.tool_result(resolve_and_append(
+            &self.app,
+            &project_id,
+            &task_id,
+            expected_version,
+            idempotency_key,
+            |version, key| {
+                self.app
+                    .propose_task_completion(&project_id, &task_id, &actor, version, key)
+            },
+        ))
+    }
+
+    #[tool(
+        description = "Confirm and archive an all-green task immediately after the user explicitly agrees in the current trusted interaction. Never infer or fabricate confirmation; do not ask the user to close it manually"
+    )]
+    fn task_complete(&self, Parameters(input): Parameters<TaskCompleteWrite>) -> CallToolResult {
+        let TaskCompleteWrite {
+            project_id,
+            task_id,
+            actor,
+            confirmed_by,
+            channel,
+            expected_version,
+            idempotency_key,
+        } = input;
+        if channel != "cli" {
+            return tool_error(json!({
+                "code": "V3_CONFIRMATION_AUTHENTICITY_REQUIRED",
+                "category": "validation",
+                "retryable": false,
+                "message": "the MCP task_complete tool accepts cli confirmation only"
+            }));
+        }
+        if confirmed_by.trim().is_empty() {
+            return tool_error(json!({
+                "code": "V3_CONFIRMATION_AUTHENTICITY_REQUIRED",
+                "category": "validation",
+                "retryable": false,
+                "message": "confirmed_by must identify the user who explicitly confirmed completion"
+            }));
+        }
+        if let Some(expected_version) = expected_version {
+            match self.app.aggregate_version(&project_id, &task_id) {
+                Ok(current_version) if current_version != expected_version => {
+                    return tool_error(json!({
+                        "code": "V3_VERSION_CONFLICT",
+                        "category": "version_conflict",
+                        "retryable": true,
+                        "message": "expected task version does not match current lifecycle version",
+                        "details": {"expected_version": expected_version, "current_version": current_version}
+                    }));
+                }
+                Err(error) => return self.tool_result::<Value>(Err(error)),
+                _ => {}
+            }
+        }
+        let key = idempotency_key.unwrap_or_else(|| format!("auto.{}", Uuid::new_v4()));
+        self.tool_result(self.app.complete_task(
+            &project_id,
+            &task_id,
+            &actor,
+            &confirmed_by,
+            &channel,
+            &key,
         ))
     }
 
@@ -554,8 +761,17 @@ impl V3McpServer {
                 "schema_version": "1.0",
                 "server_version": env!("CARGO_PKG_VERSION"),
                 "transport": "stdio",
+                "project_id": self.project_id,
                 "project_root": self.project_root,
-                "resource_namespace": RESOURCE_PREFIX
+                "scopes": self.scopes,
+                "resource_namespace": RESOURCE_PREFIX,
+                "tool_catalog": [
+                    "session_open", "task_candidates", "task_view", "criterion_review",
+                    "task_completion_propose", "task_complete", "event_log", "agent_result_record",
+                    "session_close", "plan_node_add", "plan_dependencies_set", "plan_node_state_set"
+                ],
+                "restart_required": false,
+                "last_error": Value::Null
             }),
             _ => {
                 return Err(V3Error::new(
@@ -588,7 +804,7 @@ impl ServerHandler for V3McpServer {
         info.server_info = Implementation::new("vibehub-v3", env!("CARGO_PKG_VERSION"))
             .with_title("VibeHub V3 MCP");
         info.instructions = Some(
-            "Use versioned resources for reads; session_open, event_log, and session_close for recovery writes; and plan_node_add, plan_dependencies_set, and plan_node_state_set for plan writes. expected_version and idempotency_key may be omitted and are resolved by the server; explicitly provided values are checked strictly."
+            "Read task_candidates/task_view before execution and obey node_brief.workflow_profile plus node_brief.execution_policy. Lightweight tasks use minimal records and no plan graph; standard/full tasks use their declared planning and review gates. Use session_open, event_log, agent_result_record, and session_close for execution facts; use plan tools only when planning_required is true; criterion_review after real validation; task_completion_propose when all gates are green; and task_complete immediately after explicit current-user confirmation. Accepted criteria are not passed. expected_version and idempotency_key may be omitted and are resolved by the server; explicitly provided values are checked strictly."
                 .to_owned(),
         );
         info
@@ -693,7 +909,15 @@ mod tests {
         let diagnostics = server
             .read_resource_text("vibehub://v3/1.0/diagnostics")
             .unwrap();
-        assert!(diagnostics.contains("stdio"));
+        let diagnostics: Value = serde_json::from_str(&diagnostics).unwrap();
+        assert_eq!(diagnostics["transport"], "stdio");
+        assert_eq!(diagnostics["project_id"], server.project_id);
+        assert_eq!(
+            diagnostics["scopes"]["control_root"],
+            server.scopes.control_root
+        );
+        assert_eq!(diagnostics["tool_catalog"].as_array().unwrap().len(), 12);
+        assert_eq!(diagnostics["restart_required"], false);
         fs::remove_dir_all(root).unwrap();
     }
 

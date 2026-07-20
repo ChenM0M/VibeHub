@@ -126,7 +126,7 @@ interface V3State {
   leaveProject: () => void;
   inspectProjectLayout: () => Promise<V3ProjectLayoutStatus | null>;
   runLifecycleAction: (action: V3LifecycleAction, taskId?: string) => Promise<void>;
-  loadCurrentBundle: () => Promise<void>;
+  loadCurrentBundle: (taskIdOverride?: string | null) => Promise<V3FixtureBundle | null>;
   loadLegacyArchive: () => Promise<void>;
   loadUsage: () => Promise<void>;
   loadTaskUsage: (taskId: string | null) => Promise<void>;
@@ -352,19 +352,20 @@ export const useV3Store = create<V3State>((set, get) => ({
     }
   },
 
-  loadCurrentBundle: async () => {
+  loadCurrentBundle: async (taskIdOverride) => {
     const { currentScenario: scenario, projectPath } = get();
-    if (!scenario && !projectPath) return;
+    if (!scenario && !projectPath) return null;
     const loader = productionLoader;
-    if (!scenario && !loader) return;
+    if (!scenario && !loader) return null;
     const requestId = ++loadRequestId;
     set({ loading: true, error: null });
     try {
       const previousProjectId = get().bundle?.projectOverview.project_id ?? null;
+      const requestedTaskId = taskIdOverride === undefined ? get().selectedTaskId : taskIdOverride;
       const bundle = scenario
         ? await v3Repository.loadScenario(scenario)
-        : await loader!(projectPath!, get().selectedTaskId, previousProjectId);
-      if (requestId !== loadRequestId || get().projectPath !== projectPath || get().currentScenario !== scenario) return;
+        : await loader!(projectPath!, requestedTaskId, previousProjectId);
+      if (requestId !== loadRequestId || get().projectPath !== projectPath || get().currentScenario !== scenario) return null;
       if (previousProjectId && bundle.projectOverview.project_id !== previousProjectId) {
         throw new Error("V3_IDENTITY_MISMATCH: refresh returned a different project");
       }
@@ -384,9 +385,11 @@ export const useV3Store = create<V3State>((set, get) => ({
         selectedTaskId,
         selectedNodeId,
       });
+      return bundle;
     } catch (err) {
-      if (requestId !== loadRequestId || get().projectPath !== projectPath || get().currentScenario !== scenario) return;
+      if (requestId !== loadRequestId || get().projectPath !== projectPath || get().currentScenario !== scenario) return null;
       set({ loading: false, error: errorMessage(err) });
+      return null;
     }
   },
 
@@ -450,12 +453,33 @@ export const useV3Store = create<V3State>((set, get) => ({
       const settings = await api.update(projectPath, request);
       if (requestId !== settingsRequestId || get().projectPath !== projectPath || get().currentScenario) return false;
       set({ projectSettings: { status: "present", settings, recommended_action: null }, settingsLoading: false });
-      await get().syncAgentSpecs(false);
-      await get().loadProjectSettings();
-      return true;
+      return await get().syncAgentSpecs(false);
     } catch (err) {
       if (requestId !== settingsRequestId || get().projectPath !== projectPath || get().currentScenario) return false;
-      set({ settingsLoading: false, settingsError: errorMessage(err) });
+      const message = errorMessage(err);
+      if (message.includes("V3_PROJECT_SETTINGS_REVISION_CONFLICT")) {
+        try {
+          const latest = await api.get(projectPath);
+          const latestSpecs = latest.status === "present" ? await api.inspectSpecs(projectPath) : null;
+          if (requestId !== settingsRequestId || get().projectPath !== projectPath || get().currentScenario) return false;
+          set({
+            projectSettings: latest,
+            agentSpecs: latestSpecs,
+            settingsLoading: false,
+            specsLoading: false,
+            settingsError: `${message} Latest project settings were reloaded; review and submit again.`,
+          });
+          return false;
+        } catch (refreshError) {
+          if (requestId !== settingsRequestId || get().projectPath !== projectPath || get().currentScenario) return false;
+          set({
+            settingsLoading: false,
+            settingsError: `${message} Refresh failed: ${errorMessage(refreshError)}`,
+          });
+          return false;
+        }
+      }
+      set({ settingsLoading: false, settingsError: message });
       return false;
     }
   },
@@ -469,8 +493,17 @@ export const useV3Store = create<V3State>((set, get) => ({
     try {
       const result = await api.syncSpecs(projectPath, forceManagedRegion);
       if (requestId !== specsRequestId || get().projectPath !== projectPath || get().currentScenario) return false;
-      set({ agentSpecs: result.inspection, specsLoading: false });
-      return true;
+      const synchronized = result.status === "synchronized"
+        && result.blocking_paths.length === 0
+        && result.inspection.artifacts.every((artifact) => artifact.status === "in_sync");
+      set({
+        agentSpecs: result.inspection,
+        specsLoading: false,
+        specsError: synchronized
+          ? null
+          : `V3_AGENT_SPECS_SYNC_INCOMPLETE: ${result.blocking_paths.join(", ") || "final inspection is not in_sync"}`,
+      });
+      return synchronized;
     } catch (err) {
       if (requestId !== specsRequestId || get().projectPath !== projectPath || get().currentScenario) return false;
       set({ specsLoading: false, specsError: errorMessage(err) });

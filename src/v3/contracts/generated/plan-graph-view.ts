@@ -12,6 +12,8 @@ export interface PlanGraphView {
   plan_version: number;
   generated_at: string;
   model_version: string;
+  workflow_profile: "lightweight" | "standard" | "full";
+  planning_required: boolean;
   freshness: "fresh" | "stale" | "rebuilding" | "unavailable";
   completeness: "complete" | "partial" | "unsupported" | "unknown";
   graph_state: "valid" | "cycle" | "unknown_node" | "changed" | "stale";

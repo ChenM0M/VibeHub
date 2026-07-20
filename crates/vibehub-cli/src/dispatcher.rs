@@ -127,9 +127,14 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   v3 <project> event-log <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> <progress|risk> <details_json>
   v3 <project> agent-result <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> <result_id> <node_id|-> <details_json>
   v3 <project> session-close <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key>
+  v3 <project> criterion-review <project_id> <task_id> <actor> <expected_version> <idempotency_key> <criterion_id> <passed|failed|blocked> <reviewer> <evidence_refs_json> [details_json]
+  v3 <project> task-completion-propose <project_id> <task_id> <actor> <expected_version> <idempotency_key>
+  v3 <project> task-complete <project_id> <task_id> <actor> <confirmed_by> <cli|desktop_ui> <idempotency_key> --confirmed-by-user
   v3 <project> rebuild <project_id>
   v3 <project> view-bundle <task_id>
   v3 <project> task-lifecycle <project_id> <task_id>
+  v3 <project> task-candidates
+  v3 <project> task-view <task_id>
   v3 <project> plan-event <command_json_path|--stdin|->
   v3 <project> lifecycle-event <command_json_path|--stdin|->
   v3 <project> worktree-event <command_json_path|--stdin|->
@@ -578,11 +583,11 @@ fn run_v3_action(project_root: &str, args: &[String]) {
         "agent-result" => {
             let (project_id, task_id, session_id, actor, expected_version, idempotency_key) =
                 parse_v3_write_scope(command, &args[1..]);
-            let Some(result_id) = args.get(6) else {
+            let Some(result_id) = args.get(7) else {
                 v3_usage_error(command, "missing result_id");
             };
-            let node_id = optional_v3_value(args.get(7));
-            let Some(details) = args.get(8) else {
+            let node_id = optional_v3_value(args.get(8));
+            let Some(details) = args.get(9) else {
                 v3_usage_error(command, "missing details JSON");
             };
             let details = serde_json::from_str(details).unwrap_or_else(|error| {
@@ -599,6 +604,69 @@ fn run_v3_action(project_root: &str, args: &[String]) {
                 node_id,
                 details,
             ));
+        }
+        "criterion-review" => {
+            let (project_id, task_id, actor, expected_version, idempotency_key) =
+                parse_v3_task_write_scope(command, &args[1..]);
+            let Some(criterion_id) = args.get(6) else {
+                v3_usage_error(command, "missing criterion_id");
+            };
+            let Some(outcome) = args.get(7) else {
+                v3_usage_error(command, "missing review outcome");
+            };
+            let Some(reviewer) = args.get(8) else {
+                v3_usage_error(command, "missing reviewer");
+            };
+            let Some(evidence_refs) = args.get(9) else {
+                v3_usage_error(command, "missing evidence_refs JSON");
+            };
+            let evidence_refs =
+                serde_json::from_str::<Vec<String>>(evidence_refs).unwrap_or_else(|error| {
+                    v3_usage_error(command, &format!("invalid evidence_refs JSON: {error}"))
+                });
+            let details = args
+                .get(10)
+                .map(|value| {
+                    serde_json::from_str(value).unwrap_or_else(|error| {
+                        v3_usage_error(command, &format!("invalid details JSON: {error}"))
+                    })
+                })
+                .unwrap_or(serde_json::Value::Null);
+            print_v3_json(app.review_criterion(
+                project_id,
+                task_id,
+                actor,
+                expected_version,
+                idempotency_key,
+                criterion_id,
+                outcome,
+                reviewer,
+                evidence_refs,
+                details,
+            ));
+        }
+        "task-completion-propose" => {
+            let (project_id, task_id, actor, expected_version, idempotency_key) =
+                parse_v3_task_write_scope(command, &args[1..]);
+            print_v3_json(app.propose_task_completion(
+                project_id,
+                task_id,
+                actor,
+                expected_version,
+                idempotency_key,
+            ));
+        }
+        "task-complete" => {
+            require_user_confirmation(command, &args[1..]);
+            if args.len() < 7 {
+                v3_usage_error(
+                    command,
+                    "expected project_id task_id actor confirmed_by channel idempotency_key --confirmed-by-user",
+                );
+            }
+            print_v3_json(
+                app.complete_task(&args[1], &args[2], &args[3], &args[4], &args[5], &args[6]),
+            );
         }
         "rebuild" => {
             let Some(project_id) = args.get(1) else {
@@ -622,6 +690,29 @@ fn run_v3_action(project_root: &str, args: &[String]) {
                 v3_usage_error(command, "missing task_id");
             };
             print_v3_json(app.task_lifecycle(project_id, task_id));
+        }
+        "task-candidates" => {
+            let repository =
+                V3ViewRepository::open(project_root).unwrap_or_else(|error| print_v3_error(error));
+            let task_id = repository
+                .current_task_id()
+                .unwrap_or_else(|error| print_v3_error(error));
+            let bundle = repository
+                .load_bundle(&task_id)
+                .unwrap_or_else(|error| print_v3_error(error));
+            print_v3_json(Ok(bundle
+                .project_overview
+                .get("active_tasks")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!([]))));
+        }
+        "task-view" => {
+            let Some(task_id) = args.get(1) else {
+                v3_usage_error(command, "missing task_id");
+            };
+            let repository =
+                V3ViewRepository::open(project_root).unwrap_or_else(|error| print_v3_error(error));
+            print_v3_json(repository.load_bundle(task_id));
         }
         "plan-event" => {
             let Some(json_path) = args.get(1) else {
@@ -737,6 +828,22 @@ fn parse_v3_write_scope<'a>(
         expected_version,
         &args[5],
     )
+}
+
+fn parse_v3_task_write_scope<'a>(
+    command: &str,
+    args: &'a [String],
+) -> (&'a str, &'a str, &'a str, u64, &'a str) {
+    if args.len() < 5 {
+        v3_usage_error(
+            command,
+            "expected project_id task_id actor expected_version idempotency_key",
+        );
+    }
+    let expected_version = args[3].parse::<u64>().unwrap_or_else(|error| {
+        v3_usage_error(command, &format!("invalid expected_version: {error}"))
+    });
+    (&args[0], &args[1], &args[2], expected_version, &args[4])
 }
 
 fn v3_usage_error(command: &str, message: &str) -> ! {

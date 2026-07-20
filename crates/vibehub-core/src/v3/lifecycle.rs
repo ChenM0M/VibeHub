@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub const LIFECYCLE_EVENT_TYPES: &[&str] = &[
     "task.created",
+    "task.relation_recorded",
     "plan.node_added",
     "plan.node_state_changed",
     "plan.dependency_changed",
@@ -32,6 +33,7 @@ pub const LIFECYCLE_EVENT_TYPES: &[&str] = &[
     "task.completion_proposed",
     "task.completion_confirmed",
     "task.completion_rejected",
+    "task.closed_with_exceptions",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +116,8 @@ pub struct TaskLifecycleProjection {
     pub criteria: BTreeMap<String, CriterionProjection>,
     pub findings: BTreeMap<String, FindingProjection>,
     pub attempts: BTreeMap<String, AttemptProjection>,
+    #[serde(default)]
+    pub relations: Vec<TaskRelationProjection>,
     pub sessions: BTreeMap<String, SessionLifecycleProjection>,
     pub confirmation: Option<CompletionConfirmation>,
     pub event_ids: Vec<String>,
@@ -129,6 +133,7 @@ impl TaskLifecycleProjection {
             criteria: BTreeMap::new(),
             findings: BTreeMap::new(),
             attempts: BTreeMap::new(),
+            relations: Vec::new(),
             sessions: BTreeMap::new(),
             confirmation: None,
             event_ids: Vec::new(),
@@ -173,6 +178,14 @@ impl TaskLifecycleProjection {
         hasher.update(format!("{}:{}:{}", self.task_id, self.version, criteria));
         format!("sha256:{:x}", hasher.finalize())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskRelationProjection {
+    pub related_task_id: String,
+    pub relation_type: String,
+    pub confidence: u8,
+    pub evidence_refs: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -387,6 +400,21 @@ fn apply_event(projection: &mut TaskLifecycleProjection, event: &V3EventEnvelope
     let payload = &event.payload;
     match event.event_type.as_str() {
         "task.created" => projection.state = "active".to_owned(),
+        "task.relation_recorded" => {
+            let Some(related_task_id) = value_id(payload, "related_task_id") else {
+                return;
+            };
+            projection.relations.push(TaskRelationProjection {
+                related_task_id,
+                relation_type: value_string(payload, "relation_type", "related"),
+                confidence: payload
+                    .get("confidence")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+                    .min(100) as u8,
+                evidence_refs: string_vec(payload, "evidence_refs"),
+            });
+        }
         "plan.node_added" => {
             let Some(node_id) = value_id(payload, "node_id")
                 .or_else(|| event.node_id.as_ref().map(|id| id.0.clone()))
@@ -580,6 +608,9 @@ fn apply_event(projection: &mut TaskLifecycleProjection, event: &V3EventEnvelope
             }
             projection.state = "active".to_owned();
         }
+        "task.closed_with_exceptions" => {
+            projection.state = "closed_with_exceptions".to_owned();
+        }
         _ => {}
     }
 }
@@ -601,6 +632,27 @@ fn validate_command(
     }
     let payload = &command.payload;
     match command.event_type.as_str() {
+        "task.relation_recorded" => {
+            required_id(payload, "related_task_id")?;
+            required_id(payload, "relation_type")?;
+            if payload
+                .get("confidence")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                > 100
+            {
+                return Err(validation(
+                    "V3_RELATION_CONFIDENCE_INVALID",
+                    "relation confidence must be between 0 and 100",
+                ));
+            }
+            if string_vec(payload, "evidence_refs").is_empty() {
+                return Err(validation(
+                    "V3_RELATION_EVIDENCE_REQUIRED",
+                    "task relation requires evidence_refs",
+                ));
+            }
+        }
         "plan.node_added" => {
             let node_id = required_id(payload, "node_id")?;
             if projection.nodes.contains_key(node_id) {
@@ -716,6 +768,26 @@ fn validate_command(
                 )
             {
                 return Err(validation("V3_CONFIRMATION_AUTHENTICITY_REQUIRED", "completion confirmation requires matching digest, human identity, and trusted channel"));
+            }
+        }
+        "task.closed_with_exceptions" => {
+            if payload
+                .get("reason")
+                .and_then(Value::as_str)
+                .is_none_or(|reason| reason.trim().is_empty())
+                || payload
+                    .get("confirmed_by")
+                    .and_then(Value::as_str)
+                    .is_none_or(|identity| identity.trim().is_empty())
+                || !matches!(
+                    payload.get("channel").and_then(Value::as_str),
+                    Some("desktop_ui" | "cli")
+                )
+            {
+                return Err(validation(
+                    "V3_FORCE_CLOSE_CONFIRMATION_REQUIRED",
+                    "forced task closure requires a reason, human identity, and trusted channel",
+                ));
             }
         }
         _ => {}
@@ -1141,6 +1213,57 @@ mod tests {
             "Real acceptance criterion"
         );
         assert!(projection.criteria["criterion.one"].required);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn relation_requires_evidence_and_is_projected() {
+        let (root, store) = store();
+        let missing_evidence = apply_command(
+            &store,
+            command(
+                "task.relation_recorded",
+                "project.test",
+                "task.test",
+                0,
+                "relation.invalid",
+                json!({
+                    "related_task_id": "task.related",
+                    "relation_type": "extends",
+                    "confidence": 70,
+                    "evidence_refs": []
+                }),
+            ),
+        )
+        .unwrap_err();
+        assert_eq!(missing_evidence.code, "V3_RELATION_EVIDENCE_REQUIRED");
+
+        apply_command(
+            &store,
+            command(
+                "task.relation_recorded",
+                "project.test",
+                "task.test",
+                0,
+                "relation.valid",
+                json!({
+                    "related_task_id": "task.related",
+                    "relation_type": "extends",
+                    "confidence": 70,
+                    "evidence_refs": ["route:intent-overlap-70"]
+                }),
+            ),
+        )
+        .unwrap();
+        let projection = fold_task("task.test", &store.load_project("project.test").unwrap());
+        assert_eq!(projection.relations.len(), 1);
+        assert_eq!(projection.relations[0].related_task_id, "task.related");
+        assert_eq!(projection.relations[0].relation_type, "extends");
+        assert_eq!(projection.relations[0].confidence, 70);
+        assert_eq!(
+            projection.relations[0].evidence_refs,
+            ["route:intent-overlap-70"]
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

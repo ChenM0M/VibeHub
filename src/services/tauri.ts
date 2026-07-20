@@ -171,6 +171,14 @@ export const tauriApi = {
         return await invoke('v3_create_task', { projectPath, request });
     },
 
+    v3CompleteTask: async (projectPath: string, request: { project_id: string; task_id: string; actor: string; confirmed_by: string; channel: string; idempotency_key: string }): Promise<V3AppendResult> => {
+        return await invoke('v3_complete_task', { projectPath, request });
+    },
+
+    v3CloseTaskWithExceptions: async (projectPath: string, request: { project_id: string; task_id: string; actor: string; confirmed_by: string; channel: string; reason: string; idempotency_key: string }): Promise<V3AppendResult> => {
+        return await invoke('v3_close_task_with_exceptions', { projectPath, request });
+    },
+
     v3GetProjectSettings: async (projectPath: string): Promise<V3ProjectSettingsInspection> => {
         return await invoke('v3_get_project_settings', { projectPath });
     },

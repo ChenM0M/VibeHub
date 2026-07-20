@@ -21,6 +21,7 @@ export interface ProjectOverviewView {
   project_id: string;
   name: string;
   root: NativePath;
+  scopes: ProjectScopeInspection;
   generated_at: string;
   model_version: string;
   freshness: "fresh" | "stale" | "rebuilding" | "unavailable";
@@ -49,10 +50,18 @@ export interface ProjectOverviewView {
   active_tasks: {
     task_id: string;
     title: string;
-    state: "planned" | "active" | "blocked" | "review" | "completed" | "cancelled";
+    intent: string;
+    workflow_profile: "lightweight" | "standard" | "full";
+    state: "planned" | "active" | "blocked" | "review" | "completed" | "cancelled" | "closed_with_exceptions";
     risk_level: "none" | "low" | "medium" | "high" | "critical";
     criteria: CriterionSummary[];
     blocker_details?: BlockerDetails;
+    relations?: {
+      related_task_id: string;
+      relation_type: string;
+      confidence: number;
+      evidence_refs: EvidenceRefs;
+    }[];
     active_sessions: number;
   }[];
   archived_tasks?: ArchivedTaskSummary[];
@@ -65,6 +74,15 @@ export interface ProjectOverviewView {
   evidence_refs: EvidenceRefs;
   warnings: Warnings;
   errors: Errors;
+}
+export interface ProjectScopeInspection {
+  control_root: string;
+  execution_root: string;
+  git_root: string | null;
+  host_config_root: string;
+  source: "control_root" | "detected_git_root" | "session_working_directory" | "ambiguous";
+  nested_repository: boolean;
+  warnings: string[];
 }
 export interface EvidenceRef {
   evidence_id: string;
@@ -98,10 +116,20 @@ export interface ArchivedTaskSummary {
   task_id: string;
   title: string;
   intent: string;
-  state: "completed" | "cancelled";
+  state: "completed" | "cancelled" | "closed_with_exceptions";
   risk_level: "none" | "low" | "medium" | "high" | "critical";
   terminal_at: string | null;
   completion: CompletionSummary;
+  closure: {
+    method: "all_green" | "with_exceptions" | null;
+    actor: string | null;
+    confirmed_by: string | null;
+    channel: string | null;
+    confirmed_at: string | null;
+    reason: string | null;
+    criteria_snapshot: CriterionSummary[];
+    unresolved_items: string[];
+  };
   criteria: CriterionSummary[];
   blocker_details: BlockerDetails;
   plan: {

@@ -21,6 +21,8 @@ pub struct V3TaskCreateRequest {
     pub title: String,
     pub intent: String,
     pub acceptance_criteria: Vec<String>,
+    #[serde(default = "default_workflow_profile")]
+    pub workflow_profile: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,7 +31,7 @@ pub struct V3TaskCreateResult {
     pub task_id: String,
     pub task_path: String,
     pub current_pointer_path: String,
-    pub initial_node_id: String,
+    pub initial_node_id: Option<String>,
     pub lifecycle_version: u64,
 }
 
@@ -42,6 +44,8 @@ struct TaskDocument {
     phase_status: String,
     acceptance_criteria: Vec<String>,
     dependencies: Vec<String>,
+    #[serde(default = "default_workflow_profile")]
+    workflow_profile: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,10 +85,16 @@ pub fn create_v3_task(
         task_id: task_id.clone(),
         title: request.title,
         intent: request.intent,
-        phase: "plan".to_owned(),
+        phase: if request.workflow_profile == "lightweight" {
+            "execute"
+        } else {
+            "plan"
+        }
+        .to_owned(),
         phase_status: "active".to_owned(),
         acceptance_criteria: request.acceptance_criteria,
         dependencies: Vec::new(),
+        workflow_profile: request.workflow_profile.clone(),
     };
     let task_yaml = serde_yaml::to_string(&document)
         .map_err(|error| task_error("V3_TASK_ENCODE_FAILED", error.to_string()))?;
@@ -140,6 +150,7 @@ pub fn create_v3_task(
             &document.title,
             &document.intent,
             &document.acceptance_criteria,
+            &document.workflow_profile,
         )?
     } else {
         // Existing eventless tasks predate lifecycle recording. They remain read-only;
@@ -160,7 +171,7 @@ pub fn create_v3_task(
         task_id: task_id.clone(),
         task_path: format!(".vibehub/tasks/{task_id}/task.yaml"),
         current_pointer_path: ".vibehub/tasks/current".to_owned(),
-        initial_node_id,
+        initial_node_id: (document.workflow_profile != "lightweight").then_some(initial_node_id),
         lifecycle_version,
     })
 }
@@ -173,6 +184,7 @@ fn append_creation_events(
     title: &str,
     intent: &str,
     acceptance_criteria: &[String],
+    workflow_profile: &str,
 ) -> Result<u64, V3Error> {
     let mut created_command = command(
         "task.created",
@@ -180,29 +192,31 @@ fn append_creation_events(
         task_id,
         0,
         &format!("create.{task_id}.task"),
-        json!({"title": title, "intent": intent}),
+        json!({"title": title, "intent": intent, "workflow_profile": workflow_profile}),
     );
     created_command.actor = "vibehub".to_owned();
     created_command.evidence_grade = Some(EvidenceGrade::HardObserved);
     application.lifecycle_command(created_command)?;
 
-    let mut node_command = command(
-        "plan.node_added",
-        &project_id,
-        task_id,
-        1,
-        &format!("create.{task_id}.initial-node"),
-        json!({
-            "node_id": initial_node_id,
-            "title": title,
-            "goal": intent,
-            "scope": [],
-            "dependencies": []
-        }),
-    );
-    node_command.actor = "vibehub".to_owned();
-    node_command.evidence_grade = Some(EvidenceGrade::HardObserved);
-    application.lifecycle_command(node_command)?;
+    if workflow_profile != "lightweight" {
+        let mut node_command = command(
+            "plan.node_added",
+            &project_id,
+            task_id,
+            1,
+            &format!("create.{task_id}.initial-node"),
+            json!({
+                "node_id": initial_node_id,
+                "title": title,
+                "goal": intent,
+                "scope": [],
+                "dependencies": []
+            }),
+        );
+        node_command.actor = "vibehub".to_owned();
+        node_command.evidence_grade = Some(EvidenceGrade::HardObserved);
+        application.lifecycle_command(node_command)?;
+    }
 
     for (index, title) in acceptance_criteria.iter().enumerate() {
         let criterion_id = canonical_criterion_id(task_id, index);
@@ -230,6 +244,10 @@ fn append_creation_events(
     Ok(application.task_lifecycle(&project_id, task_id)?.version)
 }
 
+fn default_workflow_profile() -> String {
+    "standard".to_owned()
+}
+
 fn validate_request(request: V3TaskCreateRequest) -> Result<V3TaskCreateRequest, V3Error> {
     let title = clean_field("title", request.title)?;
     let intent = clean_field("intent", request.intent)?;
@@ -245,10 +263,20 @@ fn validate_request(request: V3TaskCreateRequest) -> Result<V3TaskCreateRequest,
         .enumerate()
         .map(|(index, value)| clean_field(&format!("acceptance_criteria[{index}]"), value))
         .collect::<Result<Vec<_>, _>>()?;
+    if !matches!(
+        request.workflow_profile.as_str(),
+        "lightweight" | "standard" | "full"
+    ) {
+        return Err(task_error(
+            "V3_TASK_VALIDATION_ERROR",
+            "workflow_profile must be lightweight, standard, or full",
+        ));
+    }
     Ok(V3TaskCreateRequest {
         title,
         intent,
         acceptance_criteria,
+        workflow_profile: request.workflow_profile,
     })
 }
 
@@ -431,6 +459,7 @@ mod tests {
             title: "Ship safe task creation".to_owned(),
             intent: "Create a bounded V3 task without protocol state".to_owned(),
             acceptance_criteria: vec!["Task is readable from production views".to_owned()],
+            workflow_profile: "standard".to_owned(),
         }
     }
 
@@ -443,14 +472,14 @@ mod tests {
         assert!(project.join(&result.task_path).is_file());
         assert_eq!(result.lifecycle_version, 3);
         assert_eq!(
-            result.initial_node_id,
-            format!("node.{}.initial", result.task_id)
+            result.initial_node_id.as_deref(),
+            Some(format!("node.{}.initial", result.task_id).as_str())
         );
         let repository = V3ViewRepository::open(&project).unwrap();
         let bundle = repository.load_bundle(&result.task_id).unwrap();
         let nodes = bundle.plan_graph["nodes"].as_array().unwrap();
         assert_eq!(nodes.len(), 1);
-        assert_eq!(nodes[0]["node_id"], result.initial_node_id);
+        assert_eq!(nodes[0]["node_id"], result.initial_node_id.unwrap());
         assert_eq!(nodes[0]["title"], request().title);
         assert_eq!(nodes[0]["goal"], request().intent);
         assert_eq!(nodes[0]["scope"], json!([]));
@@ -496,6 +525,55 @@ mod tests {
     }
 
     #[test]
+    fn lightweight_creation_skips_task_graph_and_keeps_minimal_lifecycle() {
+        let project = temp_project();
+        initialize_v3(&project).unwrap();
+        let mut lightweight = request();
+        lightweight.workflow_profile = "lightweight".to_owned();
+        let result = create_v3_task(&project, lightweight).unwrap();
+        assert_eq!(result.lifecycle_version, 2);
+        assert!(result.initial_node_id.is_none());
+        let task_yaml = fs::read_to_string(project.join(&result.task_path)).unwrap();
+        assert!(task_yaml.contains("phase: execute"));
+        let repository = V3ViewRepository::open(&project).unwrap();
+        let bundle = repository.load_bundle(&result.task_id).unwrap();
+        assert_eq!(bundle.plan_graph["nodes"].as_array().unwrap().len(), 0);
+        assert_eq!(bundle.plan_graph["workflow_profile"], "lightweight");
+        assert_eq!(bundle.plan_graph["planning_required"], false);
+        assert!(bundle.plan_graph["warnings"].as_array().unwrap().is_empty());
+        assert_eq!(bundle.node_brief["workflow_profile"], "lightweight");
+        assert_eq!(
+            bundle.node_brief["execution_policy"]["milestone_policy"],
+            "minimal"
+        );
+        assert_eq!(bundle.node_brief["budget"]["max_tokens"], 2000);
+        let repository_id = repository.project_id();
+        let error = V3ApplicationService::open(&project)
+            .unwrap()
+            .plan_add_node(crate::v3::PlanAddNodeCommand {
+                identity: crate::v3::PlanCommandIdentity {
+                    project_id: repository_id,
+                    task_id: result.task_id.clone(),
+                    actor: "test".to_owned(),
+                    expected_version: result.lifecycle_version,
+                    idempotency_key: "lightweight-plan-forbidden".to_owned(),
+                },
+                node_id: "node.forbidden".to_owned(),
+                title: "Forbidden plan".to_owned(),
+                goal: "Must not be added".to_owned(),
+                scope: Vec::new(),
+                dependencies: Vec::new(),
+            })
+            .unwrap_err();
+        assert_eq!(error.code, "V3_LIGHTWEIGHT_PLAN_FORBIDDEN");
+        assert_eq!(
+            bundle.project_overview["active_tasks"][0]["workflow_profile"],
+            "lightweight"
+        );
+        fs::remove_dir_all(project).unwrap();
+    }
+
+    #[test]
     fn historical_eventless_task_is_not_backfilled() {
         let project = temp_project();
         initialize_v3(&project).unwrap();
@@ -511,6 +589,7 @@ mod tests {
             phase_status: "active".to_owned(),
             acceptance_criteria: validated_request.acceptance_criteria,
             dependencies: Vec::new(),
+            workflow_profile: validated_request.workflow_profile,
         };
         fs::write(
             task_dir.join("task.yaml"),

@@ -23,7 +23,9 @@ export interface AgentResultsView {
   model_version: string;
   freshness: "fresh" | "stale" | "rebuilding" | "unavailable";
   completeness: "complete" | "partial" | "unsupported" | "unknown";
-  state: "not_executed" | "awaiting_result" | "available" | "failed";
+  state: "not_executed" | "awaiting_result" | "available" | "failed" | "review_required";
+  review_required: boolean;
+  next_action: string | null;
   results: {
     result_id: string;
     kind: "execution" | "evaluation";

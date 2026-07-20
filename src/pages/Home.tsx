@@ -203,6 +203,8 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
                 revealProjectFile={tauriApi.vibehubRevealProjectFile}
                 openProjectFile={tauriApi.vibehubOpenProjectFile}
                 createTask={tauriApi.v3CreateTask}
+                completeTask={tauriApi.v3CompleteTask}
+                closeTaskWithExceptions={tauriApi.v3CloseTaskWithExceptions}
                 debugMode={V3_DEBUG_ENABLED}
                 onBack={() => {
                     leaveV3Project();

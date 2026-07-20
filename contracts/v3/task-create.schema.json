@@ -13,6 +13,7 @@
       "properties": {
         "title": { "type": "string", "minLength": 1, "maxLength": 4096 },
         "intent": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "workflow_profile": { "enum": ["lightweight", "standard", "full"], "default": "standard" },
         "acceptance_criteria": {
           "type": "array",
           "minItems": 1,
@@ -36,7 +37,7 @@
         "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
         "task_path": { "type": "string", "minLength": 1 },
         "current_pointer_path": { "type": "string", "minLength": 1 },
-        "initial_node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "initial_node_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
         "lifecycle_version": { "type": "integer", "minimum": 1 }
       }
     }

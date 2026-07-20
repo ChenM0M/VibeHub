@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { CriterionBadge } from "@/v3/components/common/CriterionBadge";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import type { CriterionSummary } from "@/v3/contracts/generated/project-overview-view";
+import { useTranslation } from "react-i18next";
 
 interface AcceptanceProgressProps {
   criteria: CriterionSummary[];
@@ -9,6 +10,7 @@ interface AcceptanceProgressProps {
 }
 
 export function AcceptanceProgress({ criteria, className }: AcceptanceProgressProps) {
+  const { t } = useTranslation();
   const total = criteria.length;
   const passed = criteria.filter((c) => c.status === "passed").length;
   const failed = criteria.filter((c) => c.status === "failed").length;
@@ -19,18 +21,18 @@ export function AcceptanceProgress({ criteria, className }: AcceptanceProgressPr
     <div className={cn("space-y-3", className)}>
       <div className="flex items-baseline justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold">验收门槛</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">这些是完成条件，不是实现步骤。</div>
+          <div className="text-sm font-semibold">{t("v3.acceptance.title")}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{t("v3.acceptance.description")}</div>
         </div>
-        <span className="shrink-0 text-[10px] text-muted-foreground">Acceptance criteria</span>
+        <span className="shrink-0 text-[10px] text-muted-foreground">{t("v3.acceptance.eyebrow")}</span>
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-sm">
-          <span className="font-medium">{passed}/{total} 已通过</span>
+          <span className="font-medium">{t("v3.acceptance.passed", { passed, total })}</span>
           {(failed > 0 || blocked > 0) && (
             <span className="text-xs">
-              {failed > 0 && <span className="text-red-600">{failed} 失败 </span>}
-              {blocked > 0 && <span className="text-orange-600">{blocked} 阻塞</span>}
+              {failed > 0 && <span className="text-red-600">{t("v3.acceptance.failed", { count: failed })} </span>}
+              {blocked > 0 && <span className="text-orange-600">{t("v3.acceptance.blocked", { count: blocked })}</span>}
             </span>
           )}
         </div>
@@ -40,7 +42,7 @@ export function AcceptanceProgress({ criteria, className }: AcceptanceProgressPr
       </div>
 
       {total === 0 ? (
-        <div className="border border-dashed border-border px-6 py-8 text-center text-sm text-muted-foreground">未定义验收标准</div>
+        <div className="border border-dashed border-border px-6 py-8 text-center text-sm text-muted-foreground">{t("v3.acceptance.empty")}</div>
       ) : (
         <div className="divide-y divide-border/30 border-t border-border/30 mt-2">
           {criteria.map((criterion) => (

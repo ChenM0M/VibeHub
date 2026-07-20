@@ -19,6 +19,19 @@
   "errors": [],
   "task_id": "task.m0",
   "node_id": "node.contracts",
+  "workflow_profile": "full",
+  "execution_policy": {
+    "milestone_policy": "full",
+    "planning_required": true,
+    "review_required": true,
+    "required_records": [
+      "plan",
+      "session",
+      "progress",
+      "result",
+      "review"
+    ]
+  },
   "goal": "冻结契约与 TypeScript 类型",
   "scope": [
     "src/v3/contracts/generated/*.ts",

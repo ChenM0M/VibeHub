@@ -4,7 +4,7 @@
   "title": "AgentResultsView",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "project_id", "task_id", "generated_at", "model_version", "freshness", "completeness", "state", "results", "evidence_refs", "warnings", "errors"],
+  "required": ["schema_version", "project_id", "task_id", "generated_at", "model_version", "freshness", "completeness", "state", "review_required", "next_action", "results", "evidence_refs", "warnings", "errors"],
   "properties": {
     "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
     "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
@@ -13,7 +13,9 @@
     "model_version": { "type": "string", "minLength": 1 },
     "freshness": { "$ref": "common.schema.json#/$defs/Freshness" },
     "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
-    "state": { "enum": ["not_executed", "awaiting_result", "available", "failed"] },
+    "state": { "enum": ["not_executed", "awaiting_result", "available", "failed", "review_required"] },
+    "review_required": { "type": "boolean" },
+    "next_action": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
     "results": {
       "type": "array",
       "items": {

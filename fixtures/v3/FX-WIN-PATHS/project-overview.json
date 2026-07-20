@@ -87,6 +87,15 @@
     "path_kind": "drive",
     "accessible": true
   },
+  "scopes": {
+    "control_root": "/Users/alex/Projects/VibeHub",
+    "execution_root": "/Users/alex/Projects/VibeHub",
+    "git_root": "/Users/alex/Projects/VibeHub",
+    "host_config_root": "/Users/alex/Projects/VibeHub",
+    "source": "control_root",
+    "nested_repository": false,
+    "warnings": []
+  },
   "repository": {
     "state": "available",
     "branch": "feature/v3",
@@ -120,6 +129,8 @@
     {
       "task_id": "task.m0",
       "title": "Freeze V3 contracts and fixtures",
+      "intent": "Keep V3 contracts and fixtures stable",
+      "workflow_profile": "full",
       "state": "active",
       "risk_level": "low",
       "criteria": [
@@ -177,6 +188,8 @@
     {
       "task_id": "task.m1",
       "title": "Build V3 high-fidelity frontend from fixtures",
+      "intent": "Build the V3 frontend from fixtures",
+      "workflow_profile": "standard",
       "state": "active",
       "risk_level": "medium",
       "criteria": [
@@ -234,6 +247,8 @@
     {
       "task_id": "task.m2",
       "title": "Implement V3 event core and MCP control plane",
+      "intent": "Implement the V3 event core and MCP control plane",
+      "workflow_profile": "full",
       "state": "planned",
       "risk_level": "medium",
       "criteria": [

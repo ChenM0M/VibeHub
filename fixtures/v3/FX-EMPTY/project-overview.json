@@ -132,6 +132,15 @@
     "path_kind": "absolute",
     "accessible": true
   },
+  "scopes": {
+    "control_root": "/Users/alex/Projects/VibeHub",
+    "execution_root": "/Users/alex/Projects/VibeHub",
+    "git_root": "/Users/alex/Projects/VibeHub",
+    "host_config_root": "/Users/alex/Projects/VibeHub",
+    "source": "control_root",
+    "nested_repository": false,
+    "warnings": []
+  },
   "repository": {
     "state": "not_repository",
     "branch": null,

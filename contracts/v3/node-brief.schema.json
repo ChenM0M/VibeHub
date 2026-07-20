@@ -3,9 +3,20 @@
   "$id": "https://schemas.vibehub.dev/v3/1.0/node-brief.schema.json",
   "title": "NodeBrief",
   "type": "object", "additionalProperties": false,
-  "required": ["schema_version", "project_id", "task_id", "node_id", "generated_at", "model_version", "freshness", "completeness", "goal", "scope", "non_scope", "dependencies", "accepted_decisions", "research_summary", "criteria", "files", "validation_commands", "state", "next_intent", "budget", "source_versions", "protocol_coverage", "evidence_refs", "warnings", "errors"],
+  "required": ["schema_version", "project_id", "task_id", "node_id", "workflow_profile", "execution_policy", "generated_at", "model_version", "freshness", "completeness", "goal", "scope", "non_scope", "dependencies", "accepted_decisions", "research_summary", "criteria", "files", "validation_commands", "state", "next_intent", "budget", "source_versions", "protocol_coverage", "evidence_refs", "warnings", "errors"],
   "properties": {
     "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" }, "project_id": { "$ref": "common.schema.json#/$defs/StableId" }, "task_id": { "$ref": "common.schema.json#/$defs/StableId" }, "node_id": { "oneOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "const": "" }] },
+    "workflow_profile": { "enum": ["lightweight", "standard", "full"] },
+    "execution_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["milestone_policy", "planning_required", "review_required", "required_records"],
+      "properties": {
+        "milestone_policy": { "enum": ["minimal", "standard", "full"] },
+        "planning_required": { "type": "boolean" },
+        "review_required": { "type": "boolean" },
+        "required_records": { "type": "array", "items": { "enum": ["plan", "session", "progress", "result", "review", "risk_if_any"] }, "uniqueItems": true }
+      }
+    },
     "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "model_version": { "type": "string", "minLength": 1 }, "freshness": { "$ref": "common.schema.json#/$defs/Freshness" }, "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
     "goal": { "type": "string", "minLength": 1 }, "scope": { "type": "array", "items": { "type": "string" } }, "non_scope": { "type": "array", "items": { "type": "string" } },
     "dependencies": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } }, "accepted_decisions": { "type": "array", "items": { "type": "string" } },

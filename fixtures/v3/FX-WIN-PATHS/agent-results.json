@@ -80,6 +80,8 @@
   "errors": [],
   "task_id": "task.m0",
   "state": "available",
+  "review_required": false,
+  "next_action": null,
   "results": [
     {
       "result_id": "result.m0.evaluation",

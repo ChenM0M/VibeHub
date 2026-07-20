@@ -33,7 +33,8 @@ const exportedDefinitions = new Map([
     "V3ProjectSettings", "V3ProjectSettingsInspection", "V3ProjectSettingsUpdateRequest",
   ]],
   ["agent-spec.schema.json", [
-    "V3AgentSpecContract", "V3AgentSpecArtifactStatus", "V3AgentSpecArtifactInspection",
+    "V3AgentSpecContract", "V3AgentSpecArtifactStatus", "V3AgentSpecSyncStatus", "V3AgentSpecArtifactInspection",
+    "ProjectScopeInspection", "EffectiveAgentDeclaration", "McpHostConfigInspection",
     "V3AgentSpecInspection", "V3AgentSpecSyncRequest", "V3AgentSpecSyncResult",
   ]],
 ]);

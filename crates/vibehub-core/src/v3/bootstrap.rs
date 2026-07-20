@@ -657,6 +657,7 @@ mod tests {
                 title: "Repair V3 bootstrap".to_owned(),
                 intent: "Recover valid V3 runtime state".to_owned(),
                 acceptance_criteria: vec!["MCP can resolve current task".to_owned()],
+                workflow_profile: "standard".to_owned(),
             },
         )
         .unwrap();
@@ -716,6 +717,7 @@ mod tests {
                 title: "Repair candidate".to_owned(),
                 intent: "Expose a safe recovery choice".to_owned(),
                 acceptance_criteria: vec!["Candidate is visible".to_owned()],
+                workflow_profile: "standard".to_owned(),
             },
         )
         .unwrap();

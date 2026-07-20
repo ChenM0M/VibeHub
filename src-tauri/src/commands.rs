@@ -167,6 +167,74 @@ pub async fn v3_create_task(
     .map_err(|error| format!("V3_TASK_CREATE_TASK_FAILED: {error}"))?
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct V3CompleteTaskRequest {
+    pub project_id: String,
+    pub task_id: String,
+    pub actor: String,
+    pub confirmed_by: String,
+    pub channel: String,
+    pub idempotency_key: String,
+}
+
+#[tauri::command]
+pub async fn v3_complete_task(
+    project_path: String,
+    request: V3CompleteTaskRequest,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| {
+                application.complete_task(
+                    &request.project_id,
+                    &request.task_id,
+                    &request.actor,
+                    &request.confirmed_by,
+                    &request.channel,
+                    &request.idempotency_key,
+                )
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_TASK_COMPLETE_TASK_FAILED: {error}"))?
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct V3CloseTaskWithExceptionsRequest {
+    pub project_id: String,
+    pub task_id: String,
+    pub actor: String,
+    pub confirmed_by: String,
+    pub channel: String,
+    pub reason: String,
+    pub idempotency_key: String,
+}
+
+#[tauri::command]
+pub async fn v3_close_task_with_exceptions(
+    project_path: String,
+    request: V3CloseTaskWithExceptionsRequest,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| {
+                application.close_task_with_exceptions(
+                    &request.project_id,
+                    &request.task_id,
+                    &request.actor,
+                    &request.confirmed_by,
+                    &request.channel,
+                    &request.reason,
+                    &request.idempotency_key,
+                )
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_TASK_FORCE_CLOSE_TASK_FAILED: {error}"))?
+}
+
 #[tauri::command]
 pub async fn v3_plan_add_node(
     project_path: String,

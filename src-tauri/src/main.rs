@@ -79,6 +79,8 @@ fn main() {
             commands::v3_agent_specs_status,
             commands::v3_agent_specs_sync,
             commands::v3_create_task,
+            commands::v3_complete_task,
+            commands::v3_close_task_with_exceptions,
             commands::v3_plan_add_node,
             commands::v3_plan_set_dependencies,
             commands::v3_plan_set_state,

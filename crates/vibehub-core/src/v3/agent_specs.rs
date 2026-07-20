@@ -1,6 +1,8 @@
 use super::{
-    inspect_project_layout, read_project_settings, AgentSpecTarget, OutputLanguage,
-    ProjectLayoutState, V3Error, V3ErrorCategory, V3ProjectSettings,
+    effective_agent_declarations, inspect_mcp_host_configs, inspect_project_layout,
+    read_project_settings, resolve_project_scopes, AgentSpecTarget, EffectiveAgentDeclaration,
+    McpHostConfigInspection, OutputLanguage, ProjectLayoutState, ProjectScopeInspection, V3Error,
+    V3ErrorCategory, V3ProjectSettings,
 };
 use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -30,6 +32,7 @@ pub enum AgentSpecArtifactStatus {
     InSync,
     Outdated,
     ModifiedOutside,
+    LegacyMigratable,
     Unsupported,
 }
 
@@ -49,6 +52,9 @@ pub struct AgentSpecInspection {
     pub spec_version: String,
     pub renderer_version: String,
     pub settings_revision: u64,
+    pub scope: ProjectScopeInspection,
+    pub effective_declarations: Vec<EffectiveAgentDeclaration>,
+    pub mcp_hosts: Vec<McpHostConfigInspection>,
     pub artifacts: Vec<AgentSpecArtifactInspection>,
 }
 
@@ -61,9 +67,18 @@ pub struct AgentSpecSyncRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSpecSyncResult {
+    pub status: AgentSpecSyncStatus,
     pub inspection: AgentSpecInspection,
     pub written_paths: Vec<String>,
     pub skipped_paths: Vec<String>,
+    pub blocking_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSpecSyncStatus {
+    Synchronized,
+    Incomplete,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,11 +133,15 @@ pub fn inspect_agent_specs(project_root: impl AsRef<Path>) -> Result<AgentSpecIn
     let paths = validated_paths(project_root.as_ref())?;
     let settings = required_settings(&paths.root)?;
     let state = read_runtime_state(&paths.state)?;
-    let artifacts = desired_artifacts(&paths.root, &settings);
+    let scopes = resolve_project_scopes(&paths.root, None)?;
+    let artifacts = desired_artifacts(&paths.root, &scopes.execution_root, &settings);
     inspect_desired(&settings, artifacts, state.as_ref()).map(|items| AgentSpecInspection {
         spec_version: SPEC_VERSION.to_owned(),
         renderer_version: RENDERER_VERSION.to_owned(),
         settings_revision: settings.revision,
+        scope: scopes.inspection(),
+        effective_declarations: effective_agent_declarations(&scopes, &settings.agent_spec_targets),
+        mcp_hosts: inspect_mcp_host_configs(&scopes, &settings.agent_spec_targets),
         artifacts: items.into_iter().map(|item| item.public).collect(),
     })
 }
@@ -131,28 +150,38 @@ pub fn sync_agent_specs(
     project_root: impl AsRef<Path>,
     request: AgentSpecSyncRequest,
 ) -> Result<AgentSpecSyncResult, V3Error> {
-    let paths = validated_paths(project_root.as_ref())?;
+    sync_agent_specs_with_hook(project_root.as_ref(), request, |_, _| Ok(()))
+}
+
+fn sync_agent_specs_with_hook(
+    project_root: &Path,
+    request: AgentSpecSyncRequest,
+    mut before_write: impl FnMut(&Path, usize) -> Result<(), V3Error>,
+) -> Result<AgentSpecSyncResult, V3Error> {
+    let paths = validated_paths(project_root)?;
     let settings = required_settings(&paths.root)?;
     let prior_state = read_runtime_state(&paths.state)?;
+    let scopes = resolve_project_scopes(&paths.root, None)?;
     let inspected = inspect_desired(
         &settings,
-        desired_artifacts(&paths.root, &settings),
+        desired_artifacts(&paths.root, &scopes.execution_root, &settings),
         prior_state.as_ref(),
     )?;
-    let mut written_paths = Vec::new();
     let mut skipped_paths = Vec::new();
     let mut state_artifacts = Vec::new();
+    let mut prepared_writes = Vec::new();
 
-    for item in inspected {
+    for (index, item) in inspected.iter().enumerate() {
         let should_write = matches!(
             item.public.status,
             AgentSpecArtifactStatus::Missing | AgentSpecArtifactStatus::Outdated
         ) || (item.public.status == AgentSpecArtifactStatus::ModifiedOutside
-            && request.force_managed_region);
+            && request.force_managed_region)
+            || (item.public.status == AgentSpecArtifactStatus::LegacyMigratable
+                && request.force_managed_region);
         let last_written_hash = if should_write {
             let replacement = merged_content(&item)?;
-            atomic_replace_with_precondition(&item.desired.path, &replacement, &item.snapshot)?;
-            written_paths.push(item.public.path.clone());
+            prepared_writes.push((index, replacement));
             Some(item.desired.desired_hash.clone())
         } else {
             skipped_paths.push(item.public.path.clone());
@@ -163,9 +192,9 @@ pub fn sync_agent_specs(
             }
         };
         state_artifacts.push(AgentSpecRuntimeArtifact {
-            path: item.public.path,
-            consumers: item.public.consumers,
-            desired_hash: item.desired.desired_hash,
+            path: item.public.path.clone(),
+            consumers: item.public.consumers.clone(),
+            desired_hash: item.desired.desired_hash.clone(),
             last_written_hash,
         });
     }
@@ -180,12 +209,70 @@ pub fn sync_agent_specs(
     };
     let yaml = serde_yaml::to_string(&state)
         .map_err(|error| validation("V3_AGENT_SPECS_STATE_SERIALIZE_FAILED", error.to_string()))?;
-    atomic_replace_unconditional(&paths.state, yaml.as_bytes())?;
-    let inspection = inspect_agent_specs(&paths.root)?;
+    let state_snapshot = snapshot_regular_file(&paths.state, MAX_STATE_BYTES)?;
+
+    // Fail before the first mutation if any artifact or runtime-state precondition is stale.
+    for (index, _) in &prepared_writes {
+        let item = &inspected[*index];
+        verify_precondition(&item.desired.path, &item.snapshot, MAX_ARTIFACT_BYTES)?;
+    }
+    verify_precondition(&paths.state, &state_snapshot, MAX_STATE_BYTES)?;
+
+    let mut attempted_writes = Vec::new();
+    for (write_number, (index, replacement)) in prepared_writes.iter().enumerate() {
+        let item = &inspected[*index];
+        attempted_writes.push((*index, replacement.as_slice()));
+        let result = before_write(&item.desired.path, write_number).and_then(|_| {
+            atomic_replace_with_precondition(&item.desired.path, replacement, &item.snapshot)
+        });
+        if let Err(error) = result {
+            return rollback_after_error(error, &inspected, &attempted_writes, None);
+        }
+    }
+
+    let state_write_number = prepared_writes.len();
+    if let Err(error) = before_write(&paths.state, state_write_number).and_then(|_| {
+        atomic_replace_with_precondition(&paths.state, yaml.as_bytes(), &state_snapshot)
+    }) {
+        return rollback_after_error(
+            error,
+            &inspected,
+            &attempted_writes,
+            Some((&paths.state, yaml.as_bytes(), &state_snapshot)),
+        );
+    }
+
+    let inspection = match inspect_agent_specs(&paths.root) {
+        Ok(inspection) => inspection,
+        Err(error) => {
+            return rollback_after_error(
+                error,
+                &inspected,
+                &attempted_writes,
+                Some((&paths.state, yaml.as_bytes(), &state_snapshot)),
+            )
+        }
+    };
+    let blocking_paths = inspection
+        .artifacts
+        .iter()
+        .filter(|item| item.status != AgentSpecArtifactStatus::InSync)
+        .map(|item| item.path.clone())
+        .collect::<Vec<_>>();
+    let status = if blocking_paths.is_empty() {
+        AgentSpecSyncStatus::Synchronized
+    } else {
+        AgentSpecSyncStatus::Incomplete
+    };
     Ok(AgentSpecSyncResult {
+        status,
         inspection,
-        written_paths,
+        written_paths: prepared_writes
+            .iter()
+            .map(|(index, _)| inspected[*index].public.path.clone())
+            .collect(),
         skipped_paths,
+        blocking_paths,
     })
 }
 
@@ -224,7 +311,11 @@ fn required_settings(root: &Path) -> Result<V3ProjectSettings, V3Error> {
     })
 }
 
-fn desired_artifacts(root: &Path, settings: &V3ProjectSettings) -> Vec<DesiredArtifact> {
+fn desired_artifacts(
+    control_root: &Path,
+    artifact_root: &Path,
+    settings: &V3ProjectSettings,
+) -> Vec<DesiredArtifact> {
     let mut grouped: BTreeMap<&str, Vec<AgentSpecTarget>> = BTreeMap::new();
     for target in &settings.agent_spec_targets {
         let path = match target {
@@ -237,9 +328,15 @@ fn desired_artifacts(root: &Path, settings: &V3ProjectSettings) -> Vec<DesiredAr
         .into_iter()
         .map(|(relative_path, consumers)| {
             let region = render_region(&consumers, settings.output_language);
+            let path = artifact_root.join(relative_path);
+            let relative_path = path
+                .strip_prefix(control_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .into_owned();
             DesiredArtifact {
-                path: root.join(relative_path),
-                relative_path: relative_path.to_owned(),
+                path,
+                relative_path,
                 consumers,
                 desired_hash: hash(region.as_bytes()),
                 region,
@@ -271,11 +368,14 @@ fn render_region(consumers: &[AgentSpecTarget], language: OutputLanguage) -> Str
             "禁止恢复 V2 state、run、agent-view、adapters 或其他旧协议文件。",
             "开始工作前必须读取 V3 current task、task lifecycle、plan 和 session 投影；不得用 V2 status/sync/output 或旧仓库 skills 推断当前状态。",
             "优先使用已连接的 V3 MCP；MCP 不可用时使用能输出 V3 JSON 的 CLI fallback。在 VibeHub 源码仓库中优先使用由当前源码构建的 <project_root>/target/debug/vibehub，不得假定 PATH 中的旧安装包兼容。若命令启动 GUI、没有 JSON 或版本不兼容，必须停止状态变更并明确报告控制面不可用。",
-            "进入执行时必须先把目标 plan node 置为 active，再用 session_open 记录 task、node、Agent 和真实 working directory；不得在无活动 session 的情况下声称正在执行。",
+            "读取 task.workflow_profile 后按复杂度执行：lightweight 仅记录最小 session/event/result 与必要风险，不创建任务图或强制完整里程碑；standard 使用常规计划与审查；full 使用完整计划、finding、证据和确认门禁。无法判断时选择 standard，并把判断写入 progress。",
+            "standard/full 进入执行时必须先把目标 plan node 置为 active，再用 session_open 记录 task、node、Agent 和真实 working directory；lightweight 可跳过任务图节点，但仍须用最小事件记录器保留执行、结果和风险事实。",
             "每完成一个可核验里程碑都必须写 progress 事件；发现阻塞、范围漂移、版本冲突或证据缺口时必须立即写 risk 事件，不得只在聊天中说明。",
             "计划、依赖或节点状态变化必须在发生的同一工作批次写入 V3 事件；禁止工作完成后再凭记忆一次性补写过程。",
+            "实现结束不是停点：必须立即执行与每个必需 criterion 对应的真实验证，并通过 criterion_review 将其从 accepted 更新为 passed、failed 或 blocked；accepted 只表示验收标准已登记，不表示已经通过。",
+            "若任一必需 criterion 未通过或 finding 未闭环，必须继续修复或记录 risk/blocker，不得声称完成；全部通过后必须在同一工作批次完成 plan node、agent_result 与 session_close，并调用 task_completion_propose 进入待用户确认。",
+            "只有全部必需 criterion 有可核验 evidence、finding 已闭环时才能请求用户确认；用户在当前受信交互中明确同意后，必须立即调用 task_complete 完成并归档，不得停在 review/completion_pending，也不得把手动关任务留给用户。",
             "结束或交接前必须写 agent_result（成功、失败或仍在运行的真实状态及证据），然后 session_close；中断恢复必须显式记录 gap/recover 或新的 session。",
-            "只有全部必需 criterion 有可核验 evidence、finding 已闭环且用户通过受信渠道确认后，才能提议或确认 task 完成。",
             "只有存在可核验的工具结果、事件或测试证据时才能声称工作完成；缺少证据时必须明确说明未验证。",
         ],
         OutputLanguage::ZhTw => [
@@ -285,11 +385,14 @@ fn render_region(consumers: &[AgentSpecTarget], language: OutputLanguage) -> Str
             "禁止恢復 V2 state、run、agent-view、adapters 或其他舊協定檔案。",
             "開始工作前必須讀取 V3 current task、task lifecycle、plan 與 session 投影；不得用 V2 status/sync/output 或舊倉庫 skills 推斷目前狀態。",
             "優先使用已連線的 V3 MCP；MCP 不可用時使用能輸出 V3 JSON 的 CLI fallback。在 VibeHub 原始碼倉庫中優先使用由目前原始碼建置的 <project_root>/target/debug/vibehub，不得假定 PATH 中的舊安裝套件相容。若命令啟動 GUI、沒有 JSON 或版本不相容，必須停止狀態變更並明確回報控制面不可用。",
-            "進入執行時必須先把目標 plan node 設為 active，再用 session_open 記錄 task、node、Agent 與真實 working directory；不得在沒有活動 session 的情況下宣稱正在執行。",
+            "讀取 task.workflow_profile 後按複雜度執行：lightweight 僅記錄最小 session/event/result 與必要風險，不建立任務圖或強制完整里程碑；standard 使用常規計畫與審查；full 使用完整計畫、finding、證據和確認門檻。無法判斷時選擇 standard，並把判斷寫入 progress。",
+            "standard/full 進入執行時必須先把目標 plan node 設為 active，再用 session_open 記錄 task、node、Agent 與真實 working directory；lightweight 可略過任務圖節點，但仍須用最小事件記錄器保留執行、結果和風險事實。",
             "每完成一個可核驗里程碑都必須寫 progress 事件；發現阻塞、範圍漂移、版本衝突或證據缺口時必須立即寫 risk 事件，不得只在聊天中說明。",
             "計畫、依賴或節點狀態變化必須在發生的同一工作批次寫入 V3 事件；禁止工作完成後再憑記憶一次性補寫過程。",
+            "實作結束不是停點：必須立即執行與每個必要 criterion 對應的真實驗證，並透過 criterion_review 將其從 accepted 更新為 passed、failed 或 blocked；accepted 只表示驗收標準已登記，不表示已經通過。",
+            "若任一必要 criterion 未通過或 finding 未閉環，必須繼續修復或記錄 risk/blocker，不得宣稱完成；全部通過後必須在同一工作批次完成 plan node、agent_result 與 session_close，並呼叫 task_completion_propose 進入等待使用者確認。",
+            "只有全部必要 criterion 具備可核驗 evidence、finding 已閉環時才能請求使用者確認；使用者在目前受信互動中明確同意後，必須立即呼叫 task_complete 完成並封存，不得停在 review/completion_pending，也不得把手動關閉任務留給使用者。",
             "結束或交接前必須寫 agent_result（成功、失敗或仍在執行的真實狀態及證據），然後 session_close；中斷恢復必須明確記錄 gap/recover 或新的 session。",
-            "只有全部必要 criterion 具備可核驗 evidence、finding 已閉環且使用者透過受信管道確認後，才能提議或確認 task 完成。",
             "只有具備可核驗的工具結果、事件或測試證據時才能宣稱工作完成；缺少證據時必須明確說明尚未驗證。",
         ],
         OutputLanguage::EnUs => [
@@ -299,11 +402,14 @@ fn render_region(consumers: &[AgentSpecTarget], language: OutputLanguage) -> Str
             "Do not restore V2 state, run, agent-view, adapters, or any other legacy protocol files.",
             "Before work, read the V3 current task, task lifecycle, plan, and session projections; never infer current state from V2 status/sync/output or legacy repository skills.",
             "Prefer a connected V3 MCP server; when MCP is unavailable, use a CLI fallback that emits V3 JSON. In a VibeHub source checkout, prefer <project_root>/target/debug/vibehub built from the current source and never assume an older PATH installation is compatible. If it launches a GUI, emits no JSON, or is incompatible, stop state mutations and report that the control plane is unavailable.",
-            "Before execution, transition the target plan node to active and call session_open with the task, node, Agent, and real working directory; never claim execution without an active session.",
+            "Read task.workflow_profile and scale execution accordingly: lightweight records only the minimum session/event/result and necessary risks, without a task graph or mandatory full milestone set; standard uses the normal plan and review flow; full uses complete planning, findings, evidence, and confirmation gates. When uncertain, choose standard and record the decision in progress.",
+            "For standard/full, transition the target plan node to active and call session_open with the task, node, Agent, and real working directory before execution; lightweight may skip the graph node but must preserve execution, result, and risk facts through the minimal event recorder.",
             "Write a progress event after every verifiable milestone. Write a risk event immediately for blockers, scope drift, version conflicts, or evidence gaps; chat-only reporting is insufficient.",
             "Write plan, dependency, and node-state changes in the same work batch in which they occur; do not reconstruct the process from memory after implementation finishes.",
+            "Implementation completion is not a stopping point: immediately run the real validation for every required criterion and use criterion_review to move it from accepted to passed, failed, or blocked. Accepted means registered, not passed.",
+            "If any required criterion has not passed or any finding remains open, continue remediation or record a risk/blocker and do not claim completion. When all are green, finish the plan node, agent_result, and session_close in the same work batch, then call task_completion_propose.",
+            "Ask for confirmation only after every required criterion has verifiable evidence and findings are closed. When the user explicitly agrees in the current trusted interaction, immediately call task_complete to complete and archive the task; do not leave it in review/completion_pending or make the user close it manually.",
             "Before stopping or handing off, write agent_result with the truthful succeeded, failed, or running state and evidence, then call session_close. Interrupted work must explicitly record gap/recover or open a new session.",
-            "Propose or confirm task completion only after every required criterion has verifiable evidence, findings are closed, and the user confirms through a trusted channel.",
             "Claim completion only when supported by verifiable tool results, events, or test evidence; explicitly state when work is unverified.",
         ],
     };
@@ -403,16 +509,59 @@ fn inspect_file(
             ))
         }
     };
-    if text.contains(OLD_START) || text.contains(OLD_END) {
-        return Ok(unsupported_with_bytes(
-            bytes,
-            metadata.permissions(),
-            whole_hash,
-            "legacy V2 managed marker detected",
-        ));
-    }
     let start_count = text.matches(MANAGED_START).count();
     let end_count = text.matches(MANAGED_END).count();
+    let old_start_count = text.matches(OLD_START).count();
+    let old_end_count = text.matches(OLD_END).count();
+    if old_start_count > 0 || old_end_count > 0 {
+        if start_count > 0 || end_count > 0 {
+            return Ok(unsupported_with_bytes(
+                bytes,
+                metadata.permissions(),
+                whole_hash,
+                "legacy V2 and V3 managed markers coexist",
+            ));
+        }
+        if old_start_count > 1 || old_end_count > 1 {
+            return Ok(unsupported_with_bytes(
+                bytes,
+                metadata.permissions(),
+                whole_hash,
+                "legacy V2 managed markers are duplicated",
+            ));
+        }
+        if old_start_count != old_end_count {
+            return Ok(unsupported_with_bytes(
+                bytes,
+                metadata.permissions(),
+                whole_hash,
+                "legacy V2 managed marker is missing its matching endpoint",
+            ));
+        }
+        let start = text.find(OLD_START).unwrap();
+        let end_marker = text.find(OLD_END).unwrap();
+        if end_marker < start {
+            return Ok(unsupported_with_bytes(
+                bytes,
+                metadata.permissions(),
+                whole_hash,
+                "legacy V2 managed markers are reversed",
+            ));
+        }
+        let end = end_marker + OLD_END.len();
+        let current_hash = hash(&text.as_bytes()[start..end]);
+        return Ok((
+            FileSnapshot {
+                whole_hash: Some(whole_hash),
+                bytes: Some(bytes),
+                permissions: Some(metadata.permissions()),
+                region_range: Some((start, end)),
+            },
+            AgentSpecArtifactStatus::LegacyMigratable,
+            "legacy V2 managed region can be migrated after explicit confirmation".to_owned(),
+            Some(current_hash),
+        ));
+    }
     if start_count > 1 || end_count > 1 {
         return Ok(unsupported_with_bytes(
             bytes,
@@ -585,6 +734,115 @@ fn read_runtime_state(path: &Path) -> Result<Option<AgentSpecRuntimeState>, V3Er
     Ok(Some(state))
 }
 
+fn snapshot_regular_file(path: &Path, max_bytes: u64) -> Result<FileSnapshot, V3Error> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(FileSnapshot {
+                whole_hash: None,
+                bytes: None,
+                permissions: None,
+                region_range: None,
+            })
+        }
+        Err(error) => return Err(io_error("V3_AGENT_SPECS_SNAPSHOT_FAILED", error)),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > max_bytes {
+        return Err(validation(
+            "V3_AGENT_SPECS_SNAPSHOT_INVALID",
+            format!(
+                "transaction target must be a regular file within the size limit: {}",
+                path.display()
+            ),
+        ));
+    }
+    let bytes =
+        fs::read(path).map_err(|error| io_error("V3_AGENT_SPECS_SNAPSHOT_FAILED", error))?;
+    Ok(FileSnapshot {
+        whole_hash: Some(hash(&bytes)),
+        bytes: Some(bytes),
+        permissions: Some(metadata.permissions()),
+        region_range: None,
+    })
+}
+
+fn rollback_after_error(
+    original_error: V3Error,
+    inspected: &[InspectedArtifact],
+    attempted_writes: &[(usize, &[u8])],
+    state_attempt: Option<(&Path, &[u8], &FileSnapshot)>,
+) -> Result<AgentSpecSyncResult, V3Error> {
+    let mut rollback_errors = Vec::new();
+    if let Some((path, replacement, snapshot)) = state_attempt {
+        if let Err(error) = rollback_snapshot(path, replacement, snapshot, MAX_STATE_BYTES) {
+            rollback_errors.push(error.to_string());
+        }
+    }
+    for (index, replacement) in attempted_writes.iter().rev() {
+        let item = &inspected[*index];
+        if let Err(error) = rollback_snapshot(
+            &item.desired.path,
+            replacement,
+            &item.snapshot,
+            MAX_ARTIFACT_BYTES,
+        ) {
+            rollback_errors.push(error.to_string());
+        }
+    }
+    if rollback_errors.is_empty() {
+        Err(original_error)
+    } else {
+        Err(V3Error::new(
+            "V3_AGENT_SPECS_TRANSACTION_ROLLBACK_FAILED",
+            V3ErrorCategory::Internal,
+            false,
+            "agent spec transaction failed and one or more files could not be rolled back safely",
+        )
+        .with_detail("original_error", original_error.to_string())
+        .with_detail("rollback_errors", serde_json::json!(rollback_errors)))
+    }
+}
+
+fn rollback_snapshot(
+    path: &Path,
+    replacement: &[u8],
+    original: &FileSnapshot,
+    max_bytes: u64,
+) -> Result<(), V3Error> {
+    let replacement_hash = hash(replacement);
+    let current = match snapshot_regular_file(path, max_bytes) {
+        Ok(snapshot) => snapshot,
+        Err(_) if original.whole_hash.is_none() && !path.exists() => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if current.whole_hash == original.whole_hash {
+        return Ok(());
+    }
+    if current.whole_hash.as_deref() != Some(replacement_hash.as_str()) {
+        return Err(V3Error::new(
+            "V3_AGENT_SPECS_ROLLBACK_PRECONDITION_FAILED",
+            V3ErrorCategory::StaleResource,
+            false,
+            format!(
+                "transaction target changed before rollback and was left untouched: {}",
+                path.display()
+            ),
+        ));
+    }
+    if let Some(bytes) = original.bytes.as_ref() {
+        return atomic_replace(path, bytes, original.permissions.as_ref(), Some(&current));
+    }
+    verify_precondition(path, &current, max_bytes)?;
+    fs::remove_file(path).map_err(|error| io_error("V3_AGENT_SPECS_ROLLBACK_FAILED", error))?;
+    let parent = path.parent().ok_or_else(|| {
+        validation(
+            "V3_AGENT_SPECS_ROLLBACK_FAILED",
+            "transaction target has no parent directory",
+        )
+    })?;
+    sync_directory(parent).map_err(|error| io_error("V3_AGENT_SPECS_ROLLBACK_FAILED", error))
+}
+
 fn atomic_replace_with_precondition(
     path: &Path,
     content: &[u8],
@@ -593,7 +851,11 @@ fn atomic_replace_with_precondition(
     atomic_replace(path, content, snapshot.permissions.as_ref(), Some(snapshot))
 }
 
-fn verify_precondition(path: &Path, snapshot: &FileSnapshot) -> Result<(), V3Error> {
+fn verify_precondition(
+    path: &Path,
+    snapshot: &FileSnapshot,
+    max_bytes: u64,
+) -> Result<(), V3Error> {
     match (&snapshot.whole_hash, fs::symlink_metadata(path)) {
         (None, Err(error)) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         (None, _) => Err(stale(path)),
@@ -601,7 +863,7 @@ fn verify_precondition(path: &Path, snapshot: &FileSnapshot) -> Result<(), V3Err
         (Some(expected), Ok(metadata)) => {
             if metadata.file_type().is_symlink()
                 || !metadata.is_file()
-                || metadata.len() > MAX_ARTIFACT_BYTES
+                || metadata.len() > max_bytes
             {
                 return Err(stale(path));
             }
@@ -623,21 +885,6 @@ fn stale(path: &Path) -> V3Error {
         true,
         format!("artifact changed after inspection: {}", path.display()),
     )
-}
-
-fn atomic_replace_unconditional(path: &Path, content: &[u8]) -> Result<(), V3Error> {
-    let permissions = match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
-            return Err(validation(
-                "V3_AGENT_SPECS_STATE_INVALID",
-                "agent-specs.yaml must be a regular file and must not be a symbolic link",
-            ));
-        }
-        Ok(metadata) => Some(metadata.permissions()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(io_error("V3_AGENT_SPECS_STATE_READ_FAILED", error)),
-    };
-    atomic_replace(path, content, permissions.as_ref(), None)
 }
 
 fn atomic_replace(
@@ -668,7 +915,7 @@ fn atomic_replace(
             .and_then(|_| file.sync_all())
             .map_err(|error| io_error("V3_AGENT_SPECS_WRITE_FAILED", error))?;
         if let Some(snapshot) = precondition {
-            verify_precondition(path, snapshot)?;
+            verify_precondition(path, snapshot, MAX_ARTIFACT_BYTES)?;
         }
         replace_file(&temporary, path)
             .map_err(|error| io_error("V3_AGENT_SPECS_WRITE_FAILED", error))?;
@@ -806,6 +1053,8 @@ mod tests {
             AgentSpecTarget::Codex,
         ]);
         let result = sync(&root, false);
+        assert_eq!(result.status, AgentSpecSyncStatus::Synchronized);
+        assert!(result.blocking_paths.is_empty());
         assert_eq!(result.written_paths, vec!["AGENTS.md", "CLAUDE.md"]);
         assert_eq!(
             artifact(&result.inspection, "AGENTS.md").consumers,
@@ -910,9 +1159,14 @@ mod tests {
             artifact(&inspection, "CLAUDE.md").status,
             AgentSpecArtifactStatus::ModifiedOutside
         );
-        assert!(sync(&root, false).written_paths.is_empty());
+        let skipped = sync(&root, false);
+        assert_eq!(skipped.status, AgentSpecSyncStatus::Incomplete);
+        assert_eq!(skipped.blocking_paths, vec!["CLAUDE.md"]);
+        assert!(skipped.written_paths.is_empty());
         assert_eq!(fs::read_to_string(&path).unwrap(), changed);
-        assert_eq!(sync(&root, true).written_paths, vec!["CLAUDE.md"]);
+        let synchronized = sync(&root, true);
+        assert_eq!(synchronized.status, AgentSpecSyncStatus::Synchronized);
+        assert_eq!(synchronized.written_paths, vec!["CLAUDE.md"]);
         assert_eq!(
             artifact(&inspect_agent_specs(&root).unwrap(), "CLAUDE.md").status,
             AgentSpecArtifactStatus::InSync
@@ -921,7 +1175,49 @@ mod tests {
     }
 
     #[test]
-    fn malformed_old_and_invalid_files_are_unsupported_and_never_written() {
+    fn well_formed_legacy_region_requires_confirmation_and_preserves_user_bytes() {
+        let root = project(vec![AgentSpecTarget::ClaudeCode]);
+        let content = format!("prefix\r\n{OLD_START}\nlegacy instructions\n{OLD_END}\nsuffix\n");
+        fs::write(root.join("CLAUDE.md"), content.as_bytes()).unwrap();
+
+        let inspection = inspect_agent_specs(&root).unwrap();
+        assert_eq!(
+            artifact(&inspection, "CLAUDE.md").status,
+            AgentSpecArtifactStatus::LegacyMigratable
+        );
+        let ordinary = sync(&root, false);
+        assert_eq!(ordinary.status, AgentSpecSyncStatus::Incomplete);
+        assert_eq!(ordinary.blocking_paths, vec!["CLAUDE.md"]);
+        assert_eq!(
+            fs::read(root.join("CLAUDE.md")).unwrap(),
+            content.as_bytes()
+        );
+
+        let migrated = sync(&root, true);
+        assert_eq!(migrated.status, AgentSpecSyncStatus::Synchronized);
+        assert_eq!(migrated.written_paths, vec!["CLAUDE.md"]);
+        let updated = fs::read(root.join("CLAUDE.md")).unwrap();
+        assert!(updated.starts_with(b"prefix\r\n"));
+        assert!(updated.ends_with(b"\nsuffix\n"));
+        assert_eq!(
+            updated
+                .windows(OLD_START.len())
+                .filter(|part| *part == OLD_START.as_bytes())
+                .count(),
+            0
+        );
+        assert_eq!(
+            updated
+                .windows(MANAGED_START.len())
+                .filter(|part| *part == MANAGED_START.as_bytes())
+                .count(),
+            1
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn malformed_markers_and_invalid_files_are_unsupported_and_never_written() {
         let cases = [
             (format!("{MANAGED_START}\nno end"), "matching endpoint"),
             (format!("{MANAGED_END}\n{MANAGED_START}"), "reversed"),
@@ -929,7 +1225,13 @@ mod tests {
                 format!("{MANAGED_START}\n{MANAGED_START}\n{MANAGED_END}"),
                 "duplicated",
             ),
-            (format!("{OLD_START}\nlegacy\n{OLD_END}"), "legacy V2"),
+            (format!("{OLD_START}\nno end"), "matching endpoint"),
+            (format!("{OLD_END}\n{OLD_START}"), "reversed"),
+            (format!("{OLD_START}\n{OLD_START}\n{OLD_END}"), "duplicated"),
+            (
+                format!("{MANAGED_START}\nv3\n{MANAGED_END}\n{OLD_START}\nlegacy\n{OLD_END}"),
+                "coexist",
+            ),
         ];
         for (content, reason) in cases {
             let root = project(vec![AgentSpecTarget::ClaudeCode]);
@@ -937,7 +1239,9 @@ mod tests {
             let item = inspect_agent_specs(&root).unwrap().artifacts.remove(0);
             assert_eq!(item.status, AgentSpecArtifactStatus::Unsupported);
             assert!(item.reason.contains(reason));
-            sync(&root, true);
+            let result = sync(&root, true);
+            assert_eq!(result.status, AgentSpecSyncStatus::Incomplete);
+            assert_eq!(result.blocking_paths, vec!["CLAUDE.md"]);
             assert_eq!(fs::read_to_string(root.join("CLAUDE.md")).unwrap(), content);
             fs::remove_dir_all(root).unwrap();
         }
@@ -950,6 +1254,37 @@ mod tests {
         );
         sync(&root, true);
         assert_eq!(fs::read(root.join("CLAUDE.md")).unwrap(), [0xff, 0xfe]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn multi_artifact_failure_rolls_back_prior_writes_and_runtime_state() {
+        let root = project(vec![
+            AgentSpecTarget::ClaudeCode,
+            AgentSpecTarget::Opencode,
+            AgentSpecTarget::Codex,
+        ]);
+        let error = sync_agent_specs_with_hook(
+            &root,
+            AgentSpecSyncRequest {
+                force_managed_region: false,
+            },
+            |_, write_number| {
+                if write_number == 1 {
+                    Err(validation(
+                        "V3_AGENT_SPECS_TEST_WRITE_FAILED",
+                        "injected second-artifact failure",
+                    ))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "V3_AGENT_SPECS_TEST_WRITE_FAILED");
+        assert!(!root.join("AGENTS.md").exists());
+        assert!(!root.join("CLAUDE.md").exists());
+        assert!(!root.join(".vibehub/runtime/agent-specs.yaml").exists());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -983,6 +1318,37 @@ mod tests {
         assert!(content.starts_with("user content without newline\n\n"));
         assert_eq!(content.matches(MANAGED_START).count(), 1);
         assert!(sync(&root, false).written_paths.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn nested_git_project_targets_effective_execution_root_and_reports_precedence() {
+        let root = project(vec![AgentSpecTarget::Codex, AgentSpecTarget::Opencode]);
+        let nested = root.join("GDG2026");
+        fs::create_dir_all(nested.join(".git")).unwrap();
+        fs::write(root.join("AGENTS.md"), "outer instructions\n").unwrap();
+        fs::write(nested.join("AGENTS.md"), "inner instructions\n").unwrap();
+
+        let before = inspect_agent_specs(&root).unwrap();
+        assert_eq!(
+            before.scope.source,
+            super::super::ProjectScopeSource::DetectedGitRoot
+        );
+        assert_eq!(before.artifacts[0].path, "GDG2026/AGENTS.md");
+        assert_eq!(before.effective_declarations.len(), 2);
+        assert_eq!(before.effective_declarations[0].path, "AGENTS.md");
+        assert_eq!(before.effective_declarations[1].path, "GDG2026/AGENTS.md");
+
+        let result = sync(&root, false);
+        assert_eq!(result.status, AgentSpecSyncStatus::Synchronized);
+        assert_eq!(result.written_paths, vec!["GDG2026/AGENTS.md"]);
+        assert_eq!(
+            fs::read_to_string(root.join("AGENTS.md")).unwrap(),
+            "outer instructions\n"
+        );
+        let inner = fs::read_to_string(nested.join("AGENTS.md")).unwrap();
+        assert!(inner.starts_with("inner instructions\n"));
+        assert!(inner.contains(MANAGED_START));
         fs::remove_dir_all(root).unwrap();
     }
 }

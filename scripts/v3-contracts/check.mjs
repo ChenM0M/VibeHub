@@ -184,24 +184,24 @@ assert(/set\(\{ lifecycleAction: null, lifecycleResult: result \}\);[\s\S]{0,100
 assert(!/initialSourceMode="fixture"[\s\S]{0,300}lifecycleApi=/.test(homeSource), "fixture playground receives no production lifecycle write API");
 assert(!/initialSourceMode="fixture"[\s\S]{0,500}(revealProjectFile|openProjectFile|createTask)=/.test(homeSource), "fixture playground receives no production project file or task mutation actions");
 assert(/initialSourceMode="production"[\s\S]{0,900}createTask=\{tauriApi\.v3CreateTask\}/.test(homeSource), "production V3 route injects the bounded task creation action");
-assert(/sourceMode === "production" && createTask[\s\S]{0,150}创建任务/.test(cockpitSource), "production V3 exposes a user-reachable task creation entry");
+assert(/sourceMode === "production" && createTask[\s\S]{0,250}(创建任务|v3\.cockpit\.create\.submit)/.test(cockpitSource), "production V3 exposes a user-reachable task creation entry");
 assert(!/VibehubCockpitDialog|VibeHub Cockpit|isCockpitOpen|LayoutDashboard/.test(projectCardSource), "project card no longer reaches or mounts the legacy Cockpit");
 assert(/initialSourceMode="production"[\s\S]{0,800}revealProjectFile=\{tauriApi\.vibehubRevealProjectFile\}[\s\S]{0,150}openProjectFile=\{tauriApi\.vibehubOpenProjectFile\}/.test(homeSource), "production V3 route injects bounded project file actions");
 assert(/onRevealProjectFile=\{revealProjectFile\}[\s\S]{0,150}onOpenProjectFile=\{openProjectFile\}/.test(cockpitSource), "cockpit forwards project file actions only to the structure surface");
 assert(/selectedNode\.kind === "file" && onOpenProjectFile/.test(structureSource), "structure surface restricts default-app open to files");
 assert(/role="alert">\{fileActionError\}/.test(structureSource), "structure surface keeps project file action failures visible");
-assert(/status\.state === "conflict"[\s\S]{0,300}不会提供强制初始化或迁移/.test(lifecycleSource), "conflict lifecycle UI fails closed without force controls");
+assert(/status\.state === "conflict"[\s\S]{0,500}(不会提供强制初始化或迁移|v3\.lifecycle\.noRepairCandidate)/.test(lifecycleSource), "conflict lifecycle UI fails closed without force controls");
 assert(/nextAction !== "migrate" \|\| migrationConfirmed/.test(lifecycleSource), "V2 migration requires explicit archive acknowledgement");
 for (const [pattern, label] of [
-  [/usage\?\.total_tokens[\s\S]{0,200}费用不可用/, "project token summary"],
+  [/usage\?\.total_tokens[\s\S]{0,200}(费用不可用|v3\.cockpit\.usageValue|v3\.cockpit\.usageEmpty)/, "project token summary"],
   [/AIUsagePanel/, "AI usage panel"],
-  [/项目 AI 用量总览/, "project usage drawer"],
+  [/(项目 AI 用量总览|v3\.cockpit\.projectUsage)/, "project usage drawer"],
 ]) assert(pattern.test(cockpitSource), `M1 cockpit preserves ${label}`);
 for (const [pattern, label] of [
-  [/AI 工具用量/, "usage title"],
-  [/总 Token/, "token metric"],
-  [/预估成本/, "cost metric"],
-  [/会话明细/, "session interaction"],
+  [/(AI 工具用量|v3\.usage\.projectTitle|v3\.usage\.taskTitle)/, "usage title"],
+  [/(总 Token|v3\.usage\.totalToken)/, "token metric"],
+  [/(预估成本|v3\.usage\.estimatedCost)/, "cost metric"],
+  [/(会话明细|v3\.usage\.sessionDetails)/, "session interaction"],
   [/usage\.claude_app[\s\S]{0,100}usage\.cursor/, "explicit unsupported Claude App and Cursor sources"],
   [/tool\.tokens \?[^\n]*: tool\.status/, "unsupported sources render status instead of zero tokens"],
 ]) assert(pattern.test(usageSource), `M1 usage panel preserves ${label}`);
@@ -231,7 +231,7 @@ assert(usageCapabilitySource.includes('explicit `claude_app` and `cursor` summar
 for (const [pattern, label] of [
   [/FlaskConical/, "fixture scenario control"],
   [/showScenarioDropdown/, "scenario dropdown interaction"],
-  [/调试模式/, "debug indicator"],
+  [/(调试模式|v3\.cockpit\.debugMode)/, "debug indicator"],
   [/setShowSettingsModal\(true\)/, "settings interaction"],
   [/ProjectSetupModal/, "setup/settings modal"],
 ]) assert(pattern.test(cockpitSource), `M1 cockpit preserves ${label}`);
@@ -342,6 +342,14 @@ assert(taskCreateValidator({
   initial_node_id: "node.contract.initial",
   lifecycle_version: 1,
 }), "task create result includes initial node and lifecycle version");
+assert(taskCreateValidator({
+  status: "created",
+  task_id: "task.lightweight",
+  task_path: ".vibehub/tasks/task.lightweight/task.yaml",
+  current_pointer_path: ".vibehub/tasks/current/task.yaml",
+  initial_node_id: null,
+  lifecycle_version: 2,
+}), "lightweight task create result has no synthetic initial node");
 assert(!taskCreateValidator({ title: "Contract", intent: "Missing criteria", acceptance_criteria: [] }), "task create rejects empty acceptance criteria");
 
 const settingsValidator = ajv.getSchema(schemas.get("project-settings.schema.json").$id);
@@ -352,6 +360,45 @@ assert(!settingsValidator({ expected_revision: 0, output_language: "zh-CN", agen
 const agentSpecValidator = ajv.getSchema(schemas.get("agent-spec.schema.json").$id);
 assert(agentSpecValidator({ force_managed_region: false }), "agent spec sync request validates");
 assert(!agentSpecValidator({ force_managed_region: false, adapters: true }), "agent spec sync rejects legacy adapter fields");
+const agentSpecArtifact = (status) => ({
+  path: "AGENTS.md",
+  consumers: ["codex"],
+  status,
+  reason: "contract sample",
+  current_hash: null,
+  desired_hash: "desired",
+  last_written_hash: null,
+});
+const agentSpecInspection = (status) => ({
+  spec_version: "3.0",
+  renderer_version: "3",
+  settings_revision: 1,
+  scope: {
+    control_root: "/project",
+    execution_root: "/project/repo",
+    git_root: "/project/repo",
+    host_config_root: "/project/repo",
+    source: "detected_git_root",
+    nested_repository: true,
+    warnings: ["V3_NESTED_GIT_ROOT_DETECTED"],
+  },
+  effective_declarations: [{ path: "repo/AGENTS.md", consumers: ["codex"], precedence: 1, exists: true, contains_v3_region: true }],
+  mcp_hosts: [{ consumer: "codex", path: "repo/.codex/config.toml", status: "mismatched", reason: "wrong root", server_name: "vibehub", configured_project_root: "/other" }],
+  artifacts: [agentSpecArtifact(status)],
+});
+assert(agentSpecValidator({
+  status: "incomplete",
+  inspection: agentSpecInspection("legacy_migratable"),
+  written_paths: [],
+  skipped_paths: ["AGENTS.md"],
+  blocking_paths: ["AGENTS.md"],
+}), "agent spec sync result exposes incomplete legacy migration");
+assert(!agentSpecValidator({
+  status: "synchronized",
+  inspection: agentSpecInspection("unsupported"),
+  written_paths: [],
+  skipped_paths: ["AGENTS.md"],
+}), "agent spec sync result requires blocking paths");
 
 const commandValidator = ajv.getSchema(schemas.get("application-command.schema.json").$id);
 assert(commandValidator({

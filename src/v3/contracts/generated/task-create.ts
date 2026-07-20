@@ -5,6 +5,7 @@ export type V3TaskCreateContract = V3TaskCreateRequest | V3TaskCreateResult;
 export interface V3TaskCreateRequest {
   title: string;
   intent: string;
+  workflow_profile?: "lightweight" | "standard" | "full";
   /**
    * @minItems 1
    * @maxItems 100
@@ -17,7 +18,7 @@ export interface V3TaskCreateResult {
   task_id: string;
   task_path: string;
   current_pointer_path: string;
-  initial_node_id: string;
+  initial_node_id: string | null;
   lifecycle_version: number;
   [k: string]: unknown;
 }

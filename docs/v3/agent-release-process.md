@@ -19,6 +19,11 @@ Agent Specification；任务、计划、事件和 session 的事实来源仍然�
    立即写 `risk`。
 5. 结束时写真实的 `agent_result`，然后 `session_close`。中断后必须新开
    recovery session 并记录 gap/recover，不得复用“看起来仍在运行”的旧 session。
+6. 实现结束后不得停在 `criterion.accepted`：立即执行逐项验收并通过
+   `criterion_review` 写入 `passed`、`failed` 或 `blocked`。`accepted` 只表示标准已
+   登记。全部必需项通过且 finding 闭环后，调用 `task_completion_propose` 请求用户
+   确认；用户在当前受信交互明确同意后，立即调用 `task_complete` 完成并归档，
+   不把手动关闭留给用户。
 
 创建或重写 Git 提交前必须设置并核验仓库级身份：
 

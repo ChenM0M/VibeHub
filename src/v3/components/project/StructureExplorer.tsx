@@ -7,6 +7,7 @@ import { ErrorList } from "@/v3/components/common/ErrorList";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import { NativePathDisplay } from "@/v3/components/common/NativePathDisplay";
 import type { ProjectStructureView } from "@/v3/contracts/generated/project-structure-view";
+import { useTranslation } from "react-i18next";
 
 const kindIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   root: Box,
@@ -17,15 +18,6 @@ const kindIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   symbol: Braces,
 };
 
-const kindLabel: Record<string, string> = {
-  root: "根",
-  directory: "目录",
-  file: "文件",
-  module: "模块",
-  package: "包",
-  symbol: "符号",
-};
-
 const gitStateTone: Record<string, string> = {
   clean: "",
   modified: "text-amber-600 dark:text-amber-400",
@@ -33,23 +25,6 @@ const gitStateTone: Record<string, string> = {
   deleted: "text-red-600 dark:text-red-400",
   ignored: "text-muted-foreground/50",
   unknown: "text-muted-foreground/50",
-};
-
-const gitStateLabel: Record<string, string> = {
-  clean: "干净",
-  modified: "已修改",
-  added: "已添加",
-  deleted: "已删除",
-  ignored: "已忽略",
-  unknown: "未知",
-};
-
-const indexStateLabel: Record<string, string> = {
-  uninitialized: "未初始化",
-  indexing: "索引中",
-  ready: "就绪",
-  interrupted: "已中断",
-  error: "错误",
 };
 
 interface TreeNode {
@@ -93,6 +68,7 @@ interface StructureExplorerProps {
 }
 
 export function StructureExplorer({ data, highlightModuleId }: StructureExplorerProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -166,12 +142,12 @@ export function StructureExplorer({ data, highlightModuleId }: StructureExplorer
 
       <div className="flex items-center gap-3">
         <span className="text-xs text-muted-foreground">
-          {data.nodes.length} 个节点 · {data.edges.length} 条边
-          {data.page.truncated && "（已截断）"}
+          {t("v3.structure.summary", { nodes: data.nodes.length, edges: data.edges.length })}
+          {data.page.truncated && t("v3.structure.truncated")}
         </span>
-        <span className="text-xs text-muted-foreground">索引：{indexStateLabel[data.index_state] ?? data.index_state}</span>
+        <span className="text-xs text-muted-foreground">{t("v3.structure.index", { state: t(`v3.structure.indexState.${data.index_state}`, { defaultValue: data.index_state }) })}</span>
         {data.unsupported_analyzers.length > 0 && (
-          <span className="text-xs text-orange-600">不支持：{data.unsupported_analyzers.join("、")}</span>
+          <span className="text-xs text-orange-600">{t("v3.structure.unsupported", { value: data.unsupported_analyzers.join(t("v3.common.listSeparator")) })}</span>
         )}
         <div className="relative ml-auto">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -179,7 +155,7 @@ export function StructureExplorer({ data, highlightModuleId }: StructureExplorer
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索节点…"
+            placeholder={t("v3.structure.searchNodes")}
             className="h-8 w-56 rounded-md border border-input bg-transparent pl-8 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
@@ -190,7 +166,7 @@ export function StructureExplorer({ data, highlightModuleId }: StructureExplorer
           {search ? (
             <div className="divide-y divide-border/50">
               {searchResults!.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-muted-foreground">无匹配项</div>
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">{t("v3.structure.noMatches")}</div>
               ) : (
                 searchResults!.map(({ node, parents }) => {
                   const Icon = kindIcons[node.kind] ?? File;
@@ -243,7 +219,7 @@ export function StructureExplorer({ data, highlightModuleId }: StructureExplorer
                       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="truncate">{node.name}</span>
                       <span className={cn("ml-auto text-[10px]", gitStateTone[node.git_state])}>
-                        {node.git_state !== "clean" && node.git_state !== "unknown" ? gitStateLabel[node.git_state] ?? node.git_state : ""}
+                        {node.git_state !== "clean" && node.git_state !== "unknown" ? t(`v3.structure.gitState.${node.git_state}`, { defaultValue: node.git_state }) : ""}
                       </span>
                     </button>
                   </div>
@@ -257,12 +233,12 @@ export function StructureExplorer({ data, highlightModuleId }: StructureExplorer
           <aside className="border border-border/70 p-4">
             <div className="mb-2 text-sm font-medium">{selectedNode.name}</div>
             <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between"><span className="text-muted-foreground">类型</span><span>{kindLabel[selectedNode.kind] ?? selectedNode.kind}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Git 状态</span><span className={gitStateTone[selectedNode.git_state]}>{gitStateLabel[selectedNode.git_state] ?? selectedNode.git_state}</span></div>
-              {selectedNode.module_id && <div className="flex justify-between"><span className="text-muted-foreground">模块</span><span>{selectedNode.module_id}</span></div>}
-              {selectedNode.ide_target && <div className="flex justify-between"><span className="text-muted-foreground">IDE 目标</span><span>{selectedNode.ide_target}</span></div>}
+              <div className="flex justify-between"><span className="text-muted-foreground">{t("v3.structure.type")}</span><span>{t(`v3.structure.kind.${selectedNode.kind}`, { defaultValue: selectedNode.kind })}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t("v3.structure.gitStatus")}</span><span className={gitStateTone[selectedNode.git_state]}>{t(`v3.structure.gitState.${selectedNode.git_state}`, { defaultValue: selectedNode.git_state })}</span></div>
+              {selectedNode.module_id && <div className="flex justify-between"><span className="text-muted-foreground">{t("v3.structure.module")}</span><span>{selectedNode.module_id}</span></div>}
+              {selectedNode.ide_target && <div className="flex justify-between"><span className="text-muted-foreground">{t("v3.structure.ideTarget")}</span><span>{selectedNode.ide_target}</span></div>}
               <div className="pt-1">
-                <span className="text-muted-foreground">路径 </span>
+                <span className="text-muted-foreground">{t("v3.structure.path")} </span>
                 <NativePathDisplay path={selectedNode.path} showPlatform />
               </div>
               <EvidenceLink evidenceRefs={selectedNode.evidence_refs} />

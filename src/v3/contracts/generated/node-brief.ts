@@ -21,6 +21,13 @@ export interface NodeBrief {
   project_id: string;
   task_id: string;
   node_id: string | "";
+  workflow_profile: "lightweight" | "standard" | "full";
+  execution_policy: {
+    milestone_policy: "minimal" | "standard" | "full";
+    planning_required: boolean;
+    review_required: boolean;
+    required_records: ("plan" | "session" | "progress" | "result" | "review" | "risk_if_any")[];
+  };
   generated_at: string;
   model_version: string;
   freshness: "fresh" | "stale" | "rebuilding" | "unavailable";

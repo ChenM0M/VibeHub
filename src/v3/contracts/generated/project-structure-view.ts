@@ -25,7 +25,7 @@ export interface ProjectStructureView {
   index_state: "uninitialized" | "indexing" | "ready" | "interrupted" | "error";
   workspace: {
     root: NativePath;
-    source: "session_worktree" | "session_working_directory" | "project_root_fallback";
+    source: "session_worktree" | "session_working_directory" | "detected_git_root" | "project_root_fallback";
     session_id: string | null;
     worktree_id: string | null;
     fallback_reason: string | null;

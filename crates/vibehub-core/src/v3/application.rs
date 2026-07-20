@@ -15,6 +15,10 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+fn default_standard_profile() -> String {
+    "standard".to_owned()
+}
+
 #[derive(Debug, Clone)]
 pub struct V3ApplicationService {
     store: V3EventStore,
@@ -242,6 +246,14 @@ impl V3ApplicationService {
     }
 
     pub fn plan_add_node(&self, command: PlanAddNodeCommand) -> Result<AppendResult, V3Error> {
+        if self.task_workflow_profile(&command.identity.task_id)? == "lightweight" {
+            return Err(V3Error::new(
+                "V3_LIGHTWEIGHT_PLAN_FORBIDDEN",
+                super::domain::V3ErrorCategory::Validation,
+                false,
+                "lightweight tasks do not create plan nodes; record the minimal session/result flow instead",
+            ));
+        }
         self.lifecycle_command(command.into())
     }
 
@@ -263,6 +275,184 @@ impl V3ApplicationService {
     ) -> Result<TaskLifecycleProjection, V3Error> {
         let events = self.store.load_project(project_id)?;
         Ok(super::lifecycle::fold_task(task_id, &events))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn review_criterion(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        actor: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+        criterion_id: &str,
+        outcome: &str,
+        reviewer: &str,
+        evidence_refs: Vec<String>,
+        details: Value,
+    ) -> Result<AppendResult, V3Error> {
+        if !matches!(outcome, "passed" | "failed" | "blocked") {
+            return Err(V3Error::new(
+                "V3_CRITERION_OUTCOME_INVALID",
+                super::domain::V3ErrorCategory::Validation,
+                false,
+                "criterion outcome must be passed, failed, or blocked",
+            ));
+        }
+        let mut payload = json!({
+            "criterion_id": criterion_id,
+            "reviewer": reviewer,
+            "evidence_refs": evidence_refs,
+        });
+        if !details.is_null() {
+            payload["details"] = details;
+        }
+        self.lifecycle_command(LifecycleCommand {
+            event_type: format!("criterion.{outcome}"),
+            project_id: project_id.to_owned(),
+            task_id: task_id.to_owned(),
+            node_id: None,
+            session_id: None,
+            actor: actor.to_owned(),
+            expected_version,
+            idempotency_key: idempotency_key.to_owned(),
+            evidence_grade: Some(EvidenceGrade::HardObserved),
+            payload,
+        })
+    }
+
+    pub fn propose_task_completion(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        actor: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+    ) -> Result<AppendResult, V3Error> {
+        let lifecycle = self.task_lifecycle(project_id, task_id)?;
+        self.lifecycle_command(LifecycleCommand {
+            event_type: "task.completion_proposed".to_owned(),
+            project_id: project_id.to_owned(),
+            task_id: task_id.to_owned(),
+            node_id: None,
+            session_id: None,
+            actor: actor.to_owned(),
+            expected_version,
+            idempotency_key: idempotency_key.to_owned(),
+            evidence_grade: Some(EvidenceGrade::HardObserved),
+            payload: json!({"digest": lifecycle.completion_digest()}),
+        })
+    }
+
+    pub fn complete_task(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        actor: &str,
+        confirmed_by: &str,
+        channel: &str,
+        idempotency_key: &str,
+    ) -> Result<AppendResult, V3Error> {
+        if !matches!(channel, "desktop_ui" | "cli") {
+            return Err(V3Error::new(
+                "V3_CONFIRMATION_AUTHENTICITY_REQUIRED",
+                super::domain::V3ErrorCategory::Validation,
+                false,
+                "completion confirmation requires a trusted channel",
+            ));
+        }
+        let events = self.store.load_project(project_id)?;
+        let proposal_key = format!("{idempotency_key}.proposal");
+        let confirmation_key = format!("{idempotency_key}.confirmation");
+        let existing_confirmation = events.iter().find(|event| {
+            event.task_id.0 == task_id
+                && event.event_type == "task.completion_confirmed"
+                && event.idempotency_key == confirmation_key
+        });
+        if let Some(existing_confirmation) = existing_confirmation {
+            let digest = existing_confirmation
+                .payload
+                .get("digest")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            return self.lifecycle_command(LifecycleCommand {
+                event_type: "task.completion_confirmed".to_owned(),
+                project_id: project_id.to_owned(),
+                task_id: task_id.to_owned(),
+                node_id: None,
+                session_id: None,
+                actor: actor.to_owned(),
+                expected_version: existing_confirmation.expected_version,
+                idempotency_key: confirmation_key,
+                evidence_grade: Some(EvidenceGrade::UserConfirmed),
+                payload: json!({"digest": digest, "confirmed_by": confirmed_by, "channel": channel}),
+            });
+        }
+        let existing_proposal = events.iter().find(|event| {
+            event.task_id.0 == task_id
+                && event.event_type == "task.completion_proposed"
+                && event.idempotency_key == proposal_key
+        });
+        let lifecycle = super::lifecycle::fold_task(task_id, &events);
+        let pending = lifecycle.confirmation.as_ref().filter(|confirmation| {
+            confirmation.valid && confirmation.confirmed_at_version.is_none()
+        });
+        let (digest, confirmation_expected_version) = if let Some(pending) = pending {
+            (pending.digest.clone(), lifecycle.version)
+        } else {
+            let digest = existing_proposal
+                .and_then(|event| event.payload.get("digest"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_else(|| lifecycle.completion_digest());
+            self.lifecycle_command(LifecycleCommand {
+                event_type: "task.completion_proposed".to_owned(),
+                project_id: project_id.to_owned(),
+                task_id: task_id.to_owned(),
+                node_id: None,
+                session_id: None,
+                actor: actor.to_owned(),
+                expected_version: existing_proposal
+                    .map(|event| event.expected_version)
+                    .unwrap_or(lifecycle.version),
+                idempotency_key: proposal_key,
+                evidence_grade: Some(EvidenceGrade::HardObserved),
+                payload: json!({"digest": digest}),
+            })?;
+            let proposed = self.task_lifecycle(project_id, task_id)?;
+            (digest, proposed.version)
+        };
+        self.lifecycle_command(LifecycleCommand {
+            event_type: "task.completion_confirmed".to_owned(),
+            project_id: project_id.to_owned(),
+            task_id: task_id.to_owned(),
+            node_id: None,
+            session_id: None,
+            actor: actor.to_owned(),
+            expected_version: confirmation_expected_version,
+            idempotency_key: confirmation_key,
+            evidence_grade: Some(EvidenceGrade::UserConfirmed),
+            payload: json!({"digest": digest, "confirmed_by": confirmed_by, "channel": channel}),
+        })
+    }
+
+    pub fn close_task_with_exceptions(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        actor: &str,
+        confirmed_by: &str,
+        channel: &str,
+        reason: &str,
+        idempotency_key: &str,
+    ) -> Result<AppendResult, V3Error> {
+        let lifecycle = self.task_lifecycle(project_id, task_id)?;
+        self.lifecycle_command(LifecycleCommand {
+            event_type: "task.closed_with_exceptions".to_owned(), project_id: project_id.to_owned(), task_id: task_id.to_owned(),
+            node_id: None, session_id: None, actor: actor.to_owned(), expected_version: lifecycle.version,
+            idempotency_key: idempotency_key.to_owned(), evidence_grade: Some(EvidenceGrade::UserConfirmed),
+            payload: json!({"reason": reason, "confirmed_by": confirmed_by, "channel": channel, "criteria_snapshot": lifecycle.criteria}),
+        })
     }
 
     pub fn orchestration_command(
@@ -316,6 +506,37 @@ impl V3ApplicationService {
             .enumerate()
             .map(|(index, _)| canonical_criterion_id(task_id, index))
             .collect())
+    }
+
+    fn task_workflow_profile(&self, task_id: &str) -> Result<String, V3Error> {
+        #[derive(Deserialize)]
+        struct TaskProfile {
+            #[serde(default = "default_standard_profile")]
+            workflow_profile: String,
+        }
+        let path = self
+            .store
+            .project_root()
+            .join(".vibehub/tasks")
+            .join(task_id)
+            .join("task.yaml");
+        let content = fs::read_to_string(&path).map_err(|error| {
+            V3Error::new(
+                "V3_TASK_READ_FAILED",
+                super::domain::V3ErrorCategory::NotFound,
+                false,
+                error.to_string(),
+            )
+        })?;
+        let task: TaskProfile = serde_yaml::from_str(&content).map_err(|error| {
+            V3Error::new(
+                "V3_TASK_INVALID",
+                super::domain::V3ErrorCategory::CorruptLog,
+                false,
+                error.to_string(),
+            )
+        })?;
+        Ok(task.workflow_profile)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -714,6 +935,132 @@ mod tests {
 
         let projection = app.task_lifecycle("project.test", "task.test").unwrap();
         assert_eq!(projection.state, "completion_pending");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn complete_task_is_all_green_and_idempotent() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-complete-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub/tasks/task.test")).unwrap();
+        fs::write(
+            root.join(".vibehub/tasks/task.test/task.yaml"),
+            "task_id: task.test\ntitle: Complete task\nintent: Finish without another agent run\nphase: execute\nphase_status: active\nacceptance_criteria:\n- Review passes\n",
+        )
+        .unwrap();
+        let app = V3ApplicationService::open(&root).unwrap();
+        app.lifecycle_command(command(
+            "criterion.passed",
+            "project.test",
+            "task.test",
+            0,
+            "criterion.pass.1",
+            json!({"criterion_id":"criterion.task.test.c01","reviewer":"reviewer","evidence_refs":["test:review"]}),
+        ))
+        .unwrap();
+
+        let first = app
+            .complete_task(
+                "project.test",
+                "task.test",
+                "desktop-user",
+                "ChenM0M",
+                "desktop_ui",
+                "complete.1",
+            )
+            .unwrap();
+        let second = app
+            .complete_task(
+                "project.test",
+                "task.test",
+                "desktop-user",
+                "ChenM0M",
+                "desktop_ui",
+                "complete.1",
+            )
+            .unwrap();
+        assert!(matches!(first, AppendResult::Appended { .. }));
+        assert!(matches!(second, AppendResult::Duplicate { .. }));
+        let lifecycle = app.task_lifecycle("project.test", "task.test").unwrap();
+        assert_eq!(lifecycle.state, "completed");
+        assert_eq!(lifecycle.version, 3);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn complete_task_confirms_the_existing_pending_proposal() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-confirm-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub/tasks/task.test")).unwrap();
+        fs::write(
+            root.join(".vibehub/tasks/task.test/task.yaml"),
+            "task_id: task.test\ntitle: Confirm task\nintent: Confirm the reviewed truth\nphase: execute\nphase_status: active\nacceptance_criteria:\n- Review passes\n",
+        )
+        .unwrap();
+        let app = V3ApplicationService::open(&root).unwrap();
+        app.review_criterion(
+            "project.test",
+            "task.test",
+            "codex",
+            0,
+            "criterion.pass.1",
+            "criterion.task.test.c01",
+            "passed",
+            "reviewer",
+            vec!["test:review".to_owned()],
+            Value::Null,
+        )
+        .unwrap();
+        app.propose_task_completion("project.test", "task.test", "codex", 1, "proposal.1")
+            .unwrap();
+        let proposed = app.task_lifecycle("project.test", "task.test").unwrap();
+        let proposed_digest = proposed.confirmation.as_ref().unwrap().digest.clone();
+
+        app.complete_task(
+            "project.test",
+            "task.test",
+            "codex",
+            "ChenM0M",
+            "cli",
+            "complete.1",
+        )
+        .unwrap();
+
+        let completed = app.task_lifecycle("project.test", "task.test").unwrap();
+        assert_eq!(completed.state, "completed");
+        assert_eq!(completed.version, 3);
+        assert_eq!(completed.confirmation.unwrap().digest, proposed_digest);
+        let events = app.store.load_project("project.test").unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.event_type == "task.completion_proposed")
+                .count(),
+            1
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn forced_closure_rejects_blank_reason() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-force-close-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub/tasks/task.test")).unwrap();
+        fs::write(
+            root.join(".vibehub/tasks/task.test/task.yaml"),
+            "task_id: task.test\ntitle: Force close\nintent: Require a reason\nphase: execute\nphase_status: active\n",
+        )
+        .unwrap();
+        let error = V3ApplicationService::open(&root)
+            .unwrap()
+            .close_task_with_exceptions(
+                "project.test",
+                "task.test",
+                "desktop-user",
+                "ChenM0M",
+                "desktop_ui",
+                "   ",
+                "closure.blank",
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "V3_FORCE_CLOSE_CONFIRMATION_REQUIRED");
         fs::remove_dir_all(root).unwrap();
     }
 

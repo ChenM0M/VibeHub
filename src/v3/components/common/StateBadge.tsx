@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 type Freshness = "fresh" | "stale" | "rebuilding" | "unavailable";
 type Completeness = "complete" | "partial" | "unsupported" | "unknown";
@@ -17,20 +18,6 @@ const completenessTone: Record<Completeness, string> = {
   unknown: "text-muted-foreground",
 };
 
-const freshnessLabelMap: Record<Freshness, string> = {
-  fresh: "最新",
-  stale: "过期",
-  rebuilding: "重建中",
-  unavailable: "不可用",
-};
-
-const completenessLabelMap: Record<Completeness, string> = {
-  complete: "完整",
-  partial: "部分",
-  unsupported: "不支持",
-  unknown: "未知",
-};
-
 interface StateBadgeProps {
   freshness?: Freshness;
   completeness?: Completeness;
@@ -38,16 +25,17 @@ interface StateBadgeProps {
 }
 
 export function StateBadge({ freshness, completeness, className }: StateBadgeProps) {
+  const { t } = useTranslation();
   return (
     <span className={cn("inline-flex items-center gap-2 text-xs", className)}>
       {freshness && (
         <span className={cn("border border-border/70 px-1.5 py-0.5", freshnessTone[freshness])}>
-          {freshnessLabelMap[freshness]}
+          {t(`v3.common.freshness.${freshness}`)}
         </span>
       )}
       {completeness && (
         <span className={cn("border border-border/70 px-1.5 py-0.5", completenessTone[completeness])}>
-          {completenessLabelMap[completeness]}
+          {t(`v3.common.completeness.${completeness}`)}
         </span>
       )}
     </span>

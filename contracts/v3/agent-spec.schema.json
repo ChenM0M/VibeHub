@@ -10,7 +10,10 @@
   "$defs": {
     "AgentSpecTarget": { "enum": ["claude_code", "opencode", "codex"] },
     "V3AgentSpecArtifactStatus": {
-      "enum": ["missing", "in_sync", "outdated", "modified_outside", "unsupported"]
+      "enum": ["missing", "in_sync", "outdated", "modified_outside", "legacy_migratable", "unsupported"]
+    },
+    "V3AgentSpecSyncStatus": {
+      "enum": ["synchronized", "incomplete"]
     },
     "V3AgentSpecArtifactInspection": {
       "type": "object",
@@ -38,13 +41,55 @@
         "last_written_hash": { "type": ["string", "null"] }
       }
     },
+    "ProjectScopeInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control_root", "execution_root", "git_root", "host_config_root", "source", "nested_repository", "warnings"],
+      "properties": {
+        "control_root": { "type": "string", "minLength": 1 },
+        "execution_root": { "type": "string", "minLength": 1 },
+        "git_root": { "type": ["string", "null"] },
+        "host_config_root": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["control_root", "detected_git_root", "session_working_directory", "ambiguous"] },
+        "nested_repository": { "type": "boolean" },
+        "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "EffectiveAgentDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "consumers", "precedence", "exists", "contains_v3_region"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "consumers": { "type": "array", "items": { "$ref": "#/$defs/AgentSpecTarget" }, "uniqueItems": true },
+        "precedence": { "type": "integer", "minimum": 0 },
+        "exists": { "type": "boolean" },
+        "contains_v3_region": { "type": "boolean" }
+      }
+    },
+    "McpHostConfigInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consumer", "path", "status", "reason", "server_name", "configured_project_root"],
+      "properties": {
+        "consumer": { "$ref": "#/$defs/AgentSpecTarget" },
+        "path": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["missing", "in_sync", "mismatched", "invalid"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "server_name": { "type": ["string", "null"] },
+        "configured_project_root": { "type": ["string", "null"] }
+      }
+    },
     "V3AgentSpecInspection": {
       "type": "object",
-      "required": ["spec_version", "renderer_version", "settings_revision", "artifacts"],
+      "required": ["spec_version", "renderer_version", "settings_revision", "scope", "effective_declarations", "mcp_hosts", "artifacts"],
       "properties": {
         "spec_version": { "type": "string", "minLength": 1 },
         "renderer_version": { "type": "string", "minLength": 1 },
         "settings_revision": { "type": "integer", "minimum": 1 },
+        "scope": { "$ref": "#/$defs/ProjectScopeInspection" },
+        "effective_declarations": { "type": "array", "items": { "$ref": "#/$defs/EffectiveAgentDeclaration" } },
+        "mcp_hosts": { "type": "array", "items": { "$ref": "#/$defs/McpHostConfigInspection" } },
         "artifacts": {
           "type": "array",
           "items": { "$ref": "#/$defs/V3AgentSpecArtifactInspection" }
@@ -60,11 +105,13 @@
     },
     "V3AgentSpecSyncResult": {
       "type": "object",
-      "required": ["inspection", "written_paths", "skipped_paths"],
+      "required": ["status", "inspection", "written_paths", "skipped_paths", "blocking_paths"],
       "properties": {
+        "status": { "$ref": "#/$defs/V3AgentSpecSyncStatus" },
         "inspection": { "$ref": "#/$defs/V3AgentSpecInspection" },
         "written_paths": { "type": "array", "items": { "type": "string" } },
-        "skipped_paths": { "type": "array", "items": { "type": "string" } }
+        "skipped_paths": { "type": "array", "items": { "type": "string" } },
+        "blocking_paths": { "type": "array", "items": { "type": "string" } }
       }
     }
   }

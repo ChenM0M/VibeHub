@@ -125,6 +125,19 @@
   "errors": [],
   "task_id": "task.none",
   "node_id": "node.none",
+  "workflow_profile": "full",
+  "execution_policy": {
+    "milestone_policy": "full",
+    "planning_required": true,
+    "review_required": true,
+    "required_records": [
+      "plan",
+      "session",
+      "progress",
+      "result",
+      "review"
+    ]
+  },
   "goal": "未选择任务",
   "scope": [],
   "non_scope": [],

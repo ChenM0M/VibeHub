@@ -8,6 +8,9 @@ export type V3ApplicationCommand =
   | PlanNodeAdd
   | PlanDependenciesSet
   | PlanNodeStateSet
+  | CriterionReview
+  | TaskCompletionPropose
+  | TaskComplete
   | WorktreeCommand
   | Rebuild;
 export type SessionOpen = SessionWriteScope & {
@@ -72,6 +75,21 @@ export type PlanNodeStateSet = TaskWriteScope & {
   state: "planned" | "ready" | "active" | "blocked" | "completed" | "failed" | "cancelled";
   [k: string]: unknown;
 };
+export type CriterionReview = TaskWriteScope & {
+  command: "criterion_review";
+  criterion_id: string;
+  outcome: "passed" | "failed" | "blocked";
+  reviewer: string;
+  evidence_refs: EvidenceRefs;
+  details?: {
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
+export type TaskCompletionPropose = TaskWriteScope & {
+  command: "task_completion_propose";
+  [k: string]: unknown;
+};
 export type WorktreeCommand = TaskWriteScope & {
   command: "worktree_event";
   event_type:
@@ -128,6 +146,15 @@ export interface TaskWriteScope {
   expected_version: number;
   idempotency_key: string;
   [k: string]: unknown;
+}
+export interface TaskComplete {
+  command: "task_complete";
+  project_id: string;
+  task_id: string;
+  actor: string;
+  confirmed_by: string;
+  channel: "desktop_ui" | "cli";
+  idempotency_key: string;
 }
 export interface Rebuild {
   command: "rebuild";

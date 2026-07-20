@@ -7,8 +7,10 @@ pub mod git_runner;
 pub mod lifecycle;
 pub mod orchestration;
 pub mod project_intelligence;
+pub mod project_scopes;
 pub mod project_settings;
 pub mod projection;
+pub mod routing;
 pub mod task_creation;
 pub mod task_quarantine;
 pub mod views;
@@ -29,6 +31,7 @@ pub use orchestration::{
     OrchestrationProjection, WorktreeProjection,
 };
 pub use project_intelligence::{ProjectIndexService, ProjectModelSnapshot, ProjectPage};
+pub use project_scopes::*;
 pub use project_settings::*;
 pub use task_creation::{create_v3_task, V3TaskCreateRequest, V3TaskCreateResult};
 pub use task_quarantine::{quarantine_v3_task, V3TaskQuarantineResult};

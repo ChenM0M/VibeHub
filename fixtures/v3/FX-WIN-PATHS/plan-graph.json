@@ -80,6 +80,8 @@
   "errors": [],
   "task_id": "task.m0",
   "plan_version": 2,
+  "workflow_profile": "full",
+  "planning_required": true,
   "graph_state": "valid",
   "nodes": [
     {

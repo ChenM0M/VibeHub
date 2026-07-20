@@ -4,12 +4,13 @@
   "title": "ProjectOverviewView",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "project_id", "name", "root", "generated_at", "model_version", "freshness", "completeness", "repository", "model", "architecture", "active_tasks", "protocol_coverage", "evidence_refs", "warnings", "errors"],
+  "required": ["schema_version", "project_id", "name", "root", "scopes", "generated_at", "model_version", "freshness", "completeness", "repository", "model", "architecture", "active_tasks", "protocol_coverage", "evidence_refs", "warnings", "errors"],
   "properties": {
     "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
     "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
     "name": { "type": "string", "minLength": 1 },
     "root": { "$ref": "common.schema.json#/$defs/NativePath" },
+    "scopes": { "$ref": "#/$defs/ProjectScopeInspection" },
     "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
     "model_version": { "type": "string", "minLength": 1 },
     "freshness": { "$ref": "common.schema.json#/$defs/Freshness" },
@@ -48,13 +49,15 @@
       "type": "array",
       "items": {
         "type": "object", "additionalProperties": false,
-        "required": ["task_id", "title", "state", "risk_level", "criteria", "active_sessions"],
+        "required": ["task_id", "title", "intent", "workflow_profile", "state", "risk_level", "criteria", "active_sessions"],
         "properties": {
           "task_id": { "$ref": "common.schema.json#/$defs/StableId" }, "title": { "type": "string", "minLength": 1 },
-          "state": { "enum": ["planned", "active", "blocked", "review", "completed", "cancelled"] },
+          "intent": { "type": "string" }, "workflow_profile": { "enum": ["lightweight", "standard", "full"] },
+          "state": { "enum": ["planned", "active", "blocked", "review", "completed", "cancelled", "closed_with_exceptions"] },
           "risk_level": { "enum": ["none", "low", "medium", "high", "critical"] },
           "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
           "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
+          "relations": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["related_task_id", "relation_type", "confidence", "evidence_refs"], "properties": { "related_task_id": { "$ref": "common.schema.json#/$defs/StableId" }, "relation_type": { "type": "string", "minLength": 1 }, "confidence": { "$ref": "common.schema.json#/$defs/Confidence" }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" } } } },
           "active_sessions": { "type": "integer", "minimum": 0 }
         }
       }
@@ -76,6 +79,20 @@
     "errors": { "$ref": "common.schema.json#/$defs/Errors" }
   },
   "$defs": {
+    "ProjectScopeInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control_root", "execution_root", "git_root", "host_config_root", "source", "nested_repository", "warnings"],
+      "properties": {
+        "control_root": { "type": "string", "minLength": 1 },
+        "execution_root": { "type": "string", "minLength": 1 },
+        "git_root": { "type": ["string", "null"] },
+        "host_config_root": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["control_root", "detected_git_root", "session_working_directory", "ambiguous"] },
+        "nested_repository": { "type": "boolean" },
+        "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
     "CompletionSummary": {
       "type": "object",
       "additionalProperties": false,
@@ -94,15 +111,16 @@
     "ArchivedTaskSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["task_id", "title", "intent", "state", "risk_level", "terminal_at", "completion", "criteria", "blocker_details", "plan", "sessions", "findings", "result", "evidence_count", "evidence_refs", "next_action", "source"],
+      "required": ["task_id", "title", "intent", "state", "risk_level", "terminal_at", "completion", "closure", "criteria", "blocker_details", "plan", "sessions", "findings", "result", "evidence_count", "evidence_refs", "next_action", "source"],
       "properties": {
         "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
         "title": { "type": "string", "minLength": 1 },
         "intent": { "type": "string" },
-        "state": { "enum": ["completed", "cancelled"] },
+        "state": { "enum": ["completed", "cancelled", "closed_with_exceptions"] },
         "risk_level": { "enum": ["none", "low", "medium", "high", "critical"] },
         "terminal_at": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Timestamp" }, { "type": "null" }] },
         "completion": { "$ref": "#/$defs/CompletionSummary" },
+        "closure": { "type": "object", "additionalProperties": false, "required": ["method", "actor", "confirmed_by", "channel", "confirmed_at", "reason", "criteria_snapshot", "unresolved_items"], "properties": { "method": { "type": ["string", "null"], "enum": ["all_green", "with_exceptions", null] }, "actor": { "type": ["string", "null"] }, "confirmed_by": { "type": ["string", "null"] }, "channel": { "type": ["string", "null"] }, "confirmed_at": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Timestamp" }, { "type": "null" }] }, "reason": { "type": ["string", "null"] }, "criteria_snapshot": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } }, "unresolved_items": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } } } },
         "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
         "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
         "plan": {

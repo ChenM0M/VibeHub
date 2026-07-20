@@ -98,7 +98,7 @@ try {
   const tools = await request("tools/list");
   assert(resources.resources.length === 7, "expected seven versioned resources");
   assert(resources.resources.every((resource) => resource.uri.startsWith("vibehub://v3/1.0/")), "resource URI is not versioned");
-  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,event_log,plan_dependencies_set,plan_node_add,plan_node_state_set,session_close,session_open", "unexpected tool catalog");
+  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,criterion_review,event_log,plan_dependencies_set,plan_node_add,plan_node_state_set,session_close,session_open,task_candidates,task_complete,task_completion_propose,task_view", "unexpected tool catalog");
   const planToolNames = ["plan_node_add", "plan_dependencies_set", "plan_node_state_set"];
   for (const name of planToolNames) {
     const schema = tools.tools.find((tool) => tool.name === name)?.inputSchema;
@@ -111,6 +111,14 @@ try {
   assert(agentResultSchema?.type === "object", "agent_result_record exposes an object input schema");
   for (const field of ["project_id", "task_id", "session_id", "actor", "expected_version", "idempotency_key", "result_id", "details"]) {
     assert(agentResultSchema?.properties?.[field], `agent_result_record schema exposes ${field}`);
+  }
+  const criterionReviewSchema = tools.tools.find((tool) => tool.name === "criterion_review")?.inputSchema;
+  for (const field of ["project_id", "task_id", "actor", "criterion_id", "outcome", "reviewer", "evidence_refs"]) {
+    assert(criterionReviewSchema?.properties?.[field], `criterion_review schema exposes ${field}`);
+  }
+  const taskCompleteSchema = tools.tools.find((tool) => tool.name === "task_complete")?.inputSchema;
+  for (const field of ["project_id", "task_id", "actor", "confirmed_by", "channel"]) {
+    assert(taskCompleteSchema?.properties?.[field], `task_complete schema exposes ${field}`);
   }
 
   const contractRoot = resolve("contracts/v3");
@@ -137,6 +145,10 @@ try {
   const overview = productionViews["project-overview"];
   const projectId = overview.project_id;
   assert(overview.task_id === undefined && overview.active_tasks[0].task_id === taskId, "resource identity mismatch");
+  const candidates = await request("tools/call", { name: "task_candidates", arguments: { project_id: projectId } });
+  assert(candidates.structuredContent.result.some((task) => task.task_id === taskId), "task_candidates did not expose the active task");
+  const taskView = await request("tools/call", { name: "task_view", arguments: { task_id: taskId } });
+  assert(taskView.structuredContent.result.node_brief.task_id === taskId, "task_view did not return the requested task bundle");
 
   const planScope = {
     project_id: projectId,
@@ -251,6 +263,27 @@ try {
 
   const closed = await request("tools/call", { name: "session_close", arguments: { ...scope, idempotency_key: "contract.close.1", expected_version: 3 } });
   assert(closed.structuredContent.result.status === "appended", "session_close did not append");
+
+  const criterionReviewed = await request("tools/call", { name: "criterion_review", arguments: {
+    ...planScope,
+    criterion_id: "criterion.task.contract.c01",
+    outcome: "passed",
+    reviewer: "contract-test",
+    evidence_refs: ["test:mcp-contract"],
+    details: { command: "npm run v3:mcp:check" },
+  } });
+  assert(criterionReviewed.structuredContent.result.status === "appended", "criterion_review did not append");
+  const proposed = await request("tools/call", { name: "task_completion_propose", arguments: planScope });
+  assert(proposed.structuredContent.result.status === "appended", "task_completion_propose did not append");
+  const completed = await request("tools/call", { name: "task_complete", arguments: {
+    ...planScope,
+    confirmed_by: "contract-user",
+    channel: "cli",
+  } });
+  assert(completed.structuredContent.result.status === "appended", "task_complete did not append");
+  const completedView = await request("tools/call", { name: "task_view", arguments: { task_id: taskId } });
+  assert(completedView.structuredContent.result.project_overview.archived_tasks.some((task) => task.task_id === taskId && task.state === "completed"), "task_complete did not close the lifecycle");
+  assert(completedView.structuredContent.result.task_timeline.events.filter((event) => event.summary_key === "task.completion_proposed").length === 1, "task_complete did not confirm the proposal the user reviewed");
 
   notify("notifications/cancelled", { requestId: "already-completed", reason: "contract probe" });
   child.stdin.end();

@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 const MAX_TASK_METADATA_BYTES: u64 = 1024 * 1024;
+const QUARANTINE_DIRECTORY: &str = "quarantine";
+const QUARANTINE_TASKS_DIRECTORY: &str = "tasks";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct V3TaskQuarantineResult {
@@ -41,6 +43,8 @@ struct V3TaskMetadata {
     acceptance_criteria: Vec<String>,
     #[serde(default)]
     dependencies: Vec<String>,
+    #[serde(default)]
+    workflow_profile: String,
 }
 
 struct TaskMetadataIssue {
@@ -48,9 +52,9 @@ struct TaskMetadataIssue {
     message: String,
 }
 
-/// Moves an invalid task directory out of `.vibehub/tasks` without deleting
-/// its artifacts. The task directory and audit record are finalized by one
-/// directory rename inside `.vibehub/quarantine/tasks`.
+/// Moves an invalid task directory out of `.vibehub/tasks` without deleting any
+/// of its files. The staged audit and task directory are committed together by
+/// renaming the containing directory inside `.vibehub/quarantine/tasks`.
 pub fn quarantine_v3_task(
     project_root: impl AsRef<Path>,
     task_id: &str,
@@ -70,7 +74,8 @@ pub fn quarantine_v3_task(
     let root = project_root.join(".vibehub");
     let source = root.join("tasks").join(task_id);
     require_regular_directory(&source, "V3_TASK_QUARANTINE_TASK_NOT_FOUND")?;
-    let issue = task_metadata_issue(&source.join("task.yaml"), task_id)?;
+    let task_yaml = source.join("task.yaml");
+    let issue = task_metadata_issue(&task_yaml, task_id)?;
     let Some(issue) = issue else {
         return Err(validation(
             "V3_TASK_QUARANTINE_REQUIRES_INVALID_METADATA",
@@ -109,6 +114,7 @@ pub fn quarantine_v3_task(
         let _ = fs::remove_dir_all(&staging);
         return Err(error);
     }
+
     if let Err(error) = fs::rename(&source, staging.join("task")) {
         let _ = fs::remove_dir_all(&staging);
         return Err(io_error("V3_TASK_QUARANTINE_MOVE_FAILED", error));
@@ -184,15 +190,22 @@ fn task_metadata_issue(
             message: "a required V3 task metadata field is empty".to_owned(),
         }));
     }
-    let _ = (task.acceptance_criteria, task.dependencies);
+
+    // The V3 reader intentionally defaults these fields for historical V3
+    // documents, so their absence alone is not a quarantine condition.
+    let _ = (
+        task.acceptance_criteria,
+        task.dependencies,
+        task.workflow_profile,
+    );
     Ok(None)
 }
 
 fn ensure_quarantine_root(root: &Path) -> Result<PathBuf, V3Error> {
     require_regular_directory(root, "V3_TASK_QUARANTINE_ROOT_INVALID")?;
-    let quarantine = root.join("quarantine");
+    let quarantine = root.join(QUARANTINE_DIRECTORY);
     ensure_regular_directory(&quarantine, "V3_TASK_QUARANTINE_ROOT_INVALID")?;
-    let tasks = quarantine.join("tasks");
+    let tasks = quarantine.join(QUARANTINE_TASKS_DIRECTORY);
     ensure_regular_directory(&tasks, "V3_TASK_QUARANTINE_ROOT_INVALID")?;
     Ok(tasks)
 }
@@ -296,6 +309,7 @@ mod tests {
                 title: "Valid V3 task".to_owned(),
                 intent: "Remain visible after quarantine".to_owned(),
                 acceptance_criteria: vec!["Views remain usable".to_owned()],
+                workflow_profile: "standard".to_owned(),
             },
         )
         .unwrap();
@@ -306,6 +320,7 @@ mod tests {
         fs::write(legacy.join("artifact.md"), "preserve me").unwrap();
 
         let result = quarantine_v3_task(&project, "T-20260718191720-ffb8c89a").unwrap();
+
         assert_eq!(result.status, "quarantined");
         assert!(!legacy.exists());
         assert_eq!(
@@ -332,6 +347,7 @@ mod tests {
                 .len(),
             1
         );
+
         fs::remove_dir_all(project).unwrap();
     }
 
@@ -343,14 +359,17 @@ mod tests {
             &project,
             V3TaskCreateRequest {
                 title: "Valid V3 task".to_owned(),
-                intent: "Must not be moved".to_owned(),
-                acceptance_criteria: vec!["Safety".to_owned()],
+                intent: "Must not be quarantined".to_owned(),
+                acceptance_criteria: vec!["Metadata is valid".to_owned()],
+                workflow_profile: "standard".to_owned(),
             },
         )
         .unwrap();
+
         let error = quarantine_v3_task(&project, &valid.task_id).unwrap_err();
         assert_eq!(error.code, "V3_TASK_QUARANTINE_REQUIRES_INVALID_METADATA");
-        assert!(project.join(&valid.task_path).exists());
+        assert!(project.join(".vibehub/tasks").join(valid.task_id).is_dir());
+
         fs::remove_dir_all(project).unwrap();
     }
 }

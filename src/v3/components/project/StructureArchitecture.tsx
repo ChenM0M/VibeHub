@@ -6,20 +6,14 @@ import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import { NativePathDisplay } from "@/v3/components/common/NativePathDisplay";
 import type { ProjectStructureView } from "@/v3/contracts/generated/project-structure-view";
 import { queryV3ProjectStructure } from "@/services/v3ProductionViews";
+import { useTranslation } from "react-i18next";
 
 const sourceKindColor: Record<string, string> = {
   filesystem: "#9ca3af", git: "#22c55e", manifest: "#3b82f6",
   parser: "#a855f7", documentation: "#f97316", inference: "#eab308",
 };
-const sourceKindLabel: Record<string, string> = {
-  filesystem: "文件系统", git: "Git", manifest: "清单", parser: "解析器", documentation: "文档", inference: "推断",
-};
-const edgeKindLabel: Record<string, string> = { contains: "包含", imports: "导入", depends_on: "依赖", declares: "声明", generates: "生成" };
 const kindIcons: Record<string, React.ComponentType<{ className?: string }>> = { root: Box, directory: Folder, file: File, module: Package, package: Package, symbol: Braces };
-const kindLabel: Record<string, string> = { root: "根", directory: "目录", file: "文件", module: "模块", package: "包", symbol: "符号" };
 const gitStateTone: Record<string, string> = { clean: "", modified: "text-amber-600 dark:text-amber-400", added: "text-blue-600 dark:text-blue-400", deleted: "text-red-600 dark:text-red-400", ignored: "text-muted-foreground/50", unknown: "text-muted-foreground/50" };
-const gitStateLabel: Record<string, string> = { clean: "干净", modified: "已修改", added: "已添加", deleted: "已删除", ignored: "已忽略", unknown: "未知" };
-const indexStateLabel: Record<string, string> = { uninitialized: "未初始化", indexing: "索引中", ready: "就绪", interrupted: "已中断", error: "错误" };
 
 interface TreeNode { node: ProjectStructureView["nodes"][number]; children: TreeNode[]; depth: number; }
 
@@ -52,6 +46,9 @@ interface StructureArchitectureProps {
 }
 
 export function StructureArchitecture({ data, taskId, projectPath, highlightModuleId, onModuleClick, onRevealProjectFile, onOpenProjectFile }: StructureArchitectureProps) {
+  const { t } = useTranslation();
+  const sourceLabel = (kind: string) => t(`v3.structure.sourceKind.${kind}`, { defaultValue: kind });
+  const edgeLabel = (kind: string) => t(`v3.structure.edgeKind.${kind}`, { defaultValue: kind });
   const [viewData, setViewData] = useState(data);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -211,18 +208,18 @@ export function StructureArchitecture({ data, taskId, projectPath, highlightModu
       <div className="flex flex-col gap-2 shrink-0 mb-1">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-center gap-1 min-w-0 max-w-[300px] xl:max-w-md">
-            <span className="text-xs font-medium whitespace-nowrap text-foreground/90">工作目录：</span>
+            <span className="text-xs font-medium whitespace-nowrap text-foreground/90">{t("v3.structure.workingDirectory")}</span>
             <span className="text-xs text-muted-foreground truncate" title={viewData.workspace.root.display}>{viewData.workspace.root.display}</span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[11px] text-muted-foreground whitespace-nowrap bg-muted/50 px-2 py-1 rounded-md border border-border/50">
-              来源：{viewData.workspace.source === "session_worktree" ? "Agent worktree" : viewData.workspace.source === "session_working_directory" ? "Agent 会话" : "项目根回退"}
+              {t("v3.structure.workspaceSource", { source: t(`v3.structure.workspaceSourceValue.${viewData.workspace.source}`, { defaultValue: viewData.workspace.source }) })}
             </span>
             <span className="text-[11px] text-muted-foreground whitespace-nowrap bg-muted/50 px-2 py-1 rounded-md border border-border/50">
-              {viewData.nodes.length} 节点 · {viewData.edges.length} 文件关系 · {viewData.architecture_nodes.length} 架构模块
+              {t("v3.structure.architectureSummary", { nodes: viewData.nodes.length, edges: viewData.edges.length, modules: viewData.architecture_nodes.length })}
             </span>
             <span className="text-[11px] text-muted-foreground whitespace-nowrap bg-muted/50 px-2 py-1 rounded-md border border-border/50">
-              索引：{indexStateLabel[viewData.index_state] ?? viewData.index_state}{viewData.page.truncated && `（已截断：${viewData.page.truncation_reason}）`}{queryLoading && " · 查询中"}
+              {t("v3.structure.index", { state: t(`v3.structure.indexState.${viewData.index_state}`, { defaultValue: viewData.index_state }) })}{viewData.page.truncated && t("v3.structure.truncatedReason", { reason: viewData.page.truncation_reason })}{queryLoading && t("v3.structure.querying")}
             </span>
           </div>
         </div>
@@ -238,11 +235,11 @@ export function StructureArchitecture({ data, taskId, projectPath, highlightModu
         {/* 左：架构模块列表 */}
         <div className="flex flex-col overflow-hidden">
           <div className="shrink-0 pb-3 flex flex-col gap-2">
-            <span className="text-sm font-semibold text-foreground/80">架构模块</span>
+            <span className="text-sm font-semibold text-foreground/80">{t("v3.structure.architectureModules")}</span>
             {/* 固定图例 */}
             <div className="flex flex-wrap gap-x-3 gap-y-1.5">
               {Object.entries(sourceKindColor).map(([kind, color]) => (
-                <div key={kind} className="flex items-center gap-1 text-[11px]"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} /><span className="text-muted-foreground/80">{sourceKindLabel[kind]}</span></div>
+                <div key={kind} className="flex items-center gap-1 text-[11px]"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} /><span className="text-muted-foreground/80">{sourceLabel(kind)}</span></div>
               ))}
             </div>
           </div>
@@ -257,21 +254,21 @@ export function StructureArchitecture({ data, taskId, projectPath, highlightModu
                   <div className="flex items-center gap-2 mb-1.5">
                     <Package className={cn("h-4 w-4", isHighlighted ? "text-primary" : "text-muted-foreground")} />
                     <span className={cn("text-sm font-medium truncate", isHighlighted ? "text-foreground" : "text-foreground/80")}>{mod.name}</span>
-                    <span className="ml-auto text-xs text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded-md">{files} 文件</span>
+                    <span className="ml-auto text-xs text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded-md">{t("v3.structure.fileCount", { count: files })}</span>
                   </div>
                   <div className="mt-2 pl-6 text-[11px] text-muted-foreground">
                     <NativePathDisplay path={mod.path} />
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6 text-[10px] text-muted-foreground">
-                    <span className="rounded bg-muted px-1.5 py-0.5" style={{ color: sourceKindColor[mod.source_kind] }}>{sourceKindLabel[mod.source_kind] ?? mod.source_kind}</span>
-                    <span>{(mod.confidence * 100).toFixed(0)}% 置信度</span>
+                    <span className="rounded bg-muted px-1.5 py-0.5" style={{ color: sourceKindColor[mod.source_kind] }}>{sourceLabel(mod.source_kind)}</span>
+                    <span>{t("v3.structure.confidenceValue", { value: (mod.confidence * 100).toFixed(0) })}</span>
                     <span className="font-mono" title={mod.generator_version}>{mod.generator_version}</span>
                   </div>
                   <EvidenceLink evidenceRefs={mod.evidence_refs} className="mt-2 pl-6" />
                   {(incoming.length > 0 || outgoing.length > 0) && (
                     <div className="mt-3 pt-2 flex flex-wrap gap-1.5 pl-6">
-                      {outgoing.map((e) => { const target = viewData.architecture_nodes.find((n) => n.node_id === e.to_node_id); return <button key={e.edge_id} type="button" onClick={(event) => { event.stopPropagation(); setSelectedArchitectureEdgeId(e.edge_id); }} className={cn("flex items-center gap-1 rounded bg-accent/50 px-1.5 py-0.5 text-[11px] text-muted-foreground", selectedArchitectureEdgeId === e.edge_id && "ring-1 ring-primary/40")} title={`${sourceKindLabel[e.source_kind] ?? e.source_kind} · ${(e.confidence * 100).toFixed(0)}%`}><span style={{ color: sourceKindColor[e.source_kind] }}>●</span>{edgeKindLabel[e.kind]} <ArrowRight className="h-3 w-3" /> <span className="font-medium">{target?.name ?? "?"}</span></button>; })}
-                      {incoming.map((e) => { const src = viewData.architecture_nodes.find((n) => n.node_id === e.from_node_id); return <button key={e.edge_id} type="button" onClick={(event) => { event.stopPropagation(); setSelectedArchitectureEdgeId(e.edge_id); }} className={cn("flex items-center gap-1 rounded bg-accent/50 px-1.5 py-0.5 text-[11px] text-muted-foreground", selectedArchitectureEdgeId === e.edge_id && "ring-1 ring-primary/40")} title={`${sourceKindLabel[e.source_kind] ?? e.source_kind} · ${(e.confidence * 100).toFixed(0)}%`}><span style={{ color: sourceKindColor[e.source_kind] }}>●</span><span className="font-medium">{src?.name ?? "?"}</span> <ArrowRight className="h-3 w-3" /> {edgeKindLabel[e.kind]}</button>; })}
+                      {outgoing.map((e) => { const target = viewData.architecture_nodes.find((n) => n.node_id === e.to_node_id); return <button key={e.edge_id} type="button" onClick={(event) => { event.stopPropagation(); setSelectedArchitectureEdgeId(e.edge_id); }} className={cn("flex items-center gap-1 rounded bg-accent/50 px-1.5 py-0.5 text-[11px] text-muted-foreground", selectedArchitectureEdgeId === e.edge_id && "ring-1 ring-primary/40")} title={`${sourceLabel(e.source_kind)} · ${(e.confidence * 100).toFixed(0)}%`}><span style={{ color: sourceKindColor[e.source_kind] }}>●</span>{edgeLabel(e.kind)} <ArrowRight className="h-3 w-3" /> <span className="font-medium">{target?.name ?? "?"}</span></button>; })}
+                      {incoming.map((e) => { const src = viewData.architecture_nodes.find((n) => n.node_id === e.from_node_id); return <button key={e.edge_id} type="button" onClick={(event) => { event.stopPropagation(); setSelectedArchitectureEdgeId(e.edge_id); }} className={cn("flex items-center gap-1 rounded bg-accent/50 px-1.5 py-0.5 text-[11px] text-muted-foreground", selectedArchitectureEdgeId === e.edge_id && "ring-1 ring-primary/40")} title={`${sourceLabel(e.source_kind)} · ${(e.confidence * 100).toFixed(0)}%`}><span style={{ color: sourceKindColor[e.source_kind] }}>●</span><span className="font-medium">{src?.name ?? "?"}</span> <ArrowRight className="h-3 w-3" /> {edgeLabel(e.kind)}</button>; })}
                     </div>
                   )}
                 </div>
@@ -284,11 +281,11 @@ export function StructureArchitecture({ data, taskId, projectPath, highlightModu
                 <span className="font-medium">{modules.mods.find((node) => node.node_id === selectedArchitectureEdge.from_node_id)?.name ?? selectedArchitectureEdge.from_node_id}</span>
                 <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="font-medium">{modules.mods.find((node) => node.node_id === selectedArchitectureEdge.to_node_id)?.name ?? selectedArchitectureEdge.to_node_id}</span>
-                <span className="ml-auto text-muted-foreground">{edgeKindLabel[selectedArchitectureEdge.kind]}</span>
+                <span className="ml-auto text-muted-foreground">{edgeLabel(selectedArchitectureEdge.kind)}</span>
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-                <span style={{ color: sourceKindColor[selectedArchitectureEdge.source_kind] }}>{sourceKindLabel[selectedArchitectureEdge.source_kind] ?? selectedArchitectureEdge.source_kind}</span>
-                <span>{(selectedArchitectureEdge.confidence * 100).toFixed(0)}% 置信度</span>
+                <span style={{ color: sourceKindColor[selectedArchitectureEdge.source_kind] }}>{sourceLabel(selectedArchitectureEdge.source_kind)}</span>
+                <span>{t("v3.structure.confidenceValue", { value: (selectedArchitectureEdge.confidence * 100).toFixed(0) })}</span>
                 <span className="font-mono">{selectedArchitectureEdge.generator_version}</span>
               </div>
               <EvidenceLink evidenceRefs={selectedArchitectureEdge.evidence_refs} className="mt-2" />
@@ -299,16 +296,16 @@ export function StructureArchitecture({ data, taskId, projectPath, highlightModu
         {/* 右：文件树 */}
         <div className="flex flex-col overflow-hidden bg-card/20 rounded-xl ring-1 ring-border/30">
           <div className="shrink-0 pb-3 flex items-center gap-3 px-1 mt-[-6px]">
-            <span className="text-sm font-semibold text-foreground/80">文件树</span>
+            <span className="text-sm font-semibold text-foreground/80">{t("v3.structure.fileTree")}</span>
             <div className="relative ml-auto w-48">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索文件或节点…" className="h-8 w-full rounded-md border border-input/50 bg-background/50 pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring transition-all" />
+              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("v3.structure.searchFiles")} className="h-8 w-full rounded-md border border-input/50 bg-background/50 pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring transition-all" />
             </div>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-auto rounded-lg bg-card/30 border border-border/30">
             {search ? (
               <div className="divide-y divide-border/30">
-                {searchResults!.length === 0 ? <div className="px-3 py-6 text-center text-sm text-muted-foreground">无匹配项</div> : searchResults!.map(({ node, parents }) => { const Icon = kindIcons[node.kind] ?? File; return <button key={node.node_id} type="button" onClick={() => setSelectedNodeId(node.node_id)} className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/20", selectedNodeId === node.node_id && "bg-muted/30")}><Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><span className="truncate">{node.name}</span>{parents.length > 0 && <span className="ml-auto truncate text-xs text-muted-foreground/60">{"< " + parents.join(" < ")}</span>}</button>; })}
+                {searchResults!.length === 0 ? <div className="px-3 py-6 text-center text-sm text-muted-foreground">{t("v3.structure.noMatches")}</div> : searchResults!.map(({ node, parents }) => { const Icon = kindIcons[node.kind] ?? File; return <button key={node.node_id} type="button" onClick={() => setSelectedNodeId(node.node_id)} className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/20", selectedNodeId === node.node_id && "bg-muted/30")}><Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><span className="truncate">{node.name}</span>{parents.length > 0 && <span className="ml-auto truncate text-xs text-muted-foreground/60">{"< " + parents.join(" < ")}</span>}</button>; })}
               </div>
             ) : (
               <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
@@ -316,22 +313,22 @@ export function StructureArchitecture({ data, taskId, projectPath, highlightModu
                   const tn = flatNodes![vi.index]; const node = tn.node; const Icon = kindIcons[node.kind] ?? File; const hasChildren = tn.children.length > 0; const isExpanded = expanded.has(node.node_id);
                   const isHighlighted = highlightModuleId && (node.module_id === highlightModuleId || node.node_id === highlightModuleId);
                   const expandable = node.kind === "directory" || node.kind === "root" || hasChildren;
-                  return <div key={vi.key} data-index={vi.index} ref={virtualizer.measureElement} style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vi.start}px)` }}><button type="button" onClick={() => expandable ? void toggleExpand(node, hasChildren) : setSelectedNodeId(node.node_id)} onDoubleClick={() => setSelectedNodeId(node.node_id)} className={cn("flex w-full items-center gap-2 px-2 py-1 text-left text-sm transition-all duration-500", selectedNodeId === node.node_id ? "bg-muted/30" : "hover:bg-muted/20", isHighlighted && "bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium")} style={{ paddingLeft: `${tn.depth * 16 + 8}px` }}>{expandable ? (isExpanded ? <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", isHighlighted && "text-blue-500")} /> : <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 transition-transform", isHighlighted && "text-blue-500")} />) : <span className="w-3.5 shrink-0" />}<Icon className={cn("h-3.5 w-3.5 shrink-0", isHighlighted ? "text-blue-500" : "text-muted-foreground")} /><span className="truncate">{node.name}</span><span className={cn("ml-auto text-[10px]", gitStateTone[node.git_state])}>{node.git_state !== "clean" && node.git_state !== "unknown" ? gitStateLabel[node.git_state] ?? node.git_state : ""}</span></button></div>;
+                  return <div key={vi.key} data-index={vi.index} ref={virtualizer.measureElement} style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vi.start}px)` }}><button type="button" onClick={() => expandable ? void toggleExpand(node, hasChildren) : setSelectedNodeId(node.node_id)} onDoubleClick={() => setSelectedNodeId(node.node_id)} className={cn("flex w-full items-center gap-2 px-2 py-1 text-left text-sm transition-all duration-500", selectedNodeId === node.node_id ? "bg-muted/30" : "hover:bg-muted/20", isHighlighted && "bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium")} style={{ paddingLeft: `${tn.depth * 16 + 8}px` }}>{expandable ? (isExpanded ? <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", isHighlighted && "text-blue-500")} /> : <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 transition-transform", isHighlighted && "text-blue-500")} />) : <span className="w-3.5 shrink-0" />}<Icon className={cn("h-3.5 w-3.5 shrink-0", isHighlighted ? "text-blue-500" : "text-muted-foreground")} /><span className="truncate">{node.name}</span><span className={cn("ml-auto text-[10px]", gitStateTone[node.git_state])}>{node.git_state !== "clean" && node.git_state !== "unknown" ? t(`v3.structure.gitState.${node.git_state}`, { defaultValue: node.git_state }) : ""}</span></button></div>;
                 })}
               </div>
             )}
           </div>
           {!search && viewData.page.next_cursor && (
             <button type="button" onClick={() => void loadNextPage()} disabled={queryLoading} className="mt-2 h-8 shrink-0 rounded-md border border-border/50 text-xs text-muted-foreground hover:bg-muted/30 disabled:opacity-50">
-              {queryLoading ? "加载中" : "加载更多"}
+              {t(queryLoading ? "v3.structure.loading" : "v3.structure.loadMore")}
             </button>
           )}
           {selectedNode && (
             <div className="shrink-0 mt-3 rounded-lg bg-card/60 border border-border/40 p-3.5 shadow-sm">
               <div className="mb-2 text-sm font-medium text-foreground">{selectedNode.name}</div>
               <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground/90">
-                <span className="flex items-center gap-1.5"><Box className="h-3.5 w-3.5 opacity-70" />{kindLabel[selectedNode.kind] ?? selectedNode.kind}</span>
-                <span className={cn("flex items-center gap-1.5", gitStateTone[selectedNode.git_state])}><File className="h-3.5 w-3.5 opacity-70" />{gitStateLabel[selectedNode.git_state] ?? selectedNode.git_state}</span>
+                <span className="flex items-center gap-1.5"><Box className="h-3.5 w-3.5 opacity-70" />{t(`v3.structure.kind.${selectedNode.kind}`, { defaultValue: selectedNode.kind })}</span>
+                <span className={cn("flex items-center gap-1.5", gitStateTone[selectedNode.git_state])}><File className="h-3.5 w-3.5 opacity-70" />{t(`v3.structure.gitState.${selectedNode.git_state}`, { defaultValue: selectedNode.git_state })}</span>
                 {selectedNode.module_id && <span className="flex items-center gap-1.5"><Package className="h-3.5 w-3.5 opacity-70" />{selectedNode.module_id}</span>}
               </div>
               <div className="mt-3"><NativePathDisplay path={selectedNode.path} showPlatform /></div>
@@ -340,12 +337,12 @@ export function StructureArchitecture({ data, taskId, projectPath, highlightModu
                 <div className="mt-3 flex flex-wrap gap-2 border-t border-border/40 pt-3">
                   {onRevealProjectFile && (
                     <button type="button" onClick={() => void runFileAction("reveal")} disabled={fileActionLoading !== null} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-xs hover:bg-muted/40 disabled:opacity-50">
-                      <FolderOpen className="h-3.5 w-3.5" />{fileActionLoading === "reveal" ? "正在显示…" : "在文件管理器中显示"}
+                      <FolderOpen className="h-3.5 w-3.5" />{t(fileActionLoading === "reveal" ? "v3.structure.revealing" : "v3.structure.reveal")}
                     </button>
                   )}
                   {selectedNode.kind === "file" && onOpenProjectFile && (
                     <button type="button" onClick={() => void runFileAction("open")} disabled={fileActionLoading !== null} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-xs hover:bg-muted/40 disabled:opacity-50">
-                      <ExternalLink className="h-3.5 w-3.5" />{fileActionLoading === "open" ? "正在打开…" : "使用默认应用打开"}
+                      <ExternalLink className="h-3.5 w-3.5" />{t(fileActionLoading === "open" ? "v3.structure.opening" : "v3.structure.open")}
                     </button>
                   )}
                 </div>

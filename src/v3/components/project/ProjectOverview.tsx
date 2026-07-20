@@ -6,6 +6,7 @@ import { BlockerDetailsPanel } from "@/v3/components/common/BlockerDetailsPanel"
 import { GitBranch, Database, Layers, ShieldCheck, ListTodo, Clock, FolderTree, ChevronRight } from "lucide-react";
 import type { V3View } from "@/v3/stores/v3Store";
 import type { ProjectOverviewView } from "@/v3/contracts/generated/project-overview-view";
+import { useTranslation } from "react-i18next";
 
 const riskTone: Record<string, string> = {
   none: "",
@@ -22,43 +23,6 @@ const taskStateTone: Record<string, string> = {
   review: "text-purple-600 dark:text-purple-400",
   completed: "text-emerald-600 dark:text-emerald-400",
   cancelled: "text-red-600 dark:text-red-400",
-};
-
-const taskStateLabel: Record<string, string> = {
-  planned: "已规划",
-  active: "进行中",
-  blocked: "阻塞",
-  review: "审查中",
-  completed: "已完成",
-  cancelled: "已取消",
-};
-
-const riskLabel: Record<string, string> = {
-  none: "无",
-  low: "低",
-  medium: "中",
-  high: "高",
-  critical: "严重",
-};
-
-const repoStateLabel: Record<string, string> = {
-  available: "可用",
-  not_repository: "非仓库",
-  unavailable: "不可用",
-};
-
-const modelStateLabel: Record<string, string> = {
-  uninitialized: "未初始化",
-  rebuilding: "重建中",
-  ready: "就绪",
-  error: "错误",
-};
-
-const protocolStateLabel: Record<string, string> = {
-  complete: "完整",
-  partial: "部分",
-  gapped: "有缺口",
-  unknown: "未知",
 };
 
 function DrillCard({ icon, title, detail, onClick, children }: {
@@ -104,6 +68,8 @@ interface ProjectOverviewProps {
 }
 
 export function ProjectOverview({ data, onDrillIn }: ProjectOverviewProps) {
+  const { t, i18n } = useTranslation();
+  const stateLabel = (group: string, value: string) => t(`v3.projectOverview.${group}.${value}`, { defaultValue: value });
   return (
     <div className="space-y-8 pb-8">
       <WarningList warnings={data.warnings} />
@@ -111,44 +77,46 @@ export function ProjectOverview({ data, onDrillIn }: ProjectOverviewProps) {
 
       {/* 项目信息卡片网格 — 每个可点击进入详细视图 */}
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        <DrillCard icon={<GitBranch className="h-4 w-4" />} title="仓库" >
+        <DrillCard icon={<GitBranch className="h-4 w-4" />} title={t("v3.projectOverview.repository")} >
           <div className="space-y-2">
-            <Field label="状态">{repoStateLabel[data.repository.state] ?? data.repository.state}</Field>
-            {data.repository.branch && <Field label="分支"><span className="font-mono">{data.repository.branch}</span></Field>}
+            <Field label={t("v3.projectOverview.status")}>{stateLabel("repoState", data.repository.state)}</Field>
+            {data.repository.branch && <Field label={t("v3.projectOverview.branch")}><span className="font-mono">{data.repository.branch}</span></Field>}
             {data.repository.head && <Field label="HEAD"><span className="font-mono">{data.repository.head}</span></Field>}
-            <Field label="工作树">{data.repository.worktree_count}</Field>
-            <Field label="改动">{data.repository.dirty === null ? "—" : data.repository.dirty ? "是" : "否"}</Field>
+            <Field label={t("v3.projectOverview.worktrees")}>{data.repository.worktree_count}</Field>
+            <Field label={t("v3.projectOverview.changes")}>{data.repository.dirty === null ? "—" : data.repository.dirty ? t("v3.projectOverview.yes") : t("v3.projectOverview.no")}</Field>
+            <Field label={t("v3.projectOverview.controlRoot")}><span className="font-mono" title={data.scopes.control_root}>{data.scopes.control_root}</span></Field>
+            <Field label={t("v3.projectOverview.executionRoot")}><span className="font-mono" title={data.scopes.execution_root}>{data.scopes.execution_root}</span></Field>
           </div>
         </DrillCard>
 
-        <DrillCard icon={<Database className="h-4 w-4" />} title="模型">
+        <DrillCard icon={<Database className="h-4 w-4" />} title={t("v3.projectOverview.model")}>
           <div className="space-y-2">
-            <Field label="状态">{modelStateLabel[data.model.state] ?? data.model.state}</Field>
-            <Field label="已索引文件">{data.model.indexed_files}</Field>
-            {data.model.last_evidence_at && <Field label="最后证据">{new Date(data.model.last_evidence_at).toLocaleString()}</Field>}
+            <Field label={t("v3.projectOverview.status")}>{stateLabel("modelState", data.model.state)}</Field>
+            <Field label={t("v3.projectOverview.indexedFiles")}>{data.model.indexed_files}</Field>
+            {data.model.last_evidence_at && <Field label={t("v3.projectOverview.lastEvidence")}>{new Intl.DateTimeFormat(i18n.resolvedLanguage, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(data.model.last_evidence_at))}</Field>}
           </div>
         </DrillCard>
 
         <DrillCard
           icon={<Layers className="h-4 w-4" />}
-          title="架构"
-          detail={`${data.architecture.modules} 模块`}
-          onClick={() => onDrillIn("architecture-map", "架构地图")}
+          title={t("v3.projectOverview.architecture")}
+          detail={t("v3.projectOverview.moduleCount", { count: data.architecture.modules })}
+          onClick={() => onDrillIn("architecture-map", t("v3.projectOverview.architectureMap"))}
         >
           <div className="space-y-2">
-            <Field label="声明文档">{data.architecture.declared_docs}</Field>
-            <Field label="关系数">{data.architecture.relationships}</Field>
-            <Field label="置信度">{(data.architecture.confidence * 100).toFixed(0)}%</Field>
+            <Field label={t("v3.projectOverview.declaredDocs")}>{data.architecture.declared_docs}</Field>
+            <Field label={t("v3.projectOverview.relationships")}>{data.architecture.relationships}</Field>
+            <Field label={t("v3.projectOverview.confidence")}>{(data.architecture.confidence * 100).toFixed(0)}%</Field>
             <EvidenceLink evidenceRefs={data.architecture.evidence_refs} />
           </div>
         </DrillCard>
 
-        <DrillCard icon={<ShieldCheck className="h-4 w-4" />} title="协议覆盖">
+        <DrillCard icon={<ShieldCheck className="h-4 w-4" />} title={t("v3.projectOverview.protocolCoverage")}>
           <div className="space-y-2">
-            <Field label="状态">{protocolStateLabel[data.protocol_coverage.state] ?? data.protocol_coverage.state}</Field>
-            <Field label="已开启会话">{data.protocol_coverage.opened_sessions}</Field>
-            <Field label="已关闭会话">{data.protocol_coverage.closed_sessions}</Field>
-            <Field label="缺口">{data.protocol_coverage.gaps}</Field>
+            <Field label={t("v3.projectOverview.status")}>{stateLabel("protocolState", data.protocol_coverage.state)}</Field>
+            <Field label={t("v3.projectOverview.openedSessions")}>{data.protocol_coverage.opened_sessions}</Field>
+            <Field label={t("v3.projectOverview.closedSessions")}>{data.protocol_coverage.closed_sessions}</Field>
+            <Field label={t("v3.projectOverview.gaps")}>{data.protocol_coverage.gaps}</Field>
           </div>
         </DrillCard>
       </div>
@@ -156,18 +124,18 @@ export function ProjectOverview({ data, onDrillIn }: ProjectOverviewProps) {
       {/* 结构浏览入口 */}
       <DrillCard
         icon={<FolderTree className="h-4 w-4" />}
-        title="结构浏览"
-        detail="查看项目文件树与模块关系"
-        onClick={() => onDrillIn("structure-explorer", "结构浏览")}
+        title={t("v3.projectOverview.structureExplorer")}
+        detail={t("v3.projectOverview.structureDetail")}
+        onClick={() => onDrillIn("structure-explorer", t("v3.projectOverview.structureExplorer"))}
       >
-        <p className="text-sm text-muted-foreground">浏览项目的文件和模块结构，查看 Git 状态和证据引用</p>
+        <p className="text-sm text-muted-foreground">{t("v3.projectOverview.structureDescription")}</p>
       </DrillCard>
 
       {/* 活跃任务 — 点击进入任务时间线 */}
       <section>
         <div className="mb-3 flex items-center gap-2">
           <ListTodo className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">活跃任务</span>
+          <span className="text-sm font-semibold">{t("v3.projectOverview.activeTasks")}</span>
           <span className="text-xs text-muted-foreground">({data.active_tasks.length})</span>
         </div>
         {data.active_tasks.length === 0 ? (
@@ -175,7 +143,7 @@ export function ProjectOverview({ data, onDrillIn }: ProjectOverviewProps) {
             <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center border border-border text-muted-foreground">
               <ListTodo className="h-4 w-4" />
             </div>
-            <div className="text-sm font-medium">暂无活跃任务</div>
+            <div className="text-sm font-medium">{t("v3.projectOverview.noActiveTasks")}</div>
           </div>
         ) : (
           <div className="divide-y divide-border/70 border-y border-border/70">
@@ -183,21 +151,21 @@ export function ProjectOverview({ data, onDrillIn }: ProjectOverviewProps) {
               <button
                 key={task.task_id}
                 type="button"
-                onClick={() => onDrillIn("task-timeline", `任务：${task.title}`)}
+                onClick={() => onDrillIn("task-timeline", t("v3.projectOverview.taskLabel", { title: task.title }))}
                 className="group flex w-full items-start justify-between gap-3 py-3 text-left transition-colors hover:bg-muted/10"
               >
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{task.title}</span>
                     <span className={"text-xs font-medium " + (taskStateTone[task.state] ?? "")}>
-                      {taskStateLabel[task.state] ?? task.state}
+                      {t(`v3.timeline.taskState.${task.state}`, { defaultValue: task.state })}
                     </span>
                     <span className={"text-xs " + (riskTone[task.risk_level] ?? "")}>
-                      风险：{riskLabel[task.risk_level] ?? task.risk_level}
+                      {t("v3.projectOverview.risk", { level: t(`v3.cockpit.riskLevel.${task.risk_level}`, { defaultValue: task.risk_level }) })}
                     </span>
                   </div>
                   <div className="font-mono text-[11px] text-muted-foreground">{task.task_id}</div>
-                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">验收门槛</div>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("v3.projectOverview.acceptance")}</div>
                   <div className="flex flex-wrap items-center gap-1">
                     {task.criteria.map((c) => (
                       <CriterionBadge key={c.criterion_id} criterion={c} />
@@ -206,7 +174,7 @@ export function ProjectOverview({ data, onDrillIn }: ProjectOverviewProps) {
                   <BlockerDetailsPanel blockers={task.blocker_details} compact />
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="text-xs text-muted-foreground">{task.active_sessions} 个会话</div>
+                  <div className="text-xs text-muted-foreground">{t("v3.projectOverview.sessionCount", { count: task.active_sessions })}</div>
                   <ChevronRight className="ml-auto mt-1 h-4 w-4 text-muted-foreground/50 transition group-hover:text-foreground" />
                 </div>
               </button>
@@ -218,11 +186,11 @@ export function ProjectOverview({ data, onDrillIn }: ProjectOverviewProps) {
       {/* 时间线入口 */}
       <DrillCard
         icon={<Clock className="h-4 w-4" />}
-        title="全局时间线"
-        detail="查看事件流"
-        onClick={() => onDrillIn("global-timeline", "全局时间线")}
+        title={t("v3.projectOverview.globalTimeline")}
+        detail={t("v3.projectOverview.viewEventStream")}
+        onClick={() => onDrillIn("global-timeline", t("v3.projectOverview.globalTimeline"))}
       >
-        <p className="text-sm text-muted-foreground">按时间顺序查看项目事件流，筛选不同类型的事件</p>
+        <p className="text-sm text-muted-foreground">{t("v3.projectOverview.timelineDescription")}</p>
       </DrillCard>
     </div>
   );

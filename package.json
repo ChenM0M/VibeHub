@@ -1,6 +1,6 @@
 {
     "name": "vibehub",
-    "version": "3.0.3",
+    "version": "3.0.4",
     "description": "A cross-platform launcher for development tools",
     "license": "Apache-2.0",
     "type": "module",
@@ -9,8 +9,10 @@
         "build": "tsc && vite build",
         "v3:contracts:generate": "node scripts/v3-contracts/generate-fixtures.mjs && node scripts/v3-contracts/generate-types.mjs",
         "v3:contracts:check": "node scripts/v3-contracts/check.mjs",
+        "v3:i18n:check": "node scripts/v3-i18n/check.mjs",
     "v3:mcp:check": "node scripts/v3-mcp/contract-test.mjs",
     "v3:m4:stability": "node scripts/v3-task-lifecycle/stability.mjs",
+    "v3:closure-refresh:check": "node scripts/v3-task-lifecycle/closure-refresh.mjs",
     "release:check": "node scripts/release/preflight.mjs",
         "preview": "vite preview",
         "tauri": "tauri",

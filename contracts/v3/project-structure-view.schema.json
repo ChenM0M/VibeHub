@@ -14,7 +14,7 @@
       "required": ["root", "source", "session_id", "worktree_id", "fallback_reason", "ignored_directories"],
       "properties": {
         "root": { "$ref": "common.schema.json#/$defs/NativePath" },
-        "source": { "enum": ["session_worktree", "session_working_directory", "project_root_fallback"] },
+        "source": { "enum": ["session_worktree", "session_working_directory", "detected_git_root", "project_root_fallback"] },
         "session_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
         "worktree_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
         "fallback_reason": { "type": ["string", "null"] },

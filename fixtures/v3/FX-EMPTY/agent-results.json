@@ -125,5 +125,7 @@
   "errors": [],
   "task_id": "task.none",
   "state": "not_executed",
+  "review_required": false,
+  "next_action": null,
   "results": []
 }

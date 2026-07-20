@@ -10,6 +10,9 @@
     { "$ref": "#/$defs/PlanNodeAdd" },
     { "$ref": "#/$defs/PlanDependenciesSet" },
     { "$ref": "#/$defs/PlanNodeStateSet" },
+    { "$ref": "#/$defs/CriterionReview" },
+    { "$ref": "#/$defs/TaskCompletionPropose" },
+    { "$ref": "#/$defs/TaskComplete" },
     { "$ref": "#/$defs/WorktreeCommand" },
     { "$ref": "#/$defs/Rebuild" }
   ],
@@ -162,6 +165,51 @@
           }
         }
       ]
+    },
+    "CriterionReview": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/TaskWriteScope" },
+        {
+          "type": "object",
+          "required": ["command", "criterion_id", "outcome", "reviewer", "evidence_refs"],
+          "properties": {
+            "command": { "const": "criterion_review" },
+            "criterion_id": { "$ref": "common.schema.json#/$defs/StableId" },
+            "outcome": { "enum": ["passed", "failed", "blocked"] },
+            "reviewer": { "type": "string", "minLength": 1 },
+            "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
+            "details": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "TaskCompletionPropose": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/TaskWriteScope" },
+        {
+          "type": "object",
+          "required": ["command"],
+          "properties": { "command": { "const": "task_completion_propose" } }
+        }
+      ]
+    },
+    "TaskComplete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "project_id", "task_id", "actor", "confirmed_by", "channel", "idempotency_key"],
+      "properties": {
+        "command": { "const": "task_complete" },
+        "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "actor": { "type": "string", "minLength": 1 },
+        "confirmed_by": { "type": "string", "minLength": 1 },
+        "channel": { "enum": ["desktop_ui", "cli"] },
+        "idempotency_key": { "$ref": "common.schema.json#/$defs/StableId" }
+      }
     },
     "WorktreeCommand": {
       "type": "object",

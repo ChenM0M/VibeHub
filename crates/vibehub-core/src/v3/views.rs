@@ -4,7 +4,10 @@ use super::orchestration::fold_task as fold_orchestration;
 use super::project_intelligence::{
     AnalyzerFinding, GitState, NodeKind, ProjectIndexService, ProjectModelSnapshot, ProjectPage,
 };
-use super::{EvidenceGrade, V3Error, V3ErrorCategory, V3EventEnvelope, V3EventStore};
+use super::{
+    resolve_project_scopes, EvidenceGrade, ProjectScopeSource, V3Error, V3ErrorCategory,
+    V3EventEnvelope, V3EventStore,
+};
 use crate::process_util::silent_command;
 use crate::vibehub::current::resolve_current_task;
 use chrono::{SecondsFormat, Utc};
@@ -61,12 +64,18 @@ struct TaskDocument {
     acceptance_criteria: Vec<String>,
     #[serde(default)]
     dependencies: Vec<String>,
+    #[serde(default = "default_workflow_profile")]
+    workflow_profile: String,
 }
 
 #[derive(Debug, Clone)]
 struct TaskReadResult {
     tasks: Vec<TaskDocument>,
     warnings: Vec<Value>,
+}
+
+fn default_workflow_profile() -> String {
+    "standard".to_owned()
 }
 
 impl V3ViewRepository {
@@ -82,17 +91,19 @@ impl V3ViewRepository {
     pub fn current_task_id(&self) -> Result<String, V3Error> {
         let pointer_path = self.root.join(".vibehub/tasks/current");
         let pointed_task_id = if pointer_path.is_dir() {
-            let content = fs::read_to_string(pointer_path.join("task.yaml"))
-                .map_err(internal("V3_CURRENT_TASK_READ_FAILED"))?;
-            let task: TaskDocument = serde_yaml::from_str(&content).map_err(|error| {
-                V3Error::new(
-                    "V3_CURRENT_TASK_INVALID",
-                    V3ErrorCategory::CorruptLog,
-                    false,
-                    error.to_string(),
-                )
-            })?;
-            Ok(task.task_id)
+            fs::read_to_string(pointer_path.join("task.yaml"))
+                .map_err(internal("V3_CURRENT_TASK_READ_FAILED"))
+                .and_then(|content| {
+                    serde_yaml::from_str::<TaskDocument>(&content).map_err(|error| {
+                        V3Error::new(
+                            "V3_CURRENT_TASK_INVALID",
+                            V3ErrorCategory::CorruptLog,
+                            false,
+                            error.to_string(),
+                        )
+                    })
+                })
+                .map(|task| task.task_id)
         } else {
             resolve_current_task(&self.root)
                 .map(|pointer| pointer.task_id)
@@ -249,10 +260,13 @@ impl V3ViewRepository {
                 Some(json!({
                     "task_id": project_task.task_id,
                     "title": project_task.title,
+                    "intent": project_task.intent,
+                    "workflow_profile": project_task.workflow_profile,
                     "state": state,
                     "risk_level": risk_level(&events, &project_task.task_id),
                     "criteria": task_criteria,
                     "blocker_details": task_blocker_details,
+                    "relations": task_lifecycle.relations,
                     "active_sessions": task_opened_sessions.saturating_sub(task_closed_sessions)
                 }))
             })
@@ -276,6 +290,9 @@ impl V3ViewRepository {
             .collect();
         let effective_current_task_id = self.current_task_id().ok();
         let workspace = resolve_workspace(&self.root, task_id, &events);
+        let workspace_native_root = native_path(&workspace.root);
+        let resolved_scopes = resolve_project_scopes(&self.root, Some(&workspace.root))?;
+        let scope_inspection = resolved_scopes.inspection();
         let index = ProjectIndexService::open(&workspace.root).and_then(|service| {
             let snapshot = service.current_snapshot()?;
             let page = service.first_page()?;
@@ -336,6 +353,15 @@ impl V3ViewRepository {
             .unwrap_or_default();
         let mut overview_warnings = task_metadata_warnings.clone();
         overview_warnings.extend(architecture_warnings.clone());
+        overview_warnings.extend(scope_inspection.warnings.iter().map(|warning| {
+            json!({
+                "code": warning.split(':').next().unwrap_or("V3_PROJECT_SCOPE_WARNING"),
+                "severity": "warning",
+                "message_key": "v3.warning.project_scope",
+                "details": {"scope_warning": warning},
+                "evidence_refs": []
+            })
+        }));
         let index_state = project_structure["index_state"].as_str().unwrap_or("error");
         let model_state = match index_state {
             "ready" => "ready",
@@ -361,8 +387,9 @@ impl V3ViewRepository {
         let project_overview = json!({
             "schema_version": "1.0", "project_id": project_id, "name": self.root.file_name().and_then(|v| v.to_str()).unwrap_or("Project"),
             "root": native_root, "generated_at": generated_at, "model_version": MODEL_VERSION,
+            "scopes": scope_inspection,
             "freshness": structure_freshness, "completeness": overview_completeness,
-            "repository": {"state": if self.root.join(".git").exists() {"available"} else {"not_repository"}, "branch": Value::Null, "head": Value::Null, "dirty": Value::Null, "worktree_count": 1},
+            "repository": {"state": if resolved_scopes.git_root.is_some() {"available"} else {"not_repository"}, "branch": Value::Null, "head": Value::Null, "dirty": Value::Null, "worktree_count": if resolved_scopes.git_root.is_some() {1} else {0}},
             "model": {"state": model_state, "last_evidence_at": generated_at, "generator_version": structure_model_version, "indexed_files": indexed_files},
             "architecture": {"declared_docs": declared_docs, "modules": architecture_modules, "relationships": architecture_edges.len(), "confidence": architecture_confidence, "evidence_refs": architecture_evidence_refs},
             "current_task_id": effective_current_task_id,
@@ -432,7 +459,7 @@ impl V3ViewRepository {
             .unwrap_or("")
             .to_owned();
         let mut plan_warnings = task_metadata_warnings.clone();
-        if lifecycle.nodes.is_empty() {
+        if lifecycle.nodes.is_empty() && task.workflow_profile != "lightweight" {
             plan_warnings.push(json!({
                 "code": "V3_PLAN_NOT_RECORDED",
                 "severity": "warning",
@@ -449,7 +476,8 @@ impl V3ViewRepository {
             .count();
         let plan_graph = json!({
             "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "plan_version": lifecycle.version,
-            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": "fresh", "completeness": if lifecycle.nodes.is_empty() {"unknown"} else {"partial"}, "graph_state": "valid",
+            "workflow_profile": task.workflow_profile, "planning_required": task.workflow_profile != "lightweight",
+            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": "fresh", "completeness": if task.workflow_profile == "lightweight" && lifecycle.nodes.is_empty() {"complete"} else if lifecycle.nodes.is_empty() {"unknown"} else {"partial"}, "graph_state": "valid",
             "nodes": graph_nodes,
             "scheduling_edges": scheduling_edges, "trace_relations": trace_relations,
             "execution": {"planned_sessions": 0, "observed_sessions": sessions.len(), "planned_worktrees": planned_worktrees, "observed_worktrees": observed_worktrees},
@@ -458,17 +486,30 @@ impl V3ViewRepository {
 
         let mut node_warnings = task_metadata_warnings;
         node_warnings.extend(architecture_warnings.clone());
+        let (max_tokens, estimated_tokens, milestone_policy, planning_required, review_required) =
+            match task.workflow_profile.as_str() {
+                "lightweight" => (2000, 400, "minimal", false, false),
+                "full" => (16000, 2000, "full", true, true),
+                _ => (8000, 1000, "standard", true, true),
+            };
         let node_brief = json!({
             "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "node_id": node_id,
+            "workflow_profile": task.workflow_profile,
+            "execution_policy": {
+                "milestone_policy": milestone_policy,
+                "planning_required": planning_required,
+                "review_required": review_required,
+                "required_records": if task.workflow_profile == "lightweight" {json!(["session", "result", "risk_if_any"])} else {json!(["plan", "session", "progress", "result", "review"])}
+            },
             "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": structure_freshness, "completeness": structure_completeness,
             "goal": lifecycle.nodes.get(&node_id).map(|node| node.goal.as_str()).unwrap_or(&task.intent),
-            "scope": lifecycle.nodes.get(&node_id).map(|node| node.scope.clone()).unwrap_or_default(), "non_scope": ["M5-M6 milestone-owned capabilities"],
+            "scope": lifecycle.nodes.get(&node_id).map(|node| node.scope.clone()).unwrap_or_default(), "non_scope": [],
             "dependencies": task.dependencies.iter().map(|dependency| normalize_dependency_id(dependency)).collect::<Vec<_>>(),
-            "accepted_decisions": ["JSON Schema 2020-12 remains the wire source of truth", "MCP and CLI share V3ApplicationService"],
-            "research_summary": [], "criteria": current_criteria, "files": [native_root],
-            "validation_commands": ["npm run v3:contracts:check", "cargo test --workspace"], "state": lifecycle.nodes.get(&node_id).map(|node| view_node_state(&node.state)).unwrap_or_else(|| node_state(&task)), "next_intent": task.phase,
+            "accepted_decisions": [],
+            "research_summary": [], "criteria": current_criteria, "files": [workspace_native_root],
+            "validation_commands": [], "state": lifecycle.nodes.get(&node_id).map(|node| view_node_state(&node.state)).unwrap_or_else(|| node_state(&task)), "next_intent": task.phase,
             "blocker_details": current_blocker_details,
-            "budget": {"max_tokens": 8000, "estimated_tokens": 1000, "truncated_sections": []},
+            "budget": {"max_tokens": max_tokens, "estimated_tokens": estimated_tokens, "truncated_sections": []},
             "source_versions": {"view_model": MODEL_VERSION, "project_model": structure_model_version}, "protocol_coverage": protocol_coverage(opened_sessions, closed_sessions, explicit_session_gaps),
             "evidence_refs": evidence_refs, "warnings": node_warnings, "errors": architecture_errors
         });
@@ -910,13 +951,11 @@ fn resolve_workspace(
         .map(|(session_id, _, _)| session_id)
         .collect();
     if active_sessions.is_empty() {
-        return WorkspaceSelection {
-            root: project_root.to_path_buf(),
-            source: "project_root_fallback",
-            session_id: None,
-            worktree_id: None,
-            fallback_reason: Some("no active session or worktree context was recorded".to_owned()),
-        };
+        return fallback_workspace(
+            project_root,
+            None,
+            "no active session or worktree context was recorded",
+        );
     }
     let candidate_sessions = |event: &&V3EventEnvelope| {
         event.task_id.0 == task_id
@@ -961,14 +1000,34 @@ fn resolve_workspace(
             }
         }
     }
+    fallback_workspace(
+        project_root,
+        active_sessions.iter().next().cloned(),
+        "active session has no accessible working directory or worktree path",
+    )
+}
+
+fn fallback_workspace(
+    project_root: &Path,
+    session_id: Option<String>,
+    reason: &str,
+) -> WorkspaceSelection {
+    let resolved = resolve_project_scopes(project_root, None).ok();
+    let detected = resolved
+        .as_ref()
+        .filter(|scopes| scopes.source == ProjectScopeSource::DetectedGitRoot);
     WorkspaceSelection {
-        root: project_root.to_path_buf(),
-        source: "project_root_fallback",
-        session_id: active_sessions.iter().next().cloned(),
+        root: detected
+            .map(|scopes| scopes.execution_root.clone())
+            .unwrap_or_else(|| project_root.to_path_buf()),
+        source: if detected.is_some() {
+            "detected_git_root"
+        } else {
+            "project_root_fallback"
+        },
+        session_id,
         worktree_id: None,
-        fallback_reason: Some(
-            "active session has no accessible working directory or worktree path".to_owned(),
-        ),
+        fallback_reason: Some(reason.to_owned()),
     }
 }
 
@@ -1968,9 +2027,25 @@ fn agent_results_view(
     } else {
         "awaiting_result"
     };
+    let review_required = results.iter().any(|result| result["status"] == "succeeded")
+        && !events.iter().any(|event| {
+            event.task_id.0 == task_id
+                && matches!(
+                    event.event_type.as_str(),
+                    "criterion.passed"
+                        | "criterion.failed"
+                        | "criterion.blocked"
+                        | "criterion.not_applicable"
+                )
+        });
+    let state = if review_required {
+        "review_required"
+    } else {
+        state
+    };
     json!({
         "schema_version": "1.0", "project_id": project_id, "task_id": task_id, "generated_at": generated_at, "model_version": MODEL_VERSION,
-        "freshness": "fresh", "completeness": if results.is_empty() {"unknown"} else {"complete"}, "state": state, "results": results,
+        "freshness": "fresh", "completeness": if results.is_empty() {"unknown"} else {"complete"}, "state": state, "review_required": review_required, "next_action": if review_required { Value::String("run_review".to_owned()) } else { Value::Null }, "results": results,
         "evidence_refs": evidence_refs, "warnings": warnings, "errors": []
     })
 }
@@ -2007,6 +2082,7 @@ fn archived_task_summary(
                 "task.completion_confirmed"
                     | "task.completion_proposed"
                     | "task.completion_rejected"
+                    | "task.closed_with_exceptions"
             )
         })
         .map(|event| event.occurred_at.clone())
@@ -2070,6 +2146,32 @@ fn archived_task_summary(
         .filter(|finding| finding.state == "closed")
         .count();
     let finding_open = finding_total.saturating_sub(finding_closed);
+    let closure_event = task_events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.event_type.as_str(),
+                "task.completion_confirmed" | "task.closed_with_exceptions"
+            )
+        })
+        .max_by(|left, right| left.occurred_at.cmp(&right.occurred_at));
+    let closure_method = closure_event.map(|event| {
+        if event.event_type == "task.completion_confirmed" {
+            "all_green"
+        } else {
+            "with_exceptions"
+        }
+    });
+    let unresolved_items = criteria
+        .iter()
+        .filter(|criterion| {
+            !matches!(
+                criterion["status"].as_str(),
+                Some("passed" | "not_applicable")
+            )
+        })
+        .filter_map(|criterion| criterion["criterion_id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
     let next_action = if state == "completed" && confirmed {
         "无待处理动作；可从验收与时间线回顾本次任务".to_owned()
     } else if state == "completed" {
@@ -2086,6 +2188,16 @@ fn archived_task_summary(
         "risk_level": risk_level(events, &task.task_id),
         "terminal_at": terminal_at,
         "completion": completion,
+        "closure": {
+            "method": closure_method,
+            "actor": closure_event.map(|event| event.actor.clone()),
+            "confirmed_by": closure_event.and_then(|event| event.payload.get("confirmed_by")).cloned().unwrap_or(Value::Null),
+            "channel": closure_event.and_then(|event| event.payload.get("channel")).cloned().unwrap_or(Value::Null),
+            "confirmed_at": closure_event.map(|event| event.occurred_at.clone()),
+            "reason": closure_event.and_then(|event| event.payload.get("reason")).cloned().unwrap_or(Value::Null),
+            "criteria_snapshot": criteria.clone(),
+            "unresolved_items": unresolved_items
+        },
         "criteria": criteria,
         "blocker_details": blocker_details(task, events, lifecycle, None, generated_at),
         "plan": {
@@ -2117,7 +2229,7 @@ fn archived_task_summary(
 }
 
 fn is_terminal_task_state(state: &str) -> bool {
-    matches!(state, "completed" | "cancelled")
+    matches!(state, "completed" | "cancelled" | "closed_with_exceptions")
 }
 
 fn validate_id(name: &str, value: &str) -> Result<(), V3Error> {
@@ -2704,7 +2816,11 @@ fn projected_task_state(lifecycle: &TaskLifecycleProjection) -> &str {
             "review"
         }
         _ if lifecycle.nodes.values().any(|node| node.state == "ready") => "planned",
-        _ if matches!(lifecycle.state.as_str(), "planned" | "active" | "review") => {
+        _ if matches!(
+            lifecycle.state.as_str(),
+            "planned" | "active" | "review" | "closed_with_exceptions"
+        ) =>
+        {
             lifecycle.state.as_str()
         }
         _ => "active",
@@ -2714,7 +2830,14 @@ fn projected_task_state(lifecycle: &TaskLifecycleProjection) -> &str {
 fn view_node_state(state: &str) -> &str {
     match state {
         "failed" => "blocked",
-        "planned" | "ready" | "active" | "blocked" | "review" | "completed" | "cancelled"
+        "planned"
+        | "ready"
+        | "active"
+        | "blocked"
+        | "review"
+        | "completed"
+        | "cancelled"
+        | "closed_with_exceptions"
         | "superseded" => state,
         _ => "planned",
     }
@@ -2866,6 +2989,7 @@ mod tests {
                 title: "Valid task".to_owned(),
                 intent: "Keep valid V3 tasks visible".to_owned(),
                 acceptance_criteria: vec!["View bundle remains available".to_owned()],
+                workflow_profile: "standard".to_owned(),
             },
         )
         .unwrap();
@@ -2875,14 +2999,14 @@ mod tests {
         fs::write(
             legacy_dir.join("task.yaml"),
             format!(
-                "schema_version: 1\\nkind: vibehub_task\\ntask_id: {legacy_task_id}\\ntitle: Legacy task\\nmode: evidence_drive\\nphase: align\\nphase_status: active\\n"
+                "schema_version: 1\nkind: vibehub_task\ntask_id: {legacy_task_id}\ntitle: Legacy task\nmode: evidence_drive\nphase: align\nphase_status: active\n"
             ),
         )
         .unwrap();
         fs::write(
             root.join(".vibehub/tasks/current"),
             format!(
-                "schema_version: 1\\nkind: current_task_pointer\\ntask_id: {legacy_task_id}\\npath: .vibehub/tasks/{legacy_task_id}\\nupdated_at: 2026-07-18T00:00:00Z\\nupdated_by: vibehub\\n"
+                "schema_version: 1\nkind: current_task_pointer\ntask_id: {legacy_task_id}\npath: .vibehub/tasks/{legacy_task_id}\nupdated_at: 2026-07-18T00:00:00Z\nupdated_by: vibehub\n"
             ),
         )
         .unwrap();
@@ -3004,7 +3128,9 @@ mod tests {
             bundle.project_structure["workspace"]["root"]["native"],
             workspace.canonicalize().unwrap().to_string_lossy().as_ref()
         );
-        assert_eq!(bundle.agent_results["state"], "available");
+        assert_eq!(bundle.agent_results["state"], "review_required");
+        assert_eq!(bundle.agent_results["review_required"], true);
+        assert_eq!(bundle.agent_results["next_action"], "run_review");
         assert_eq!(bundle.agent_results["results"].as_array().unwrap().len(), 1);
         assert_eq!(bundle.agent_results["results"][0]["status"], "succeeded");
         assert_eq!(bundle.agent_results["results"][0]["summary"], "Passed");
@@ -3014,6 +3140,53 @@ mod tests {
         );
         fs::remove_dir_all(project).unwrap();
         fs::remove_dir_all(workspace).unwrap();
+    }
+
+    #[test]
+    fn forced_closure_archive_preserves_reason_and_unresolved_snapshot() {
+        let project = std::env::temp_dir().join(format!("vibehub-v3-closure-{}", Uuid::new_v4()));
+        fs::create_dir_all(project.join(".vibehub/tasks/task.test")).unwrap();
+        fs::create_dir_all(project.join(".vibehub/tasks/current")).unwrap();
+        let task = "task_id: task.test\ntitle: Forced closure\nintent: Preserve closure audit\nphase: execute\nphase_status: active\nacceptance_criteria:\n- Review passes\n";
+        fs::write(project.join(".vibehub/tasks/task.test/task.yaml"), task).unwrap();
+        fs::write(project.join(".vibehub/tasks/current/task.yaml"), task).unwrap();
+        let repository = V3ViewRepository::open(&project).unwrap();
+        let project_id = repository.project_id();
+        V3ApplicationService::open(&project)
+            .unwrap()
+            .close_task_with_exceptions(
+                &project_id,
+                "task.test",
+                "desktop-user",
+                "ChenM0M",
+                "desktop_ui",
+                "User chose to archive before review",
+                "closure.force.1",
+            )
+            .unwrap();
+
+        let bundle = repository.load_bundle("task.test").unwrap();
+        let archived = &bundle.project_overview["archived_tasks"][0];
+        assert_eq!(archived["state"], "closed_with_exceptions");
+        assert_eq!(archived["closure"]["method"], "with_exceptions");
+        assert_eq!(archived["closure"]["confirmed_by"], "ChenM0M");
+        assert_eq!(archived["closure"]["channel"], "desktop_ui");
+        assert_eq!(
+            archived["closure"]["reason"],
+            "User chose to archive before review"
+        );
+        assert_eq!(
+            archived["closure"]["unresolved_items"],
+            json!(["criterion.task.test.c01"])
+        );
+        assert_eq!(
+            archived["closure"]["criteria_snapshot"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        fs::remove_dir_all(project).unwrap();
     }
 
     #[test]
@@ -3606,6 +3779,7 @@ mod tests {
                 title: "Build projection".to_owned(),
                 intent: "Project real plan state".to_owned(),
                 acceptance_criteria: vec!["Projection is factual".to_owned()],
+                workflow_profile: "standard".to_owned(),
             },
         )
         .unwrap();
@@ -3618,7 +3792,7 @@ mod tests {
             &created.task_id,
             created.lifecycle_version,
             "plan.second",
-            json!({"node_id":"node.second","title":"Second","goal":"Continue","scope":[],"dependencies":[created.initial_node_id]}),
+            json!({"node_id":"node.second","title":"Second","goal":"Continue","scope":[],"dependencies":[created.initial_node_id.unwrap()]}),
         ))
         .unwrap();
         app.session_open(

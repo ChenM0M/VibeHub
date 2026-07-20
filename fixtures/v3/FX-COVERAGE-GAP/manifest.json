@@ -21,7 +21,7 @@
       "contract": "project_overview",
       "schema": "project-overview-view.schema.json",
       "file": "project-overview.json",
-      "sha256": "d556fc98abd9e5168096dab63287c53883d324aae29c92d49a8c70532fefdc30"
+      "sha256": "97b80b2b20ace12e5051803018095c3220fe9ada6b246b2b08a4166f7d541868"
     },
     {
       "contract": "project_structure",
@@ -33,7 +33,7 @@
       "contract": "agent_results",
       "schema": "agent-results-view.schema.json",
       "file": "agent-results.json",
-      "sha256": "ec88646ee0e904165c52625c6022654b19896d49def6588d98c14c68cb1473e8"
+      "sha256": "7e7bb7faa3fffba1215a9d5fd250953ab82e0969a1f24d716561ad034fec21ef"
     },
     {
       "contract": "task_timeline",
@@ -45,13 +45,13 @@
       "contract": "plan_graph",
       "schema": "plan-graph-view.schema.json",
       "file": "plan-graph.json",
-      "sha256": "9887eda9a4704e7d7c3a003cf4de35d68142d93fc253bd65fbe01f17917af2a6"
+      "sha256": "ac15dc1ab04bcce3861cb4761e2b7a16930a26c0fff6c0f464db5dc9fd7238c4"
     },
     {
       "contract": "node_brief",
       "schema": "node-brief.schema.json",
       "file": "node-brief.json",
-      "sha256": "0c68e5ef3906b5832c36111fc2d5eb60c5410c0f1b77d443932ca436e3bd31b9"
+      "sha256": "378e73c43b72cad7cdb7f74742fba1e7d3dc12cd722c220f345e828afbf4a0a5"
     },
     {
       "contract": "worktree_orchestration",

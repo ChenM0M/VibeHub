@@ -5,6 +5,7 @@ import { WarningList } from "@/v3/components/common/WarningList";
 import { ErrorList } from "@/v3/components/common/ErrorList";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import type { TaskTimelineView } from "@/v3/contracts/generated/task-timeline-view";
+import { useTranslation } from "react-i18next";
 
 const eventKindTone: Record<string, string> = {
   decision: "text-purple-600 dark:text-purple-400",
@@ -30,18 +31,6 @@ const eventKindDot: Record<string, string> = {
   plan: "bg-pink-500",
 };
 
-const eventKindLabel: Record<string, string> = {
-  decision: "决策",
-  evidence: "证据",
-  finding: "发现",
-  attempt: "尝试",
-  validation: "验证",
-  confirmation: "确认",
-  gap: "缺口",
-  session: "会话",
-  plan: "计划",
-};
-
 const allKinds = ["decision", "evidence", "finding", "attempt", "validation", "confirmation", "gap", "session", "plan"];
 
 interface GlobalTimelineProps {
@@ -49,6 +38,7 @@ interface GlobalTimelineProps {
 }
 
 export function GlobalTimeline({ data }: GlobalTimelineProps) {
+  const { t, i18n } = useTranslation();
   const [filterKind, setFilterKind] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -77,13 +67,13 @@ export function GlobalTimeline({ data }: GlobalTimelineProps) {
       <ErrorList errors={data.errors} />
 
       <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
-        <span>{data.events.length} 个事件</span>
+        <span>{t("v3.timeline.eventCount", { count: data.events.length })}</span>
         {timeRange && (
           <span>
-            {new Date(timeRange.start).toLocaleString()} → {new Date(timeRange.end).toLocaleString()}
+            {new Intl.DateTimeFormat(i18n.resolvedLanguage, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(timeRange.start))} → {new Intl.DateTimeFormat(i18n.resolvedLanguage, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(timeRange.end))}
           </span>
         )}
-        <span className="italic">（M1 原型：仅当前任务；多任务聚合需 M3/M4）</span>
+        <span className="italic">{t("v3.globalTimeline.currentTaskOnly")}</span>
       </div>
 
       <div className="flex items-center gap-1 flex-wrap">
@@ -95,7 +85,7 @@ export function GlobalTimeline({ data }: GlobalTimelineProps) {
             filterKind === null ? "border-foreground bg-foreground/5 text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
           )}
         >
-          全部
+          {t("v3.globalTimeline.all")}
         </button>
         {allKinds.map((kind) => (
           <button
@@ -107,14 +97,14 @@ export function GlobalTimeline({ data }: GlobalTimelineProps) {
               filterKind === kind ? "border-foreground bg-foreground/5 text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
-            {eventKindLabel[kind] ?? kind}
+            {t(`v3.timeline.eventKind.${kind}`, { defaultValue: kind })}
           </button>
         ))}
       </div>
 
       <div ref={scrollRef} className="h-[55vh] overflow-auto border border-border/70">
         {sortedEvents.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">无事件</div>
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">{t("v3.globalTimeline.noEvents")}</div>
         ) : (
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
             {virtualizer.getVirtualItems().map((virtualItem) => {
@@ -132,11 +122,11 @@ export function GlobalTimeline({ data }: GlobalTimelineProps) {
                     <div className="min-w-0 flex-1">
                       <div className={cn("text-sm font-medium", eventKindTone[event.kind])}>{event.summary_key}</div>
                       <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                        <span>{new Date(event.occurred_at).toLocaleString()}</span>
-                        <span>执行者：{event.actor}</span>
-                        {event.tool && <span>通过 {event.tool}</span>}
+                        <span>{new Intl.DateTimeFormat(i18n.resolvedLanguage, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(event.occurred_at))}</span>
+                        <span>{t("v3.globalTimeline.actor", { actor: event.actor })}</span>
+                        {event.tool && <span>{t("v3.globalTimeline.via", { tool: event.tool })}</span>}
                         {event.commit_sha && <span className="font-mono">{event.commit_sha.slice(0, 7)}</span>}
-                        {event.order_state !== "ordered" && <span className="text-orange-600">[迟到的]</span>}
+                        {event.order_state !== "ordered" && <span className="text-orange-600">{t("v3.globalTimeline.late")}</span>}
                       </div>
                       <EvidenceLink evidenceRefs={event.evidence_refs} />
                     </div>

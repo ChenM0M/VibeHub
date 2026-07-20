@@ -253,16 +253,25 @@ function baseViews() {
       ...shared,
       name: "VibeHub",
       root,
+      scopes: {
+        control_root: "/Users/alex/Projects/VibeHub",
+        execution_root: "/Users/alex/Projects/VibeHub",
+        git_root: "/Users/alex/Projects/VibeHub",
+        host_config_root: "/Users/alex/Projects/VibeHub",
+        source: "control_root",
+        nested_repository: false,
+        warnings: [],
+      },
       repository: { state: "available", branch: "feature/v3", head: "d7ece57", dirty: false, worktree_count: 1 },
       model: { state: "ready", last_evidence_at: "2026-07-11T08:15:00.000Z", generator_version: "fixture-1.0", indexed_files: 128 },
       architecture: { declared_docs: 2, modules: architectureNodes.filter((node) => node.kind !== "workspace").length, relationships: architectureEdges.length, confidence: 0.95, evidence_refs: evidence("ev.architecture", "file", "hard_observed", "evidence.architecture.generated", "contracts/v3/README.md") },
       active_tasks: [
         {
-          task_id: "task.m0", title: "Freeze V3 contracts and fixtures", state: "active", risk_level: "low",
+          task_id: "task.m0", title: "Freeze V3 contracts and fixtures", intent: "Keep V3 contracts and fixtures stable", workflow_profile: "full", state: "active", risk_level: "low",
           criteria: [c0, c1, c2], active_sessions: 1,
         },
         {
-          task_id: "task.m1", title: "Build V3 high-fidelity frontend from fixtures", state: "active", risk_level: "medium",
+          task_id: "task.m1", title: "Build V3 high-fidelity frontend from fixtures", intent: "Build the V3 frontend from fixtures", workflow_profile: "standard", state: "active", risk_level: "medium",
           criteria: [
             criterion("criterion.m1.c01", "State coverage across 12 scenarios", "accepted"),
             criterion("criterion.m1.c02", "Field traceability to contracts", "proposed"),
@@ -270,7 +279,7 @@ function baseViews() {
           ], active_sessions: 2,
         },
         {
-          task_id: "task.m2", title: "Implement V3 event core and MCP control plane", state: "planned", risk_level: "medium",
+          task_id: "task.m2", title: "Implement V3 event core and MCP control plane", intent: "Implement the V3 event core and MCP control plane", workflow_profile: "full", state: "planned", risk_level: "medium",
           criteria: [
             criterion("criterion.m2.c01", "Event store persistence", "proposed"),
           ], active_sessions: 0,
@@ -293,6 +302,8 @@ function baseViews() {
       ...shared,
       task_id: "task.m0",
       state: "available",
+      review_required: false,
+      next_action: null,
       results: [{
         result_id: "result.m0.evaluation", kind: "evaluation", session_id: "session.main", node_id: "node.contracts",
         request: { source: "evaluation_instruction", instruction: "按 V3 契约验证全部 fixture 并报告不一致" }, status: "succeeded",
@@ -315,7 +326,7 @@ function baseViews() {
     },
     plan_graph: {
       ...shared,
-      task_id: "task.m0", plan_version: 2, graph_state: "valid",
+      task_id: "task.m0", plan_version: 2, workflow_profile: "full", planning_required: true, graph_state: "valid",
       nodes: [
         { node_id: "node.schema", title: "定义 JSON Schema", goal: "编写 5 个视图的 JSON Schema 2020-12 定义", state: "completed", readiness: "ready", block_reasons: [], scope: ["contracts/v3/*.schema.json"], criterion_ids: ["criterion.m0.c01"] },
         { node_id: "node.fixtures", title: "生成 Fixture 数据", goal: "生成 12 场景 × 5 视图的确定性 fixture", state: "completed", readiness: "ready", block_reasons: [], scope: ["fixtures/v3", "scripts/v3-contracts/fixture-data.mjs"], criterion_ids: ["criterion.m0.c02"] },
@@ -366,7 +377,9 @@ function baseViews() {
     },
     node_brief: {
       ...shared,
-      task_id: "task.m0", node_id: "node.contracts", goal: "冻结契约与 TypeScript 类型",
+      task_id: "task.m0", node_id: "node.contracts", workflow_profile: "full",
+      execution_policy: { milestone_policy: "full", planning_required: true, review_required: true, required_records: ["plan", "session", "progress", "result", "review"] },
+      goal: "冻结契约与 TypeScript 类型",
       scope: ["src/v3/contracts/generated/*.ts", "src/v3/contracts/fixtureRepository.ts", "src/v3/contracts/index.ts"],
       non_scope: ["V3 event store", "M1 UI 组件", "M2 MCP 控制面"],
       dependencies: ["node.schema", "node.fixtures"],
