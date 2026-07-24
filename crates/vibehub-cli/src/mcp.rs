@@ -766,7 +766,9 @@ impl V3McpServer {
                     .and_then(|inspection| inspection.settings)
                     .map(|settings| settings.agent_spec_targets)
                     .filter(|targets| !targets.is_empty())
-                    .unwrap_or_else(|| vec![AgentSpecTarget::ClaudeCode, AgentSpecTarget::Opencode]);
+                    .unwrap_or_else(|| {
+                        vec![AgentSpecTarget::ClaudeCode, AgentSpecTarget::Opencode]
+                    });
                 let host_configs = inspect_mcp_host_configs(&self.resolved_scopes, &targets);
                 let alignment = assess_root_alignment(&self.resolved_scopes, &host_configs);
                 let restart_required = alignment.restart_required;

@@ -721,7 +721,10 @@ mod tests {
             .expect("host config mismatch finding");
         assert_eq!(finding.actual.as_deref(), Some("/wrong/project"));
         assert_eq!(finding.consumer, Some(AgentSpecTarget::Opencode));
-        assert_eq!(finding.expected.as_deref(), Some(display(&scopes.control_root).as_str()));
+        assert_eq!(
+            finding.expected.as_deref(),
+            Some(display(&scopes.control_root).as_str())
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -740,8 +743,14 @@ mod tests {
             .iter()
             .find(|finding| finding.code == "V3_CONTROL_EXECUTION_ROOT_SPLIT")
             .expect("control/execution split finding");
-        assert_eq!(finding.expected.as_deref(), Some(display(&scopes.control_root).as_str()));
-        assert_eq!(finding.actual.as_deref(), Some(display(&scopes.execution_root).as_str()));
+        assert_eq!(
+            finding.expected.as_deref(),
+            Some(display(&scopes.control_root).as_str())
+        );
+        assert_eq!(
+            finding.actual.as_deref(),
+            Some(display(&scopes.execution_root).as_str())
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }
