@@ -248,11 +248,14 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   }, [sourceMode, activeProjectPath, selectedTaskId, loadTaskUsage]);
 
   useEffect(() => {
-    if (sourceMode !== "production" || projectSettings?.status !== "missing" || !lifecycleResult || !activeProjectPath) return;
+    // After V3 layout exists, missing project settings should open setup immediately —
+    // including the no-current-task empty state (do not wait for the first task).
+    if (sourceMode !== "production" || projectSettings?.status !== "missing" || !activeProjectPath) return;
+    if (layoutStatus?.state !== "v3") return;
     if (autoOpenedSettingsFor.current === activeProjectPath) return;
     autoOpenedSettingsFor.current = activeProjectPath;
     setShowSettingsModal(true);
-  }, [sourceMode, projectSettings, lifecycleResult, activeProjectPath]);
+  }, [sourceMode, projectSettings, activeProjectPath, layoutStatus?.state]);
 
   const overview = bundle?.projectOverview;
   const timeline = bundle?.taskTimeline;
@@ -342,6 +345,26 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
     return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => !taskCreatePending && setShowCreateTask(false)}><div role="dialog" aria-modal="true" aria-labelledby="v3-create-task-title" className="w-full max-w-lg space-y-4 rounded-lg border border-border bg-background p-6 shadow-xl" onClick={(event) => event.stopPropagation()}><div><h3 id="v3-create-task-title" className="text-lg font-semibold">{t("v3.cockpit.create.title")}</h3><p className="mt-1 text-sm text-muted-foreground">{t("v3.cockpit.create.description")}</p></div><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.create.titleLabel")}</span><input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.titlePlaceholder")} /></label><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.create.intentLabel")}</span><textarea value={taskIntent} onChange={(event) => setTaskIntent(event.target.value)} className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.intentPlaceholder")} /></label><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.workflowLabel")}</span><select value={taskWorkflowProfile} onChange={(event) => setTaskWorkflowProfile(event.target.value as V3TaskCreateRequest["workflow_profile"])} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="lightweight">{t("v3.cockpit.workflow.lightweight")}</option><option value="standard">{t("v3.cockpit.workflow.standard")}</option><option value="full">{t("v3.cockpit.workflow.full")}</option></select><span className="text-[11px] text-muted-foreground">{t("v3.cockpit.workflowHint")}</span></label><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.create.criteriaLabel")}</span><textarea value={taskCriteria} onChange={(event) => setTaskCriteria(event.target.value)} className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.criteriaPlaceholder")} /></label>{taskCreateError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{taskCreateError}</div>}<div className="flex justify-end gap-2"><Button variant="outline" disabled={taskCreatePending} onClick={() => setShowCreateTask(false)}>{t("v3.common.cancel")}</Button><Button disabled={taskCreatePending} onClick={() => void submitTask()}>{t(taskCreatePending ? "v3.cockpit.create.creating" : "v3.cockpit.create.submit")}</Button></div></div></div>;
   }
 
+  function renderProjectSetupModal() {
+    if (sourceMode !== "production" || !projectSettingsApi || !showSettingsModal) return null;
+    return (
+      <ProjectSetupModal
+        mode={projectSettings?.status === "missing" ? "setup" : "settings"}
+        onClose={() => setShowSettingsModal(false)}
+        onSubmit={updateProjectSettings}
+        onSync={() => syncAgentSpecs(false)}
+        onForceSync={() => syncAgentSpecs(true)}
+        initialLanguage={projectSettings?.settings?.output_language}
+        initialTools={projectSettings?.settings?.agent_spec_targets}
+        initialGitUrl={projectSettings?.settings?.repository_remote_url ?? ""}
+        expectedRevision={projectSettings?.settings?.revision ?? 0}
+        agentSpecs={agentSpecs}
+        pending={settingsLoading || specsLoading}
+        error={settingsError || specsError}
+      />
+    );
+  }
+
   if (sourceMode === "production" && projectPath && lifecycleApi && (layoutLoading || layoutError || layoutStatus?.state !== "v3")) {
     return (
       <div className="relative h-full">
@@ -364,7 +387,54 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   if (loading && !bundle) { return <div className="flex h-full items-center justify-center"><div className="text-sm text-muted-foreground">{t("v3.cockpit.loading")}</div></div>; }
   if (error && !(sourceMode === "production" && createTask && /CURRENT_TASK|TASK_NOT_FOUND/.test(error))) { return <div className="flex h-full flex-col gap-4 p-8"><Button variant="ghost" size="sm" className="w-fit" onClick={onBack}><ArrowLeft className="mr-2 h-4 w-4" />{t("v3.cockpit.backToProjects")}</Button><div className="border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div></div>; }
   if (sourceMode === "production" && createTask && error && /CURRENT_TASK|TASK_NOT_FOUND/.test(error)) {
-    return <div className="flex h-full flex-col"><div className="flex items-center border-b border-border/60 px-6 py-3"><Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="mr-2 h-4 w-4" /></Button><h2 className="text-xl font-semibold">{t("v3.cockpit.v3Project")}</h2></div><div className="flex flex-1 items-center justify-center p-8"><div className="max-w-md rounded-lg border border-dashed border-border p-8 text-center"><ListTodo className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><h3 className="font-semibold">{t("v3.cockpit.noTaskTitle")}</h3><p className="mt-2 text-sm text-muted-foreground">{t("v3.cockpit.noTaskDescription")}</p><Button className="mt-5" onClick={() => { setTaskCreateError(null); setShowCreateTask(true); }}>{t("v3.cockpit.create.submit")}</Button></div></div>{showCreateTask && renderCreateTaskDialog()}</div>;
+    const settingsMissing = projectSettings?.status === "missing";
+    const specsNeedAttention = Boolean(settingsError || specsError || agentSpecs?.artifacts.some((artifact) => artifact.status !== "in_sync"));
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-center border-b border-border/60 px-6 py-3">
+          <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="mr-2 h-4 w-4" /></Button>
+          <h2 className="text-xl font-semibold">{t("v3.cockpit.v3Project")}</h2>
+          {projectSettingsApi && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto"
+              aria-label={t("v3.setup.settingsTitle")}
+              onClick={() => setShowSettingsModal(true)}
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+        {(settingsMissing || specsNeedAttention) && (
+          <div className="shrink-0 px-6 pt-3">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+              <span>{settingsError || specsError || t(settingsMissing ? "v3.cockpit.settingsMissing" : "v3.cockpit.specsNeedAttention")}</span>
+              <button type="button" className="shrink-0 underline" onClick={() => setShowSettingsModal(true)}>{t("v3.cockpit.openSettings")}</button>
+            </div>
+          </div>
+        )}
+        <div className="flex flex-1 items-center justify-center p-8">
+          <div className="max-w-md rounded-lg border border-dashed border-border p-8 text-center">
+            <ListTodo className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <h3 className="font-semibold">{t(settingsMissing ? "v3.cockpit.setupBeforeTaskTitle" : "v3.cockpit.noTaskTitle")}</h3>
+            <p className="mt-2 text-sm text-muted-foreground">{t(settingsMissing ? "v3.cockpit.setupBeforeTaskDescription" : "v3.cockpit.noTaskDescription")}</p>
+            <div className="mt-5 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+              {settingsMissing ? (
+                <>
+                  <Button onClick={() => setShowSettingsModal(true)}>{t("v3.cockpit.openSettings")}</Button>
+                  <Button variant="outline" onClick={() => { setTaskCreateError(null); setShowCreateTask(true); }}>{t("v3.cockpit.create.submit")}</Button>
+                </>
+              ) : (
+                <Button onClick={() => { setTaskCreateError(null); setShowCreateTask(true); }}>{t("v3.cockpit.create.submit")}</Button>
+              )}
+            </div>
+          </div>
+        </div>
+        {showCreateTask && renderCreateTaskDialog()}
+        {renderProjectSetupModal()}
+      </div>
+    );
   }
   if (!overview || !timeline || !planGraph || !nodeBrief || !structure || !agentResults) return null;
 
@@ -843,22 +913,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
       )}
 
       {/* Setup / Settings Modal */}
-      {sourceMode === "production" && projectSettingsApi && showSettingsModal && (
-        <ProjectSetupModal
-          mode={projectSettings?.status === "missing" ? "setup" : "settings"}
-          onClose={() => setShowSettingsModal(false)}
-          onSubmit={updateProjectSettings}
-          onSync={() => syncAgentSpecs(false)}
-          onForceSync={() => syncAgentSpecs(true)}
-          initialLanguage={projectSettings?.settings?.output_language}
-          initialTools={projectSettings?.settings?.agent_spec_targets}
-          initialGitUrl={projectSettings?.settings?.repository_remote_url ?? ""}
-          expectedRevision={projectSettings?.settings?.revision ?? 0}
-          agentSpecs={agentSpecs}
-          pending={settingsLoading || specsLoading}
-          error={settingsError || specsError}
-        />
-      )}
+      {renderProjectSetupModal()}
       </div>
     </div>
     </>

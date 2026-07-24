@@ -790,7 +790,11 @@
       "loading": "正在載入…",
       "workflowLabel": "工作流程等級",
       "workflowHint": "極輕量任務只記錄最小事件，不建立任務圖；無法判斷時使用標準。",
-      "workflow": { "lightweight": "輕量", "standard": "標準", "full": "完整" },
+      "workflow": {
+        "lightweight": "輕量",
+        "standard": "標準",
+        "full": "完整"
+      },
       "backToProjects": "返回專案列表",
       "v3Project": "V3 專案",
       "noTaskTitle": "尚未建立任務",
@@ -931,7 +935,9 @@
         "task_created": "任務已建立",
         "criterion_accepted": "驗收標準已接受",
         "criterion_passed": "驗收標準已通過"
-      }
+      },
+      "setupBeforeTaskTitle": "先完成專案設定",
+      "setupBeforeTaskDescription": "V3 目錄已初始化。請先選擇輸出語言和 AI Agent，同步 AGENTS.md / CLAUDE.md 後再建立第一個任務。"
     },
     "projectOverview": {
       "repository": "儲存庫",
@@ -1106,7 +1112,11 @@
       "confirmForceSync": "確認只取代 managed region",
       "updating": "更新中…",
       "update": "更新專案設定",
-      "language": { "zh-CN": "簡體中文", "zh-TW": "繁體中文", "en-US": "英文" },
+      "language": {
+        "zh-CN": "簡體中文",
+        "zh-TW": "繁體中文",
+        "en-US": "英文"
+      },
       "tool": {
         "claude_code": "Claude Code 專案指令",
         "opencode": "共享 Agent 專案指令",
@@ -1255,7 +1265,11 @@
       "milestonePolicy": "里程碑策略",
       "planningRequired": "需要計畫圖",
       "reviewRequired": "需要正式審查",
-      "policy": { "minimal": "最小記錄", "standard": "標準流程", "full": "完整流程" }
+      "policy": {
+        "minimal": "最小記錄",
+        "standard": "標準流程",
+        "full": "完整流程"
+      }
     },
     "usage": {
       "none": "暫無",
@@ -1312,8 +1326,14 @@
       "rubric": "標準：{{value}}",
       "noRubric": "未提供評估標準",
       "kind": {
-        "evaluation": { "result": "評估結果", "label": "評估" },
-        "execution": { "result": "執行結果", "label": "執行" }
+        "evaluation": {
+          "result": "評估結果",
+          "label": "評估"
+        },
+        "execution": {
+          "result": "執行結果",
+          "label": "執行"
+        }
       },
       "request": {
         "evaluation_instruction": "評估指令",

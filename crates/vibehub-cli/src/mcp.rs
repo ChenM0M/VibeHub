@@ -12,9 +12,10 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use vibehub_core::v3::{
-    resolve_project_scopes, PlanAddNodeCommand, PlanCommandIdentity, PlanSetDependenciesCommand,
-    PlanSetStateCommand, ProjectScopeInspection, V3ApplicationService, V3Error, V3ErrorCategory,
-    V3ViewRepository,
+    assess_root_alignment, inspect_mcp_host_configs, read_project_settings, resolve_project_scopes,
+    AgentSpecTarget, PlanAddNodeCommand, PlanCommandIdentity, PlanSetDependenciesCommand,
+    PlanSetStateCommand, ProjectScopeInspection, ResolvedProjectScopes, V3ApplicationService,
+    V3Error, V3ErrorCategory, V3ViewRepository,
 };
 
 const RESOURCE_PREFIX: &str = "vibehub://v3/1.0";
@@ -198,6 +199,7 @@ pub struct V3McpServer {
     views: V3ViewRepository,
     project_id: String,
     scopes: ProjectScopeInspection,
+    resolved_scopes: ResolvedProjectScopes,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -220,6 +222,7 @@ impl V3McpServer {
             project_id,
             project_root,
             scopes,
+            resolved_scopes,
             tool_router: Self::tool_router(),
         })
     }
@@ -757,22 +760,35 @@ impl V3McpServer {
                     )
                 })?
             }
-            "diagnostics" => json!({
-                "schema_version": "1.0",
-                "server_version": env!("CARGO_PKG_VERSION"),
-                "transport": "stdio",
-                "project_id": self.project_id,
-                "project_root": self.project_root,
-                "scopes": self.scopes,
-                "resource_namespace": RESOURCE_PREFIX,
-                "tool_catalog": [
-                    "session_open", "task_candidates", "task_view", "criterion_review",
-                    "task_completion_propose", "task_complete", "event_log", "agent_result_record",
-                    "session_close", "plan_node_add", "plan_dependencies_set", "plan_node_state_set"
-                ],
-                "restart_required": false,
-                "last_error": Value::Null
-            }),
+            "diagnostics" => {
+                let targets = read_project_settings(&self.project_root)
+                    .ok()
+                    .and_then(|inspection| inspection.settings)
+                    .map(|settings| settings.agent_spec_targets)
+                    .filter(|targets| !targets.is_empty())
+                    .unwrap_or_else(|| vec![AgentSpecTarget::ClaudeCode, AgentSpecTarget::Opencode]);
+                let host_configs = inspect_mcp_host_configs(&self.resolved_scopes, &targets);
+                let alignment = assess_root_alignment(&self.resolved_scopes, &host_configs);
+                let restart_required = alignment.restart_required;
+                json!({
+                    "schema_version": "1.0",
+                    "server_version": env!("CARGO_PKG_VERSION"),
+                    "transport": "stdio",
+                    "project_id": self.project_id,
+                    "project_root": self.project_root,
+                    "scopes": self.scopes,
+                    "resource_namespace": RESOURCE_PREFIX,
+                    "tool_catalog": [
+                        "session_open", "task_candidates", "task_view", "criterion_review",
+                        "task_completion_propose", "task_complete", "event_log", "agent_result_record",
+                        "session_close", "plan_node_add", "plan_dependencies_set", "plan_node_state_set"
+                    ],
+                    "mcp_hosts": host_configs,
+                    "root_alignment": alignment,
+                    "restart_required": restart_required,
+                    "last_error": Value::Null
+                })
+            }
             _ => {
                 return Err(V3Error::new(
                     "V3_RESOURCE_NOT_FOUND",
@@ -918,6 +934,12 @@ mod tests {
         );
         assert_eq!(diagnostics["tool_catalog"].as_array().unwrap().len(), 12);
         assert_eq!(diagnostics["restart_required"], false);
+        assert_eq!(diagnostics["root_alignment"]["status"], "aligned");
+        assert_eq!(
+            diagnostics["root_alignment"]["control_root"],
+            server.scopes.control_root
+        );
+        assert!(diagnostics["mcp_hosts"].is_array());
         fs::remove_dir_all(root).unwrap();
     }
 

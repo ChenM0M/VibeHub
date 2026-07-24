@@ -3144,6 +3144,42 @@ mod tests {
     }
 
     #[test]
+    fn workspace_falls_back_and_exposes_reason_when_working_directory_missing() {
+        let project = std::env::temp_dir().join(format!("vibehub-v3-fallback-{}", Uuid::new_v4()));
+        fs::create_dir_all(project.join(".vibehub/tasks/task.test")).unwrap();
+        fs::write(
+            project.join(".vibehub/tasks/task.test/task.yaml"),
+            "task_id: task.test\ntitle: Fallback\nintent: Workspace fallback\nphase: implement\nphase_status: active\n",
+        )
+        .unwrap();
+        let repository = V3ViewRepository::open(&project).unwrap();
+        let project_id = repository.project_id();
+        let app = V3ApplicationService::open(&project).unwrap();
+        let missing = project.join("does-not-exist");
+        app.session_open_with_context(
+            &project_id,
+            "task.test",
+            "session.test",
+            "agent",
+            0,
+            "session.context",
+            Some(missing.to_string_lossy().into_owned()),
+            None,
+            None,
+        )
+        .unwrap();
+
+        let bundle = repository.load_bundle("task.test").unwrap();
+        let workspace = &bundle.project_structure["workspace"];
+        assert_eq!(workspace["source"], "project_root_fallback");
+        assert!(workspace["fallback_reason"]
+            .as_str()
+            .expect("fallback reason present")
+            .contains("no accessible working directory"));
+        fs::remove_dir_all(project).unwrap();
+    }
+
+    #[test]
     fn forced_closure_archive_preserves_reason_and_unresolved_snapshot() {
         let project = std::env::temp_dir().join(format!("vibehub-v3-closure-{}", Uuid::new_v4()));
         fs::create_dir_all(project.join(".vibehub/tasks/task.test")).unwrap();

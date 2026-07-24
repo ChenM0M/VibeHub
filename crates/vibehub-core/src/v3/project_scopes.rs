@@ -74,6 +74,41 @@ pub struct EffectiveAgentDeclaration {
     pub contains_v3_region: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RootAlignmentStatus {
+    Aligned,
+    DriftDetected,
+}
+
+/// A single reason the anchored control root disagrees with the environment the
+/// agent actually develops in. `expected` is the active control root and
+/// `actual` is the diverging path, so consumers can report both sides.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RootAlignmentFinding {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consumer: Option<AgentSpecTarget>,
+}
+
+/// Assessment of whether the control root that anchors workflow facts still
+/// matches the execution root and the roots declared by MCP host configs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RootAlignmentReport {
+    pub status: RootAlignmentStatus,
+    pub control_root: String,
+    pub execution_root: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_root: Option<String>,
+    pub restart_required: bool,
+    pub findings: Vec<RootAlignmentFinding>,
+}
+
 impl ResolvedProjectScopes {
     pub fn inspection(&self) -> ProjectScopeInspection {
         ProjectScopeInspection {
@@ -222,6 +257,69 @@ pub fn inspect_mcp_host_configs(
             }
         })
         .collect()
+}
+
+/// Compares the control root that anchors workflow facts against the execution
+/// root and the roots declared in MCP host configurations. A long-lived MCP
+/// process freezes its control root at startup, so this lets it surface a stale
+/// or mismatched project root instead of silently serving the wrong `.vibehub`
+/// store while the agent develops somewhere else.
+pub fn assess_root_alignment(
+    scopes: &ResolvedProjectScopes,
+    host_configs: &[McpHostConfigInspection],
+) -> RootAlignmentReport {
+    let control_root = display(&scopes.control_root);
+    let mut findings = Vec::new();
+
+    if scopes.execution_root != scopes.control_root {
+        findings.push(RootAlignmentFinding {
+            code: "V3_CONTROL_EXECUTION_ROOT_SPLIT".to_owned(),
+            message: "workflow facts are anchored to a control root that differs from the execution root where code is developed".to_owned(),
+            expected: Some(control_root.clone()),
+            actual: Some(display(&scopes.execution_root)),
+            consumer: None,
+        });
+    }
+
+    for host in host_configs {
+        if host.status == HostConfigStatus::Mismatched {
+            findings.push(RootAlignmentFinding {
+                code: "V3_HOST_CONFIG_ROOT_MISMATCH".to_owned(),
+                message: "MCP launch arguments target a different project root than the active control root; align the configured path and restart the MCP host".to_owned(),
+                expected: Some(control_root.clone()),
+                actual: host.configured_project_root.clone(),
+                consumer: Some(host.consumer),
+            });
+        }
+    }
+
+    for warning in &scopes.warnings {
+        findings.push(RootAlignmentFinding {
+            code: "V3_SCOPE_WARNING".to_owned(),
+            message: warning.clone(),
+            expected: None,
+            actual: None,
+            consumer: None,
+        });
+    }
+
+    let restart_required = findings
+        .iter()
+        .any(|finding| finding.code == "V3_HOST_CONFIG_ROOT_MISMATCH");
+    let status = if findings.is_empty() {
+        RootAlignmentStatus::Aligned
+    } else {
+        RootAlignmentStatus::DriftDetected
+    };
+
+    RootAlignmentReport {
+        status,
+        control_root,
+        execution_root: display(&scopes.execution_root),
+        git_root: scopes.git_root.as_ref().map(|path| display(path)),
+        restart_required,
+        findings,
+    }
 }
 
 fn inspect_codex(scopes: &ResolvedProjectScopes) -> McpHostConfigInspection {
@@ -577,6 +675,73 @@ mod tests {
             inspection[0].configured_project_root.as_deref(),
             Some("/wrong/project")
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn root_alignment_is_aligned_when_control_root_matches_host_config() {
+        let root = root();
+        fs::create_dir_all(root.join(".git")).unwrap();
+        let canonical = root.canonicalize().unwrap();
+        fs::write(
+            root.join("opencode.json"),
+            format!(
+                r#"{{"mcp":{{"vibehub":{{"type":"local","command":["/bin/vibehub","mcp-stdio","{}"]}}}}}}"#,
+                canonical.to_string_lossy()
+            ),
+        )
+        .unwrap();
+        let scopes = resolve_project_scopes(&root, None).unwrap();
+        let hosts = inspect_mcp_host_configs(&scopes, &[AgentSpecTarget::Opencode]);
+        let report = assess_root_alignment(&scopes, &hosts);
+        assert_eq!(report.status, RootAlignmentStatus::Aligned);
+        assert!(!report.restart_required);
+        assert!(report.findings.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn root_alignment_flags_host_config_mismatch_and_requires_restart() {
+        let root = root();
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::write(
+            root.join("opencode.json"),
+            r#"{"mcp":{"vibehub":{"type":"local","command":["/bin/vibehub","mcp-stdio","/wrong/project"]}}}"#,
+        )
+        .unwrap();
+        let scopes = resolve_project_scopes(&root, None).unwrap();
+        let hosts = inspect_mcp_host_configs(&scopes, &[AgentSpecTarget::Opencode]);
+        let report = assess_root_alignment(&scopes, &hosts);
+        assert_eq!(report.status, RootAlignmentStatus::DriftDetected);
+        assert!(report.restart_required);
+        let finding = report
+            .findings
+            .iter()
+            .find(|finding| finding.code == "V3_HOST_CONFIG_ROOT_MISMATCH")
+            .expect("host config mismatch finding");
+        assert_eq!(finding.actual.as_deref(), Some("/wrong/project"));
+        assert_eq!(finding.consumer, Some(AgentSpecTarget::Opencode));
+        assert_eq!(finding.expected.as_deref(), Some(display(&scopes.control_root).as_str()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn root_alignment_flags_control_execution_split_for_nested_git_root() {
+        let root = root();
+        let nested = root.join("app");
+        fs::create_dir_all(nested.join(".git")).unwrap();
+        let scopes = resolve_project_scopes(&root, None).unwrap();
+        assert_eq!(scopes.source, ProjectScopeSource::DetectedGitRoot);
+        let report = assess_root_alignment(&scopes, &[]);
+        assert_eq!(report.status, RootAlignmentStatus::DriftDetected);
+        assert!(!report.restart_required);
+        let finding = report
+            .findings
+            .iter()
+            .find(|finding| finding.code == "V3_CONTROL_EXECUTION_ROOT_SPLIT")
+            .expect("control/execution split finding");
+        assert_eq!(finding.expected.as_deref(), Some(display(&scopes.control_root).as_str()));
+        assert_eq!(finding.actual.as_deref(), Some(display(&scopes.execution_root).as_str()));
         fs::remove_dir_all(root).unwrap();
     }
 }

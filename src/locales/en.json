@@ -536,7 +536,7 @@
       "handoffPath": "Handoff path",
       "handoffSectionsCount": "Sections",
       "missingSections": "Missing sections",
-      "handoffIsComplete": "Handoff is complete \u2013 all required sections present.",
+      "handoffIsComplete": "Handoff is complete – all required sections present.",
       "handoffNotGenerated": "Handoff has not been built. Use \"Build Handoff\" action to generate handoff.md.",
       "handoffDataSource": "Source",
       "researchRequired": "Required",
@@ -935,7 +935,9 @@
         "task_created": "Task created",
         "criterion_accepted": "Criterion accepted",
         "criterion_passed": "Criterion passed"
-      }
+      },
+      "setupBeforeTaskTitle": "Finish project setup first",
+      "setupBeforeTaskDescription": "The V3 layout is ready. Choose an output language and AI agents to sync AGENTS.md / CLAUDE.md before creating the first task."
     },
     "projectOverview": {
       "repository": "Repository",
@@ -1265,7 +1267,11 @@
       "milestonePolicy": "Milestone policy",
       "planningRequired": "Plan graph required",
       "reviewRequired": "Formal review required",
-      "policy": { "minimal": "Minimal records", "standard": "Standard flow", "full": "Full flow" }
+      "policy": {
+        "minimal": "Minimal records",
+        "standard": "Standard flow",
+        "full": "Full flow"
+      }
     },
     "usage": {
       "none": "None",
@@ -1322,8 +1328,14 @@
       "rubric": "Rubric: {{value}}",
       "noRubric": "No rubric provided",
       "kind": {
-        "evaluation": { "result": "Evaluation result", "label": "Evaluation" },
-        "execution": { "result": "Execution result", "label": "Execution" }
+        "evaluation": {
+          "result": "Evaluation result",
+          "label": "Evaluation"
+        },
+        "execution": {
+          "result": "Execution result",
+          "label": "Execution"
+        }
       },
       "request": {
         "evaluation_instruction": "Evaluation instruction",

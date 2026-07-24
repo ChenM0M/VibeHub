@@ -1,6 +1,6 @@
 {
     "name": "vibehub",
-    "version": "3.0.5",
+    "version": "3.0.6",
     "description": "A cross-platform launcher for development tools",
     "license": "Apache-2.0",
     "type": "module",
