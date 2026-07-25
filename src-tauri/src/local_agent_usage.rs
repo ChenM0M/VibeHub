@@ -595,10 +595,6 @@ struct ClaudeSessionAccumulator {
     warnings: Vec<String>,
 }
 
-fn read_claude_code_usage(project_path: &ProjectPathMatcher) -> AgentUsageSourceSummary {
-    read_claude_code_usage_scoped(project_path, None)
-}
-
 fn read_claude_code_usage_scoped(
     project_path: &ProjectPathMatcher,
     session_filter: Option<&UsageSessionFilter>,
@@ -965,10 +961,6 @@ fn lineage_is_ambiguous(value: &Value) -> bool {
         || value.get("agentId").is_some()
 }
 
-fn read_codex_usage(project_path: &ProjectPathMatcher) -> AgentUsageSourceSummary {
-    read_codex_usage_scoped(project_path, None)
-}
-
 fn read_codex_usage_scoped(
     project_path: &ProjectPathMatcher,
     session_filter: Option<&UsageSessionFilter>,
@@ -1192,13 +1184,6 @@ fn read_codex_usage_from_dbs_scoped(
     })
 }
 
-fn read_codex_rows_from_db(
-    project_path: &ProjectPathMatcher,
-    db_path: &Path,
-) -> Result<MatchedRows<CodexThreadRow>> {
-    read_codex_rows_from_db_scoped(project_path, db_path, None)
-}
-
 fn read_codex_rows_from_db_scoped(
     project_path: &ProjectPathMatcher,
     db_path: &Path,
@@ -1295,10 +1280,6 @@ fn max_codex_updated_at(rows: &[CodexThreadRow]) -> Option<i64> {
     rows.iter().filter_map(|row| row.updated_at_ms).max()
 }
 
-fn read_opencode_usage(project_path: &ProjectPathMatcher) -> AgentUsageSourceSummary {
-    read_opencode_usage_scoped(project_path, None)
-}
-
 fn read_opencode_usage_scoped(
     project_path: &ProjectPathMatcher,
     session_filter: Option<&UsageSessionFilter>,
@@ -1334,14 +1315,6 @@ fn read_opencode_usage_from_db(
     let matcher = ProjectPathMatcher::new(Path::new(project_path));
     let mut warnings = Vec::new();
     read_opencode_usage_from_dbs_scoped(&matcher, &[db_path.to_path_buf()], &mut warnings, None)
-}
-
-fn read_opencode_usage_from_dbs(
-    project_path: &ProjectPathMatcher,
-    db_paths: &[PathBuf],
-    warnings: &mut Vec<String>,
-) -> Result<AgentUsageSourceSummary> {
-    read_opencode_usage_from_dbs_scoped(project_path, db_paths, warnings, None)
 }
 
 fn read_opencode_usage_from_dbs_scoped(
@@ -1474,13 +1447,6 @@ fn read_opencode_usage_from_dbs_scoped(
             .filter_map(|id| normalize_provider_session_id("opencode", &id))
             .collect(),
     })
-}
-
-fn read_opencode_rows_from_db(
-    project_path: &ProjectPathMatcher,
-    db_path: &Path,
-) -> Result<MatchedRows<OpenCodeSessionRow>> {
-    read_opencode_rows_from_db_scoped(project_path, db_path, None)
 }
 
 fn read_opencode_rows_from_db_scoped(
