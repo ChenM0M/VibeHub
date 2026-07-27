@@ -228,7 +228,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Open a VibeHub V3 agent session; expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
+        description = "Open a VibeHub V3 agent session to start recording execution facts. When: right before you begin implementing, after task_view and (for standard/full) after plan_node_state_set moves the target node to active. Prerequisite: know the task_id and the real working_directory; pass node_id for standard/full. Typical params: project_id, task_id, session_id (a stable id you choose), actor, working_directory, node_id. expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
     )]
     fn session_open(&self, Parameters(input): Parameters<SessionWrite>) -> CallToolResult {
         let SessionWrite {
@@ -269,7 +269,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Discover active V3 task candidates and their workflow, risk, criteria, session, and relation summaries; this is not limited to the current task"
+        description = "Discover active V3 task candidates and their workflow, risk, criteria, session, and relation summaries. When: call this first for every task, before task_view or any write tool. Prerequisite: a connected V3 workspace and its project_id. Typical params: project_id. Use the returned task_id to call task_view; do not infer the current task from files or chat"
     )]
     fn task_candidates(&self, Parameters(input): Parameters<TaskCandidatesRead>) -> CallToolResult {
         if input.project_id != self.project_id {
@@ -292,14 +292,14 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Read a complete V3 view bundle for a specified task candidate, including node_brief.workflow_profile and the server-derived execution_policy"
+        description = "Read a complete V3 view bundle for a specified task candidate. When: immediately after task_candidates and before planning, opening a session, or editing files. Prerequisite: a task_id returned by task_candidates. Typical params: task_id. Read and echo node_brief.workflow_profile plus node_brief.execution_policy (planning_required, milestone_policy, review_required, required_records), then obey them"
     )]
     fn task_view(&self, Parameters(input): Parameters<TaskViewRead>) -> CallToolResult {
         self.tool_result(self.views.load_bundle(&input.task_id))
     }
 
     #[tool(
-        description = "Record the evidence-backed review outcome for one accepted criterion. Run the real validation first; accepted only means registered, not passed. expected_version and idempotency_key are optional and auto-resolved when omitted"
+        description = "Record the evidence-backed review outcome for one accepted criterion. When: after implementation, run the real validation for each required criterion, then call this once per criterion to move it from accepted to passed/failed/blocked. Prerequisite: real validation already executed and its output captured as evidence. Typical params: project_id, task_id, actor, criterion_id, outcome (passed|failed|blocked), reviewer, evidence_refs (paths/commands/logs). Run the real validation first; accepted only means registered, not passed. expected_version and idempotency_key are optional and auto-resolved when omitted"
     )]
     fn criterion_review(
         &self,
@@ -344,7 +344,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "After every required criterion has passed with evidence and findings are closed, move the task to completion_pending and ask the user for explicit confirmation; do not leave an all-green task in review"
+        description = "Move an all-green task to completion_pending and ask the user for explicit confirmation. When: only after every required criterion_review is passed with evidence, findings are closed, any planning_required node is completed, agent_result_record succeeded, and session_close finished. Prerequisite: all review and execution gates declared by execution_policy are already green; never use this to bypass them. Typical params: project_id, task_id, actor. Do not leave an all-green task in review"
     )]
     fn task_completion_propose(
         &self,
@@ -371,7 +371,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Confirm and archive an all-green task immediately after the user explicitly agrees in the current trusted interaction. Never infer or fabricate confirmation; do not ask the user to close it manually"
+        description = "Confirm and archive an all-green task. When: immediately after the user explicitly agrees in the current trusted interaction to a valid task_completion_propose. Prerequisite: the task is completion_pending and the current user has explicitly confirmed; never infer or fabricate confirmation. Typical params: project_id, task_id, actor, confirmed_by, channel=cli. Do not ask the user to close it manually"
     )]
     fn task_complete(&self, Parameters(input): Parameters<TaskCompleteWrite>) -> CallToolResult {
         let TaskCompleteWrite {
@@ -426,7 +426,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Record progress or risk evidence; expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
+        description = "Record progress or risk evidence for the current session. When: call with kind=progress after every verifiable milestone; call with kind=risk immediately when you hit a blocker, scope drift, version conflict, or evidence gap (do not report these only in chat). Prerequisite: an open session (session_open). Typical params: project_id, task_id, session_id, actor, kind (progress|risk), details ({summary, evidence, node_id}). expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
     )]
     fn event_log(&self, Parameters(input): Parameters<EventLogWrite>) -> CallToolResult {
         let EventLogWrite {
@@ -469,7 +469,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Record an Agent execution or evaluation result; expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
+        description = "Record an Agent execution or evaluation result. When: before you stop or hand off, write the truthful pending/running/succeeded/failed outcome with evidence; call this just before session_close. Prerequisite: an open session and the work's real outcome. Typical params: project_id, task_id, session_id, actor, result_id, node_id, details ({kind: execution|evaluation, request_source: user_request|evaluation_instruction, instruction, status: pending|running|succeeded|failed, summary, evidence}). expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
     )]
     fn agent_result_record(
         &self,
@@ -509,7 +509,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Close a VibeHub V3 agent session; expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
+        description = "Close a VibeHub V3 agent session. When: after agent_result_record, as the last step of a work batch or handoff. Prerequisite: agent_result already recorded for this session. Typical params: project_id, task_id, session_id, actor. expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
     )]
     fn session_close(&self, Parameters(input): Parameters<SessionWrite>) -> CallToolResult {
         let SessionWrite {
@@ -535,7 +535,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Add a node to the VibeHub V3 task plan; expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
+        description = "Add a node to the VibeHub V3 task plan. When: at the start of a standard/full task (execution_policy.planning_required is true), before implementing, to break work into verifiable nodes. Prerequisite: you have read task_view. Typical params: project_id, task_id, actor, node_id (a stable id you choose), title, goal, scope (files/areas), dependencies (ids of already-added nodes; leave empty and set later via plan_dependencies_set if the dependency does not exist yet). expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
     )]
     fn plan_node_add(&self, Parameters(input): Parameters<PlanNodeAddWrite>) -> CallToolResult {
         let PlanNodeAddWrite {
@@ -579,7 +579,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Replace dependencies for a VibeHub V3 plan node; expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
+        description = "Replace dependencies for a VibeHub V3 plan node. When: after all referenced nodes exist, to wire scheduling order between plan nodes. Prerequisite: both the node and every dependency node were already added via plan_node_add. Typical params: project_id, task_id, actor, node_id, dependencies (list of existing node_ids). expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
     )]
     fn plan_dependencies_set(
         &self,
@@ -620,7 +620,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Transition a VibeHub V3 plan node state; expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
+        description = "Transition a VibeHub V3 plan node state. When: set active right before you start working a node (before session_open); set completed after its work and evidence are done; set blocked/failed when stuck (also log a risk event). Prerequisite: the node exists. Typical params: project_id, task_id, actor, node_id, state (ready|active|blocked|completed|failed|cancelled). expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
     )]
     fn plan_node_state_set(
         &self,
@@ -822,7 +822,7 @@ impl ServerHandler for V3McpServer {
         info.server_info = Implementation::new("vibehub-v3", env!("CARGO_PKG_VERSION"))
             .with_title("VibeHub V3 MCP");
         info.instructions = Some(
-            "Read task_candidates/task_view before execution and obey node_brief.workflow_profile plus node_brief.execution_policy. Lightweight tasks use minimal records and no plan graph; standard/full tasks use their declared planning and review gates. Use session_open, event_log, agent_result_record, and session_close for execution facts; use plan tools only when planning_required is true; criterion_review after real validation; task_completion_propose when all gates are green; and task_complete immediately after explicit current-user confirmation. Accepted criteria are not passed. expected_version and idempotency_key may be omitted and are resolved by the server; explicitly provided values are checked strictly."
+            "First call task_candidates, then task_view; echo node_brief.workflow_profile and node_brief.execution_policy before acting. Lightweight uses the minimal session/result/risk-if-any flow without a plan graph. When planning_required is true (standard/full), create or refine the plan before file changes, activate the target node, then call session_open. Record progress at each milestone and risks immediately; run real validation before criterion_review; complete the node, record agent_result with the required detail fields, then session_close. Call task_completion_propose only when all gates are green, and task_complete only after explicit current-user confirmation. Accepted criteria are not passed. expected_version and idempotency_key may be omitted and are resolved by the server; explicitly provided values are checked strictly."
                 .to_owned(),
         );
         info
@@ -916,6 +916,16 @@ mod tests {
         (root, server)
     }
 
+    fn assert_in_order(text: &str, terms: &[&str]) {
+        let mut offset = 0;
+        for term in terms {
+            let relative = text[offset..]
+                .find(term)
+                .unwrap_or_else(|| panic!("missing '{term}' in: {text}"));
+            offset += relative + term.len();
+        }
+    }
+
     #[test]
     fn catalog_is_versioned_and_readable() {
         let (root, server) = server();
@@ -942,6 +952,69 @@ mod tests {
             server.scopes.control_root
         );
         assert!(diagnostics["mcp_hosts"].is_array());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn tool_descriptions_expose_when_prerequisite_and_typical_params() {
+        let (root, server) = server();
+        let tools = server.tool_router.list_all();
+        assert_eq!(tools.len(), 12);
+        for tool in &tools {
+            let description = tool
+                .description
+                .as_deref()
+                .unwrap_or_else(|| panic!("{} must have a description", tool.name));
+            for section in ["When:", "Prerequisite:", "Typical params:"] {
+                assert!(
+                    description.contains(section),
+                    "{} description is missing {section}: {description}",
+                    tool.name
+                );
+            }
+        }
+
+        let description = |name: &str| {
+            tools
+                .iter()
+                .find(|tool| tool.name.as_ref() == name)
+                .and_then(|tool| tool.description.as_deref())
+                .unwrap()
+        };
+        let task_view = description("task_view");
+        for field in [
+            "workflow_profile",
+            "planning_required",
+            "milestone_policy",
+            "review_required",
+            "required_records",
+        ] {
+            assert!(
+                task_view.contains(field),
+                "task_view must advertise {field}"
+            );
+        }
+
+        let result = description("agent_result_record");
+        for field in ["kind", "request_source", "instruction", "status", "summary"] {
+            assert!(
+                result.contains(field),
+                "agent_result_record must advertise required field {field}"
+            );
+        }
+
+        let completion = description("task_completion_propose");
+        for prerequisite in ["criterion_review", "agent_result_record", "session_close"] {
+            assert!(
+                completion.contains(prerequisite),
+                "task_completion_propose must name {prerequisite}"
+            );
+        }
+
+        let instructions = server.get_info().instructions.unwrap();
+        assert_in_order(&instructions, &["task_candidates", "task_view"]);
+        assert!(instructions.contains("echo"));
+        assert!(instructions.contains("plan before file changes"));
         fs::remove_dir_all(root).unwrap();
     }
 
