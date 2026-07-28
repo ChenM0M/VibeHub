@@ -49,6 +49,8 @@ pub struct SessionProjection {
     pub progress_entries: u64,
     pub risk_entries: u64,
     #[serde(default)]
+    pub recovered_gaps: u64,
+    #[serde(default)]
     pub entries: Vec<SessionLogEntry>,
     #[serde(default)]
     pub agent_results: Vec<AgentResultEntry>,
@@ -105,13 +107,17 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
                 state: "unknown".to_owned(),
                 progress_entries: 0,
                 risk_entries: 0,
+                recovered_gaps: 0,
                 entries: Vec::new(),
                 agent_results: Vec::new(),
             });
         match event.event_type.as_str() {
             "session.opened" => session.state = "open".to_owned(),
             "session.gap_detected" => session.state = "gapped".to_owned(),
-            "session.recovered" => session.state = "open".to_owned(),
+            "session.recovered" => {
+                session.state = "open".to_owned();
+                session.recovered_gaps += 1;
+            }
             "session.closed" => session.state = "closed".to_owned(),
             "progress.logged" | "risk.logged" => {
                 let kind = if event.event_type == "progress.logged" {

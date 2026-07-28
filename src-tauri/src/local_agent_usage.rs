@@ -54,7 +54,12 @@ impl UsageCache {
     }
 
     /// Returns cached summary if the file mtime has not changed.
-    pub fn get(&self, source: &str, data_path: &str, current_mtime_ms: i64) -> Option<AgentUsageSourceSummary> {
+    pub fn get(
+        &self,
+        source: &str,
+        data_path: &str,
+        current_mtime_ms: i64,
+    ) -> Option<AgentUsageSourceSummary> {
         let key = Self::cache_key(source, data_path);
         self.entries.get(&key).and_then(|entry| {
             if entry.mtime_ms == current_mtime_ms {
@@ -65,14 +70,23 @@ impl UsageCache {
         })
     }
 
-    pub fn put(&mut self, source: &str, data_path: &str, mtime_ms: i64, summary: AgentUsageSourceSummary) {
+    pub fn put(
+        &mut self,
+        source: &str,
+        data_path: &str,
+        mtime_ms: i64,
+        summary: AgentUsageSourceSummary,
+    ) {
         let key = Self::cache_key(source, data_path);
-        self.entries.insert(key, UsageCacheEntry {
-            source: source.to_string(),
-            data_path: data_path.to_string(),
-            mtime_ms,
-            summary,
-        });
+        self.entries.insert(
+            key,
+            UsageCacheEntry {
+                source: source.to_string(),
+                data_path: data_path.to_string(),
+                mtime_ms,
+                summary,
+            },
+        );
     }
 
     pub fn clear(&mut self) {
@@ -92,7 +106,9 @@ impl UsageCache {
 pub fn shared_usage_cache() -> Arc<Mutex<UsageCache>> {
     use std::sync::OnceLock;
     static CACHE: OnceLock<Arc<Mutex<UsageCache>>> = OnceLock::new();
-    CACHE.get_or_init(|| Arc::new(Mutex::new(UsageCache::new()))).clone()
+    CACHE
+        .get_or_init(|| Arc::new(Mutex::new(UsageCache::new())))
+        .clone()
 }
 
 /// Versioned pricing catalog entry. Prices are USD per 1M tokens.
@@ -1346,9 +1362,9 @@ fn read_claude_session(path: &Path) -> Result<ClaudeSessionAccumulator> {
     for (index, line) in BufReader::new(file).lines().enumerate() {
         // Fail closed on too many lines to prevent DoS
         if index >= MAX_TRANSCRIPT_LINES {
-            session
-                .warnings
-                .push(format!("transcript exceeds maximum line count {MAX_TRANSCRIPT_LINES}; truncated"));
+            session.warnings.push(format!(
+                "transcript exceeds maximum line count {MAX_TRANSCRIPT_LINES}; truncated"
+            ));
             break;
         }
         let line = match line {
@@ -1946,15 +1962,17 @@ fn read_opencode_usage_from_dbs_scoped(
                     let model = format_opencode_model(raw);
                     pricing_catalog(&model)
                 })
-                .and_then(|pricing| pricing.cost_for(&TokenBreakdown {
-                    input: row.tokens_input,
-                    output: row.tokens_output,
-                    reasoning: row.tokens_reasoning,
-                    cached_input: 0,
-                    cache_read: row.tokens_cache_read,
-                    cache_write: row.tokens_cache_write,
-                    total,
-                }))
+                .and_then(|pricing| {
+                    pricing.cost_for(&TokenBreakdown {
+                        input: row.tokens_input,
+                        output: row.tokens_output,
+                        reasoning: row.tokens_reasoning,
+                        cached_input: 0,
+                        cache_read: row.tokens_cache_read,
+                        cache_write: row.tokens_cache_write,
+                        total,
+                    })
+                })
                 .unwrap_or(0.0)
         };
         cost += item_cost;
@@ -1978,7 +1996,11 @@ fn read_opencode_usage_from_dbs_scoped(
                 status: "available".to_string(),
                 non_cached_total_tokens,
                 total_tokens: total,
-                cost: if item_cost > 0.0 { Some(item_cost) } else { None },
+                cost: if item_cost > 0.0 {
+                    Some(item_cost)
+                } else {
+                    None
+                },
                 updated_at_ms: row.time_updated,
             });
         }
@@ -2637,7 +2659,10 @@ mod tests {
         // Second call: cache state reflects warm entries
         let usage2 = read_local_agent_usage_with_cache(&project, cache).expect("usage2");
         // The cache may still be cold if no providers found data, but it should not error
-        assert!(["cold", "warm_1_entries", "warm_2_entries", "warm_3_entries"].contains(&usage2.refresh.cache_state.as_str()));
+        assert!(
+            ["cold", "warm_1_entries", "warm_2_entries", "warm_3_entries"]
+                .contains(&usage2.refresh.cache_state.as_str())
+        );
     }
 
     #[test]
@@ -2701,8 +2726,14 @@ mod tests {
         assert_eq!(canonical_model_id("gpt-4o-2024-08-06"), "gpt-4o");
         assert_eq!(canonical_model_id("GPT-4O"), "gpt-4o");
         assert_eq!(canonical_model_id("gpt-4o-mini-2024-07-18"), "gpt-4o-mini");
-        assert_eq!(canonical_model_id("claude-3-opus-20240229"), "claude-3-opus");
-        assert_eq!(canonical_model_id("claude-3-5-sonnet-20241022"), "claude-3-5-sonnet");
+        assert_eq!(
+            canonical_model_id("claude-3-opus-20240229"),
+            "claude-3-opus"
+        );
+        assert_eq!(
+            canonical_model_id("claude-3-5-sonnet-20241022"),
+            "claude-3-5-sonnet"
+        );
         assert_eq!(canonical_model_id("o1-preview-2024-09-12"), "o1-preview");
         assert_eq!(canonical_model_id("unknown-model-2024"), "unknown-model");
     }

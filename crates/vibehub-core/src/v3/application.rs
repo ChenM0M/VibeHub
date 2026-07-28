@@ -930,11 +930,11 @@ impl V3ApplicationService {
                 .any(|record| record == "progress")
         }) && task_sessions
             .iter()
-            .any(|(_, session)| session.progress_entries == 0)
+            .any(|(_, session)| session.progress_entries == 0 && session.recovered_gaps == 0)
         {
             return Err(session_error(
                 "V3_COMPLETION_PROGRESS_GATE_FAILED",
-                "policy requires progress evidence for each session",
+                "policy requires progress evidence for each session, or a recorded gap recovery for interrupted sessions",
             ));
         }
         let orchestration = self.worktree_orchestration(project_id, task_id)?;

@@ -672,6 +672,28 @@ impl V3ViewRepository {
             .difference(&terminal_result_session_ids)
             .cloned()
             .collect::<Vec<_>>();
+        let progress_session_ids = task_events
+            .iter()
+            .filter(|event| event.event_type == "progress.logged")
+            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let recovered_session_ids = task_events
+            .iter()
+            .filter(|event| event.event_type == "session.recovered")
+            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let sessions_without_progress = if required_records.contains(&"progress".to_owned()) {
+            opened_session_ids
+                .iter()
+                .filter(|session_id| {
+                    !progress_session_ids.contains(*session_id)
+                        && !recovered_session_ids.contains(*session_id)
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         let criterion_issues = lifecycle
             .criteria
             .values()
@@ -747,6 +769,7 @@ impl V3ViewRepository {
             completion_gate_item("plan_terminal", "completion.plan_non_terminal", !planning_required || (!lifecycle.nodes.is_empty() && incomplete_nodes.is_empty()), "所有必需 plan node 均为 completed/waived/superseded", format!("未终结节点：{}", incomplete_nodes.join(", ")), incomplete_nodes.clone(), Vec::new(), vec!["按 DAG 顺序完成、waive 或 supersede 未终结节点".to_owned()]),
             completion_gate_item("sessions_settled", "completion.session_unsettled", unsettled_sessions.is_empty(), "所有 session 均 closed，gap 已 recover", format!("未结 session：{}", unsettled_sessions.join(", ")), unsettled_sessions.clone(), Vec::new(), vec!["对 gapped session 先 session_recovery(recover)，记录 terminal result 后 session_close".to_owned()]),
             completion_gate_item("results_terminal", "completion.result_missing_or_non_terminal", sessions_without_result.is_empty(), "每个 opened session 都有 succeeded/failed terminal AgentResult", format!("缺少 terminal result 的 session：{}", sessions_without_result.join(", ")), sessions_without_result.clone(), Vec::new(), vec!["为列出的 session 调用 agent_result_record(status=succeeded|failed)".to_owned()]),
+            completion_gate_item("progress_evidence", "completion.progress_missing", sessions_without_progress.is_empty(), "policy 要求 progress 时，每个 session 都有 progress 事件，或中断 session 有 session.recovered 证据", format!("缺少 progress/recovery 证据的 session：{}", sessions_without_progress.join(", ")), sessions_without_progress.clone(), Vec::new(), vec!["session 仍开启时调用 event_log(kind=progress)；已中断则先 session_recovery(action=recover, evidence_refs=[...]) 再结束".to_owned()]),
             completion_gate_item("criteria_green", "completion.review_or_evidence_not_green", criterion_issues.is_empty(), "所有 required criterion 为 passed/not_applicable，且 passed evidence 有效且未标记 stale", format!("未通过项：{}", criterion_issues.join("；")), criterion_issues.clone(), current_blocker_details.iter().filter(|blocker| blocker.get("source_type").and_then(Value::as_str) == Some("criterion")).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["执行每项真实验证；缺记录则 review，blocked 则解除环境条件，invalid/stale evidence 则重新采集".to_owned()]),
             completion_gate_item("findings_closed", "completion.finding_open", open_findings.is_empty(), "所有 finding 均有 remediation attempt 且 closed", format!("未闭环 finding：{}", open_findings.join(", ")), open_findings.clone(), current_blocker_details.iter().filter(|blocker| blocker.get("source_type").and_then(Value::as_str) == Some("finding")).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["记录 remediation attempt 与验证 evidence，然后关闭 finding".to_owned()]),
             completion_gate_item("orchestration_settled", "completion.worktree_or_lease_unsettled", unsettled_worktrees.is_empty(), "所有 worktree 已 integrated/cleaned/abandoned，且无 active lease", format!("未结 orchestration：{}", unsettled_worktrees.join("；")), unsettled_worktrees.clone(), current_blocker_details.iter().filter(|blocker| matches!(blocker.get("source_type").and_then(Value::as_str), Some("worktree" | "lease" | "integration"))).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["完成或安全放弃 integration，并 release/reclaim lease".to_owned()]),
@@ -3047,10 +3070,16 @@ fn blocker_detail_from_event(
     if let Some(title) = criterion_title.filter(|title| !summary.contains(*title)) {
         summary = format!("{title}：{summary}");
     }
+    let release_handoff = release_handoff_context(payload);
     let precondition = payload_text(
         payload,
         &["resume_condition", "required_next", "blocked_on"],
     )
+    .or_else(|| {
+        release_handoff
+            .as_ref()
+            .map(|context| context.precondition.clone())
+    })
     .unwrap_or_else(|| match kind {
         "permission" => {
             "为当前执行宿主授予 macOS Accessibility/System Events 权限，并完成一次复检".to_owned()
@@ -3063,6 +3092,7 @@ fn blocker_detail_from_event(
         _ => "补充具体阻塞原因、依赖或恢复条件".to_owned(),
     });
     let mut resume_action = payload_text(payload, &["next", "required_next", "resume_condition"])
+        .or_else(|| release_handoff.as_ref().map(|context| context.repair_action.clone()))
         .unwrap_or_else(|| match kind {
             "permission" => "解除权限阻塞后恢复对应 plan node，只复验未覆盖的原生链路".to_owned(),
             "external_precondition" => {
@@ -3110,15 +3140,27 @@ fn blocker_detail_from_event(
         .or_else(|| event_node_id.clone())
         .unwrap_or_else(|| event.event_id.clone());
     let expected_state = payload_text(payload, &["expected_state", "expected"])
+        .or_else(|| {
+            release_handoff
+                .as_ref()
+                .map(|context| context.expected_state.clone())
+        })
         .unwrap_or_else(|| expected_state_for_kind(kind).to_owned());
     let observed_state = payload_text(payload, &["observed_state", "observed", "actual"])
+        .or_else(|| {
+            release_handoff
+                .as_ref()
+                .map(|context| context.observed_state.clone())
+        })
         .unwrap_or_else(|| observed_state_for_event(event, kind));
     let existing_criterion_evidence = criterion_id
         .as_deref()
         .and_then(|id| lifecycle.criteria.get(id))
         .map(|criterion| criterion.evidence_refs.len())
         .unwrap_or_default();
-    let missing_facts = payload_string_list(payload, "missing_facts").unwrap_or_else(|| {
+    let missing_facts = payload_string_list(payload, "missing_facts")
+        .or_else(|| release_handoff.as_ref().map(|context| context.missing_facts.clone()))
+        .unwrap_or_else(|| {
         if kind == "evidence_gap" {
             vec![format!(
                 "reviewer 尚未确认的验证结果（当前已有 {existing_criterion_evidence} 条 evidence；blocked 表示这些证据仍不足）"
@@ -3126,7 +3168,7 @@ fn blocker_detail_from_event(
         } else {
             default_missing_facts(kind, criterion_id.as_deref(), event_node_id.as_deref())
         }
-    });
+        });
     let why_blocked = payload_text(payload, &["why_blocked", "reason", "summary"])
         .unwrap_or_else(|| {
             if kind == "evidence_gap" {
@@ -3137,8 +3179,8 @@ fn blocker_detail_from_event(
         });
     let impact = payload_text(payload, &["impact"])
         .unwrap_or_else(|| "受影响节点及任务完成门禁保持阻塞，不能被声明为完成".to_owned());
-    let legacy_has_context =
-        payload_text(payload, &["summary", "reason", "message", "body", "error"]).is_some()
+    let legacy_has_context = release_handoff.is_some()
+        || payload_text(payload, &["summary", "reason", "message", "body", "error"]).is_some()
             && payload_text(
                 payload,
                 &["next", "required_next", "resume_condition", "blocked_on"],
@@ -3181,6 +3223,61 @@ fn blocker_detail_from_event(
         vec![event.event_id.clone()],
         unknown_fields,
     )
+}
+
+struct ReleaseHandoffContext {
+    precondition: String,
+    repair_action: String,
+    expected_state: String,
+    observed_state: String,
+    missing_facts: Vec<String>,
+}
+
+fn release_handoff_context(payload: &Value) -> Option<ReleaseHandoffContext> {
+    let evidence = payload
+        .get("evidence_refs")?
+        .as_array()?
+        .iter()
+        .filter_map(|reference| {
+            reference.as_str().map(str::to_owned).or_else(|| {
+                reference
+                    .get("locator")
+                    .or_else(|| reference.get("evidence_id"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+        })
+        .collect::<Vec<_>>();
+    let blocked_checks = evidence
+        .iter()
+        .find(|reference| reference.contains("A07") && reference.contains("G05"))?;
+    let artifact = evidence
+        .iter()
+        .find(|reference| reference.contains(".exe") && reference.contains("sha256="))?;
+    let signing = evidence
+        .iter()
+        .find(|reference| reference.contains("WINDOWS_SIGNING_STATUS="))?;
+    let checks = blocked_checks
+        .strip_prefix("BLOCKED: ")
+        .and_then(|value| value.strip_suffix(" await Windows host"))
+        .unwrap_or("A07, E07, F07-F10, G05");
+
+    Some(ReleaseHandoffContext {
+        precondition: format!(
+            "在 Windows 主机取得并校验发布产物：{artifact}；确认签名状态：{signing}"
+        ),
+        repair_action: format!(
+            "在 Windows 主机使用精确发布产物（{artifact}，{signing}）执行 {checks}；记录 Windows/IDE 版本和每项原始结果，再调用 criterion_review(outcome=passed|failed|blocked)"
+        ),
+        expected_state: format!("Windows 原生验收 {checks} 均有真实主机 evidence"),
+        observed_state: format!("发布产物已定位：{artifact}；{signing}；等待 Windows 主机执行 {checks}"),
+        missing_facts: checks
+            .split(',')
+            .map(str::trim)
+            .filter(|check| !check.is_empty())
+            .map(|check| format!("Windows 原生验收 {check} 的真实结果"))
+            .collect(),
+    })
 }
 
 fn generic_blocker_detail(node_id: Option<&str>) -> Value {
@@ -4842,5 +4939,358 @@ mod tests {
         assert!(detail["repair_actions"][0]["instructions"]
             .as_str()
             .is_some_and(|action| action.contains("补录可核验事实")));
+    }
+
+    #[test]
+    fn release_handoff_evidence_becomes_an_exact_windows_repair_action() {
+        let context = release_handoff_context(&json!({
+            "evidence_refs": [
+                "VibeHub_3.1.0_x64-setup.exe sha256=4fc847a802c944de5096d9dacf9f55977168bc8204ab9a4b256e578f30be1a8c",
+                "WINDOWS_SIGNING_STATUS=unsigned",
+                "BLOCKED: A07, E07, F07-F10, G05 await Windows host"
+            ]
+        }))
+        .expect("release handoff context");
+
+        assert!(context.observed_state.contains("4fc847a802c944de"));
+        assert!(context.observed_state.contains("unsigned"));
+        assert_eq!(
+            context.missing_facts,
+            vec![
+                "Windows 原生验收 A07 的真实结果",
+                "Windows 原生验收 E07 的真实结果",
+                "Windows 原生验收 F07-F10 的真实结果",
+                "Windows 原生验收 G05 的真实结果"
+            ]
+        );
+        assert!(context.repair_action.contains("Windows/IDE 版本"));
+        assert!(context.repair_action.contains("criterion_review"));
+    }
+
+    fn blocked_task_document() -> TaskDocument {
+        serde_yaml::from_str(
+            "task_id: task.test\ntitle: Blocker coverage\nintent: Cover every blocker source\nphase: implement\nphase_status: active\nacceptance_criteria:\n- Windows 原生验收在真实主机完成\n",
+        )
+        .unwrap()
+    }
+
+    fn blocked_lifecycle() -> TaskLifecycleProjection {
+        let mut lifecycle = TaskLifecycleProjection::empty("task.test");
+        lifecycle.state = "active".to_owned();
+        lifecycle.nodes.insert(
+            "node.upstream".to_owned(),
+            PlanNodeProjection {
+                node_id: "node.upstream".to_owned(),
+                title: "Upstream".to_owned(),
+                goal: "Provide dependency".to_owned(),
+                state: "active".to_owned(),
+                dependencies: BTreeSet::new(),
+                scope: Vec::new(),
+                criterion_ids: BTreeSet::new(),
+            },
+        );
+        lifecycle.nodes.insert(
+            "node.downstream".to_owned(),
+            PlanNodeProjection {
+                node_id: "node.downstream".to_owned(),
+                title: "Downstream".to_owned(),
+                goal: "Consume dependency".to_owned(),
+                state: "blocked".to_owned(),
+                dependencies: BTreeSet::from(["node.upstream".to_owned()]),
+                scope: Vec::new(),
+                criterion_ids: BTreeSet::new(),
+            },
+        );
+        lifecycle.sessions.insert(
+            "session.gapped".to_owned(),
+            super::super::lifecycle::SessionLifecycleProjection {
+                session_id: "session.gapped".to_owned(),
+                host: "Codex".to_owned(),
+                node_id: Some("node.downstream".to_owned()),
+                state: "gapped".to_owned(),
+                coverage: "degraded".to_owned(),
+            },
+        );
+        lifecycle.findings.insert(
+            "finding.open".to_owned(),
+            super::super::lifecycle::FindingProjection {
+                finding_id: "finding.open".to_owned(),
+                severity: "high".to_owned(),
+                state: "open".to_owned(),
+                target_node_id: Some("node.downstream".to_owned()),
+                evidence_refs: vec!["evt.finding".to_owned()],
+                attempt_ids: Vec::new(),
+            },
+        );
+        lifecycle.criteria.insert(
+            "criterion.task.test.c01".to_owned(),
+            super::super::lifecycle::CriterionProjection {
+                criterion_id: "criterion.task.test.c01".to_owned(),
+                title: "Windows 原生验收在真实主机完成".to_owned(),
+                required: true,
+                state: CriterionState::Accepted,
+                evidence_refs: Vec::new(),
+                reviewer: None,
+                version: 1,
+            },
+        );
+        lifecycle
+    }
+
+    fn typed_blocker(detail: &Value) -> super::super::blockers::BlockerDetail {
+        let parsed: super::super::blockers::BlockerDetail =
+            serde_json::from_value(detail.clone()).expect("blocker detail matches typed contract");
+        parsed.validate().expect("blocker detail is actionable");
+        parsed
+    }
+
+    #[test]
+    fn every_workflow_blocker_source_is_typed_and_actionable() {
+        let details = blocker_details(
+            &blocked_task_document(),
+            &[],
+            &blocked_lifecycle(),
+            None,
+            "2026-07-28T00:00:00Z",
+        );
+
+        let sources = details
+            .iter()
+            .map(|detail| typed_blocker(detail).source_type)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            sources,
+            BTreeSet::from([
+                "criterion".to_owned(),
+                "finding".to_owned(),
+                "plan_node".to_owned(),
+                "session".to_owned(),
+            ])
+        );
+        assert!(details.iter().all(|detail| {
+            let blocker = typed_blocker(detail);
+            blocker.reason_code != "lifecycle.blocked.details_missing"
+                && !blocker.missing_facts.is_empty()
+                && blocker.provenance.status
+                    == super::super::blockers::BlockerProvenanceStatus::Native
+        }));
+        assert!(details.iter().any(|detail| {
+            typed_blocker(detail)
+                .observed_state
+                .contains("未完成依赖：node.upstream")
+        }));
+    }
+
+    #[test]
+    fn settled_workflow_truth_leaves_no_blocker_or_generic_message() {
+        let mut lifecycle = blocked_lifecycle();
+        lifecycle.nodes.get_mut("node.upstream").unwrap().state = "completed".to_owned();
+        lifecycle.nodes.get_mut("node.downstream").unwrap().state = "completed".to_owned();
+        lifecycle.sessions.get_mut("session.gapped").unwrap().state = "closed".to_owned();
+        lifecycle.findings.get_mut("finding.open").unwrap().state = "closed".to_owned();
+        let criterion = lifecycle
+            .criteria
+            .get_mut("criterion.task.test.c01")
+            .unwrap();
+        criterion.state = CriterionState::Passed;
+        criterion.evidence_refs = vec!["cargo test -p vibehub-core v3::views::tests".to_owned()];
+
+        assert_eq!(
+            blocker_details(
+                &blocked_task_document(),
+                &[],
+                &lifecycle,
+                None,
+                "2026-07-28T00:00:00Z"
+            ),
+            Vec::<Value>::new()
+        );
+        assert_eq!(
+            blocker_details(
+                &blocked_task_document(),
+                &[],
+                &lifecycle,
+                Some("node.downstream"),
+                "2026-07-28T00:00:00Z"
+            ),
+            Vec::<Value>::new()
+        );
+    }
+
+    #[test]
+    fn blocker_derivation_is_stable_across_event_order_permutations() {
+        let task = blocked_task_document();
+        let lifecycle = blocked_lifecycle();
+        let events = [
+            json!({
+                "event_id":"evt.risk","event_type":"risk.logged","event_version":"1.0",
+                "aggregate_id":"task.test","aggregate_version":1,"expected_version":0,
+                "idempotency_key":"risk.1","project_id":"project.test","task_id":"task.test",
+                "node_id":"node.downstream","actor":"test","evidence_grade":"agent_reported",
+                "occurred_at":"2026-07-28T00:00:00Z","recorded_at":"2026-07-28T00:00:00Z",
+                "payload":{"summary":"权限缺失导致阻塞","external_action_required":true}
+            }),
+            json!({
+                "event_id":"evt.node","event_type":"plan.node_state_changed","event_version":"1.0",
+                "aggregate_id":"task.test","aggregate_version":2,"expected_version":1,
+                "idempotency_key":"node.1","project_id":"project.test","task_id":"task.test",
+                "node_id":"node.downstream","actor":"test","evidence_grade":"agent_reported",
+                "occurred_at":"2026-07-28T00:00:01Z","recorded_at":"2026-07-28T00:00:01Z",
+                "payload":{"node_id":"node.downstream","state":"blocked"}
+            }),
+        ]
+        .into_iter()
+        .map(|event| serde_json::from_value::<V3EventEnvelope>(event).unwrap())
+        .collect::<Vec<_>>();
+
+        let forward = blocker_details(&task, &events, &lifecycle, None, "2026-07-28T00:00:00Z");
+        let mut permuted = events.clone();
+        permuted.reverse();
+        let reversed = blocker_details(&task, &permuted, &lifecycle, None, "2026-07-28T00:00:00Z");
+
+        let reasons = |details: &[Value]| {
+            details
+                .iter()
+                .map(|detail| typed_blocker(detail).reason_code)
+                .collect::<BTreeSet<_>>()
+        };
+        assert_eq!(reasons(&forward), reasons(&reversed));
+        assert!(reasons(&forward).contains("macos.accessibility.tcc"));
+        assert!(reasons(&forward).contains("lifecycle.blocked"));
+        assert!(forward.iter().any(|detail| {
+            let blocker = typed_blocker(detail);
+            blocker.kind == super::super::blockers::BlockerKind::Permission
+                && blocker
+                    .provenance
+                    .source_event_ids
+                    .contains(&"evt.risk".to_owned())
+        }));
+    }
+
+    #[test]
+    fn stale_criterion_evidence_keeps_the_completion_gate_blocked() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-stale-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub/tasks/task.test")).unwrap();
+        fs::write(
+            root.join(".vibehub/tasks/task.test/task.yaml"),
+            "task_id: task.test\ntitle: Stale evidence\nintent: Reject stale completion evidence\nphase: implement\nphase_status: active\nworkflow_profile: lightweight\nacceptance_criteria:\n- Windows 原生验收在真实主机完成\n",
+        )
+        .unwrap();
+        let app = V3ApplicationService::open(&root).unwrap();
+        let repo = V3ViewRepository::open(&root).unwrap();
+        app.lifecycle_command(super::super::lifecycle::command(
+            "criterion.passed",
+            &repo.project_id(),
+            "task.test",
+            0,
+            "criterion.stale",
+            json!({"criterion_id":"criterion.task.test.c01","reviewer":"reviewer","evidence_refs":["stale:2026-07-01-windows-run"]}),
+        ))
+        .unwrap();
+
+        let bundle = repo.load_bundle("task.test").unwrap();
+        let criteria_gate = bundle.node_brief["completion_gate"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["gate"] == "criteria_green")
+            .unwrap()
+            .clone();
+        assert_eq!(criteria_gate["passed"], false);
+        assert_eq!(
+            criteria_gate["missing_facts"][0],
+            "criterion.task.test.c01=invalid_or_stale_evidence"
+        );
+        assert_eq!(bundle.node_brief["completion_gate"]["all_passed"], false);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_session_progress_is_a_visible_gate_not_a_hidden_completion_failure() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-progress-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        super::super::initialize_v3(&root).unwrap();
+        let created = create_v3_task(
+            &root,
+            V3TaskCreateRequest {
+                title: "Progress gate".to_owned(),
+                intent: "Expose the progress requirement in the view".to_owned(),
+                acceptance_criteria: vec!["Gate is visible".to_owned()],
+                workflow_profile: "standard".to_owned(),
+                trigger_context: Default::default(),
+                profile_override: None,
+            },
+        )
+        .unwrap();
+        let repo = V3ViewRepository::open(&root).unwrap();
+        let project_id = repo.project_id();
+        let app = V3ApplicationService::open(&root).unwrap();
+        let initial_node_id = created.initial_node_id.clone().unwrap();
+        app.plan_set_state(PlanSetStateCommand {
+            identity: PlanCommandIdentity {
+                project_id: project_id.clone(),
+                task_id: created.task_id.clone(),
+                actor: "test".to_owned(),
+                expected_version: created.lifecycle_version,
+                idempotency_key: "plan.progress.active".to_owned(),
+            },
+            node_id: initial_node_id.clone(),
+            state: "active".to_owned(),
+        })
+        .unwrap();
+        app.session_open_with_context(
+            &project_id,
+            &created.task_id,
+            "session.silent",
+            "test",
+            0,
+            "session.silent.open",
+            None,
+            Some(initial_node_id),
+            None,
+        )
+        .unwrap();
+
+        let gate = |bundle: &V3ViewBundle| {
+            bundle.node_brief["completion_gate"]["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["gate"] == "progress_evidence")
+                .unwrap()
+                .clone()
+        };
+        let blocked = gate(&repo.load_bundle(&created.task_id).unwrap());
+        assert_eq!(blocked["passed"], false);
+        assert_eq!(blocked["missing_facts"][0], "session.silent");
+        assert!(blocked["repair_actions"][0]
+            .as_str()
+            .is_some_and(|action| action.contains("session_recovery")));
+
+        app.session_gap(
+            &project_id,
+            &created.task_id,
+            "session.silent",
+            "test",
+            1,
+            "session.silent.gap",
+            "interrupted without progress",
+        )
+        .unwrap();
+        app.session_recover(
+            &project_id,
+            &created.task_id,
+            "session.silent",
+            "test",
+            2,
+            "session.silent.recover",
+            vec!["evt.gap".to_owned()],
+        )
+        .unwrap();
+
+        let recovered = gate(&repo.load_bundle(&created.task_id).unwrap());
+        assert_eq!(recovered["passed"], true);
+        assert_eq!(recovered["missing_facts"], json!([]));
+        fs::remove_dir_all(root).unwrap();
     }
 }
