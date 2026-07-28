@@ -34,6 +34,11 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.platform }}-rust
+
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -90,7 +95,7 @@ jobs:
       - name: Validate patch hygiene
         run: git diff --check
 
-      - name: Build Tauri app
+      - name: Build Tauri app (macOS / Linux)
         if: matrix.platform != 'windows-latest'
         run: npm run tauri -- build
 
