@@ -3,14 +3,21 @@
   "$id": "https://schemas.vibehub.dev/v3/1.0/node-brief.schema.json",
   "title": "NodeBrief",
   "type": "object", "additionalProperties": false,
-  "required": ["schema_version", "project_id", "task_id", "node_id", "workflow_profile", "execution_policy", "generated_at", "model_version", "freshness", "completeness", "goal", "scope", "non_scope", "dependencies", "accepted_decisions", "research_summary", "criteria", "files", "validation_commands", "state", "next_intent", "budget", "source_versions", "protocol_coverage", "evidence_refs", "warnings", "errors"],
+  "required": ["schema_version", "project_id", "task_id", "node_id", "workflow_profile", "execution_policy", "generated_at", "model_version", "freshness", "completeness", "goal", "scope", "non_scope", "dependencies", "accepted_decisions", "project_memory", "protocol_records", "coverage_mode", "completion_gate", "research_summary", "criteria", "files", "validation_commands", "state", "next_intent", "budget", "source_versions", "protocol_coverage", "evidence_refs", "warnings", "errors"],
   "properties": {
     "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" }, "project_id": { "$ref": "common.schema.json#/$defs/StableId" }, "task_id": { "$ref": "common.schema.json#/$defs/StableId" }, "node_id": { "oneOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "const": "" }] },
     "workflow_profile": { "enum": ["lightweight", "standard", "full"] },
     "execution_policy": {
       "type": "object", "additionalProperties": false,
-      "required": ["milestone_policy", "planning_required", "review_required", "required_records"],
+      "required": ["recommended_profile", "effective_profile", "policy_version", "enforcement_epoch", "trigger_reasons", "milestone_policy", "planning_required", "review_required", "required_records", "upgrade_history"],
       "properties": {
+        "recommended_profile": { "enum": ["lightweight", "standard", "full"] },
+        "effective_profile": { "enum": ["lightweight", "standard", "full"] },
+        "policy_version": { "type": "integer", "minimum": 0 },
+        "enforcement_epoch": { "type": "string" },
+        "trigger_reasons": { "type": "array", "items": { "type": "string" } },
+        "override_record": { "type": ["object", "null"] },
+        "upgrade_history": { "type": "array", "items": { "type": "object" } },
         "milestone_policy": { "enum": ["minimal", "standard", "full"] },
         "planning_required": { "type": "boolean" },
         "review_required": { "type": "boolean" },
@@ -20,6 +27,27 @@
     "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" }, "model_version": { "type": "string", "minLength": 1 }, "freshness": { "$ref": "common.schema.json#/$defs/Freshness" }, "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
     "goal": { "type": "string", "minLength": 1 }, "scope": { "type": "array", "items": { "type": "string" } }, "non_scope": { "type": "array", "items": { "type": "string" } },
     "dependencies": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } }, "accepted_decisions": { "type": "array", "items": { "type": "string" } },
+    "project_memory": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["entry_id", "kind", "source", "revision", "status", "evidence_refs", "content", "why_injected", "instructional", "security_boundary"], "properties": {
+      "entry_id": { "$ref": "common.schema.json#/$defs/StableId" }, "kind": { "type": "string" }, "source": { "const": "project_memory" },
+      "revision": { "type": "integer", "minimum": 1 }, "status": { "type": "string" }, "evidence_refs": { "type": "array", "items": { "type": "string" } },
+      "content": { "type": "string" }, "why_injected": { "type": "string", "minLength": 1 }, "instructional": { "const": false }, "security_boundary": { "const": "untrusted_data_only" }
+    } } },
+    "protocol_records": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["record", "status", "repair_action"], "properties": { "record": { "type": "string" }, "status": { "enum": ["complete", "missing"] }, "repair_action": { "type": ["string", "null"] } } } },
+    "coverage_mode": { "enum": ["enforced", "legacy_degraded"] },
+    "completion_gate": {
+      "type": "object",
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["gate", "passed"],
+            "properties": { "gate": { "type": "string" }, "passed": { "type": "boolean" } }
+          }
+        }
+      }
+    },
     "research_summary": { "type": "array", "items": { "type": "string" } }, "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
     "files": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/NativePath" } }, "validation_commands": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "state": { "enum": ["planned", "ready", "active", "blocked", "review", "completed", "cancelled", "superseded"] }, "next_intent": { "type": "string" },

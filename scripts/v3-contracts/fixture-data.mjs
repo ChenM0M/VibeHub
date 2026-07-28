@@ -378,7 +378,7 @@ function baseViews() {
     node_brief: {
       ...shared,
       task_id: "task.m0", node_id: "node.contracts", workflow_profile: "full",
-      execution_policy: { milestone_policy: "full", planning_required: true, review_required: true, required_records: ["plan", "session", "progress", "result", "review"] },
+      execution_policy: { recommended_profile: "full", effective_profile: "full", policy_version: 1, enforcement_epoch: "v3.1-hard-closure", trigger_reasons: ["fixture:full"], override_record: null, upgrade_history: [], milestone_policy: "full", planning_required: true, review_required: true, required_records: ["plan", "session", "progress", "result", "review"] },
       goal: "冻结契约与 TypeScript 类型",
       scope: ["src/v3/contracts/generated/*.ts", "src/v3/contracts/fixtureRepository.ts", "src/v3/contracts/index.ts"],
       non_scope: ["V3 event store", "M1 UI 组件", "M2 MCP 控制面"],
@@ -388,6 +388,10 @@ function baseViews() {
         "Fixture-first 策略隔离 M1 与 V2",
         "确定性种子 20260711 保证可复现",
       ],
+      project_memory: [],
+      protocol_records: ["plan", "session", "progress", "result", "review"].map((record) => ({ record, status: "complete", repair_action: null })),
+      coverage_mode: "enforced",
+      completion_gate: { items: [{ gate: "plan_terminal", passed: true }, { gate: "sessions_settled", passed: true }, { gate: "results_terminal", passed: true }, { gate: "criteria_green", passed: true }, { gate: "findings_closed", passed: true }] },
       research_summary: [
         "调查了 JSON Schema 2020-12 vs OpenAPI 3.1，选择前者因为 AJV2020 支持更好",
         "Fixture-first 隔离 M1 前端开发与 V2 后端耦合",

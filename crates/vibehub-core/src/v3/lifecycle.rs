@@ -3,6 +3,7 @@ use super::domain::{
     V3ErrorCategory, V3EventEnvelope,
 };
 use super::event_store::V3EventStore;
+use super::EffectiveExecutionPolicy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -11,9 +12,12 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const LIFECYCLE_EVENT_TYPES: &[&str] = &[
     "task.created",
     "task.relation_recorded",
+    "task.policy_upgraded",
     "plan.node_added",
     "plan.node_state_changed",
     "plan.dependency_changed",
+    "plan.node_replanned",
+    "plan.criteria_linked",
     "criterion.accepted",
     "criterion.passed",
     "criterion.failed",
@@ -66,6 +70,8 @@ pub struct PlanNodeProjection {
     pub state: String,
     pub dependencies: BTreeSet<String>,
     pub scope: Vec<String>,
+    #[serde(default)]
+    pub criterion_ids: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +118,8 @@ pub struct TaskLifecycleProjection {
     pub task_id: String,
     pub version: u64,
     pub state: String,
+    #[serde(default)]
+    pub execution_policy: Option<EffectiveExecutionPolicy>,
     pub nodes: BTreeMap<String, PlanNodeProjection>,
     pub criteria: BTreeMap<String, CriterionProjection>,
     pub findings: BTreeMap<String, FindingProjection>,
@@ -129,6 +137,7 @@ impl TaskLifecycleProjection {
             task_id: task_id.to_owned(),
             version: 0,
             state: "planned".to_owned(),
+            execution_policy: None,
             nodes: BTreeMap::new(),
             criteria: BTreeMap::new(),
             findings: BTreeMap::new(),
@@ -208,6 +217,8 @@ pub struct PlanAddNodeCommand {
     pub scope: Vec<String>,
     #[serde(default)]
     pub dependencies: Vec<String>,
+    #[serde(default)]
+    pub criterion_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -216,6 +227,18 @@ pub struct PlanSetDependenciesCommand {
     pub identity: PlanCommandIdentity,
     pub node_id: String,
     pub dependencies: Vec<String>,
+    #[serde(default)]
+    pub change_mode: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanSetCriteriaCommand {
+    #[serde(flatten)]
+    pub identity: PlanCommandIdentity,
+    pub node_id: String,
+    pub criterion_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,6 +279,7 @@ impl From<PlanAddNodeCommand> for LifecycleCommand {
             "goal": command.goal,
             "scope": command.scope,
             "dependencies": command.dependencies,
+            "criterion_ids": command.criterion_ids,
         });
         let node_id = payload["node_id"].as_str().unwrap_or_default().to_owned();
         command
@@ -266,14 +290,32 @@ impl From<PlanAddNodeCommand> for LifecycleCommand {
 
 impl From<PlanSetDependenciesCommand> for LifecycleCommand {
     fn from(command: PlanSetDependenciesCommand) -> Self {
+        let event_type = if command.change_mode.is_some() {
+            "plan.node_replanned"
+        } else {
+            "plan.dependency_changed"
+        };
         let payload = serde_json::json!({
             "node_id": command.node_id,
             "dependencies": command.dependencies,
+            "change_mode": command.change_mode,
+            "reason": command.reason,
         });
         let node_id = payload["node_id"].as_str().unwrap_or_default().to_owned();
         command
             .identity
-            .lifecycle_command("plan.dependency_changed", node_id, payload)
+            .lifecycle_command(event_type, node_id, payload)
+    }
+}
+
+impl From<PlanSetCriteriaCommand> for LifecycleCommand {
+    fn from(command: PlanSetCriteriaCommand) -> Self {
+        let payload =
+            serde_json::json!({"node_id": command.node_id, "criterion_ids": command.criterion_ids});
+        let node_id = payload["node_id"].as_str().unwrap_or_default().to_owned();
+        command
+            .identity
+            .lifecycle_command("plan.criteria_linked", node_id, payload)
     }
 }
 
@@ -399,7 +441,19 @@ pub fn fold_task(task_id: &str, events: &[V3EventEnvelope]) -> TaskLifecycleProj
 fn apply_event(projection: &mut TaskLifecycleProjection, event: &V3EventEnvelope) {
     let payload = &event.payload;
     match event.event_type.as_str() {
-        "task.created" => projection.state = "active".to_owned(),
+        "task.created" => {
+            projection.state = "active".to_owned();
+            projection.execution_policy = payload
+                .get("execution_policy")
+                .cloned()
+                .and_then(|value| serde_json::from_value(value).ok());
+        }
+        "task.policy_upgraded" => {
+            projection.execution_policy = payload
+                .get("execution_policy")
+                .cloned()
+                .and_then(|value| serde_json::from_value(value).ok());
+        }
         "task.relation_recorded" => {
             let Some(related_task_id) = value_id(payload, "related_task_id") else {
                 return;
@@ -430,6 +484,7 @@ fn apply_event(projection: &mut TaskLifecycleProjection, event: &V3EventEnvelope
                     state: "planned".to_owned(),
                     dependencies: string_set(payload, "dependencies"),
                     scope: string_vec(payload, "scope"),
+                    criterion_ids: string_set(payload, "criterion_ids"),
                 },
             );
         }
@@ -441,6 +496,22 @@ fn apply_event(projection: &mut TaskLifecycleProjection, event: &V3EventEnvelope
         "plan.dependency_changed" => {
             if let Some(node) = find_node_mut(projection, event, payload) {
                 node.dependencies = string_set(payload, "dependencies");
+            }
+        }
+        "plan.node_replanned" => {
+            let changed = value_id(payload, "node_id")
+                .or_else(|| event.node_id.as_ref().map(|id| id.0.clone()));
+            if let Some(node) = find_node_mut(projection, event, payload) {
+                node.dependencies = string_set(payload, "dependencies");
+                node.state = "planned".to_owned();
+            }
+            if let Some(changed) = changed {
+                invalidate_downstream(projection, &changed);
+            }
+        }
+        "plan.criteria_linked" => {
+            if let Some(node) = find_node_mut(projection, event, payload) {
+                node.criterion_ids = string_set(payload, "criterion_ids");
             }
         }
         event_type if event_type.starts_with("criterion.") => {
@@ -665,28 +736,94 @@ fn validate_command(
             ensure_acyclic(&candidate)?;
         }
         "plan.dependency_changed" => {
-            require_node(projection, command, payload)?;
+            let node = require_node(projection, command, payload)?;
+            if matches!(node.state.as_str(), "active" | "completed") {
+                return Err(validation("V3_PLAN_REPLAN_REQUIRED", "active/completed nodes require explicit reopen/supersede/replan semantics before graph mutation"));
+            }
             ensure_dependencies_exist(projection, payload)?;
             let mut candidate = projection.clone();
             let synthetic = synthetic_event(command, projection.version + 1);
             apply_event(&mut candidate, &synthetic);
             ensure_acyclic(&candidate)?;
         }
+        "plan.node_replanned" => {
+            let node = require_node(projection, command, payload)?;
+            if !matches!(
+                payload.get("change_mode").and_then(Value::as_str),
+                Some("reopen" | "supersede" | "replan")
+            ) || payload
+                .get("reason")
+                .and_then(Value::as_str)
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(validation(
+                    "V3_PLAN_REPLAN_REASON_REQUIRED",
+                    "reopen/supersede/replan requires an explicit reason",
+                ));
+            }
+            if !matches!(
+                node.state.as_str(),
+                "active" | "completed" | "blocked" | "failed"
+            ) {
+                return Err(validation(
+                    "V3_PLAN_REPLAN_INVALID",
+                    "explicit replan applies only to started or terminal nodes",
+                ));
+            }
+            ensure_dependencies_exist(projection, payload)?;
+            let mut candidate = projection.clone();
+            apply_event(
+                &mut candidate,
+                &synthetic_event(command, projection.version + 1),
+            );
+            ensure_acyclic(&candidate)?;
+        }
+        "plan.criteria_linked" => {
+            let node = require_node(projection, command, payload)?;
+            if matches!(node.state.as_str(), "active" | "completed") {
+                return Err(validation(
+                    "V3_PLAN_REPLAN_REQUIRED",
+                    "criterion coverage for active/completed nodes requires explicit replan",
+                ));
+            }
+            let ids = string_set(payload, "criterion_ids");
+            if ids.is_empty() || ids.iter().any(|id| !required_criterion_ids.contains(id)) {
+                return Err(validation(
+                    "V3_CRITERION_LINK_INVALID",
+                    "criterion_ids must reference registered task criteria",
+                ));
+            }
+        }
         "plan.node_state_changed" => {
             let node = require_node(projection, command, payload)?;
             let next = required_id(payload, "state")?;
             let legal = matches!(
                 (node.state.as_str(), next),
-                ("planned", "ready" | "active" | "cancelled" | "blocked")
-                    | ("ready", "active" | "cancelled" | "blocked")
+                (
+                    "planned",
+                    "ready" | "active" | "cancelled" | "blocked" | "waived"
+                ) | ("ready", "active" | "cancelled" | "blocked")
                     | ("active", "completed" | "failed" | "blocked" | "cancelled")
-                    | ("blocked", "ready" | "active" | "cancelled")
+                    | ("blocked", "ready" | "active" | "cancelled" | "waived")
                     | ("failed", "active" | "cancelled")
             );
             if !legal {
                 return Err(validation(
                     "V3_ILLEGAL_NODE_TRANSITION",
                     "plan node transition is not legal",
+                ));
+            }
+            if matches!(next, "ready" | "active")
+                && !node.dependencies.iter().all(|dependency| {
+                    projection
+                        .nodes
+                        .get(dependency)
+                        .is_some_and(|value| matches!(value.state.as_str(), "completed" | "waived"))
+                })
+            {
+                return Err(validation(
+                    "V3_NODE_DEPENDENCIES_UNSATISFIED",
+                    "all node dependencies must be completed or waived before ready/active",
                 ));
             }
         }
@@ -739,7 +876,11 @@ fn validate_command(
                 ));
             }
             let digest = required_id(payload, "digest")?;
-            if digest != projection.completion_digest() {
+            let lifecycle_digest = payload
+                .get("lifecycle_digest")
+                .and_then(Value::as_str)
+                .unwrap_or(digest);
+            if lifecycle_digest != projection.completion_digest() {
                 return Err(validation(
                     "V3_CONFIRMATION_DIGEST_STALE",
                     "completion proposal digest does not match current task truth",
@@ -793,6 +934,21 @@ fn validate_command(
         _ => {}
     }
     Ok(())
+}
+
+fn invalidate_downstream(projection: &mut TaskLifecycleProjection, changed: &str) {
+    let mut queue = vec![changed.to_owned()];
+    let mut seen = BTreeSet::new();
+    while let Some(current) = queue.pop() {
+        for node in projection.nodes.values_mut() {
+            if node.dependencies.contains(&current) && seen.insert(node.node_id.clone()) {
+                if matches!(node.state.as_str(), "ready" | "active" | "completed") {
+                    node.state = "planned".to_owned();
+                }
+                queue.push(node.node_id.clone());
+            }
+        }
+    }
 }
 
 fn ensure_dependencies_exist(
@@ -1000,6 +1156,24 @@ mod tests {
         fs::create_dir_all(root.join(".vibehub")).unwrap();
         let store = V3EventStore::open(&root).unwrap();
         (root, store)
+    }
+
+    #[test]
+    fn arbitrary_non_confirmation_events_never_project_completed() {
+        let (root, store) = store();
+        let mut version = 0;
+        for (index, (event_type, payload)) in [
+            ("task.created", json!({"title":"T"})),
+            ("plan.node_added", json!({"node_id":"node.a","title":"A","goal":"A","dependencies":[]})),
+            ("plan.node_state_changed", json!({"node_id":"node.a","state":"active"})),
+            ("plan.node_state_changed", json!({"node_id":"node.a","state":"completed"})),
+            ("criterion.accepted", json!({"criterion_id":"criterion.a","title":"A","required":true})),
+            ("criterion.passed", json!({"criterion_id":"criterion.a","reviewer":"r","evidence_refs":["test:evidence"]})),
+        ].into_iter().enumerate() {
+            apply(&store,&mut version,event_type,&format!("property.{index}"),payload);
+            assert_ne!(fold_task("task.test",&store.load_project("project.test").unwrap()).state,"completed");
+        }
+        fs::remove_dir_all(root).unwrap();
     }
     fn apply(
         store: &V3EventStore,

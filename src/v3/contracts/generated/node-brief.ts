@@ -23,6 +23,17 @@ export interface NodeBrief {
   node_id: string | "";
   workflow_profile: "lightweight" | "standard" | "full";
   execution_policy: {
+    recommended_profile: "lightweight" | "standard" | "full";
+    effective_profile: "lightweight" | "standard" | "full";
+    policy_version: number;
+    enforcement_epoch: string;
+    trigger_reasons: string[];
+    override_record?: {
+      [k: string]: unknown;
+    } | null;
+    upgrade_history: {
+      [k: string]: unknown;
+    }[];
     milestone_policy: "minimal" | "standard" | "full";
     planning_required: boolean;
     review_required: boolean;
@@ -37,6 +48,32 @@ export interface NodeBrief {
   non_scope: string[];
   dependencies: string[];
   accepted_decisions: string[];
+  project_memory: {
+    entry_id: string;
+    kind: string;
+    source: "project_memory";
+    revision: number;
+    status: string;
+    evidence_refs: string[];
+    content: string;
+    why_injected: string;
+    instructional: false;
+    security_boundary: "untrusted_data_only";
+  }[];
+  protocol_records: {
+    record: string;
+    status: "complete" | "missing";
+    repair_action: string | null;
+  }[];
+  coverage_mode: "enforced" | "legacy_degraded";
+  completion_gate: {
+    items: {
+      gate: string;
+      passed: boolean;
+      [k: string]: unknown;
+    }[];
+    [k: string]: unknown;
+  };
   research_summary: string[];
   criteria: CriterionSummary[];
   files: NativePath[];

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/project-memory.schema.json",
+  "title": "ProjectMemoryProjection",
+  "type": "object",
+  "required": ["model_version", "project_id", "entries", "event_ids"],
+  "properties": {
+    "model_version": { "type": "string", "minLength": 1 },
+    "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "event_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } },
+    "entries": { "type": "object", "additionalProperties": { "$ref": "#/$defs/MemoryEntry" } }
+  },
+  "$defs": {
+    "MemoryEntry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["entry_id", "kind", "scope", "principal_scope", "revision", "status", "owner", "content", "evidence_refs", "verified_against", "confidence", "freshness", "invalidation", "supersedes", "injection_policy", "sensitivity", "updated_at"],
+      "properties": {
+        "entry_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "kind": { "enum": ["project_profile", "team_profile", "user_preference", "accepted_decision", "curated_knowledge", "implementation_route"] },
+        "scope": { "type": "array", "items": { "type": "string" } },
+        "principal_scope": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "status": { "enum": ["active", "candidate", "disputed", "stale", "superseded", "archived"] },
+        "owner": { "type": "string", "minLength": 1 }, "content": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "type": "array", "items": { "type": "string" } },
+        "verified_against": { "type": "array", "items": { "type": "string" } },
+        "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "freshness": { "enum": ["fresh", "stale", "unknown"] },
+        "invalidation": { "type": ["string", "null"] },
+        "supersedes": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } },
+        "injection_policy": { "enum": ["always", "task_relevant", "explicit_only", "never"] },
+        "sensitivity": { "enum": ["public", "internal", "confidential", "secret"] },
+        "updated_at": { "$ref": "common.schema.json#/$defs/Timestamp" }
+      }
+    }
+  }
+}

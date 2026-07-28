@@ -28,10 +28,11 @@ use vibehub_core::{
     legacy_v2::{self, LegacyV2Archive},
     v3::{
         self, AgentSpecInspection, AgentSpecSyncRequest, AgentSpecSyncResult, AppendResult,
-        PlanAddNodeCommand, PlanSetDependenciesCommand, PlanSetStateCommand, ProjectLayoutStatus,
-        V3ApplicationService, V3BootstrapResult, V3ProjectSettingsInspection,
-        V3ProjectSettingsUpdateRequest, V3RepairCandidate, V3RepairResult, V3TaskCreateRequest,
-        V3TaskCreateResult, V3ViewBundle, V3ViewRepository,
+        LifecycleCommand, MemoryCommand, MemoryEntry, MemoryQuery, OrchestrationCommand,
+        PlanAddNodeCommand, PlanSetCriteriaCommand, PlanSetDependenciesCommand,
+        PlanSetStateCommand, ProjectLayoutStatus, V3ApplicationService, V3BootstrapResult,
+        V3ProjectSettingsInspection, V3ProjectSettingsUpdateRequest, V3RepairCandidate,
+        V3RepairResult, V3TaskCreateRequest, V3TaskCreateResult, V3ViewBundle, V3ViewRepository,
     },
 };
 
@@ -278,9 +279,81 @@ pub async fn v3_plan_set_state(
 }
 
 #[tauri::command]
+pub async fn v3_plan_set_criteria(
+    project_path: String,
+    command: PlanSetCriteriaCommand,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| application.plan_set_criteria(command))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_PLAN_SET_CRITERIA_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_lifecycle_typed_command(
+    project_path: String,
+    command: LifecycleCommand,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| application.lifecycle_command(command))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_LIFECYCLE_TYPED_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_memory_command(
+    project_path: String,
+    command: MemoryCommand,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| application.memory_command(command))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_MEMORY_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_memory_query(
+    project_path: String,
+    project_id: String,
+    query: MemoryQuery,
+) -> Result<Vec<MemoryEntry>, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| application.query_project_memory(&project_id, &query))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_MEMORY_QUERY_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_orchestration_command(
+    project_path: String,
+    command: OrchestrationCommand,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        V3ApplicationService::open(project_path)
+            .and_then(|application| application.orchestration_command(command))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_ORCHESTRATION_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
 pub async fn v3_load_view_bundle(
     project_path: String,
     task_id: Option<String>,
+    node_id: Option<String>,
     expected_project_id: Option<String>,
 ) -> Result<V3ViewBundle, String> {
     tokio::task::spawn_blocking(move || {
@@ -301,7 +374,7 @@ pub async fn v3_load_view_bundle(
                 .map_err(|error| error.to_string())?,
         };
         repository
-            .load_bundle(&task_id)
+            .load_bundle_for_node(&task_id, node_id.as_deref())
             .map_err(|error| error.to_string())
     })
     .await

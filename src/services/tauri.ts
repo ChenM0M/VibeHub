@@ -213,6 +213,13 @@ export const tauriApi = {
         return await invoke('v3_plan_set_state', { projectPath, command });
     },
 
+    v3PlanSetCriteria: async (projectPath: string, command: Record<string, unknown>): Promise<V3AppendResult> => invoke('v3_plan_set_criteria', { projectPath, command }),
+    v3LifecycleTypedCommand: async (projectPath: string, command: Record<string, unknown>): Promise<V3AppendResult> => invoke('v3_lifecycle_typed_command', { projectPath, command }),
+    v3MemoryCommand: async (projectPath: string, command: Record<string, unknown>): Promise<V3AppendResult> => invoke('v3_memory_command', { projectPath, command }),
+    v3MemoryQuery: async (projectPath: string, projectId: string, query: Record<string, unknown>): Promise<Array<Record<string, unknown>>> => invoke('v3_memory_query', { projectPath, projectId, query }),
+    v3OrchestrationCommand: async (projectPath: string, command: Record<string, unknown>): Promise<V3AppendResult> => invoke('v3_orchestration_command', { projectPath, command }),
+    v3LoadViewBundle: async (projectPath: string, taskId?: string, nodeId?: string, expectedProjectId?: string): Promise<Record<string, unknown>> => invoke('v3_load_view_bundle', { projectPath, taskId, nodeId, expectedProjectId }),
+
     vibehubReadLocalAgentUsage: async (projectPath: string, taskId: string | null = null): Promise<LocalAgentUsageOverview> => {
         return await invoke('vibehub_read_local_agent_usage', { projectPath, taskId });
     },

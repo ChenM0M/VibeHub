@@ -13,6 +13,14 @@ includes the three plan mutations, and records Agent execution/evaluation result
 types must round-trip these schemas; adapters call the same typed application
 service and do not own transition rules.
 
+The current projection model is `v3-core-2`, with `v3-memory-1` Project Memory.
+MCP, CLI, and Tauri call the same domain validators. Normal full-profile work
+uses typed policy, plan, finding/attempt, session gap/recover, memory, and
+orchestration commands instead of depending on a generic lifecycle event.
+NodeBrief supports an explicit `node_id` and returns per-record protocol repair
+actions, completion gates, effective policy, and safely filtered memory with
+`why_injected` provenance.
+
 ## Version Policy
 
 - `schema_version` is `1.0` for this frozen surface.

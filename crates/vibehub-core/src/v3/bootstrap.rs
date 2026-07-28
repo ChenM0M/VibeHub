@@ -658,6 +658,8 @@ mod tests {
                 intent: "Recover valid V3 runtime state".to_owned(),
                 acceptance_criteria: vec!["MCP can resolve current task".to_owned()],
                 workflow_profile: "standard".to_owned(),
+                trigger_context: Default::default(),
+                profile_override: None,
             },
         )
         .unwrap();
@@ -718,6 +720,8 @@ mod tests {
                 intent: "Expose a safe recovery choice".to_owned(),
                 acceptance_criteria: vec!["Candidate is visible".to_owned()],
                 workflow_profile: "standard".to_owned(),
+                trigger_context: Default::default(),
+                profile_override: None,
             },
         )
         .unwrap();

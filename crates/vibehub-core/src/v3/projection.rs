@@ -1,6 +1,7 @@
 use super::domain::{V3Error, V3ErrorCategory, V3EventEnvelope};
 use super::lifecycle::{self, TaskLifecycleProjection, LIFECYCLE_EVENT_TYPES};
 use super::orchestration::{self, WorktreeProjection, ORCHESTRATION_EVENT_TYPES};
+use super::project_memory::{self, MemoryProjection, MEMORY_EVENT_TYPES};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,6 +19,8 @@ pub struct V3Projection {
     pub tasks: BTreeMap<String, TaskLifecycleProjection>,
     pub sessions: BTreeMap<String, SessionProjection>,
     pub worktrees: BTreeMap<String, WorktreeProjection>,
+    #[serde(default)]
+    pub project_memory: Option<MemoryProjection>,
     pub unknown_event_types: Vec<String>,
 }
 
@@ -54,13 +57,14 @@ pub struct SessionProjection {
 pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
     let mut projection = V3Projection {
         schema_version: "1.0".to_owned(),
-        model_version: "v3-core-1".to_owned(),
+        model_version: "v3-core-2".to_owned(),
         project_id: project_id.to_owned(),
         source_event_ids: Vec::new(),
         aggregate_versions: BTreeMap::new(),
         tasks: BTreeMap::new(),
         sessions: BTreeMap::new(),
         worktrees: BTreeMap::new(),
+        project_memory: None,
         unknown_event_types: Vec::new(),
     };
     let mut lifecycle_task_ids = BTreeSet::new();
@@ -73,6 +77,7 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
         let is_lifecycle_event = LIFECYCLE_EVENT_TYPES.contains(&event.event_type.as_str());
         let is_known_event = is_lifecycle_event
             || ORCHESTRATION_EVENT_TYPES.contains(&event.event_type.as_str())
+            || MEMORY_EVENT_TYPES.contains(&event.event_type.as_str())
             || matches!(
                 event.event_type.as_str(),
                 "progress.logged" | "risk.logged" | "agent.result_recorded"
@@ -105,6 +110,8 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
             });
         match event.event_type.as_str() {
             "session.opened" => session.state = "open".to_owned(),
+            "session.gap_detected" => session.state = "gapped".to_owned(),
+            "session.recovered" => session.state = "open".to_owned(),
             "session.closed" => session.state = "closed".to_owned(),
             "progress.logged" | "risk.logged" => {
                 let kind = if event.event_type == "progress.logged" {
@@ -160,6 +167,7 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
             .worktrees
             .extend(orchestration::fold_task(&task_id, events).worktrees);
     }
+    projection.project_memory = Some(project_memory::fold(project_id, events));
     projection
 }
 

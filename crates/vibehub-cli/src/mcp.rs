@@ -13,9 +13,10 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use vibehub_core::v3::{
     assess_root_alignment, inspect_mcp_host_configs, read_project_settings, resolve_project_scopes,
-    AgentSpecTarget, PlanAddNodeCommand, PlanCommandIdentity, PlanSetDependenciesCommand,
-    PlanSetStateCommand, ProjectScopeInspection, ResolvedProjectScopes, V3ApplicationService,
-    V3Error, V3ErrorCategory, V3ViewRepository,
+    AgentSpecTarget, LifecycleCommand, MemoryCommand, MemoryEntry, MemoryQuery,
+    OrchestrationCommand, PlanAddNodeCommand, PlanCommandIdentity, PlanSetCriteriaCommand,
+    PlanSetDependenciesCommand, PlanSetStateCommand, ProjectScopeInspection, ResolvedProjectScopes,
+    V3ApplicationService, V3Error, V3ErrorCategory, V3ViewRepository,
 };
 
 const RESOURCE_PREFIX: &str = "vibehub://v3/1.0";
@@ -94,6 +95,115 @@ struct TaskCandidatesRead {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 struct TaskViewRead {
     task_id: String,
+    #[serde(default)]
+    node_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskPolicyUpgradeWrite {
+    #[serde(flatten)]
+    scope: PlanWriteScope,
+    target_profile: String,
+    reason: String,
+}
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct PlanCriteriaSetWrite {
+    #[serde(flatten)]
+    scope: PlanWriteScope,
+    node_id: String,
+    criterion_ids: Vec<String>,
+}
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct FindingWrite {
+    #[serde(flatten)]
+    scope: PlanWriteScope,
+    action: String,
+    finding_id: String,
+    #[serde(default)]
+    node_id: Option<String>,
+    #[serde(default)]
+    severity: Option<String>,
+    #[serde(default)]
+    evidence_refs: Vec<String>,
+    #[serde(default)]
+    details: Value,
+}
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct AttemptWrite {
+    #[serde(flatten)]
+    scope: PlanWriteScope,
+    action: String,
+    attempt_id: String,
+    finding_id: String,
+    #[serde(default)]
+    node_id: Option<String>,
+    #[serde(default)]
+    evidence_refs: Vec<String>,
+    #[serde(default)]
+    details: Value,
+}
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct SessionRecoveryWrite {
+    #[serde(flatten)]
+    session: SessionWrite,
+    action: String,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    evidence_refs: Vec<String>,
+}
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct MemoryWrite {
+    project_id: String,
+    task_id: String,
+    actor: String,
+    action: String,
+    entry_id: String,
+    expected_revision: u64,
+    #[serde(default)]
+    idempotency_key: Option<String>,
+    #[serde(default)]
+    entry: Option<Value>,
+    #[serde(default)]
+    details: Value,
+}
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct MemoryQueryRead {
+    project_id: String,
+    #[serde(default)]
+    kinds: Vec<String>,
+    #[serde(default)]
+    scope: Vec<String>,
+    #[serde(default)]
+    principal_scope: Option<String>,
+    #[serde(default)]
+    include_stale: bool,
+    #[serde(default)]
+    include_disputed: bool,
+    #[serde(default = "default_memory_budget")]
+    token_budget: usize,
+}
+fn default_memory_budget() -> usize {
+    2000
+}
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct OrchestrationWrite {
+    #[serde(flatten)]
+    scope: PlanWriteScope,
+    event_type: String,
+    node_id: String,
+    worktree_id: String,
+    eligibility_digest: String,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    lease_id: Option<String>,
+    #[serde(default)]
+    operation_id: Option<String>,
+    #[serde(default)]
+    lease_generation: Option<u64>,
+    #[serde(default)]
+    details: Value,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -165,6 +275,8 @@ struct PlanNodeAddWrite {
     scope: Vec<String>,
     #[serde(default)]
     dependencies: Vec<String>,
+    #[serde(default)]
+    criterion_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -173,6 +285,10 @@ struct PlanDependenciesSetWrite {
     scope: PlanWriteScope,
     node_id: String,
     dependencies: Vec<String>,
+    #[serde(default)]
+    change_mode: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -295,7 +411,10 @@ impl V3McpServer {
         description = "Read a complete V3 view bundle for a specified task candidate. When: immediately after task_candidates and before planning, opening a session, or editing files. Prerequisite: a task_id returned by task_candidates. Typical params: task_id. Read and echo node_brief.workflow_profile plus node_brief.execution_policy (planning_required, milestone_policy, review_required, required_records), then obey them"
     )]
     fn task_view(&self, Parameters(input): Parameters<TaskViewRead>) -> CallToolResult {
-        self.tool_result(self.views.load_bundle(&input.task_id))
+        self.tool_result(
+            self.views
+                .load_bundle_for_node(&input.task_id, input.node_id.as_deref()),
+        )
     }
 
     #[tool(
@@ -545,6 +664,7 @@ impl V3McpServer {
             goal,
             scope,
             dependencies,
+            criterion_ids,
         } = input;
         let PlanWriteScope {
             project_id,
@@ -573,6 +693,7 @@ impl V3McpServer {
                     goal: goal.clone(),
                     scope: scope.clone(),
                     dependencies: dependencies.clone(),
+                    criterion_ids: criterion_ids.clone(),
                 })
             },
         ))
@@ -589,6 +710,8 @@ impl V3McpServer {
             scope,
             node_id,
             dependencies,
+            change_mode,
+            reason,
         } = input;
         let PlanWriteScope {
             project_id,
@@ -614,6 +737,8 @@ impl V3McpServer {
                     },
                     node_id: node_id.clone(),
                     dependencies: dependencies.clone(),
+                    change_mode: change_mode.clone(),
+                    reason: reason.clone(),
                 })
             },
         ))
@@ -655,6 +780,262 @@ impl V3McpServer {
                     },
                     node_id: node_id.clone(),
                     state: state.clone(),
+                })
+            },
+        ))
+    }
+
+    #[tool(
+        description = "Upgrade a task execution policy at runtime. When: a new trigger requires stricter execution. Prerequisite: task_view policy. Typical params: project_id, task_id, target_profile, reason."
+    )]
+    fn task_policy_upgrade(
+        &self,
+        Parameters(input): Parameters<TaskPolicyUpgradeWrite>,
+    ) -> CallToolResult {
+        let PlanWriteScope {
+            project_id,
+            task_id,
+            actor,
+            expected_version,
+            idempotency_key,
+        } = input.scope;
+        self.tool_result(resolve_and_append(
+            &self.app,
+            &project_id,
+            &task_id,
+            expected_version,
+            idempotency_key,
+            |version, key| {
+                self.app.upgrade_task_policy(
+                    &project_id,
+                    &task_id,
+                    &actor,
+                    &input.target_profile,
+                    &input.reason,
+                    version,
+                    key,
+                )
+            },
+        ))
+    }
+
+    #[tool(
+        description = "Link registered acceptance criterion ids to a planned node. When: planning standard/full work. Prerequisite: registered criteria and planned node. Typical params: project_id, task_id, node_id, criterion_ids."
+    )]
+    fn plan_criteria_set(
+        &self,
+        Parameters(input): Parameters<PlanCriteriaSetWrite>,
+    ) -> CallToolResult {
+        let PlanWriteScope {
+            project_id,
+            task_id,
+            actor,
+            expected_version,
+            idempotency_key,
+        } = input.scope;
+        self.tool_result(resolve_and_append(
+            &self.app,
+            &project_id,
+            &task_id,
+            expected_version,
+            idempotency_key,
+            |version, key| {
+                self.app.plan_set_criteria(PlanSetCriteriaCommand {
+                    identity: PlanCommandIdentity {
+                        project_id: project_id.clone(),
+                        task_id: task_id.clone(),
+                        actor: actor.clone(),
+                        expected_version: version,
+                        idempotency_key: key.to_owned(),
+                    },
+                    node_id: input.node_id.clone(),
+                    criterion_ids: input.criterion_ids.clone(),
+                })
+            },
+        ))
+    }
+
+    #[tool(
+        description = "Manage a finding through the shared validator. When: review finds or closes a defect. Prerequisite: task and target node exist. Typical params: action, finding_id, evidence_refs."
+    )]
+    fn finding_manage(&self, Parameters(input): Parameters<FindingWrite>) -> CallToolResult {
+        let PlanWriteScope {
+            project_id,
+            task_id,
+            actor,
+            expected_version,
+            idempotency_key,
+        } = input.scope;
+        let event_type = match input.action.as_str() {
+            "open" => "finding.opened",
+            "regress" => "finding.regressed",
+            "close" => "finding.closed",
+            _ => {
+                return tool_error(
+                    json!({"code":"V3_FINDING_ACTION_INVALID","message":"action must be open, regress, or close"}),
+                )
+            }
+        };
+        self.tool_result(resolve_and_append(&self.app,&project_id,&task_id,expected_version,idempotency_key,|version,key|self.app.lifecycle_command(LifecycleCommand{event_type:event_type.to_owned(),project_id:project_id.clone(),task_id:task_id.clone(),node_id:input.node_id.clone(),session_id:None,actor:actor.clone(),expected_version:version,idempotency_key:key.to_owned(),evidence_grade:None,payload:json!({"finding_id":input.finding_id,"target_node_id":input.node_id,"severity":input.severity,"evidence_refs":input.evidence_refs,"details":input.details})})))
+    }
+
+    #[tool(
+        description = "Manage a remediation attempt. When: addressing an open finding. Prerequisite: finding exists. Typical params: action, attempt_id, finding_id, evidence_refs."
+    )]
+    fn attempt_manage(&self, Parameters(input): Parameters<AttemptWrite>) -> CallToolResult {
+        let PlanWriteScope {
+            project_id,
+            task_id,
+            actor,
+            expected_version,
+            idempotency_key,
+        } = input.scope;
+        let event_type = match input.action.as_str() {
+            "start" => "attempt.started",
+            "complete" => "attempt.completed",
+            "fail" => "attempt.failed",
+            _ => {
+                return tool_error(
+                    json!({"code":"V3_ATTEMPT_ACTION_INVALID","message":"action must be start, complete, or fail"}),
+                )
+            }
+        };
+        self.tool_result(resolve_and_append(&self.app,&project_id,&task_id,expected_version,idempotency_key,|version,key|self.app.lifecycle_command(LifecycleCommand{event_type:event_type.to_owned(),project_id:project_id.clone(),task_id:task_id.clone(),node_id:input.node_id.clone(),session_id:None,actor:actor.clone(),expected_version:version,idempotency_key:key.to_owned(),evidence_grade:None,payload:json!({"attempt_id":input.attempt_id,"finding_id":input.finding_id,"evidence_refs":input.evidence_refs,"details":input.details})})))
+    }
+
+    #[tool(
+        description = "Record or recover an abnormal session gap. When: interruption or recovery occurs. Prerequisite: open session for gap or gapped session for recover. Typical params: action, session scope, reason/evidence_refs."
+    )]
+    fn session_recovery(
+        &self,
+        Parameters(input): Parameters<SessionRecoveryWrite>,
+    ) -> CallToolResult {
+        let session = input.session;
+        self.tool_result(resolve_and_append(
+            &self.app,
+            &session.project_id,
+            &session.session_id,
+            session.expected_version,
+            session.idempotency_key,
+            |version, key| match input.action.as_str() {
+                "gap" => self.app.session_gap(
+                    &session.project_id,
+                    &session.task_id,
+                    &session.session_id,
+                    &session.actor,
+                    version,
+                    key,
+                    input.reason.as_deref().unwrap_or(""),
+                ),
+                "recover" => self.app.session_recover(
+                    &session.project_id,
+                    &session.task_id,
+                    &session.session_id,
+                    &session.actor,
+                    version,
+                    key,
+                    input.evidence_refs.clone(),
+                ),
+                _ => Err(V3Error::new(
+                    "V3_SESSION_RECOVERY_ACTION_INVALID",
+                    V3ErrorCategory::Validation,
+                    false,
+                    "action must be gap or recover",
+                )),
+            },
+        ))
+    }
+
+    #[tool(
+        description = "Write Project Memory with revision preconditions. When: curating or promoting durable context. Prerequisite: correct entry revision and evidence. Typical params: action, entry_id, expected_revision, entry."
+    )]
+    fn memory_write(&self, Parameters(input): Parameters<MemoryWrite>) -> CallToolResult {
+        let entry = match input.entry {
+            Some(value) => match serde_json::from_value::<MemoryEntry>(value) {
+                Ok(entry) => Some(entry),
+                Err(error) => {
+                    return tool_error(
+                        json!({"code":"V3_MEMORY_ENTRY_INVALID","message":error.to_string()}),
+                    )
+                }
+            },
+            None => None,
+        };
+        let key = input
+            .idempotency_key
+            .unwrap_or_else(|| format!("auto.{}", Uuid::new_v4()));
+        self.tool_result(self.app.memory_command(MemoryCommand {
+            action: input.action,
+            project_id: input.project_id,
+            task_id: input.task_id,
+            actor: input.actor,
+            entry_id: input.entry_id,
+            expected_revision: input.expected_revision,
+            idempotency_key: key,
+            entry,
+            details: input.details,
+        }))
+    }
+
+    #[tool(
+        description = "Query Project Memory. When: preparing task/node context. Prerequisite: project_id and actor scope. Typical params: kinds, scope, principal_scope, token_budget."
+    )]
+    fn memory_query(&self, Parameters(input): Parameters<MemoryQueryRead>) -> CallToolResult {
+        if input.project_id != self.project_id {
+            return tool_error(
+                json!({"code":"V3_PROJECT_MISMATCH","message":"project_id does not match this MCP workspace"}),
+            );
+        }
+        self.tool_result(self.app.query_project_memory(
+            &input.project_id,
+            &MemoryQuery {
+                kinds: input.kinds,
+                scope: input.scope,
+                principal_scope: input.principal_scope,
+                include_stale: input.include_stale,
+                include_disputed: input.include_disputed,
+                token_budget: input.token_budget,
+            },
+        ))
+    }
+
+    #[tool(
+        description = "Apply typed worktree, lease, or integration transitions. When: orchestrating parallel work. Prerequisite: valid prior state and eligibility digest. Typical params: event_type, worktree_id, operation_id, eligibility_digest."
+    )]
+    fn orchestration_write(
+        &self,
+        Parameters(input): Parameters<OrchestrationWrite>,
+    ) -> CallToolResult {
+        let PlanWriteScope {
+            project_id,
+            task_id,
+            actor,
+            expected_version,
+            idempotency_key,
+        } = input.scope;
+        self.tool_result(resolve_and_append(
+            &self.app,
+            &project_id,
+            &input.worktree_id,
+            expected_version,
+            idempotency_key,
+            |version, key| {
+                self.app.orchestration_command(OrchestrationCommand {
+                    event_type: input.event_type.clone(),
+                    project_id: project_id.clone(),
+                    task_id: task_id.clone(),
+                    node_id: input.node_id.clone(),
+                    worktree_id: input.worktree_id.clone(),
+                    session_id: input.session_id.clone(),
+                    lease_id: input.lease_id.clone(),
+                    operation_id: input.operation_id.clone(),
+                    eligibility_digest: input.eligibility_digest.clone(),
+                    lease_generation: input.lease_generation,
+                    actor: actor.clone(),
+                    expected_version: version,
+                    idempotency_key: key.to_owned(),
+                    evidence_grade: None,
+                    payload: input.details.clone(),
                 })
             },
         ))
@@ -784,6 +1165,8 @@ impl V3McpServer {
                         "session_open", "task_candidates", "task_view", "criterion_review",
                         "task_completion_propose", "task_complete", "event_log", "agent_result_record",
                         "session_close", "plan_node_add", "plan_dependencies_set", "plan_node_state_set"
+                        , "task_policy_upgrade", "plan_criteria_set", "finding_manage", "attempt_manage",
+                        "session_recovery", "memory_write", "memory_query", "orchestration_write"
                     ],
                     "mcp_hosts": host_configs,
                     "root_alignment": alignment,
@@ -944,7 +1327,7 @@ mod tests {
             diagnostics["scopes"]["control_root"],
             server.scopes.control_root
         );
-        assert_eq!(diagnostics["tool_catalog"].as_array().unwrap().len(), 12);
+        assert_eq!(diagnostics["tool_catalog"].as_array().unwrap().len(), 20);
         assert_eq!(diagnostics["restart_required"], false);
         assert_eq!(diagnostics["root_alignment"]["status"], "aligned");
         assert_eq!(
@@ -959,7 +1342,7 @@ mod tests {
     fn tool_descriptions_expose_when_prerequisite_and_typical_params() {
         let (root, server) = server();
         let tools = server.tool_router.list_all();
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 20);
         for tool in &tools {
             let description = tool
                 .description

@@ -2,8 +2,9 @@ use std::fs;
 use std::io::{self, Read};
 
 use vibehub_core::v3::{
-    AgentSpecSyncRequest, LifecycleCommand, PlanAddNodeCommand, PlanSetDependenciesCommand,
-    PlanSetStateCommand, V3ApplicationService, V3TaskCreateRequest, V3ViewRepository,
+    AgentSpecSyncRequest, LifecycleCommand, MemoryCommand, MemoryQuery, PlanAddNodeCommand,
+    PlanSetCriteriaCommand, PlanSetDependenciesCommand, PlanSetStateCommand, V3ApplicationService,
+    V3TaskCreateRequest, V3ViewRepository,
 };
 use vibehub_core::vibehub;
 
@@ -135,6 +136,14 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   v3 <project> task-lifecycle <project_id> <task_id>
   v3 <project> task-candidates
   v3 <project> task-view <task_id>
+  v3 <project> task-view <task_id> [node_id]
+  v3 <project> policy-upgrade <project_id> <task_id> <actor> <expected_version> <idempotency_key> <target_profile> <reason>
+  v3 <project> session-gap <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> <reason>
+  v3 <project> session-recover <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> <evidence_refs_json>
+  v3 <project> memory-command <command_json_path|--stdin|->
+  v3 <project> memory-query <project_id> <query_json>
+  v3 <project> finding-command <lifecycle_command_json_path|--stdin|->
+  v3 <project> attempt-command <lifecycle_command_json_path|--stdin|->
   v3 <project> plan-event <command_json_path|--stdin|->
   v3 <project> lifecycle-event <command_json_path|--stdin|->
   v3 <project> worktree-event <command_json_path|--stdin|->
@@ -712,7 +721,84 @@ fn run_v3_action(project_root: &str, args: &[String]) {
             };
             let repository =
                 V3ViewRepository::open(project_root).unwrap_or_else(|error| print_v3_error(error));
-            print_v3_json(repository.load_bundle(task_id));
+            print_v3_json(
+                repository.load_bundle_for_node(task_id, args.get(2).map(String::as_str)),
+            );
+        }
+        "policy-upgrade" => {
+            let (project_id, task_id, actor, version, key) =
+                parse_v3_task_write_scope(command, &args[1..]);
+            let Some(target) = args.get(6) else {
+                v3_usage_error(command, "missing target_profile")
+            };
+            let Some(reason) = args.get(7) else {
+                v3_usage_error(command, "missing reason")
+            };
+            print_v3_json(
+                app.upgrade_task_policy(project_id, task_id, actor, target, reason, version, key),
+            );
+        }
+        "session-gap" | "session-recover" => {
+            let (project_id, task_id, session_id, actor, version, key) =
+                parse_v3_write_scope(command, &args[1..]);
+            let Some(value) = args.get(7) else {
+                v3_usage_error(command, "missing reason/evidence")
+            };
+            if command == "session-gap" {
+                print_v3_json(
+                    app.session_gap(project_id, task_id, session_id, actor, version, key, value),
+                );
+            } else {
+                let evidence = serde_json::from_str::<Vec<String>>(value).unwrap_or_else(|error| {
+                    v3_usage_error(command, &format!("invalid evidence JSON: {error}"))
+                });
+                print_v3_json(app.session_recover(
+                    project_id, task_id, session_id, actor, version, key, evidence,
+                ));
+            }
+        }
+        "memory-command" => {
+            let Some(path) = args.get(1) else {
+                v3_usage_error(command, "missing memory command JSON")
+            };
+            let (content, label) = read_v3_command_content(path, "memory command");
+            let value = serde_json::from_str::<MemoryCommand>(&content).unwrap_or_else(|error| {
+                eprintln!("Invalid memory command JSON '{}': {error}", label);
+                std::process::exit(2)
+            });
+            print_v3_json(app.memory_command(value));
+        }
+        "memory-query" => {
+            let Some(project_id) = args.get(1) else {
+                v3_usage_error(command, "missing project_id")
+            };
+            let Some(value) = args.get(2) else {
+                v3_usage_error(command, "missing query JSON")
+            };
+            let query = serde_json::from_str::<MemoryQuery>(value).unwrap_or_else(|error| {
+                v3_usage_error(command, &format!("invalid query JSON: {error}"))
+            });
+            print_v3_json(app.query_project_memory(project_id, &query));
+        }
+        "finding-command" | "attempt-command" => {
+            let Some(path) = args.get(1) else {
+                v3_usage_error(command, "missing typed lifecycle command JSON")
+            };
+            let (content, label) = read_v3_command_content(path, command);
+            let value =
+                serde_json::from_str::<LifecycleCommand>(&content).unwrap_or_else(|error| {
+                    eprintln!("Invalid typed command JSON '{}': {error}", label);
+                    std::process::exit(2)
+                });
+            let prefix = if command == "finding-command" {
+                "finding."
+            } else {
+                "attempt."
+            };
+            if !value.event_type.starts_with(prefix) {
+                v3_usage_error(command, "event_type does not match typed command family")
+            };
+            print_v3_json(app.lifecycle_command(value));
         }
         "plan-event" => {
             let Some(json_path) = args.get(1) else {
@@ -733,6 +819,7 @@ fn run_v3_action(project_root: &str, args: &[String]) {
                 V3PlanCommand::PlanNodeAdd { input } => app.plan_add_node(input),
                 V3PlanCommand::PlanDependenciesSet { input } => app.plan_set_dependencies(input),
                 V3PlanCommand::PlanNodeStateSet { input } => app.plan_set_state(input),
+                V3PlanCommand::PlanCriteriaSet { input } => app.plan_set_criteria(input),
             };
             print_v3_json(result);
         }
@@ -798,6 +885,10 @@ enum V3PlanCommand {
     PlanNodeStateSet {
         #[serde(flatten)]
         input: PlanSetStateCommand,
+    },
+    PlanCriteriaSet {
+        #[serde(flatten)]
+        input: PlanSetCriteriaCommand,
     },
 }
 

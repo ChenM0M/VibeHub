@@ -11,12 +11,32 @@ use super::orchestration::{self, OrchestrationCommand, OrchestrationProjection};
 use super::projection::{self, V3Projection};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
 fn default_standard_profile() -> String {
     "standard".to_owned()
+}
+
+#[derive(Default)]
+struct SessionFacts {
+    exists: bool,
+    open: bool,
+    closed: bool,
+    gapped: bool,
+    terminal_result: bool,
+    task_id: Option<String>,
+    node_id: Option<String>,
+}
+fn session_error(code: &str, message: &str) -> V3Error {
+    V3Error::new(
+        code,
+        super::domain::V3ErrorCategory::Validation,
+        false,
+        message,
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +116,40 @@ impl V3ApplicationService {
         provider: Option<String>,
         provider_session_id: Option<String>,
     ) -> Result<AppendResult, V3Error> {
+        if let Some(policy) = self.enforced_task_policy(task_id)? {
+            if policy.planning_required {
+                let node_id = node_id.as_deref().ok_or_else(|| {
+                    session_error(
+                        "V3_SESSION_NODE_REQUIRED",
+                        "standard/full session_open requires an active plan node",
+                    )
+                })?;
+                let lifecycle = self.task_lifecycle(project_id, task_id)?;
+                let node = lifecycle.nodes.get(node_id).ok_or_else(|| {
+                    session_error(
+                        "V3_SESSION_NODE_NOT_FOUND",
+                        "session node does not exist in the task plan",
+                    )
+                })?;
+                if node.state != "active"
+                    || !node.dependencies.iter().all(|dependency| {
+                        lifecycle.nodes.get(dependency).is_some_and(|value| {
+                            matches!(value.state.as_str(), "completed" | "waived")
+                        })
+                    })
+                {
+                    return Err(session_error(
+                        "V3_SESSION_NODE_NOT_ACTIVE_READY",
+                        "session node must exist, have satisfied dependencies, and be active",
+                    ));
+                }
+            } else if node_id.is_some() {
+                return Err(session_error(
+                    "V3_LIGHTWEIGHT_NODE_FORBIDDEN",
+                    "lightweight sessions use no plan-node binding",
+                ));
+            }
+        }
         let mut payload = json!({});
         if let Some(path) = working_directory {
             payload["working_directory"] = Value::String(path);
@@ -107,6 +161,30 @@ impl V3ApplicationService {
             provider_session_id.filter(|value| !value.trim().is_empty())
         {
             payload["provider_session_id"] = Value::String(provider_session_id);
+        }
+        if self.session_facts(project_id, session_id)?.exists {
+            if self.store.load_project(project_id)?.iter().any(|event| {
+                event.aggregate_id == session_id
+                    && event.event_type == "session.opened"
+                    && event.idempotency_key == idempotency_key
+            }) {
+                return self.append_session_event_with_context(
+                    "session.opened",
+                    project_id,
+                    task_id,
+                    session_id,
+                    actor,
+                    expected_version,
+                    idempotency_key,
+                    payload,
+                    node_id,
+                    worktree_id,
+                );
+            }
+            return Err(session_error(
+                "V3_SESSION_ALREADY_EXISTS",
+                "session_id is already recorded",
+            ));
         }
         self.append_session_event_with_context(
             "session.opened",
@@ -133,6 +211,7 @@ impl V3ApplicationService {
         idempotency_key: &str,
         details: Value,
     ) -> Result<AppendResult, V3Error> {
+        self.require_open_session(project_id, task_id, session_id)?;
         let event_type = match kind {
             "progress" => "progress.logged",
             "risk" => "risk.logged",
@@ -163,6 +242,13 @@ impl V3ApplicationService {
         node_id: Option<String>,
         details: Value,
     ) -> Result<AppendResult, V3Error> {
+        let facts = self.require_open_session(project_id, task_id, session_id)?;
+        if self.enforced_task_policy(task_id)?.is_some() && facts.node_id != node_id {
+            return Err(session_error(
+                "V3_AGENT_RESULT_NODE_MISMATCH",
+                "agent_result node_id must match the open session node",
+            ));
+        }
         for field in ["kind", "request_source", "instruction", "status", "summary"] {
             if details.get(field).and_then(Value::as_str).is_none() {
                 return Err(V3Error::new(
@@ -210,6 +296,13 @@ impl V3ApplicationService {
         expected_version: u64,
         idempotency_key: &str,
     ) -> Result<AppendResult, V3Error> {
+        let facts = self.require_open_session(project_id, task_id, session_id)?;
+        if self.enforced_task_policy(task_id)?.is_some() && !facts.terminal_result {
+            return Err(session_error(
+                "V3_SESSION_TERMINAL_RESULT_REQUIRED",
+                "session_close requires a real succeeded/failed agent result",
+            ));
+        }
         self.append_session_event(
             "session.closed",
             project_id,
@@ -219,6 +312,70 @@ impl V3ApplicationService {
             expected_version,
             idempotency_key,
             json!({}),
+        )
+    }
+
+    pub fn session_gap(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        actor: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+        reason: &str,
+    ) -> Result<AppendResult, V3Error> {
+        self.require_open_session(project_id, task_id, session_id)?;
+        if reason.trim().is_empty() {
+            return Err(session_error(
+                "V3_SESSION_GAP_REASON_REQUIRED",
+                "session gap requires a reason",
+            ));
+        }
+        self.append_session_event(
+            "session.gap_detected",
+            project_id,
+            task_id,
+            session_id,
+            actor,
+            expected_version,
+            idempotency_key,
+            json!({"reason":reason}),
+        )
+    }
+
+    pub fn session_recover(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        actor: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+        recovery_evidence: Vec<String>,
+    ) -> Result<AppendResult, V3Error> {
+        let facts = self.session_facts(project_id, session_id)?;
+        if facts.task_id.as_deref() != Some(task_id) || !facts.gapped {
+            return Err(session_error(
+                "V3_SESSION_NOT_GAPPED",
+                "only a gapped session may be recovered",
+            ));
+        }
+        if recovery_evidence.is_empty() {
+            return Err(session_error(
+                "V3_SESSION_RECOVERY_EVIDENCE_REQUIRED",
+                "session recovery requires evidence",
+            ));
+        }
+        self.append_session_event(
+            "session.recovered",
+            project_id,
+            task_id,
+            session_id,
+            actor,
+            expected_version,
+            idempotency_key,
+            json!({"evidence_refs":recovery_evidence}),
         )
     }
 
@@ -264,8 +421,35 @@ impl V3ApplicationService {
         self.lifecycle_command(command.into())
     }
 
+    pub fn plan_set_criteria(
+        &self,
+        command: super::PlanSetCriteriaCommand,
+    ) -> Result<AppendResult, V3Error> {
+        self.lifecycle_command(command.into())
+    }
+
     pub fn plan_set_state(&self, command: PlanSetStateCommand) -> Result<AppendResult, V3Error> {
         self.lifecycle_command(command.into())
+    }
+
+    pub fn upgrade_task_policy(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        actor: &str,
+        target_profile: &str,
+        reason: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+    ) -> Result<AppendResult, V3Error> {
+        let lifecycle = self.task_lifecycle(project_id, task_id)?;
+        let current = lifecycle.execution_policy.or_else(|| self.task_execution_policy(task_id).ok()).ok_or_else(|| V3Error::new("V3_EXECUTION_POLICY_MISSING", super::domain::V3ErrorCategory::Validation, false, "task has no effective execution policy; repair legacy coverage before runtime upgrade"))?;
+        let upgraded = super::upgrade_policy(&current, target_profile, reason, actor)?;
+        self.lifecycle_command(LifecycleCommand {
+            event_type: "task.policy_upgraded".to_owned(), project_id: project_id.to_owned(), task_id: task_id.to_owned(), node_id: None, session_id: None,
+            actor: actor.to_owned(), expected_version, idempotency_key: idempotency_key.to_owned(), evidence_grade: Some(EvidenceGrade::AgentReported),
+            payload: json!({"execution_policy": upgraded, "reason": reason, "target_profile": target_profile}),
+        })
     }
 
     pub fn task_lifecycle(
@@ -330,6 +514,7 @@ impl V3ApplicationService {
         idempotency_key: &str,
     ) -> Result<AppendResult, V3Error> {
         let lifecycle = self.task_lifecycle(project_id, task_id)?;
+        let digest = self.validate_completion_gate(project_id, task_id, &lifecycle)?;
         self.lifecycle_command(LifecycleCommand {
             event_type: "task.completion_proposed".to_owned(),
             project_id: project_id.to_owned(),
@@ -340,7 +525,7 @@ impl V3ApplicationService {
             expected_version,
             idempotency_key: idempotency_key.to_owned(),
             evidence_grade: Some(EvidenceGrade::HardObserved),
-            payload: json!({"digest": lifecycle.completion_digest()}),
+            payload: json!({"digest": digest, "lifecycle_digest": lifecycle.completion_digest(), "gate_digest_version": 1}),
         })
     }
 
@@ -462,6 +647,26 @@ impl V3ApplicationService {
         orchestration::apply_command(&self.store, command)
     }
 
+    pub fn memory_command(&self, command: super::MemoryCommand) -> Result<AppendResult, V3Error> {
+        super::project_memory::apply_command(&self.store, command)
+    }
+    pub fn project_memory(&self, project_id: &str) -> Result<super::MemoryProjection, V3Error> {
+        Ok(super::project_memory::fold(
+            project_id,
+            &self.store.load_project(project_id)?,
+        ))
+    }
+    pub fn query_project_memory(
+        &self,
+        project_id: &str,
+        query: &super::MemoryQuery,
+    ) -> Result<Vec<super::MemoryEntry>, V3Error> {
+        Ok(super::project_memory::query(
+            &self.project_memory(project_id)?,
+            query,
+        ))
+    }
+
     pub fn worktree_orchestration(
         &self,
         project_id: &str,
@@ -537,6 +742,232 @@ impl V3ApplicationService {
             )
         })?;
         Ok(task.workflow_profile)
+    }
+
+    fn task_execution_policy(
+        &self,
+        task_id: &str,
+    ) -> Result<super::EffectiveExecutionPolicy, V3Error> {
+        #[derive(Deserialize)]
+        struct TaskPolicy {
+            execution_policy: super::EffectiveExecutionPolicy,
+        }
+        let path = self
+            .store
+            .project_root()
+            .join(".vibehub/tasks")
+            .join(task_id)
+            .join("task.yaml");
+        let content = fs::read_to_string(path).map_err(|error| {
+            V3Error::new(
+                "V3_TASK_READ_FAILED",
+                super::domain::V3ErrorCategory::NotFound,
+                false,
+                error.to_string(),
+            )
+        })?;
+        serde_yaml::from_str::<TaskPolicy>(&content)
+            .map(|task| task.execution_policy)
+            .map_err(|error| {
+                V3Error::new(
+                    "V3_EXECUTION_POLICY_MISSING",
+                    super::domain::V3ErrorCategory::CorruptLog,
+                    false,
+                    error.to_string(),
+                )
+            })
+    }
+
+    fn enforced_task_policy(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<super::EffectiveExecutionPolicy>, V3Error> {
+        match self.task_execution_policy(task_id) {
+            Ok(policy) if policy.policy_version > 0 && !policy.enforcement_epoch.is_empty() => {
+                Ok(Some(policy))
+            }
+            Ok(_) => Ok(None),
+            Err(error)
+                if matches!(
+                    error.code.as_str(),
+                    "V3_EXECUTION_POLICY_MISSING" | "V3_TASK_READ_FAILED"
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn session_facts(&self, project_id: &str, session_id: &str) -> Result<SessionFacts, V3Error> {
+        let mut facts = SessionFacts::default();
+        for event in self
+            .store
+            .load_project(project_id)?
+            .into_iter()
+            .filter(|event| event.aggregate_id == session_id)
+        {
+            facts.exists = true;
+            facts.task_id = Some(event.task_id.0);
+            if event.event_type == "session.opened" {
+                facts.open = true;
+                facts.node_id = event.node_id.map(|id| id.0);
+            }
+            if event.event_type == "session.closed" {
+                facts.open = false;
+                facts.closed = true;
+            }
+            if event.event_type == "session.gap_detected" {
+                facts.open = false;
+                facts.gapped = true;
+            }
+            if event.event_type == "session.recovered" {
+                facts.open = true;
+                facts.gapped = false;
+            }
+            if event.event_type == "agent.result_recorded" {
+                facts.terminal_result = matches!(
+                    event.payload.get("status").and_then(Value::as_str),
+                    Some("succeeded" | "failed")
+                );
+            }
+        }
+        Ok(facts)
+    }
+    fn require_open_session(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+    ) -> Result<SessionFacts, V3Error> {
+        let facts = self.session_facts(project_id, session_id)?;
+        if facts.task_id.as_deref() != Some(task_id) {
+            return Err(session_error(
+                "V3_SESSION_SCOPE_MISMATCH",
+                "session does not belong to task",
+            ));
+        }
+        if !facts.open || facts.closed || facts.gapped {
+            return Err(session_error(
+                "V3_SESSION_NOT_OPEN",
+                "session event requires an open non-gapped session",
+            ));
+        }
+        Ok(facts)
+    }
+
+    fn validate_completion_gate(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        lifecycle: &TaskLifecycleProjection,
+    ) -> Result<String, V3Error> {
+        let policy = lifecycle
+            .execution_policy
+            .clone()
+            .or_else(|| self.enforced_task_policy(task_id).ok().flatten());
+        let required = self.required_criterion_ids(task_id)?;
+        if !lifecycle.required_criteria_passed(&required)
+            || lifecycle.has_open_findings()
+            || lifecycle
+                .attempts
+                .values()
+                .any(|attempt| attempt.state == "started")
+        {
+            return Err(session_error(
+                "V3_COMPLETION_REVIEW_GATE_FAILED",
+                "criteria, findings, or attempts are not terminal and evidenced",
+            ));
+        }
+        if policy
+            .as_ref()
+            .is_some_and(|policy| policy.planning_required)
+        {
+            if lifecycle.nodes.is_empty()
+                || lifecycle.nodes.values().any(|node| {
+                    !matches!(node.state.as_str(), "completed" | "waived" | "superseded")
+                })
+            {
+                return Err(session_error(
+                    "V3_COMPLETION_PLAN_GATE_FAILED",
+                    "all required plan nodes must be terminal",
+                ));
+            }
+            let covered = lifecycle
+                .nodes
+                .values()
+                .flat_map(|node| node.criterion_ids.iter().cloned())
+                .collect::<BTreeSet<_>>();
+            if !required.is_subset(&covered) {
+                return Err(session_error(
+                    "V3_COMPLETION_CRITERION_COVERAGE_MISSING",
+                    "every required criterion must be linked to a plan node",
+                ));
+            }
+        }
+        let projection = self.rebuild_in_memory(project_id)?;
+        let task_sessions = projection
+            .sessions
+            .iter()
+            .filter(|(_, session)| session.task_id == task_id)
+            .collect::<Vec<_>>();
+        if task_sessions.iter().any(|(_, session)| {
+            session.state != "closed"
+                || !session
+                    .agent_results
+                    .iter()
+                    .any(|result| matches!(result.status.as_str(), "succeeded" | "failed"))
+        }) {
+            return Err(session_error(
+                "V3_COMPLETION_SESSION_GATE_FAILED",
+                "all sessions must be closed with terminal results and no gaps",
+            ));
+        }
+        if policy.as_ref().is_some_and(|policy| {
+            policy
+                .required_records
+                .iter()
+                .any(|record| record == "progress")
+        }) && task_sessions
+            .iter()
+            .any(|(_, session)| session.progress_entries == 0)
+        {
+            return Err(session_error(
+                "V3_COMPLETION_PROGRESS_GATE_FAILED",
+                "policy requires progress evidence for each session",
+            ));
+        }
+        let orchestration = self.worktree_orchestration(project_id, task_id)?;
+        if policy
+            .as_ref()
+            .is_some_and(|policy| policy.effective_profile == "full")
+            && orchestration.worktrees.values().any(|worktree| {
+                !matches!(
+                    worktree.state,
+                    super::worktree::WorktreeState::Integrated
+                        | super::worktree::WorktreeState::Abandoned
+                        | super::worktree::WorktreeState::Cleaned
+                ) || worktree
+                    .lease
+                    .as_ref()
+                    .is_some_and(|lease| lease.state == super::LeaseState::Active)
+            })
+        {
+            return Err(session_error(
+                "V3_COMPLETION_INTEGRATION_GATE_FAILED",
+                "full-profile worktrees, leases, and integrations must be settled",
+            ));
+        }
+        let facts = json!({"lifecycle":lifecycle.completion_digest(),"nodes":lifecycle.nodes,"sessions":task_sessions,"worktrees":orchestration.worktrees,"policy":policy,"model":"completion-gate-1"});
+        let mut hasher = Sha256::new();
+        hasher.update(serde_json::to_vec(&facts).unwrap_or_default());
+        Ok(format!("sha256:{:x}", hasher.finalize()))
+    }
+    fn rebuild_in_memory(&self, project_id: &str) -> Result<V3Projection, V3Error> {
+        Ok(projection::fold(
+            project_id,
+            &self.store.load_project(project_id)?,
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -12,6 +12,7 @@ const schemas = [
   ["application-command.schema.json", "V3ApplicationCommand"],
   ["task-create.schema.json", "V3TaskCreateContract"],
   ["project-settings.schema.json", "V3ProjectSettingsContract"],
+  ["project-memory.schema.json", "ProjectMemoryProjection"],
   ["agent-spec.schema.json", "V3AgentSpecContract"],
   ["project-overview-view.schema.json", "ProjectOverviewView"],
   ["project-structure-view.schema.json", "ProjectStructureView"],
@@ -32,6 +33,7 @@ const exportedDefinitions = new Map([
     "V3ProjectSettingsContract", "V3OutputLanguage", "V3AgentSpecTarget",
     "V3ProjectSettings", "V3ProjectSettingsInspection", "V3ProjectSettingsUpdateRequest",
   ]],
+  ["project-memory.schema.json", ["ProjectMemoryProjection", "MemoryEntry"]],
   ["agent-spec.schema.json", [
     "V3AgentSpecContract", "V3AgentSpecArtifactStatus", "V3AgentSpecSyncStatus", "V3AgentSpecArtifactInspection",
     "ProjectScopeInspection", "EffectiveAgentDeclaration", "McpHostConfigInspection",

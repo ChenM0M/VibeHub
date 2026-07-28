@@ -21,6 +21,7 @@ const schemaNames = [
   "application-command.schema.json",
   "task-create.schema.json",
   "project-settings.schema.json",
+  "project-memory.schema.json",
   "agent-spec.schema.json",
   "project-overview-view.schema.json",
   "project-structure-view.schema.json",

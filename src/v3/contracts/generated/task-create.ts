@@ -6,6 +6,20 @@ export interface V3TaskCreateRequest {
   title: string;
   intent: string;
   workflow_profile?: "lightweight" | "standard" | "full";
+  trigger_context?: {
+    dependencies?: string[];
+    handoff_required?: boolean;
+    multi_agent?: boolean;
+    cross_platform?: boolean;
+    release?: boolean;
+    migration?: boolean;
+    security_sensitive?: boolean;
+  };
+  profile_override?: {
+    requested_profile: "lightweight" | "standard" | "full";
+    reason: string;
+    user_confirmed: true;
+  } | null;
   /**
    * @minItems 1
    * @maxItems 100

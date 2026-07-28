@@ -310,6 +310,8 @@ mod tests {
                 intent: "Remain visible after quarantine".to_owned(),
                 acceptance_criteria: vec!["Views remain usable".to_owned()],
                 workflow_profile: "standard".to_owned(),
+                trigger_context: Default::default(),
+                profile_override: None,
             },
         )
         .unwrap();
@@ -362,6 +364,8 @@ mod tests {
                 intent: "Must not be quarantined".to_owned(),
                 acceptance_criteria: vec!["Metadata is valid".to_owned()],
                 workflow_profile: "standard".to_owned(),
+                trigger_context: Default::default(),
+                profile_override: None,
             },
         )
         .unwrap();

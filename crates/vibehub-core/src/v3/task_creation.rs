@@ -1,7 +1,8 @@
 use super::application::canonical_criterion_id;
 use super::lifecycle::command;
 use super::{
-    inspect_project_layout, EvidenceGrade, ProjectLayoutState, V3ApplicationService, V3Error,
+    inspect_project_layout, resolve_policy, EffectiveExecutionPolicy, EvidenceGrade,
+    ProfileOverride, ProjectLayoutState, TriggerContext, V3ApplicationService, V3Error,
     V3ErrorCategory,
 };
 use chrono::{SecondsFormat, Utc};
@@ -23,6 +24,10 @@ pub struct V3TaskCreateRequest {
     pub acceptance_criteria: Vec<String>,
     #[serde(default = "default_workflow_profile")]
     pub workflow_profile: String,
+    #[serde(default)]
+    pub trigger_context: TriggerContext,
+    #[serde(default)]
+    pub profile_override: Option<ProfileOverride>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +51,18 @@ struct TaskDocument {
     dependencies: Vec<String>,
     #[serde(default = "default_workflow_profile")]
     workflow_profile: String,
+    #[serde(default)]
+    recommended_profile: String,
+    #[serde(default)]
+    effective_profile: String,
+    #[serde(default)]
+    execution_policy: Option<EffectiveExecutionPolicy>,
+    #[serde(default)]
+    policy_version: u32,
+    #[serde(default)]
+    enforcement_epoch: String,
+    #[serde(default)]
+    trigger_reasons: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,6 +98,14 @@ pub fn create_v3_task(
     ensure_safe_tasks_root(&tasks_root)?;
 
     let task_dir = tasks_root.join(&task_id);
+    let policy = resolve_policy(
+        &request.title,
+        &request.intent,
+        request.acceptance_criteria.len(),
+        &request.workflow_profile,
+        &request.trigger_context,
+        request.profile_override.clone(),
+    )?;
     let document = TaskDocument {
         task_id: task_id.clone(),
         title: request.title,
@@ -94,7 +119,13 @@ pub fn create_v3_task(
         phase_status: "active".to_owned(),
         acceptance_criteria: request.acceptance_criteria,
         dependencies: Vec::new(),
-        workflow_profile: request.workflow_profile.clone(),
+        workflow_profile: policy.effective_profile.clone(),
+        recommended_profile: policy.recommended_profile.clone(),
+        effective_profile: policy.effective_profile.clone(),
+        policy_version: policy.policy_version,
+        enforcement_epoch: policy.enforcement_epoch.clone(),
+        trigger_reasons: policy.trigger_reasons.clone(),
+        execution_policy: Some(policy.clone()),
     };
     let task_yaml = serde_yaml::to_string(&document)
         .map_err(|error| task_error("V3_TASK_ENCODE_FAILED", error.to_string()))?;
@@ -151,6 +182,7 @@ pub fn create_v3_task(
             &document.intent,
             &document.acceptance_criteria,
             &document.workflow_profile,
+            &policy,
         )?
     } else {
         // Existing eventless tasks predate lifecycle recording. They remain read-only;
@@ -185,6 +217,7 @@ fn append_creation_events(
     intent: &str,
     acceptance_criteria: &[String],
     workflow_profile: &str,
+    policy: &EffectiveExecutionPolicy,
 ) -> Result<u64, V3Error> {
     let mut created_command = command(
         "task.created",
@@ -192,7 +225,7 @@ fn append_creation_events(
         task_id,
         0,
         &format!("create.{task_id}.task"),
-        json!({"title": title, "intent": intent, "workflow_profile": workflow_profile}),
+        json!({"title": title, "intent": intent, "workflow_profile": workflow_profile, "recommended_profile": policy.recommended_profile, "effective_profile": policy.effective_profile, "execution_policy": policy, "policy_version": policy.policy_version, "enforcement_epoch": policy.enforcement_epoch, "trigger_reasons": policy.trigger_reasons}),
     );
     created_command.actor = "vibehub".to_owned();
     created_command.evidence_grade = Some(EvidenceGrade::HardObserved);
@@ -277,6 +310,8 @@ fn validate_request(request: V3TaskCreateRequest) -> Result<V3TaskCreateRequest,
         intent,
         acceptance_criteria,
         workflow_profile: request.workflow_profile,
+        trigger_context: request.trigger_context,
+        profile_override: request.profile_override,
     })
 }
 
@@ -460,6 +495,8 @@ mod tests {
             intent: "Create a bounded V3 task without protocol state".to_owned(),
             acceptance_criteria: vec!["Task is readable from production views".to_owned()],
             workflow_profile: "standard".to_owned(),
+            trigger_context: Default::default(),
+            profile_override: None,
         }
     }
 
@@ -563,6 +600,7 @@ mod tests {
                 goal: "Must not be added".to_owned(),
                 scope: Vec::new(),
                 dependencies: Vec::new(),
+                criterion_ids: Vec::new(),
             })
             .unwrap_err();
         assert_eq!(error.code, "V3_LIGHTWEIGHT_PLAN_FORBIDDEN");
@@ -581,6 +619,15 @@ mod tests {
         let task_id = stable_task_id(&validated_request);
         let task_dir = project.join(".vibehub/tasks").join(&task_id);
         fs::create_dir_all(&task_dir).unwrap();
+        let policy = resolve_policy(
+            &validated_request.title,
+            &validated_request.intent,
+            validated_request.acceptance_criteria.len(),
+            &validated_request.workflow_profile,
+            &validated_request.trigger_context,
+            validated_request.profile_override.clone(),
+        )
+        .unwrap();
         let document = TaskDocument {
             task_id: task_id.clone(),
             title: validated_request.title,
@@ -590,6 +637,12 @@ mod tests {
             acceptance_criteria: validated_request.acceptance_criteria,
             dependencies: Vec::new(),
             workflow_profile: validated_request.workflow_profile,
+            recommended_profile: policy.recommended_profile.clone(),
+            effective_profile: policy.effective_profile.clone(),
+            execution_policy: Some(policy.clone()),
+            policy_version: policy.policy_version,
+            enforcement_epoch: policy.enforcement_epoch.clone(),
+            trigger_reasons: policy.trigger_reasons.clone(),
         };
         fs::write(
             task_dir.join("task.yaml"),

@@ -52,6 +52,15 @@
   "node_id": "node.contracts",
   "workflow_profile": "full",
   "execution_policy": {
+    "recommended_profile": "full",
+    "effective_profile": "full",
+    "policy_version": 1,
+    "enforcement_epoch": "v3.1-hard-closure",
+    "trigger_reasons": [
+      "fixture:full"
+    ],
+    "override_record": null,
+    "upgrade_history": [],
     "milestone_policy": "full",
     "planning_required": true,
     "review_required": true,
@@ -83,6 +92,59 @@
     "Fixture-first 策略隔离 M1 与 V2",
     "确定性种子 20260711 保证可复现"
   ],
+  "project_memory": [],
+  "protocol_records": [
+    {
+      "record": "plan",
+      "status": "complete",
+      "repair_action": null
+    },
+    {
+      "record": "session",
+      "status": "complete",
+      "repair_action": null
+    },
+    {
+      "record": "progress",
+      "status": "complete",
+      "repair_action": null
+    },
+    {
+      "record": "result",
+      "status": "complete",
+      "repair_action": null
+    },
+    {
+      "record": "review",
+      "status": "complete",
+      "repair_action": null
+    }
+  ],
+  "coverage_mode": "enforced",
+  "completion_gate": {
+    "items": [
+      {
+        "gate": "plan_terminal",
+        "passed": true
+      },
+      {
+        "gate": "sessions_settled",
+        "passed": true
+      },
+      {
+        "gate": "results_terminal",
+        "passed": true
+      },
+      {
+        "gate": "criteria_green",
+        "passed": true
+      },
+      {
+        "gate": "findings_closed",
+        "passed": true
+      }
+    ]
+  },
   "research_summary": [
     "调查了 JSON Schema 2020-12 vs OpenAPI 3.1，选择前者因为 AJV2020 支持更好",
     "Fixture-first 隔离 M1 前端开发与 V2 后端耦合",
