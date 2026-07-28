@@ -30,6 +30,7 @@ const schemaNames = [
   "plan-graph-view.schema.json",
   "node-brief.schema.json",
   "worktree-orchestration-view.schema.json",
+  "usage-overview.schema.json",
 ];
 const requiredScenarios = [
   "FX-EMPTY", "FX-HAPPY", "FX-NO-DOCS", "FX-PARALLEL", "FX-REWORK", "FX-STALE",

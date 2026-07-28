@@ -173,6 +173,76 @@ export interface LocalAgentUsageOverview {
     opencode: AgentUsageSourceSummary;
     cursor: AgentUsageSourceSummary;
     warnings: string[];
+    refresh?: UsageRefreshSummary;
+    audit?: UsageAuditSummary;
+}
+
+export interface UsageRefreshSummary {
+    state: 'loading' | 'success' | 'partial' | 'failure' | 'cancelled' | string;
+    duration_ms: number;
+    performance_budget_ms: number;
+    within_budget: boolean;
+    cache_state: string;
+}
+
+export interface UsageAuditSummary {
+    schema_version: string;
+    model_version: string;
+    pricing_version: string;
+    currency: string;
+    captured_at: string;
+    freshness: string;
+    confidence: string;
+    attribution: string;
+    dedupe_strategy: string;
+    token_state: 'known' | 'unknown' | 'partial' | string;
+    cost: UsageCostSummary;
+    excluded_records: number;
+    ambiguous_records: number;
+    legacy_records: number;
+    unattributed_tokens: number;
+    time_range: { from_ms: number | null; to_ms: number | null };
+    breakdowns: UsageBreakdown[];
+    anomaly?: UsageAnomaly | null;
+    evidence_provenance: UsageEvidenceProvenance[];
+}
+
+export interface UsageBreakdown {
+    kind: 'provider' | 'model' | 'task' | 'session' | 'time' | string;
+    id: string;
+    provider: string;
+    model?: string | null;
+    records: number;
+    total_tokens?: number | null;
+    cost?: number | null;
+    status: string;
+}
+
+export interface UsageCostSummary {
+    state: 'complete' | 'partial' | 'unknown' | string;
+    known_cost?: number | null;
+    currency: string;
+    pricing_version: string;
+    priced_tokens: number;
+    unpriced_tokens: number;
+    missing_reasons: string[];
+    repair_actions: string[];
+}
+
+export interface UsageAnomaly {
+    code: string;
+    observed_tokens: number;
+    explanation: string;
+    repair_action: string;
+}
+
+export interface UsageEvidenceProvenance {
+    provider: string;
+    source_kind: string;
+    locator?: string | null;
+    records: number;
+    freshness: string;
+    confidence: string;
 }
 
 export type AgentUsagePrimaryMetricKind = 'tokens' | 'cost' | 'quota' | 'token_fallback' | 'unavailable' | string;

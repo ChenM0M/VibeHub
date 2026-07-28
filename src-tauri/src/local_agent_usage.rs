@@ -4,20 +4,266 @@ use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     env,
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
+    sync::{Arc, Mutex},
+    time::{Instant, UNIX_EPOCH},
 };
 use walkdir::WalkDir;
 
 const RECENT_LIMIT: usize = 8;
 const STALE_AFTER_SECONDS: i64 = 900;
+const USAGE_SCHEMA_VERSION: &str = "1.0";
+const USAGE_MODEL_VERSION: &str = "usage-v1";
+const PRICING_VERSION: &str = "2026-07-28.official-list";
+const REFRESH_BUDGET_MS: u64 = 2_000;
+/// Maximum transcript file size we will read (10 MB). Larger files are skipped to
+/// prevent memory exhaustion from malicious or corrupted files.
+const MAX_TRANSCRIPT_FILE_SIZE: u64 = 10 * 1024 * 1024;
+/// Maximum number of lines we will read from a single transcript file.
+const MAX_TRANSCRIPT_LINES: usize = 100_000;
+/// Maximum plausible token count for a single message. Counts above this are
+/// treated as corrupted/malicious and fail closed.
+const MAX_PLAUSIBLE_TOKENS_PER_MESSAGE: u64 = 1_000_000_000;
+
+/// Cache entry for a provider scan result, keyed by file path + mtime.
+#[derive(Debug, Clone)]
+struct UsageCacheEntry {
+    source: String,
+    data_path: String,
+    mtime_ms: i64,
+    summary: AgentUsageSourceSummary,
+}
+
+/// Simple mtime-based cache for provider usage scans. Not persisted across restarts.
+#[derive(Debug, Default)]
+pub struct UsageCache {
+    entries: HashMap<String, UsageCacheEntry>,
+}
+
+impl UsageCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn cache_key(source: &str, data_path: &str) -> String {
+        format!("{source}:{data_path}")
+    }
+
+    /// Returns cached summary if the file mtime has not changed.
+    pub fn get(&self, source: &str, data_path: &str, current_mtime_ms: i64) -> Option<AgentUsageSourceSummary> {
+        let key = Self::cache_key(source, data_path);
+        self.entries.get(&key).and_then(|entry| {
+            if entry.mtime_ms == current_mtime_ms {
+                Some(entry.summary.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn put(&mut self, source: &str, data_path: &str, mtime_ms: i64, summary: AgentUsageSourceSummary) {
+        let key = Self::cache_key(source, data_path);
+        self.entries.insert(key, UsageCacheEntry {
+            source: source.to_string(),
+            data_path: data_path.to_string(),
+            mtime_ms,
+            summary,
+        });
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    pub fn cache_state(&self) -> String {
+        if self.entries.is_empty() {
+            "cold".to_string()
+        } else {
+            format!("warm_{}_entries", self.entries.len())
+        }
+    }
+}
+
+/// Global shared cache instance.
+pub fn shared_usage_cache() -> Arc<Mutex<UsageCache>> {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Arc<Mutex<UsageCache>>> = OnceLock::new();
+    CACHE.get_or_init(|| Arc::new(Mutex::new(UsageCache::new()))).clone()
+}
+
+/// Versioned pricing catalog entry. Prices are USD per 1M tokens.
+#[derive(Debug, Clone)]
+struct ModelPricing {
+    input_per_1m: f64,
+    output_per_1m: f64,
+    cache_read_per_1m: Option<f64>,
+    cache_write_per_1m: Option<f64>,
+    reasoning_per_1m: Option<f64>,
+}
+
+impl ModelPricing {
+    fn cost_for(&self, tokens: &TokenBreakdown) -> Option<f64> {
+        let input_cost = tokens.input as f64 / 1_000_000.0 * self.input_per_1m;
+        let output_cost = tokens.output as f64 / 1_000_000.0 * self.output_per_1m;
+        let cache_read_cost = self
+            .cache_read_per_1m
+            .map(|p| tokens.cache_read as f64 / 1_000_000.0 * p)
+            .unwrap_or(0.0);
+        let cache_write_cost = self
+            .cache_write_per_1m
+            .map(|p| tokens.cache_write as f64 / 1_000_000.0 * p)
+            .unwrap_or(0.0);
+        let reasoning_cost = self
+            .reasoning_per_1m
+            .map(|p| tokens.reasoning as f64 / 1_000_000.0 * p)
+            .unwrap_or(0.0);
+        Some(input_cost + output_cost + cache_read_cost + cache_write_cost + reasoning_cost)
+    }
+}
+
+/// Returns the canonical model id used for pricing lookups.
+/// Normalizes aliases and strips common date suffixes.
+fn canonical_model_id(raw: &str) -> String {
+    let trimmed = raw.trim().to_ascii_lowercase();
+    // Strip common date suffixes like -2024-08-06, -20250414, etc.
+    let no_date = trimmed
+        .split('-')
+        .take_while(|part| {
+            // Keep parts until we hit a 4+ digit sequence that looks like a year
+            !(part.len() >= 4 && part.chars().all(|c| c.is_ascii_digit()))
+        })
+        .collect::<Vec<_>>()
+        .join("-");
+    // Normalize known aliases
+    match no_date.as_str() {
+        "gpt4o" | "gpt-4o" => "gpt-4o".to_string(),
+        "gpt4o-mini" | "gpt-4o-mini" => "gpt-4o-mini".to_string(),
+        "gpt4-turbo" | "gpt-4-turbo" => "gpt-4-turbo".to_string(),
+        "gpt4" | "gpt-4" => "gpt-4".to_string(),
+        "gpt35-turbo" | "gpt-3.5-turbo" => "gpt-3.5-turbo".to_string(),
+        "claude-opus" | "claude-3-opus" | "claude-3-opus-20240229" => "claude-3-opus".to_string(),
+        "claude-sonnet" | "claude-3-sonnet" | "claude-3-sonnet-20240229" => {
+            "claude-3-sonnet".to_string()
+        }
+        "claude-haiku" | "claude-3-haiku" | "claude-3-haiku-20240307" => {
+            "claude-3-haiku".to_string()
+        }
+        "claude-3-5-sonnet" | "claude-3.5-sonnet" => "claude-3-5-sonnet".to_string(),
+        "claude-3-5-haiku" | "claude-3.5-haiku" => "claude-3-5-haiku".to_string(),
+        "o1" | "o1-preview" => "o1-preview".to_string(),
+        "o1-mini" => "o1-mini".to_string(),
+        "o3-mini" => "o3-mini".to_string(),
+        _ => no_date,
+    }
+}
+
+/// Versioned pricing catalog. Returns None for unknown models.
+fn pricing_catalog(model: &str) -> Option<ModelPricing> {
+    let canonical = canonical_model_id(model);
+    match canonical.as_str() {
+        "gpt-4o" => Some(ModelPricing {
+            input_per_1m: 2.50,
+            output_per_1m: 10.00,
+            cache_read_per_1m: Some(1.25),
+            cache_write_per_1m: Some(2.50),
+            reasoning_per_1m: None,
+        }),
+        "gpt-4o-mini" => Some(ModelPricing {
+            input_per_1m: 0.15,
+            output_per_1m: 0.60,
+            cache_read_per_1m: Some(0.075),
+            cache_write_per_1m: Some(0.15),
+            reasoning_per_1m: None,
+        }),
+        "gpt-4-turbo" => Some(ModelPricing {
+            input_per_1m: 10.00,
+            output_per_1m: 30.00,
+            cache_read_per_1m: None,
+            cache_write_per_1m: None,
+            reasoning_per_1m: None,
+        }),
+        "gpt-4" => Some(ModelPricing {
+            input_per_1m: 30.00,
+            output_per_1m: 60.00,
+            cache_read_per_1m: None,
+            cache_write_per_1m: None,
+            reasoning_per_1m: None,
+        }),
+        "gpt-3.5-turbo" => Some(ModelPricing {
+            input_per_1m: 0.50,
+            output_per_1m: 1.50,
+            cache_read_per_1m: None,
+            cache_write_per_1m: None,
+            reasoning_per_1m: None,
+        }),
+        "claude-3-opus" => Some(ModelPricing {
+            input_per_1m: 15.00,
+            output_per_1m: 75.00,
+            cache_read_per_1m: Some(1.50),
+            cache_write_per_1m: Some(18.75),
+            reasoning_per_1m: None,
+        }),
+        "claude-3-sonnet" => Some(ModelPricing {
+            input_per_1m: 3.00,
+            output_per_1m: 15.00,
+            cache_read_per_1m: Some(0.30),
+            cache_write_per_1m: Some(3.75),
+            reasoning_per_1m: None,
+        }),
+        "claude-3-haiku" => Some(ModelPricing {
+            input_per_1m: 0.25,
+            output_per_1m: 1.25,
+            cache_read_per_1m: Some(0.03),
+            cache_write_per_1m: Some(0.30),
+            reasoning_per_1m: None,
+        }),
+        "claude-3-5-sonnet" => Some(ModelPricing {
+            input_per_1m: 3.00,
+            output_per_1m: 15.00,
+            cache_read_per_1m: Some(0.30),
+            cache_write_per_1m: Some(3.75),
+            reasoning_per_1m: None,
+        }),
+        "claude-3-5-haiku" => Some(ModelPricing {
+            input_per_1m: 0.80,
+            output_per_1m: 4.00,
+            cache_read_per_1m: Some(0.08),
+            cache_write_per_1m: Some(1.00),
+            reasoning_per_1m: None,
+        }),
+        "o1-preview" => Some(ModelPricing {
+            input_per_1m: 15.00,
+            output_per_1m: 60.00,
+            cache_read_per_1m: Some(7.50),
+            cache_write_per_1m: None,
+            reasoning_per_1m: Some(60.00),
+        }),
+        "o1-mini" => Some(ModelPricing {
+            input_per_1m: 3.00,
+            output_per_1m: 12.00,
+            cache_read_per_1m: Some(1.50),
+            cache_write_per_1m: None,
+            reasoning_per_1m: Some(12.00),
+        }),
+        "o3-mini" => Some(ModelPricing {
+            input_per_1m: 1.10,
+            output_per_1m: 4.40,
+            cache_read_per_1m: Some(0.55),
+            cache_write_per_1m: None,
+            reasoning_per_1m: Some(4.40),
+        }),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalAgentUsageOverview {
+    pub schema_version: String,
+    pub model_version: String,
     pub project_path: String,
     pub scope: String,
     pub task_id: Option<String>,
@@ -27,6 +273,8 @@ pub struct LocalAgentUsageOverview {
     pub freshness: String,
     pub stale_after_seconds: i64,
     pub completeness: String,
+    pub refresh: UsageRefreshSummary,
+    pub audit: UsageAuditSummary,
     pub primary_metric: AgentUsagePrimaryMetric,
     pub non_cached_total_tokens: u64,
     pub total_tokens: u64,
@@ -37,6 +285,116 @@ pub struct LocalAgentUsageOverview {
     pub opencode: AgentUsageSourceSummary,
     pub cursor: AgentUsageSourceSummary,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageRefreshSummary {
+    pub state: String,
+    pub duration_ms: u64,
+    pub performance_budget_ms: u64,
+    pub within_budget: bool,
+    pub cache_state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageAuditSummary {
+    pub schema_version: String,
+    pub model_version: String,
+    pub pricing_version: String,
+    pub currency: String,
+    pub captured_at: String,
+    pub freshness: String,
+    pub confidence: String,
+    pub attribution: String,
+    pub dedupe_strategy: String,
+    pub token_state: String,
+    pub cost: UsageCostSummary,
+    pub excluded_records: u64,
+    pub ambiguous_records: u64,
+    pub legacy_records: u64,
+    pub unattributed_tokens: u64,
+    pub time_range: UsageTimeRange,
+    pub breakdowns: Vec<UsageBreakdown>,
+    pub anomaly: Option<UsageAnomaly>,
+    pub evidence_provenance: Vec<UsageEvidenceProvenance>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageTimeRange {
+    pub from_ms: Option<i64>,
+    pub to_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageBreakdown {
+    pub kind: String,
+    pub id: String,
+    pub provider: String,
+    pub model: Option<String>,
+    pub records: usize,
+    pub total_tokens: Option<u64>,
+    pub cost: Option<f64>,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageCostSummary {
+    pub state: String,
+    pub known_cost: Option<f64>,
+    pub currency: String,
+    pub pricing_version: String,
+    pub priced_tokens: u64,
+    pub unpriced_tokens: u64,
+    pub missing_reasons: Vec<String>,
+    pub repair_actions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageAnomaly {
+    pub code: String,
+    pub observed_tokens: u64,
+    pub explanation: String,
+    pub repair_action: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageEvidenceProvenance {
+    pub provider: String,
+    pub source_kind: String,
+    pub locator: Option<String>,
+    pub records: usize,
+    pub freshness: String,
+    pub confidence: String,
+}
+
+/// Versioned domain record used by provider adapters before aggregation. All
+/// optional measurements remain `None` when the provider did not report them;
+/// callers must never turn unknown values into numeric zero.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct UsageRecord {
+    schema_version: &'static str,
+    provider: String,
+    account_principal: Option<String>,
+    project_id: Option<String>,
+    task_id: Option<String>,
+    session_id: Option<String>,
+    source_record_id: String,
+    model: Option<String>,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    cache_read_tokens: Option<u64>,
+    cache_write_tokens: Option<u64>,
+    reasoning_tokens: Option<u64>,
+    total_tokens: Option<u64>,
+    cost: Option<f64>,
+    currency: Option<String>,
+    pricing_version: Option<String>,
+    captured_at_ms: Option<i64>,
+    freshness: String,
+    confidence: String,
+    dedupe_key: String,
+    evidence_provenance: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -116,7 +474,6 @@ impl TokenBreakdown {
 struct CodexThreadRow {
     id: String,
     rollout_path: String,
-    title: String,
     model_provider: Option<String>,
     model: Option<String>,
     tokens_used: u64,
@@ -126,7 +483,6 @@ struct CodexThreadRow {
 #[derive(Debug)]
 struct OpenCodeSessionRow {
     id: String,
-    title: String,
     agent: Option<String>,
     model: Option<String>,
     cost: f64,
@@ -284,6 +640,13 @@ pub fn read_local_agent_usage(project_path: impl AsRef<Path>) -> Result<LocalAge
     read_local_agent_usage_scoped(project_path.as_ref(), None)
 }
 
+pub fn read_local_agent_usage_with_cache(
+    project_path: impl AsRef<Path>,
+    cache: Arc<Mutex<UsageCache>>,
+) -> Result<LocalAgentUsageOverview> {
+    read_local_agent_usage_scoped_with_cache(project_path.as_ref(), None, Some(cache))
+}
+
 pub fn read_local_agent_usage_for_task(
     project_path: impl AsRef<Path>,
     task_id: String,
@@ -296,10 +659,32 @@ pub fn read_local_agent_usage_for_task(
     read_local_agent_usage_scoped(project_path.as_ref(), Some(&filter))
 }
 
+pub fn read_local_agent_usage_for_task_with_cache(
+    project_path: impl AsRef<Path>,
+    task_id: String,
+    session_links: TaskSessionProviderLinks,
+    cache: Arc<Mutex<UsageCache>>,
+) -> Result<LocalAgentUsageOverview> {
+    let filter = UsageSessionFilter {
+        task_id,
+        session_links,
+    };
+    read_local_agent_usage_scoped_with_cache(project_path.as_ref(), Some(&filter), Some(cache))
+}
+
 fn read_local_agent_usage_scoped(
     project_path: &Path,
     session_filter: Option<&UsageSessionFilter>,
 ) -> Result<LocalAgentUsageOverview> {
+    read_local_agent_usage_scoped_with_cache(project_path, session_filter, None)
+}
+
+fn read_local_agent_usage_scoped_with_cache(
+    project_path: &Path,
+    session_filter: Option<&UsageSessionFilter>,
+    cache: Option<Arc<Mutex<UsageCache>>>,
+) -> Result<LocalAgentUsageOverview> {
+    let started_at = Instant::now();
     let project_path = ProjectPathMatcher::new(project_path.as_ref());
     let generated_at = Utc::now();
     let generated_at_ms = generated_at.timestamp_millis();
@@ -390,7 +775,23 @@ fn read_local_agent_usage_scoped(
         None => ("project".to_string(), None, 0),
     };
 
+    let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let audit = build_usage_audit(
+        &generated_at.to_rfc3339(),
+        &freshness,
+        &completeness,
+        total_tokens,
+        [&claude_code, &codex, &opencode],
+        requested_session_count,
+        matched_session_count,
+    );
+    let cache_state = cache
+        .as_ref()
+        .and_then(|c| c.lock().ok().map(|guard| guard.cache_state()))
+        .unwrap_or_else(|| "disabled".to_string());
     Ok(LocalAgentUsageOverview {
+        schema_version: USAGE_SCHEMA_VERSION.to_string(),
+        model_version: USAGE_MODEL_VERSION.to_string(),
         scope,
         task_id,
         requested_session_count,
@@ -404,6 +805,19 @@ fn read_local_agent_usage_scoped(
         freshness,
         stale_after_seconds: STALE_AFTER_SECONDS,
         completeness,
+        refresh: UsageRefreshSummary {
+            state: if audit.cost.state == "partial" || !warnings.is_empty() {
+                "partial"
+            } else {
+                "success"
+            }
+            .to_string(),
+            duration_ms,
+            performance_budget_ms: REFRESH_BUDGET_MS,
+            within_budget: duration_ms <= REFRESH_BUDGET_MS,
+            cache_state,
+        },
+        audit,
         claude_code,
         claude_app,
         codex,
@@ -411,6 +825,156 @@ fn read_local_agent_usage_scoped(
         cursor,
         warnings,
     })
+}
+
+fn build_usage_audit(
+    captured_at: &str,
+    freshness: &str,
+    completeness: &str,
+    total_tokens: u64,
+    sources: [&AgentUsageSourceSummary; 3],
+    requested_session_count: usize,
+    matched_session_count: usize,
+) -> UsageAuditSummary {
+    let available = sources
+        .iter()
+        .filter(|source| source.available)
+        .collect::<Vec<_>>();
+    let known_cost = available
+        .iter()
+        .filter_map(|source| source.cost)
+        .sum::<f64>();
+    let priced_tokens = available
+        .iter()
+        .filter(|source| source.cost.is_some())
+        .map(|source| source.total_tokens)
+        .fold(0_u64, u64::saturating_add);
+    let unpriced_tokens = total_tokens.saturating_sub(priced_tokens);
+    let cost_state = if total_tokens == 0 {
+        "unknown"
+    } else if unpriced_tokens == 0 {
+        "complete"
+    } else if priced_tokens > 0 {
+        "partial"
+    } else {
+        "unknown"
+    };
+    let missing_reasons = available
+        .iter()
+        .filter(|source| source.cost.is_none() && source.total_tokens > 0)
+        .map(|source| format!("{}.model_or_price_unknown", source.source))
+        .collect::<Vec<_>>();
+    let repair_actions = if unpriced_tokens > 0 {
+        vec!["Refresh after the provider reports a stable model id, or update the versioned pricing catalog with evidence.".to_string()]
+    } else {
+        Vec::new()
+    };
+    let anomaly = (total_tokens >= 1_000_000_000).then(|| UsageAnomaly {
+        code: "usage.total.extreme".to_string(),
+        observed_tokens: total_tokens,
+        explanation: "The total exceeds one billion tokens; inspect provider/session decomposition and excluded or ambiguous records before relying on the number.".to_string(),
+        repair_action: "Drill into provider and session rows, verify source_record_id/dedupe_key, then rebuild from read-only evidence.".to_string(),
+    });
+    let mut breakdowns = Vec::new();
+    let mut from_ms = None;
+    let mut to_ms = None;
+    for source in &available {
+        breakdowns.push(UsageBreakdown {
+            kind: "provider".to_string(),
+            id: source.source.clone(),
+            provider: source.source.clone(),
+            model: None,
+            records: source.records,
+            total_tokens: Some(source.total_tokens),
+            cost: source.cost,
+            status: source.status.clone(),
+        });
+        for session in &source.recent {
+            from_ms = min_opt_i64(from_ms, session.started_at_ms.or(session.updated_at_ms));
+            to_ms = max_opt_i64(to_ms, session.updated_at_ms);
+            breakdowns.push(UsageBreakdown {
+                kind: "session".to_string(),
+                id: session.id.clone(),
+                provider: source.source.clone(),
+                model: session.model.clone(),
+                records: 1,
+                total_tokens: Some(session.total_tokens),
+                cost: session.cost,
+                status: session.status.clone(),
+            });
+        }
+    }
+    UsageAuditSummary {
+        schema_version: USAGE_SCHEMA_VERSION.to_string(),
+        model_version: USAGE_MODEL_VERSION.to_string(),
+        pricing_version: PRICING_VERSION.to_string(),
+        currency: "USD".to_string(),
+        captured_at: captured_at.to_string(),
+        freshness: freshness.to_string(),
+        confidence: if completeness == "complete" {
+            "hard_observed"
+        } else {
+            "partial"
+        }
+        .to_string(),
+        attribution: if requested_session_count > 0 {
+            "explicit_provider_session_link"
+        } else {
+            "unique_canonical_project_path"
+        }
+        .to_string(),
+        dedupe_strategy:
+            "provider+source_record_id; live Codex rollout supersedes SQLite catalog snapshot"
+                .to_string(),
+        token_state: if total_tokens == 0 && available.is_empty() {
+            "unknown"
+        } else {
+            "known"
+        }
+        .to_string(),
+        cost: UsageCostSummary {
+            state: cost_state.to_string(),
+            known_cost: (priced_tokens > 0).then_some(known_cost),
+            currency: "USD".to_string(),
+            pricing_version: PRICING_VERSION.to_string(),
+            priced_tokens,
+            unpriced_tokens,
+            missing_reasons,
+            repair_actions,
+        },
+        excluded_records: requested_session_count.saturating_sub(matched_session_count) as u64,
+        ambiguous_records: sources
+            .iter()
+            .flat_map(|source| &source.warnings)
+            .filter(|warning| warning.to_ascii_lowercase().contains("ambiguous"))
+            .count() as u64,
+        legacy_records: 0,
+        unattributed_tokens: 0,
+        time_range: UsageTimeRange { from_ms, to_ms },
+        breakdowns,
+        anomaly,
+        evidence_provenance: sources
+            .iter()
+            .map(|source| UsageEvidenceProvenance {
+                provider: source.source.clone(),
+                source_kind: if source.source == "claude_code" {
+                    "transcript"
+                } else {
+                    "sqlite_or_rollout"
+                }
+                .to_string(),
+                locator: source.data_path.clone(),
+                records: source.records,
+                freshness: source.freshness.clone(),
+                confidence: if source.available {
+                    "hard_observed"
+                } else {
+                    "unavailable"
+                }
+                .to_string(),
+            })
+            .collect(),
+    }
 }
 
 fn apply_source_freshness(
@@ -530,9 +1094,7 @@ fn select_primary_metric(
 struct ProjectPathMatcher {
     display_path: String,
     primary: String,
-    primary_children: String,
     canonical: String,
-    canonical_children: String,
     basename: Option<String>,
 }
 
@@ -552,8 +1114,6 @@ impl ProjectPathMatcher {
 
         Self {
             display_path: primary.clone(),
-            primary_children: child_path_pattern(&primary),
-            canonical_children: child_path_pattern(&canonical),
             primary,
             canonical,
             basename,
@@ -562,10 +1122,7 @@ impl ProjectPathMatcher {
 
     fn matches(&self, value: &str) -> bool {
         let value = normalize_stored_path(value);
-        value.eq_ignore_ascii_case(&self.primary)
-            || value.eq_ignore_ascii_case(&self.canonical)
-            || lower_path_starts_with(&value, &self.primary_children)
-            || lower_path_starts_with(&value, &self.canonical_children)
+        value.eq_ignore_ascii_case(&self.primary) || value.eq_ignore_ascii_case(&self.canonical)
     }
 
     fn alias_root(&self, value: &str) -> Option<String> {
@@ -584,7 +1141,6 @@ impl ProjectPathMatcher {
 #[derive(Debug, Default)]
 struct ClaudeSessionAccumulator {
     id: String,
-    title: Option<String>,
     models: BTreeSet<String>,
     tokens: TokenBreakdown,
     message_count: u64,
@@ -680,6 +1236,7 @@ fn read_claude_code_usage_from_dir_scoped(
     let mut recent = Vec::new();
     let mut latest_updated_at_ms = None;
     let mut partial = false;
+    let mut total_cost: Option<f64> = None;
     for session in &sessions {
         tokens.input = tokens.input.saturating_add(session.tokens.input);
         tokens.output = tokens.output.saturating_add(session.tokens.output);
@@ -698,6 +1255,15 @@ fn read_claude_code_usage_from_dir_scoped(
                     .map(|warning| format!("{}: {warning}", session.id)),
             );
         }
+        // Compute cost from pricing catalog when model is known
+        let session_cost = session
+            .models
+            .last()
+            .and_then(|model| pricing_catalog(model))
+            .and_then(|pricing| pricing.cost_for(&session.tokens));
+        if let Some(cost) = session_cost {
+            total_cost = Some(total_cost.map_or(cost, |acc| acc + cost));
+        }
         if recent.len() < RECENT_LIMIT {
             let models = session.models.iter().cloned().collect::<Vec<_>>();
             let duration_seconds = match (session.started_at_ms, session.updated_at_ms) {
@@ -706,12 +1272,7 @@ fn read_claude_code_usage_from_dir_scoped(
             };
             recent.push(AgentUsageRecentItem {
                 id: session.id.clone(),
-                title: safe_title(
-                    session
-                        .title
-                        .as_deref()
-                        .unwrap_or("Untitled Claude Code session"),
-                ),
+                title: "Claude Code session".to_string(),
                 model: models.last().cloned(),
                 models,
                 agent: Some("Claude Code".to_string()),
@@ -727,7 +1288,7 @@ fn read_claude_code_usage_from_dir_scoped(
                 .to_string(),
                 non_cached_total_tokens: session.tokens.non_cached_total(),
                 total_tokens: session.tokens.total,
-                cost: None,
+                cost: session_cost,
                 updated_at_ms: session.updated_at_ms,
             });
         }
@@ -749,7 +1310,7 @@ fn read_claude_code_usage_from_dir_scoped(
         records: sessions.len(),
         non_cached_total_tokens: tokens.non_cached_total(),
         total_tokens: tokens.total,
-        cost: None,
+        cost: total_cost,
         tokens,
         latest_updated_at_ms,
         recent,
@@ -762,6 +1323,16 @@ fn read_claude_code_usage_from_dir_scoped(
 }
 
 fn read_claude_session(path: &Path) -> Result<ClaudeSessionAccumulator> {
+    // Fail closed on oversized files to prevent memory exhaustion
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("Failed to stat Claude Code transcript {}", path.display()))?;
+    if metadata.len() > MAX_TRANSCRIPT_FILE_SIZE {
+        anyhow::bail!(
+            "Claude Code transcript {} exceeds maximum size {} bytes",
+            path.display(),
+            MAX_TRANSCRIPT_FILE_SIZE
+        );
+    }
     let file = File::open(path)
         .with_context(|| format!("Failed to open Claude Code transcript {}", path.display()))?;
     let fallback_id = path
@@ -773,6 +1344,13 @@ fn read_claude_session(path: &Path) -> Result<ClaudeSessionAccumulator> {
         ..Default::default()
     };
     for (index, line) in BufReader::new(file).lines().enumerate() {
+        // Fail closed on too many lines to prevent DoS
+        if index >= MAX_TRANSCRIPT_LINES {
+            session
+                .warnings
+                .push(format!("transcript exceeds maximum line count {MAX_TRANSCRIPT_LINES}; truncated"));
+            break;
+        }
         let line = match line {
             Ok(line) => line,
             Err(error) => {
@@ -803,9 +1381,6 @@ fn read_claude_session(path: &Path) -> Result<ClaudeSessionAccumulator> {
         session.updated_at_ms = max_opt_i64(session.updated_at_ms, timestamp);
         match value.get("type").and_then(Value::as_str) {
             Some("user") => {
-                if session.title.is_none() && !is_tool_result(&value) {
-                    session.title = extract_prompt_title(&value);
-                }
                 if lineage_is_ambiguous(&value) {
                     session.warnings.push(format!(
                         "line {} has branch/resume/compaction/subagent lineage metadata",
@@ -878,6 +1453,17 @@ fn parse_claude_assistant(
     let output = json_u64(usage, "output_tokens");
     let cache_read = json_u64(usage, "cache_read_input_tokens");
     let cache_creation = json_u64(usage, "cache_creation_input_tokens");
+    // Fail closed on implausible token counts (corrupted or malicious data)
+    if input > MAX_PLAUSIBLE_TOKENS_PER_MESSAGE
+        || output > MAX_PLAUSIBLE_TOKENS_PER_MESSAGE
+        || cache_read > MAX_PLAUSIBLE_TOKENS_PER_MESSAGE
+        || cache_creation > MAX_PLAUSIBLE_TOKENS_PER_MESSAGE
+    {
+        session.warnings.push(format!(
+            "line {line_number} has implausible token counts (in={input}, out={output}, cache_read={cache_read}, cache_write={cache_creation}); skipped"
+        ));
+        return;
+    }
     session.tokens.input = session.tokens.input.saturating_add(input);
     session.tokens.output = session.tokens.output.saturating_add(output);
     session.tokens.cache_read = session.tokens.cache_read.saturating_add(cache_read);
@@ -921,29 +1507,6 @@ fn min_opt_i64(current: Option<i64>, candidate: Option<i64>) -> Option<i64> {
         (None, Some(b)) => Some(b),
         (None, None) => None,
     }
-}
-
-fn extract_prompt_title(value: &Value) -> Option<String> {
-    let content = value.pointer("/message/content")?;
-    let text = content.as_str().or_else(|| {
-        content
-            .as_array()?
-            .iter()
-            .find_map(|block| block.get("text").and_then(Value::as_str))
-    })?;
-    let sanitized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    (!sanitized.is_empty()).then(|| sanitized.chars().take(120).collect())
-}
-
-fn is_tool_result(value: &Value) -> bool {
-    value
-        .pointer("/message/content")
-        .and_then(Value::as_array)
-        .is_some_and(|blocks| {
-            blocks
-                .iter()
-                .any(|block| block.get("type").and_then(Value::as_str) == Some("tool_result"))
-        })
 }
 
 fn lineage_is_ambiguous(value: &Value) -> bool {
@@ -1095,7 +1658,7 @@ fn read_codex_usage_from_dbs_scoped(
         if recent.len() < RECENT_LIMIT {
             recent.push(AgentUsageRecentItem {
                 id: row.id.clone(),
-                title: safe_title(&row.title),
+                title: "Codex session".to_string(),
                 model: row.model.clone().or_else(|| row.model_provider.clone()),
                 models: row
                     .model
@@ -1191,21 +1754,20 @@ fn read_codex_rows_from_db_scoped(
 ) -> Result<MatchedRows<CodexThreadRow>> {
     let conn = open_readonly(db_path)?;
     let mut stmt = conn.prepare(
-        "select id, rollout_path, title, model_provider, model, tokens_used, updated_at_ms, cwd \
+        "select id, rollout_path, model_provider, model, tokens_used, updated_at_ms, cwd \
          from threads order by updated_at_ms desc, updated_at desc, id desc",
     )?;
     let mut rows = stmt.query([])?;
     let mut out = MatchedRows::default();
     while let Some(row) = rows.next()? {
-        let cwd: String = row.get(7)?;
+        let cwd: String = row.get(6)?;
         let usage_row = CodexThreadRow {
             id: row.get(0)?,
             rollout_path: row.get(1)?,
-            title: row.get(2)?,
-            model_provider: row.get(3).ok(),
-            model: row.get(4).ok(),
-            tokens_used: signed_to_u64(row.get::<_, i64>(5).unwrap_or_default()),
-            updated_at_ms: row.get(6).ok(),
+            model_provider: row.get(2).ok(),
+            model: row.get(3).ok(),
+            tokens_used: signed_to_u64(row.get::<_, i64>(4).unwrap_or_default()),
+            updated_at_ms: row.get(5).ok(),
         };
         if project_path.matches(&cwd)
             && session_filter.map_or(true, |filter| {
@@ -1240,22 +1802,9 @@ fn choose_codex_rows(
         .map(|(_, alias_root, _)| alias_root.clone())
         .collect::<BTreeSet<_>>();
 
-    if alias_roots.len() == 1 {
-        let alias_root = alias_roots.into_iter().next().unwrap_or_default();
-        let mut best: Option<(PathBuf, Vec<CodexThreadRow>)> = None;
-        for (path, candidate_alias, rows) in alias_matches {
-            if candidate_alias == alias_root
-                && should_replace_codex_match(best.as_ref().map(|(_, rows)| rows), &rows)
-            {
-                best = Some((path, rows));
-            }
-        }
-        if let Some((path, rows)) = best {
-            return (path, Some(alias_root), rows);
-        }
-    } else if alias_roots.len() > 1 {
+    if !alias_roots.is_empty() {
         warnings.push(format!(
-            "Multiple same-name Codex usage paths matched {}; refusing ambiguous fallback: {}.",
+            "Non-canonical or same-name Codex usage paths matched {}; refusing ambiguous fallback: {}.",
             project_path.display_path,
             alias_roots.into_iter().collect::<Vec<_>>().join(", ")
         ));
@@ -1314,7 +1863,14 @@ fn read_opencode_usage_from_db(
 ) -> Result<AgentUsageSourceSummary> {
     let matcher = ProjectPathMatcher::new(Path::new(project_path));
     let mut warnings = Vec::new();
-    read_opencode_usage_from_dbs_scoped(&matcher, &[db_path.to_path_buf()], &mut warnings, None)
+    let mut summary = read_opencode_usage_from_dbs_scoped(
+        &matcher,
+        &[db_path.to_path_buf()],
+        &mut warnings,
+        None,
+    )?;
+    summary.warnings.append(&mut warnings);
+    Ok(summary)
 }
 
 fn read_opencode_usage_from_dbs_scoped(
@@ -1359,6 +1915,7 @@ fn read_opencode_usage_from_dbs_scoped(
 
     let mut tokens = TokenBreakdown::default();
     let mut cost = 0.0_f64;
+    let mut has_db_cost = false;
     let mut recent = Vec::new();
     let mut latest_updated_at_ms = None;
 
@@ -1378,12 +1935,34 @@ fn read_opencode_usage_from_dbs_scoped(
         tokens.cache_read = tokens.cache_read.saturating_add(row.tokens_cache_read);
         tokens.cache_write = tokens.cache_write.saturating_add(row.tokens_cache_write);
         tokens.total = tokens.total.saturating_add(total);
-        cost += row.cost;
+        // Use DB cost when available and non-zero; otherwise try pricing catalog
+        let item_cost = if row.cost > 0.0 {
+            has_db_cost = true;
+            row.cost
+        } else {
+            row.model
+                .as_deref()
+                .and_then(|raw| {
+                    let model = format_opencode_model(raw);
+                    pricing_catalog(&model)
+                })
+                .and_then(|pricing| pricing.cost_for(&TokenBreakdown {
+                    input: row.tokens_input,
+                    output: row.tokens_output,
+                    reasoning: row.tokens_reasoning,
+                    cached_input: 0,
+                    cache_read: row.tokens_cache_read,
+                    cache_write: row.tokens_cache_write,
+                    total,
+                }))
+                .unwrap_or(0.0)
+        };
+        cost += item_cost;
         latest_updated_at_ms = max_opt_i64(latest_updated_at_ms, row.time_updated);
         if recent.len() < RECENT_LIMIT {
             recent.push(AgentUsageRecentItem {
                 id: row.id.clone(),
-                title: safe_title(&row.title),
+                title: "OpenCode session".to_string(),
                 model: row.model.as_deref().map(format_opencode_model),
                 models: row
                     .model
@@ -1399,7 +1978,7 @@ fn read_opencode_usage_from_dbs_scoped(
                 status: "available".to_string(),
                 non_cached_total_tokens,
                 total_tokens: total,
-                cost: Some(row.cost),
+                cost: if item_cost > 0.0 { Some(item_cost) } else { None },
                 updated_at_ms: row.time_updated,
             });
         }
@@ -1411,6 +1990,13 @@ fn read_opencode_usage_from_dbs_scoped(
             project_path.display_path
         ));
     }
+
+    // If we have no DB cost and no pricing-catalog matches, cost is unknown
+    let final_cost = if has_db_cost || cost > 0.0 {
+        Some(cost)
+    } else {
+        None
+    };
 
     Ok(AgentUsageSourceSummary {
         source: "opencode".to_string(),
@@ -1429,7 +2015,7 @@ fn read_opencode_usage_from_dbs_scoped(
         records: rows.len(),
         non_cached_total_tokens: tokens.non_cached_total(),
         total_tokens: tokens.total,
-        cost: Some(cost),
+        cost: final_cost,
         tokens,
         latest_updated_at_ms,
         recent,
@@ -1456,7 +2042,7 @@ fn read_opencode_rows_from_db_scoped(
 ) -> Result<MatchedRows<OpenCodeSessionRow>> {
     let conn = open_readonly(db_path)?;
     let mut stmt = conn.prepare(
-        "select s.id, s.title, s.agent, s.model, s.cost, s.tokens_input, s.tokens_output, \
+        "select s.id, s.agent, s.model, s.cost, s.tokens_input, s.tokens_output, \
                 s.tokens_reasoning, s.tokens_cache_read, s.tokens_cache_write, s.time_updated, \
                 p.worktree, s.directory, s.path \
          from session s \
@@ -1466,9 +2052,9 @@ fn read_opencode_rows_from_db_scoped(
     let mut rows = stmt.query([])?;
     let mut out = MatchedRows::default();
     while let Some(row) = rows.next()? {
-        let worktree: Option<String> = row.get(11).ok();
-        let directory: Option<String> = row.get(12).ok();
-        let path: Option<String> = row.get(13).ok();
+        let worktree: Option<String> = row.get(10).ok();
+        let directory: Option<String> = row.get(11).ok();
+        let path: Option<String> = row.get(12).ok();
         let paths = [worktree.as_deref(), directory.as_deref(), path.as_deref()];
         let matches = paths
             .into_iter()
@@ -1476,16 +2062,15 @@ fn read_opencode_rows_from_db_scoped(
             .any(|path| project_path.matches(path));
         let usage_row = OpenCodeSessionRow {
             id: row.get(0)?,
-            title: row.get(1)?,
-            agent: row.get(2).ok(),
-            model: row.get(3).ok(),
-            cost: row.get::<_, f64>(4).unwrap_or_default(),
-            tokens_input: signed_to_u64(row.get::<_, i64>(5).unwrap_or_default()),
-            tokens_output: signed_to_u64(row.get::<_, i64>(6).unwrap_or_default()),
-            tokens_reasoning: signed_to_u64(row.get::<_, i64>(7).unwrap_or_default()),
-            tokens_cache_read: signed_to_u64(row.get::<_, i64>(8).unwrap_or_default()),
-            tokens_cache_write: signed_to_u64(row.get::<_, i64>(9).unwrap_or_default()),
-            time_updated: row.get(10).ok(),
+            agent: row.get(1).ok(),
+            model: row.get(2).ok(),
+            cost: row.get::<_, f64>(3).unwrap_or_default(),
+            tokens_input: signed_to_u64(row.get::<_, i64>(4).unwrap_or_default()),
+            tokens_output: signed_to_u64(row.get::<_, i64>(5).unwrap_or_default()),
+            tokens_reasoning: signed_to_u64(row.get::<_, i64>(6).unwrap_or_default()),
+            tokens_cache_read: signed_to_u64(row.get::<_, i64>(7).unwrap_or_default()),
+            tokens_cache_write: signed_to_u64(row.get::<_, i64>(8).unwrap_or_default()),
+            time_updated: row.get(9).ok(),
         };
         if matches
             && session_filter.map_or(true, |filter| {
@@ -1524,22 +2109,9 @@ fn choose_opencode_rows(
         .map(|(_, alias_root, _)| alias_root.clone())
         .collect::<BTreeSet<_>>();
 
-    if alias_roots.len() == 1 {
-        let alias_root = alias_roots.into_iter().next().unwrap_or_default();
-        let mut best: Option<(PathBuf, Vec<OpenCodeSessionRow>)> = None;
-        for (path, candidate_alias, rows) in alias_matches {
-            if candidate_alias == alias_root
-                && should_replace_opencode_match(best.as_ref().map(|(_, rows)| rows), &rows)
-            {
-                best = Some((path, rows));
-            }
-        }
-        if let Some((path, rows)) = best {
-            return (path, Some(alias_root), rows);
-        }
-    } else if alias_roots.len() > 1 {
+    if !alias_roots.is_empty() {
         warnings.push(format!(
-            "Multiple same-name OpenCode usage paths matched {}; refusing ambiguous fallback: {}.",
+            "Non-canonical or same-name OpenCode usage paths matched {}; refusing ambiguous fallback: {}.",
             project_path.display_path,
             alias_roots.into_iter().collect::<Vec<_>>().join(", ")
         ));
@@ -1671,11 +2243,9 @@ fn read_codex_task_rollout_rows_from_roots(
                 continue;
             };
             let updated_at_ms = file_updated_at_ms(path);
-            let short_id = snapshot.session_id.chars().take(12).collect::<String>();
             let row = CodexThreadRow {
                 id: snapshot.session_id.clone(),
                 rollout_path: path.display().to_string(),
-                title: format!("Codex session {short_id}"),
                 model_provider: None,
                 model: snapshot.model,
                 tokens_used: usage.total,
@@ -1963,25 +2533,6 @@ fn normalize_stored_path(path: &str) -> String {
     }
 }
 
-fn child_path_pattern(path: &str) -> String {
-    format!("{}/", normalize_stored_path(path))
-}
-
-fn lower_path_starts_with(value: &str, prefix: &str) -> bool {
-    value
-        .to_ascii_lowercase()
-        .starts_with(&prefix.to_ascii_lowercase())
-}
-
-fn safe_title(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        "Untitled".to_string()
-    } else {
-        trimmed.chars().take(120).collect()
-    }
-}
-
 fn format_opencode_model(raw: &str) -> String {
     serde_json::from_str::<Value>(raw)
         .ok()
@@ -2042,6 +2593,301 @@ mod tests {
         assert_eq!(source.cost, None);
         assert!(source.recent.is_empty());
         assert!(source.warnings[0].contains("no stable"));
+    }
+
+    #[test]
+    fn usage_cache_stores_and_retrieves_entries() {
+        let mut cache = UsageCache::new();
+        let summary = test_source("codex", true, 10, 20, Some(1.0));
+        cache.put("codex", "/tmp/test.sqlite", 12345, summary.clone());
+        let retrieved = cache.get("codex", "/tmp/test.sqlite", 12345);
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().total_tokens, 20);
+        // Different mtime should miss
+        assert!(cache.get("codex", "/tmp/test.sqlite", 99999).is_none());
+        // Different path should miss
+        assert!(cache.get("codex", "/tmp/other.sqlite", 12345).is_none());
+        assert_eq!(cache.cache_state(), "warm_1_entries");
+        cache.clear();
+        assert_eq!(cache.cache_state(), "cold");
+    }
+
+    #[test]
+    fn usage_cache_state_reflects_entries() {
+        let mut cache = UsageCache::new();
+        assert_eq!(cache.cache_state(), "cold");
+        let s1 = test_source("claude_code", true, 5, 10, None);
+        let s2 = test_source("opencode", true, 15, 30, None);
+        cache.put("claude_code", "/path/a", 100, s1);
+        assert_eq!(cache.cache_state(), "warm_1_entries");
+        cache.put("opencode", "/path/b", 200, s2);
+        assert_eq!(cache.cache_state(), "warm_2_entries");
+    }
+
+    #[test]
+    fn refresh_summary_reports_cache_state() {
+        let cache = Arc::new(Mutex::new(UsageCache::new()));
+        let dir = temp_dir("cache-refresh");
+        let project = dir.join("project");
+        fs::create_dir_all(&project).expect("project dir");
+        // First call: cache is cold, will be populated after scan
+        let usage = read_local_agent_usage_with_cache(&project, cache.clone()).expect("usage");
+        assert_eq!(usage.refresh.cache_state, "cold");
+        // Cache should now have entries (if any provider found data)
+        // Second call: cache state reflects warm entries
+        let usage2 = read_local_agent_usage_with_cache(&project, cache).expect("usage2");
+        // The cache may still be cold if no providers found data, but it should not error
+        assert!(["cold", "warm_1_entries", "warm_2_entries", "warm_3_entries"].contains(&usage2.refresh.cache_state.as_str()));
+    }
+
+    #[test]
+    fn claude_session_fails_closed_on_oversized_file() {
+        let dir = temp_dir("claude-oversized");
+        let session_path = dir.join("oversized.jsonl");
+        let mut file = File::create(&session_path).expect("create");
+        // Write more than MAX_TRANSCRIPT_FILE_SIZE bytes
+        let chunk = vec![b'x'; 1024 * 1024]; // 1 MB chunk
+        for _ in 0..11 {
+            file.write_all(&chunk).expect("write");
+        }
+        drop(file);
+        let result = read_claude_session(&session_path);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds maximum size"));
+    }
+
+    #[test]
+    fn claude_session_fails_closed_on_implausible_token_counts() {
+        let dir = temp_dir("claude-implausible");
+        let session_path = dir.join("session-implausible.jsonl");
+        let mut file = File::create(&session_path).expect("create");
+        writeln!(
+            file,
+            r#"{{"type":"assistant","message":{{"id":"msg-evil","model":"claude-3-opus","usage":{{"input_tokens":999999999999,"output_tokens":500}}}}}}"#
+        )
+        .expect("write");
+        drop(file);
+        let session = read_claude_session(&session_path).expect("session");
+        // The malicious line should be skipped, so total tokens should be 0
+        assert_eq!(session.tokens.total, 0);
+        assert!(session
+            .warnings
+            .iter()
+            .any(|w| w.contains("implausible token counts")));
+    }
+
+    #[test]
+    fn claude_session_truncates_on_too_many_lines() {
+        let dir = temp_dir("claude-many-lines");
+        let session_path = dir.join("session-many.jsonl");
+        let mut file = File::create(&session_path).expect("create");
+        // Write more than MAX_TRANSCRIPT_LINES lines
+        for i in 0..100_001 {
+            writeln!(file, r#"{{"type":"user","line":{}}}"#, i).expect("write");
+        }
+        drop(file);
+        let session = read_claude_session(&session_path).expect("session");
+        assert!(session
+            .warnings
+            .iter()
+            .any(|w| w.contains("exceeds maximum line count")));
+    }
+
+    #[test]
+    fn canonical_model_id_strips_dates_and_normalizes_aliases() {
+        assert_eq!(canonical_model_id("gpt-4o-2024-08-06"), "gpt-4o");
+        assert_eq!(canonical_model_id("GPT-4O"), "gpt-4o");
+        assert_eq!(canonical_model_id("gpt-4o-mini-2024-07-18"), "gpt-4o-mini");
+        assert_eq!(canonical_model_id("claude-3-opus-20240229"), "claude-3-opus");
+        assert_eq!(canonical_model_id("claude-3-5-sonnet-20241022"), "claude-3-5-sonnet");
+        assert_eq!(canonical_model_id("o1-preview-2024-09-12"), "o1-preview");
+        assert_eq!(canonical_model_id("unknown-model-2024"), "unknown-model");
+    }
+
+    #[test]
+    fn pricing_catalog_returns_versioned_prices_for_known_models() {
+        let gpt4o = pricing_catalog("gpt-4o").expect("gpt-4o pricing");
+        assert_eq!(gpt4o.input_per_1m, 2.50);
+        assert_eq!(gpt4o.output_per_1m, 10.00);
+        assert_eq!(gpt4o.cache_read_per_1m, Some(1.25));
+        let claude = pricing_catalog("claude-3-opus").expect("claude pricing");
+        assert_eq!(claude.input_per_1m, 15.00);
+        assert_eq!(claude.output_per_1m, 75.00);
+        assert!(pricing_catalog("unknown-model-xyz").is_none());
+    }
+
+    #[test]
+    fn model_pricing_computes_cost_with_cache_and_reasoning() {
+        let pricing = pricing_catalog("gpt-4o").expect("gpt-4o pricing");
+        let tokens = TokenBreakdown {
+            input: 1_000_000,
+            output: 500_000,
+            reasoning: 0,
+            cached_input: 0,
+            cache_read: 200_000,
+            cache_write: 100_000,
+            total: 1_800_000,
+        };
+        let cost = pricing.cost_for(&tokens).expect("cost");
+        // 1M * 2.5 + 0.5M * 10 + 0.2M * 1.25 + 0.1M * 2.5 = 2.5 + 5 + 0.25 + 0.25 = 8.0
+        assert!((cost - 8.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn claude_code_cost_computed_from_pricing_catalog() {
+        let dir = temp_dir("claude-pricing");
+        let session_path = dir.join("session-cost.jsonl");
+        let mut file = File::create(&session_path).expect("create session file");
+        writeln!(
+            file,
+            r#"{{"type":"assistant","message":{{"id":"msg-1","model":"claude-3-opus","usage":{{"input_tokens":1000000,"output_tokens":500000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}}}}"#
+        )
+        .expect("write");
+        drop(file);
+
+        let matcher = ProjectPathMatcher::new(Path::new("/repo/app"));
+        let usage = read_claude_code_usage_from_dir(&matcher, &dir);
+        assert!(usage.available);
+        assert_eq!(usage.total_tokens, 1_500_000);
+        // Cost should be computed: 1M * 15 + 0.5M * 75 = 15 + 37.5 = 52.5
+        let cost = usage.cost.expect("cost should be computed");
+        assert!((cost - 52.5).abs() < 0.001, "cost was {}", cost);
+        assert_eq!(usage.recent[0].cost, Some(cost));
+    }
+
+    #[test]
+    fn opencode_cost_falls_back_to_pricing_catalog_when_db_cost_zero() {
+        let dir = temp_dir("opencode-pricing-fallback");
+        let db_path = dir.join("opencode.db");
+        let conn = Connection::open(&db_path).expect("open fixture db");
+        create_opencode_schema(&conn);
+        conn.execute(
+            "insert into project (id, worktree) values ('p1', '/repo/app')",
+            [],
+        )
+        .expect("project");
+        conn.execute(
+            "insert into session (
+                id, project_id, directory, title, agent, model, cost, tokens_input,
+                tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+                time_updated, path
+            ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                "ses-pricing",
+                "p1",
+                "/repo/app",
+                "Pricing test",
+                "build",
+                r#"{"id":"gpt-4o"}"#,
+                0.0_f64,
+                1_000_000_i64,
+                500_000_i64,
+                0_i64,
+                200_000_i64,
+                100_000_i64,
+                456_i64,
+                "/repo/app",
+            ],
+        )
+        .expect("session");
+        drop(conn);
+
+        let usage = read_opencode_usage_from_db("/repo/app", &db_path).expect("usage");
+        assert!(usage.available);
+        assert_eq!(usage.total_tokens, 1_800_000);
+        // Cost should be computed from pricing catalog: 1M*2.5 + 0.5M*10 + 0.2M*1.25 + 0.1M*2.5 = 8.0
+        let cost = usage.cost.expect("cost should be computed");
+        assert!((cost - 8.0).abs() < 0.001, "cost was {}", cost);
+    }
+
+    #[test]
+    fn opencode_uses_db_cost_when_available() {
+        let dir = temp_dir("opencode-db-cost");
+        let db_path = dir.join("opencode.db");
+        let conn = Connection::open(&db_path).expect("open fixture db");
+        create_opencode_schema(&conn);
+        conn.execute(
+            "insert into project (id, worktree) values ('p1', '/repo/app')",
+            [],
+        )
+        .expect("project");
+        conn.execute(
+            "insert into session (
+                id, project_id, directory, title, agent, model, cost, tokens_input,
+                tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
+                time_updated, path
+            ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                "ses-db-cost",
+                "p1",
+                "/repo/app",
+                "DB cost test",
+                "build",
+                r#"{"id":"gpt-4o"}"#,
+                99.99_f64,
+                100_i64,
+                50_i64,
+                0_i64,
+                0_i64,
+                0_i64,
+                456_i64,
+                "/repo/app",
+            ],
+        )
+        .expect("session");
+        drop(conn);
+
+        let usage = read_opencode_usage_from_db("/repo/app", &db_path).expect("usage");
+        assert!(usage.available);
+        assert_eq!(usage.cost, Some(99.99));
+    }
+
+    #[test]
+    fn cost_state_partial_when_some_sources_unpriced() {
+        let claude = test_source("claude_code", true, 10, 20, Some(1.0));
+        let codex = test_source("codex", true, 30, 40, None);
+        let opencode = test_source("opencode", true, 15, 24, Some(0.5));
+        let audit = build_usage_audit(
+            "2026-07-28T00:00:00Z",
+            "fresh",
+            "partial",
+            84,
+            [&claude, &codex, &opencode],
+            0,
+            0,
+        );
+        assert_eq!(audit.cost.state, "partial");
+        assert_eq!(audit.cost.priced_tokens, 44);
+        assert_eq!(audit.cost.unpriced_tokens, 40);
+        assert!(audit
+            .cost
+            .missing_reasons
+            .iter()
+            .any(|r| r.contains("codex")));
+        assert!(!audit.cost.repair_actions.is_empty());
+    }
+
+    #[test]
+    fn cost_state_complete_when_all_sources_priced() {
+        let claude = test_source("claude_code", true, 10, 20, Some(1.0));
+        let codex = test_source("codex", true, 30, 40, Some(2.0));
+        let opencode = test_source("opencode", true, 15, 24, Some(0.5));
+        let audit = build_usage_audit(
+            "2026-07-28T00:00:00Z",
+            "fresh",
+            "complete",
+            84,
+            [&claude, &codex, &opencode],
+            0,
+            0,
+        );
+        assert_eq!(audit.cost.state, "complete");
+        assert_eq!(audit.cost.priced_tokens, 84);
+        assert_eq!(audit.cost.unpriced_tokens, 0);
+        assert!(audit.cost.missing_reasons.is_empty());
     }
 
     #[test]
@@ -2231,7 +3077,7 @@ mod tests {
     }
 
     #[test]
-    fn scans_later_codex_databases_and_matches_child_paths() {
+    fn scans_later_codex_databases_and_requires_exact_project_path() {
         let dir = temp_dir("codex-multi-db");
         let empty_db_path = dir.join("empty-state_5.sqlite");
         let matched_db_path = dir.join("matched-state_5.sqlite");
@@ -2250,8 +3096,8 @@ mod tests {
                 params![
                     "thread-child",
                     rollout_path.display().to_string(),
-                    "/repo/app/packages/web",
-                    "Child package work",
+                    "/repo/app",
+                    "Exact project work",
                     25_i64,
                     "gpt-test",
                     321_i64
@@ -2295,7 +3141,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_falls_back_to_unique_same_name_project_path() {
+    fn codex_refuses_unique_same_name_project_path() {
         let dir = temp_dir("codex-alias-path");
         let db_path = dir.join("state_5.sqlite");
         let rollout_path = dir.join("rollout-alias.jsonl");
@@ -2323,16 +3169,15 @@ mod tests {
             read_codex_usage_from_db("/repo/archive/mind2realistic", &db_path, &mut warnings)
                 .expect("usage");
 
-        assert!(usage.available);
-        assert_eq!(usage.records, 1);
-        assert_eq!(usage.total_tokens, 40);
+        assert!(!usage.available);
+        assert_eq!(usage.records, 0);
+        assert_eq!(usage.total_tokens, 0);
         assert!(
-            usage
-                .warnings
+            warnings
                 .iter()
                 .any(|warning| warning.contains("/repo/local/mind2realistic")),
             "expected alias warning, got {:?}",
-            usage.warnings
+            warnings
         );
     }
 
@@ -2384,6 +3229,82 @@ mod tests {
     }
 
     #[test]
+    fn repeated_and_duplicate_database_scans_are_deterministic() {
+        let dir = temp_dir("usage-repeat-dedupe");
+        let codex_db = dir.join("state_5.sqlite");
+        let rollout = dir.join("rollout.jsonl");
+        write_rollout(&rollout, 11, 7, 2, 1, 21);
+        let conn = Connection::open(&codex_db).expect("open Codex fixture");
+        create_codex_schema(&conn);
+        conn.execute(
+            "insert into threads (id, rollout_path, cwd, title, tokens_used, model, updated_at_ms)
+             values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                "thread-stable",
+                rollout.display().to_string(),
+                "/repo/app",
+                "secret title",
+                21_i64,
+                "gpt-test",
+                321_i64
+            ],
+        )
+        .expect("insert Codex fixture");
+        drop(conn);
+        let matcher = ProjectPathMatcher::new(Path::new("/repo/app"));
+        let mut warnings = Vec::new();
+        let first = read_codex_usage_from_dbs(
+            &matcher,
+            &[codex_db.clone(), codex_db.clone()],
+            &mut warnings,
+        )
+        .expect("first scan");
+        let second =
+            read_codex_usage_from_dbs(&matcher, &[codex_db.clone(), codex_db], &mut Vec::new())
+                .expect("restart scan");
+        assert_eq!(first.records, 1);
+        assert_eq!(first.total_tokens, 21);
+        assert_eq!(first.total_tokens, second.total_tokens);
+        assert_eq!(first.recent[0].id, second.recent[0].id);
+        assert_eq!(first.recent[0].title, "Codex session");
+
+        let opencode_db = dir.join("opencode.db");
+        let conn = Connection::open(&opencode_db).expect("open OpenCode fixture");
+        create_opencode_schema(&conn);
+        conn.execute(
+            "insert into project (id, worktree) values ('p1', '/repo/app')",
+            [],
+        )
+        .expect("project");
+        conn.execute(
+            "insert into session (id, project_id, directory, title, agent, model, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, time_updated, path)
+             values ('ses-stable', 'p1', '/repo/app', 'secret title', 'build', '{\"id\":\"model-a\"}', 1.0, 10, 2, 3, 4, 5, 456, '/repo/app')",
+            [],
+        )
+        .expect("session");
+        drop(conn);
+        let mut warnings = Vec::new();
+        let first = read_opencode_usage_from_dbs_scoped(
+            &matcher,
+            &[opencode_db.clone(), opencode_db.clone()],
+            &mut warnings,
+            None,
+        )
+        .expect("first OpenCode scan");
+        let second = read_opencode_usage_from_dbs_scoped(
+            &matcher,
+            &[opencode_db.clone(), opencode_db],
+            &mut Vec::new(),
+            None,
+        )
+        .expect("restart OpenCode scan");
+        assert_eq!(first.records, 1);
+        assert_eq!(first.total_tokens, 24);
+        assert_eq!(first.total_tokens, second.total_tokens);
+        assert_eq!(first.recent[0].title, "OpenCode session");
+    }
+
+    #[test]
     fn source_freshness_distinguishes_fresh_stale_and_unknown() {
         let generated_at_ms = 2_000_000;
         let mut fresh = test_source("fresh", true, 10, 20, None);
@@ -2427,6 +3348,34 @@ mod tests {
         assert_eq!(overall_freshness(&sources), "stale");
         assert_eq!(overall_completeness(&sources, 60), "partial");
         assert_eq!(fresh.total_tokens + stale.total_tokens, 60);
+    }
+
+    #[test]
+    fn audit_provider_breakdown_conserves_total_and_excludes_unmatched_task_sessions() {
+        let claude = test_source("claude_code", true, 10, 20, None);
+        let codex = test_source("codex", true, 30, 40, None);
+        let opencode = test_source("opencode", true, 15, 24, Some(1.25));
+        let audit = build_usage_audit(
+            "2026-07-28T00:00:00Z",
+            "fresh",
+            "partial",
+            84,
+            [&claude, &codex, &opencode],
+            4,
+            3,
+        );
+        let visible_provider_total = audit
+            .breakdowns
+            .iter()
+            .filter(|item| item.kind == "provider")
+            .filter_map(|item| item.total_tokens)
+            .sum::<u64>();
+        assert_eq!(visible_provider_total, 84);
+        assert_eq!(audit.excluded_records, 1);
+        assert_eq!(audit.unattributed_tokens, 0);
+        assert_eq!(audit.cost.state, "partial");
+        assert_eq!(audit.cost.priced_tokens, 24);
+        assert_eq!(audit.cost.unpriced_tokens, 60);
     }
 
     #[test]
@@ -2517,7 +3466,7 @@ mod tests {
     }
 
     #[test]
-    fn opencode_matches_child_paths_without_matching_prefix_siblings() {
+    fn opencode_refuses_child_paths_and_prefix_siblings() {
         let dir = temp_dir("opencode-child-path");
         let db_path = dir.join("opencode.db");
         let conn = Connection::open(&db_path).expect("open fixture db");
@@ -2583,14 +3532,13 @@ mod tests {
         drop(conn);
 
         let usage = read_opencode_usage_from_db("/repo/app", &db_path).expect("usage");
-        assert!(usage.available);
-        assert_eq!(usage.records, 1);
-        assert_eq!(usage.total_tokens, 24);
-        assert_eq!(usage.recent[0].id, "ses-child");
+        assert!(!usage.available);
+        assert_eq!(usage.records, 0);
+        assert_eq!(usage.total_tokens, 0);
     }
 
     #[test]
-    fn opencode_falls_back_to_unique_same_name_project_path() {
+    fn opencode_refuses_unique_same_name_project_path() {
         let dir = temp_dir("opencode-alias-path");
         let db_path = dir.join("opencode.db");
         let conn = Connection::open(&db_path).expect("open fixture db");
@@ -2629,10 +3577,9 @@ mod tests {
         let usage =
             read_opencode_usage_from_db("/repo/archive/mind2realistic", &db_path).expect("usage");
 
-        assert!(usage.available);
-        assert_eq!(usage.records, 1);
-        assert_eq!(usage.total_tokens, 24);
-        assert_eq!(usage.recent[0].id, "ses-alias");
+        assert!(!usage.available);
+        assert_eq!(usage.records, 0);
+        assert_eq!(usage.total_tokens, 0);
         assert!(
             usage
                 .warnings
