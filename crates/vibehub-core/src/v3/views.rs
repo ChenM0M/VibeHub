@@ -1,9 +1,15 @@
 use super::application::canonical_criterion_id;
-use super::lifecycle::{fold_task, CriterionState, TaskLifecycleProjection};
+use super::blockers::{
+    BlockerDetail, BlockerKind, BlockerProvenance, BlockerProvenanceStatus, RepairAction,
+    RepairActionKind, BLOCKER_MODEL_VERSION,
+};
+use super::lifecycle::{fold_task, valid_evidence_ref, CriterionState, TaskLifecycleProjection};
 use super::orchestration::fold_task as fold_orchestration;
+use super::orchestration::LeaseState;
 use super::project_intelligence::{
     AnalyzerFinding, GitState, NodeKind, ProjectIndexService, ProjectModelSnapshot, ProjectPage,
 };
+use super::worktree::WorktreeState;
 use super::{
     resolve_project_scopes, EffectiveExecutionPolicy, EvidenceGrade, ProjectScopeSource, V3Error,
     V3ErrorCategory, V3EventEnvelope, V3EventStore,
@@ -634,13 +640,123 @@ impl V3ViewRepository {
         } else {
             "partial"
         };
-        let completion_gate = json!({"items":[
-            {"gate":"plan_terminal","passed":!planning_required||(!lifecycle.nodes.is_empty()&&lifecycle.nodes.values().all(|node|matches!(node.state.as_str(),"completed"|"waived"|"superseded")))},
-            {"gate":"sessions_settled","passed":lifecycle.sessions.values().all(|session|session.state=="closed")},
-            {"gate":"results_terminal","passed":task_events.iter().filter(|event|event.event_type=="session.opened").count()<=task_events.iter().filter(|event|event.event_type=="agent.result_recorded"&&matches!(event.payload.get("status").and_then(Value::as_str),Some("succeeded"|"failed"))).count()},
-            {"gate":"criteria_green","passed":lifecycle.criteria.values().all(|criterion|matches!(criterion.state,CriterionState::Passed|CriterionState::NotApplicable))},
-            {"gate":"findings_closed","passed":!lifecycle.has_open_findings()}
-        ]});
+        let incomplete_nodes = lifecycle
+            .nodes
+            .values()
+            .filter(|node| !matches!(node.state.as_str(), "completed" | "waived" | "superseded"))
+            .map(|node| format!("{}={}", node.node_id, node.state))
+            .collect::<Vec<_>>();
+        let unsettled_sessions = lifecycle
+            .sessions
+            .values()
+            .filter(|session| session.state != "closed")
+            .map(|session| format!("{}={}", session.session_id, session.state))
+            .collect::<Vec<_>>();
+        let opened_session_ids = task_events
+            .iter()
+            .filter(|event| event.event_type == "session.opened")
+            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let terminal_result_session_ids = task_events
+            .iter()
+            .filter(|event| {
+                event.event_type == "agent.result_recorded"
+                    && matches!(
+                        event.payload.get("status").and_then(Value::as_str),
+                        Some("succeeded" | "failed")
+                    )
+            })
+            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let sessions_without_result = opened_session_ids
+            .difference(&terminal_result_session_ids)
+            .cloned()
+            .collect::<Vec<_>>();
+        let criterion_issues = lifecycle
+            .criteria
+            .values()
+            .filter_map(|criterion| {
+                if !matches!(
+                    criterion.state,
+                    CriterionState::Passed | CriterionState::NotApplicable
+                ) {
+                    Some(format!("{}={:?}", criterion.criterion_id, criterion.state))
+                } else if criterion.state != CriterionState::NotApplicable
+                    && !criterion
+                        .evidence_refs
+                        .iter()
+                        .any(|reference| valid_evidence_ref(reference))
+                {
+                    Some(format!(
+                        "{}=invalid_or_stale_evidence",
+                        criterion.criterion_id
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let open_findings = lifecycle
+            .findings
+            .values()
+            .filter(|finding| finding.state != "closed")
+            .map(|finding| format!("{}={}", finding.finding_id, finding.state))
+            .collect::<Vec<_>>();
+        let unsettled_worktrees = orchestration
+            .worktrees
+            .values()
+            .filter_map(|worktree| {
+                let lease_active = worktree
+                    .lease
+                    .as_ref()
+                    .is_some_and(|lease| lease.state == LeaseState::Active);
+                (!matches!(
+                    worktree.state,
+                    WorktreeState::Integrated | WorktreeState::Cleaned | WorktreeState::Abandoned
+                ) || lease_active)
+                    .then(|| {
+                        format!(
+                            "{}={:?},lease_active={lease_active}",
+                            worktree.worktree_id, worktree.state
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
+        let external_blockers = current_blocker_details
+            .iter()
+            .filter(|blocker| {
+                matches!(
+                    blocker.get("kind").and_then(Value::as_str),
+                    Some("external_precondition" | "permission")
+                )
+            })
+            .filter_map(|blocker| {
+                blocker
+                    .get("blocker_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .collect::<Vec<_>>();
+        let missing_records = protocol_records
+            .iter()
+            .filter(|record| record["status"] == "missing")
+            .filter_map(|record| record["record"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        let items = vec![
+            completion_gate_item("required_records", "completion.records_missing", missing_records.is_empty(), "所有 effective policy required_records 均存在", format!("缺少记录：{}", missing_records.join(", ")), missing_records.clone(), Vec::new(), missing_records.iter().map(|record| format!("通过 typed command 记录 {record}" )).collect()),
+            completion_gate_item("plan_terminal", "completion.plan_non_terminal", !planning_required || (!lifecycle.nodes.is_empty() && incomplete_nodes.is_empty()), "所有必需 plan node 均为 completed/waived/superseded", format!("未终结节点：{}", incomplete_nodes.join(", ")), incomplete_nodes.clone(), Vec::new(), vec!["按 DAG 顺序完成、waive 或 supersede 未终结节点".to_owned()]),
+            completion_gate_item("sessions_settled", "completion.session_unsettled", unsettled_sessions.is_empty(), "所有 session 均 closed，gap 已 recover", format!("未结 session：{}", unsettled_sessions.join(", ")), unsettled_sessions.clone(), Vec::new(), vec!["对 gapped session 先 session_recovery(recover)，记录 terminal result 后 session_close".to_owned()]),
+            completion_gate_item("results_terminal", "completion.result_missing_or_non_terminal", sessions_without_result.is_empty(), "每个 opened session 都有 succeeded/failed terminal AgentResult", format!("缺少 terminal result 的 session：{}", sessions_without_result.join(", ")), sessions_without_result.clone(), Vec::new(), vec!["为列出的 session 调用 agent_result_record(status=succeeded|failed)".to_owned()]),
+            completion_gate_item("criteria_green", "completion.review_or_evidence_not_green", criterion_issues.is_empty(), "所有 required criterion 为 passed/not_applicable，且 passed evidence 有效且未标记 stale", format!("未通过项：{}", criterion_issues.join("；")), criterion_issues.clone(), current_blocker_details.iter().filter(|blocker| blocker.get("source_type").and_then(Value::as_str) == Some("criterion")).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["执行每项真实验证；缺记录则 review，blocked 则解除环境条件，invalid/stale evidence 则重新采集".to_owned()]),
+            completion_gate_item("findings_closed", "completion.finding_open", open_findings.is_empty(), "所有 finding 均有 remediation attempt 且 closed", format!("未闭环 finding：{}", open_findings.join(", ")), open_findings.clone(), current_blocker_details.iter().filter(|blocker| blocker.get("source_type").and_then(Value::as_str) == Some("finding")).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["记录 remediation attempt 与验证 evidence，然后关闭 finding".to_owned()]),
+            completion_gate_item("orchestration_settled", "completion.worktree_or_lease_unsettled", unsettled_worktrees.is_empty(), "所有 worktree 已 integrated/cleaned/abandoned，且无 active lease", format!("未结 orchestration：{}", unsettled_worktrees.join("；")), unsettled_worktrees.clone(), current_blocker_details.iter().filter(|blocker| matches!(blocker.get("source_type").and_then(Value::as_str), Some("worktree" | "lease" | "integration"))).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["完成或安全放弃 integration，并 release/reclaim lease".to_owned()]),
+            completion_gate_item("external_preconditions", "completion.external_or_permission_blocked", external_blockers.is_empty(), "无等待外部环境或权限的 blocker", format!("外部/权限 blocker：{}", external_blockers.join(", ")), external_blockers.clone(), external_blockers.clone(), vec!["按 blocker repair_actions 在指定环境或受信人工渠道解除前置条件".to_owned()]),
+        ];
+        let completion_gate = json!({
+            "all_passed": items.iter().all(|item| item["passed"] == true),
+            "blocked_chain": items.iter().filter(|item| item["passed"] == false).map(|item| item["gate"].clone()).collect::<Vec<_>>(),
+            "items": items
+        });
         let selected_node = lifecycle.nodes.get(&node_id);
         let memory_scope = selected_node
             .map(|node| node.scope.clone())
@@ -2465,6 +2581,7 @@ fn blocker_details(
     node_id: Option<&str>,
     generated_at: &str,
 ) -> Vec<Value> {
+    let orchestration = fold_orchestration(&task.task_id, events);
     let task_has_blocked_state = lifecycle
         .nodes
         .values()
@@ -2472,7 +2589,18 @@ fn blocker_details(
         || lifecycle
             .criteria
             .values()
-            .any(|criterion| criterion.state == CriterionState::Blocked);
+            .any(|criterion| criterion.state == CriterionState::Blocked)
+        || lifecycle
+            .sessions
+            .values()
+            .any(|session| session.state == "gapped")
+        || lifecycle.has_open_findings()
+        || orchestration.worktrees.values().any(|worktree| {
+            matches!(
+                worktree.state,
+                WorktreeState::Conflicted | WorktreeState::Repairing
+            )
+        });
     let node_has_blocked_state = node_id
         .and_then(|id| lifecycle.nodes.get(id))
         .is_some_and(|node| matches!(node.state.as_str(), "blocked" | "failed"));
@@ -2510,6 +2638,8 @@ fn blocker_details(
             event,
             &reason_code,
             kind,
+            task,
+            lifecycle,
             node_id,
             generated_at,
         ));
@@ -2535,6 +2665,197 @@ fn blocker_details(
         }
     }
 
+    if node_id.is_none() && task_has_blocked_state {
+        for session in lifecycle
+            .sessions
+            .values()
+            .filter(|session| session.state == "gapped")
+        {
+            let reason = format!("session.gap:{}", session.session_id);
+            if !seen_reasons.insert(reason.clone()) {
+                continue;
+            }
+            details.push(typed_blocker_detail(
+                format!("blocker.{}.gap", session.session_id),
+                BlockerKind::Workflow,
+                reason,
+                "session".to_owned(),
+                session.session_id.clone(),
+                format!("Session {} 存在未恢复的执行 gap", session.session_id),
+                "session.gap_detected 已记录，但尚无匹配的 session.recovered 证据".to_owned(),
+                "session=recovered/closed，gap evidence 已核对".to_owned(),
+                format!("session={}, coverage={}", session.state, session.coverage),
+                vec!["中断前后工作事实差异".to_owned(), "恢复 evidence_refs".to_owned()],
+                "该 session 的执行事实不完整，结果与完成门禁不可依赖".to_owned(),
+                session.host.clone(),
+                vec!["定位中断点并核对工作树、节点和已执行验证".to_owned()],
+                format!("调用 session_recovery(action=recover, session_id={}, evidence_refs=[...])，再记录 terminal agent_result 并关闭 session", session.session_id),
+                None,
+                None,
+                session.node_id.clone(),
+                Vec::new(),
+                BlockerProvenanceStatus::Native,
+                Vec::new(),
+                Vec::new(),
+            ));
+        }
+
+        for finding in lifecycle
+            .findings
+            .values()
+            .filter(|finding| finding.state != "closed")
+        {
+            let reason = format!("finding.open:{}", finding.finding_id);
+            if !seen_reasons.insert(reason.clone()) {
+                continue;
+            }
+            let missing = if finding.attempt_ids.is_empty() {
+                vec![
+                    "至少一个 typed remediation attempt".to_owned(),
+                    "finding closure review".to_owned(),
+                ]
+            } else {
+                vec!["finding.closed 结论与关闭证据".to_owned()]
+            };
+            details.push(typed_blocker_detail(
+                format!("blocker.{}.open", finding.finding_id),
+                BlockerKind::Workflow,
+                reason,
+                "finding".to_owned(),
+                finding.finding_id.clone(),
+                format!("Finding {} 尚未闭环", finding.finding_id),
+                format!("finding state={}；完成门禁要求所有 finding=closed", finding.state),
+                "finding=closed，且至少一个 remediation attempt 有 evidence".to_owned(),
+                format!("finding={}, attempts={}", finding.state, finding.attempt_ids.len()),
+                missing,
+                "相关 criterion、节点和任务完成门禁保持阻塞".to_owned(),
+                "finding owner/reviewer".to_owned(),
+                vec!["复现 finding 并确认修复范围".to_owned()],
+                format!("调用 attempt_manage 记录针对 {} 的修复与 evidence，验证后调用 finding_manage(action=close)", finding.finding_id),
+                None,
+                None,
+                finding.target_node_id.clone(),
+                string_evidence_refs(&finding.evidence_refs, generated_at, "v3.evidence.finding"),
+                BlockerProvenanceStatus::Native,
+                Vec::new(),
+                Vec::new(),
+            ));
+        }
+
+        for node in lifecycle
+            .nodes
+            .values()
+            .filter(|node| matches!(node.state.as_str(), "blocked" | "failed"))
+        {
+            let incomplete_dependencies = node
+                .dependencies
+                .iter()
+                .filter(|dependency| {
+                    lifecycle.nodes.get(*dependency).is_none_or(|dependency| {
+                        !matches!(dependency.state.as_str(), "completed" | "waived")
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            if incomplete_dependencies.is_empty() {
+                continue;
+            }
+            let reason = format!("plan.dependency_not_ready:{}", node.node_id);
+            if !seen_reasons.insert(reason.clone()) {
+                continue;
+            }
+            details.push(typed_blocker_detail(
+                format!("blocker.{}.dependency", node.node_id),
+                BlockerKind::Dependency,
+                reason,
+                "plan_node".to_owned(),
+                node.node_id.clone(),
+                format!("节点 {} 的依赖尚未完成", node.title),
+                "DAG validator 禁止在依赖未 completed/waived 时恢复或完成下游节点".to_owned(),
+                "所有 scheduling dependencies=completed/waived".to_owned(),
+                format!("未完成依赖：{}", incomplete_dependencies.join(", ")),
+                incomplete_dependencies
+                    .iter()
+                    .map(|dependency| format!("依赖 {dependency} 的 terminal state 与 evidence"))
+                    .collect(),
+                "下游节点不能进入 ready/active，关联 criteria 无法验收".to_owned(),
+                "依赖节点 owner".to_owned(),
+                vec!["不得绕过 DAG；先处理列出的依赖节点".to_owned()],
+                format!(
+                    "依次完成或经授权 waive：{}；随后重新读取 task_view 并激活 {}",
+                    incomplete_dependencies.join(", "),
+                    node.node_id
+                ),
+                None,
+                None,
+                Some(node.node_id.clone()),
+                Vec::new(),
+                BlockerProvenanceStatus::Native,
+                Vec::new(),
+                Vec::new(),
+            ));
+        }
+
+        for worktree in orchestration.worktrees.values().filter(|worktree| {
+            matches!(
+                worktree.state,
+                WorktreeState::Conflicted | WorktreeState::Repairing
+            )
+        }) {
+            let reason = format!("worktree.integration:{:?}", worktree.state).to_ascii_lowercase();
+            if !seen_reasons.insert(reason.clone()) {
+                continue;
+            }
+            let lease_fact = worktree
+                .lease
+                .as_ref()
+                .map(|lease| {
+                    format!(
+                        "lease {} state={:?} owner={}",
+                        lease.lease_id, lease.state, lease.owner_session_id
+                    )
+                })
+                .unwrap_or_else(|| "lease=none".to_owned());
+            let owner = worktree
+                .lease
+                .as_ref()
+                .map(|lease| lease.owner_session_id.clone())
+                .unwrap_or_else(|| "integration owner".to_owned());
+            let missing_facts = if worktree.state == WorktreeState::Conflicted {
+                vec![
+                    "冲突文件的 resolution evidence".to_owned(),
+                    "新的 eligibility_digest".to_owned(),
+                    "integrated event".to_owned(),
+                ]
+            } else {
+                vec!["repair 结果与 terminal worktree state".to_owned()]
+            };
+            details.push(typed_blocker_detail(
+                format!("blocker.{}.integration", worktree.worktree_id),
+                if worktree.state == WorktreeState::Conflicted { BlockerKind::Conflict } else { BlockerKind::Workflow },
+                reason,
+                "integration".to_owned(),
+                worktree.worktree_id.clone(),
+                format!("Worktree {} 集成状态为 {:?}", worktree.worktree_id, worktree.state),
+                "worktree 尚未进入 integrated/cleaned，当前 eligibility/lease 事实不能证明可安全集成".to_owned(),
+                "worktree=integrated/cleaned，lease=released/reclaimed，eligibility digest 有效".to_owned(),
+                format!("worktree={:?}；{lease_fact}", worktree.state),
+                missing_facts,
+                "变更不能成为任务集成真值，完成提议必须被拒绝".to_owned(),
+                owner,
+                vec!["保留冲突与当前 worktree 证据，不覆盖其他 owner 的变更".to_owned()],
+                format!("通过 orchestration_write 修复 {}，重新计算 eligibility_digest，完成 integration 并 release/reclaim lease", worktree.worktree_id),
+                None,
+                None,
+                Some(worktree.node_id.clone()),
+                string_evidence_refs(&worktree.event_ids, generated_at, "v3.evidence.worktree"),
+                BlockerProvenanceStatus::Native,
+                worktree.event_ids.clone(),
+                Vec::new(),
+            ));
+        }
+    }
+
     // Accepted criteria without evidence are an actionable evidence gap, not an
     // implementation step. Surface them only when the task/node is blocked so a
     // normal in-flight task does not look blocked merely because it is unverified.
@@ -2551,17 +2872,33 @@ fn blocker_details(
             if !seen_reasons.insert(reason.clone()) {
                 continue;
             }
-            details.push(json!({
-                "blocker_id": format!("blocker.{}.evidence-gap", criterion_id),
-                "reason_code": reason,
-                "summary": format!("验收标准尚无可核验证据：{title}"),
-                "kind": "evidence_gap",
-                "owner": "验收执行者/审查者",
-                "precondition": "补充该验收标准的真实 evidence，并由受信 reviewer 确认",
-                "resume_action": format!("执行并记录验收标准：{title}"),
-                "criterion_id": criterion_id,
-                "evidence_refs": []
-            }));
+            let precondition = "在标准指定的真实执行环境中完成检查并保留可核验输出".to_owned();
+            let resume_action =
+                format!("执行并记录验收标准：{title}；随后由受信 reviewer 运行 criterion_review");
+            details.push(typed_blocker_detail(
+                format!("blocker.{}.evidence-gap", criterion_id),
+                BlockerKind::EvidenceGap,
+                reason,
+                "criterion".to_owned(),
+                criterion_id.clone(),
+                format!("验收标准尚无可核验证据：{title}"),
+                "该必需 criterion 仍为 accepted 且没有 evidence，完成门禁不能证明标准已满足"
+                    .to_owned(),
+                "criterion 由真实验证推进到 passed，并包含可解析的 evidence_refs".to_owned(),
+                "criterion=accepted，evidence_refs=[]".to_owned(),
+                vec![format!("该标准的验证输出与 reviewer 结论：{title}")],
+                "任务不能进入 completion_pending".to_owned(),
+                "验收执行者/审查者".to_owned(),
+                vec![precondition.clone()],
+                resume_action.clone(),
+                None,
+                Some(criterion_id),
+                None,
+                Vec::new(),
+                BlockerProvenanceStatus::Native,
+                Vec::new(),
+                Vec::new(),
+            ));
         }
     }
 
@@ -2680,17 +3017,36 @@ fn blocker_detail_from_event(
     event: &V3EventEnvelope,
     reason_code: &str,
     kind: &str,
+    task: &TaskDocument,
+    lifecycle: &TaskLifecycleProjection,
     node_id: Option<&str>,
     generated_at: &str,
 ) -> Value {
     let payload = &event.payload;
-    let summary = payload_text(payload, &["summary", "reason", "message", "body", "error"])
+    let criterion_id = payload
+        .get("criterion_id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let criterion_title = criterion_id.as_deref().and_then(|wanted| {
+        task.acceptance_criteria
+            .iter()
+            .enumerate()
+            .find(|(index, _)| canonical_criterion_id(&task.task_id, *index) == wanted)
+            .map(|(_, title)| title.as_str())
+    });
+    let mut summary = payload_text(payload, &["summary", "reason", "message", "body", "error"])
         .unwrap_or_else(|| match kind {
             "permission" => "外部权限或原生交互前置条件未满足".to_owned(),
             "external_precondition" => "外部环境前置条件未满足".to_owned(),
-            "evidence_gap" => "验收证据缺口尚未闭环".to_owned(),
+            "evidence_gap" => criterion_title.map_or_else(
+                || "验收证据缺口尚未闭环".to_owned(),
+                |title| format!("验收标准阻塞：{title}"),
+            ),
             _ => "工作流节点处于阻塞状态".to_owned(),
         });
+    if let Some(title) = criterion_title.filter(|title| !summary.contains(*title)) {
+        summary = format!("{title}：{summary}");
+    }
     let precondition = payload_text(
         payload,
         &["resume_condition", "required_next", "blocked_on"],
@@ -2700,18 +3056,29 @@ fn blocker_detail_from_event(
             "为当前执行宿主授予 macOS Accessibility/System Events 权限，并完成一次复检".to_owned()
         }
         "external_precondition" => "完成外部环境前置后重新运行受影响验证".to_owned(),
-        "evidence_gap" => "补充真实 evidence，并由受信 reviewer 确认".to_owned(),
+        "evidence_gap" => criterion_title.map_or_else(
+            || "补充真实 evidence，并由受信 reviewer 确认".to_owned(),
+            |title| format!("在该标准要求的真实环境执行“{title}”并保留原始输出"),
+        ),
         _ => "补充具体阻塞原因、依赖或恢复条件".to_owned(),
     });
-    let resume_action = payload_text(payload, &["next", "required_next", "resume_condition"])
+    let mut resume_action = payload_text(payload, &["next", "required_next", "resume_condition"])
         .unwrap_or_else(|| match kind {
             "permission" => "解除权限阻塞后恢复对应 plan node，只复验未覆盖的原生链路".to_owned(),
             "external_precondition" => {
                 "解除外部前置后恢复节点并记录新的 progress/evidence".to_owned()
             }
-            "evidence_gap" => "执行验收标准并记录 evidence，再进入审查".to_owned(),
+            "evidence_gap" => criterion_title.map_or_else(
+                || "执行验收标准并记录 evidence，再进入审查".to_owned(),
+                |title| format!("执行“{title}”，记录 evidence_refs，并调用 criterion_review(outcome=passed|failed|blocked)"),
+            ),
             _ => "在计划图中补充 blocker details 后将节点恢复为 ready/active".to_owned(),
         });
+    if criterion_id.is_some() && !resume_action.contains("criterion_review") {
+        resume_action.push_str(
+            "；完成后调用 criterion_review(outcome=passed|failed|blocked) 并附 evidence_refs",
+        );
+    }
     let owner = payload_text(
         payload,
         &["owner", "owner_party", "blocked_by", "responsible"],
@@ -2722,10 +3089,6 @@ fn blocker_detail_from_event(
         "evidence_gap" => "验收执行者/审查者".to_owned(),
         _ => "V3 执行者".to_owned(),
     });
-    let criterion_id = payload
-        .get("criterion_id")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
     let event_node_id = event.node_id.as_ref().map(|id| id.0.clone()).or_else(|| {
         payload
             .get("node_id")
@@ -2733,40 +3096,277 @@ fn blocker_detail_from_event(
             .map(str::to_owned)
     });
     let evidence_refs = blocker_evidence_refs(event, generated_at);
-    let mut detail = json!({
-        "blocker_id": format!("blocker.{}", event.event_id),
-        "reason_code": reason_code,
-        "summary": summary,
-        "kind": kind,
-        "owner": owner,
-        "precondition": precondition,
-        "resume_action": resume_action,
-        "evidence_refs": evidence_refs
+    let source_type = if criterion_id.is_some() {
+        "criterion"
+    } else if event.event_type.starts_with("session.") {
+        "session"
+    } else if event_node_id.is_some() || node_id.is_some() {
+        "plan_node"
+    } else {
+        "event"
+    };
+    let source_id = criterion_id
+        .clone()
+        .or_else(|| event_node_id.clone())
+        .unwrap_or_else(|| event.event_id.clone());
+    let expected_state = payload_text(payload, &["expected_state", "expected"])
+        .unwrap_or_else(|| expected_state_for_kind(kind).to_owned());
+    let observed_state = payload_text(payload, &["observed_state", "observed", "actual"])
+        .unwrap_or_else(|| observed_state_for_event(event, kind));
+    let existing_criterion_evidence = criterion_id
+        .as_deref()
+        .and_then(|id| lifecycle.criteria.get(id))
+        .map(|criterion| criterion.evidence_refs.len())
+        .unwrap_or_default();
+    let missing_facts = payload_string_list(payload, "missing_facts").unwrap_or_else(|| {
+        if kind == "evidence_gap" {
+            vec![format!(
+                "reviewer 尚未确认的验证结果（当前已有 {existing_criterion_evidence} 条 evidence；blocked 表示这些证据仍不足）"
+            )]
+        } else {
+            default_missing_facts(kind, criterion_id.as_deref(), event_node_id.as_deref())
+        }
     });
-    if let Some(criterion_id) = criterion_id {
-        detail["criterion_id"] = Value::String(criterion_id);
-    }
-    if let Some(node_id) = node_id.or(event_node_id.as_deref()) {
-        detail["node_id"] = Value::String(node_id.to_owned());
-    }
-    detail
+    let why_blocked = payload_text(payload, &["why_blocked", "reason", "summary"])
+        .unwrap_or_else(|| {
+            if kind == "evidence_gap" {
+                format!("criterion review 为 blocked；现有 {existing_criterion_evidence} 条 evidence 未证明“{expected_state}”")
+            } else {
+                format!("期望状态“{expected_state}”与当前状态“{observed_state}”不一致")
+            }
+        });
+    let impact = payload_text(payload, &["impact"])
+        .unwrap_or_else(|| "受影响节点及任务完成门禁保持阻塞，不能被声明为完成".to_owned());
+    let legacy_has_context =
+        payload_text(payload, &["summary", "reason", "message", "body", "error"]).is_some()
+            && payload_text(
+                payload,
+                &["next", "required_next", "resume_condition", "blocked_on"],
+            )
+            .is_some();
+    let provenance_status = if legacy_has_context {
+        BlockerProvenanceStatus::Legacy
+    } else {
+        BlockerProvenanceStatus::Degraded
+    };
+    let unknown_fields = if provenance_status == BlockerProvenanceStatus::Degraded {
+        vec![
+            "why_blocked".to_owned(),
+            "missing_facts".to_owned(),
+            "repair_actions".to_owned(),
+        ]
+    } else {
+        Vec::new()
+    };
+    typed_blocker_detail(
+        format!("blocker.{}", event.event_id),
+        blocker_kind(kind),
+        reason_code.to_owned(),
+        source_type.to_owned(),
+        source_id,
+        summary,
+        why_blocked,
+        expected_state,
+        observed_state,
+        missing_facts,
+        impact,
+        owner,
+        vec![precondition],
+        resume_action,
+        None,
+        criterion_id,
+        node_id.or(event_node_id.as_deref()).map(str::to_owned),
+        evidence_refs,
+        provenance_status,
+        vec![event.event_id.clone()],
+        unknown_fields,
+    )
 }
 
 fn generic_blocker_detail(node_id: Option<&str>) -> Value {
-    let mut detail = json!({
-        "blocker_id": format!("blocker.{}", node_id.unwrap_or("task")),
-        "reason_code": "lifecycle.blocked",
-        "summary": "该工作流节点处于阻塞状态，但事件中没有记录可读的阻塞原因。",
-        "kind": "workflow",
-        "owner": "V3 执行者",
-        "precondition": "记录具体阻塞原因、责任方、解除条件和 evidence",
-        "resume_action": "补充 blocker details 后将节点恢复为 ready/active",
-        "evidence_refs": []
-    });
-    if let Some(node_id) = node_id {
-        detail["node_id"] = Value::String(node_id.to_owned());
+    let source_id = node_id.unwrap_or("task").to_owned();
+    typed_blocker_detail(
+        format!("blocker.{source_id}"),
+        BlockerKind::Workflow,
+        "lifecycle.blocked.details_missing".to_owned(),
+        if node_id.is_some() { "plan_node" } else { "task" }.to_owned(),
+        source_id,
+        "工作流已标记为阻塞，但旧事件没有保存可恢复的具体原因".to_owned(),
+        "投影只能确认 blocked/failed 状态，不能从现有事件证明触发条件；缺失事实不会被伪造成已知事实".to_owned(),
+        "存在包含原因、责任方、影响、缺失事实和解除条件的 risk/finding 记录".to_owned(),
+        "仅观察到 lifecycle state=blocked/failed".to_owned(),
+        vec!["原始阻塞原因".to_owned(), "责任主体".to_owned(), "解除条件".to_owned(), "验证证据".to_owned()],
+        "当前节点和任务完成门禁保持阻塞".to_owned(),
+        "V3 执行者/原阻塞责任方".to_owned(),
+        vec!["从原执行环境、finding 或人工责任方取得真实阻塞事实".to_owned()],
+        "通过 typed risk/finding 命令补录可核验事实与 evidence_refs，再按 validator 允许的 reopen/recover 流程恢复节点".to_owned(),
+        None,
+        None,
+        node_id.map(str::to_owned),
+        Vec::new(),
+        BlockerProvenanceStatus::Degraded,
+        Vec::new(),
+        vec!["source_event_id".to_owned(), "why_blocked".to_owned(), "repair command".to_owned()],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn typed_blocker_detail(
+    blocker_id: String,
+    kind: BlockerKind,
+    reason_code: String,
+    source_type: String,
+    source_id: String,
+    summary: String,
+    why_blocked: String,
+    expected_state: String,
+    observed_state: String,
+    missing_facts: Vec<String>,
+    impact: String,
+    owner: String,
+    preconditions: Vec<String>,
+    resume_action: String,
+    command: Option<String>,
+    criterion_id: Option<String>,
+    node_id: Option<String>,
+    evidence_refs: Vec<Value>,
+    provenance_status: BlockerProvenanceStatus,
+    source_event_ids: Vec<String>,
+    unknown_fields: Vec<String>,
+) -> Value {
+    let precondition = preconditions.join("；");
+    let action_id = format!("repair.{blocker_id}");
+    let action_kind = if command.is_some() {
+        RepairActionKind::Command
+    } else if kind == BlockerKind::EvidenceGap {
+        RepairActionKind::CollectEvidence
+    } else {
+        RepairActionKind::Manual
+    };
+    BlockerDetail {
+        model_version: BLOCKER_MODEL_VERSION.to_owned(),
+        blocker_id,
+        kind,
+        reason_code,
+        source_type,
+        source_id,
+        summary,
+        why_blocked,
+        expected_state,
+        observed_state,
+        missing_facts,
+        impact,
+        owner: owner.clone(),
+        preconditions: preconditions.clone(),
+        repair_actions: vec![RepairAction {
+            action_id,
+            kind: action_kind,
+            label: "解除此阻塞".to_owned(),
+            instructions: resume_action.clone(),
+            owner,
+            preconditions,
+            verification: "重新读取 task_view，并确认该 blocker_id 消失或其 observed_state 已满足 expected_state".to_owned(),
+            command,
+            target: criterion_id.clone().or_else(|| node_id.clone()),
+            copy_text: resume_action.clone(),
+        }],
+        evidence_refs,
+        freshness: "fresh".to_owned(),
+        provenance: BlockerProvenance {
+            status: provenance_status,
+            source_event_ids,
+            reconstructed_fields: vec![
+                "source_type".to_owned(),
+                "expected_state".to_owned(),
+                "observed_state".to_owned(),
+                "repair_actions".to_owned(),
+            ],
+            unknown_fields,
+        },
+        precondition,
+        resume_action,
+        criterion_id,
+        node_id,
     }
-    detail
+    .into_value()
+}
+
+fn blocker_kind(kind: &str) -> BlockerKind {
+    match kind {
+        "external_precondition" => BlockerKind::ExternalPrecondition,
+        "permission" => BlockerKind::Permission,
+        "evidence_gap" => BlockerKind::EvidenceGap,
+        "dependency" => BlockerKind::Dependency,
+        "conflict" => BlockerKind::Conflict,
+        "workflow" => BlockerKind::Workflow,
+        _ => BlockerKind::Unknown,
+    }
+}
+
+fn expected_state_for_kind(kind: &str) -> &'static str {
+    match kind {
+        "permission" => "required permission granted and native verification passed",
+        "external_precondition" => "external precondition satisfied with evidence",
+        "evidence_gap" => "required criterion terminal with valid evidence",
+        _ => "workflow prerequisite satisfied and source entity terminal",
+    }
+}
+
+fn observed_state_for_event(event: &V3EventEnvelope, kind: &str) -> String {
+    event
+        .payload
+        .get("status")
+        .or_else(|| event.payload.get("state"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("{} emitted {}", event.event_type, kind))
+}
+
+fn default_missing_facts(
+    kind: &str,
+    criterion_id: Option<&str>,
+    node_id: Option<&str>,
+) -> Vec<String> {
+    match kind {
+        "permission" => vec!["权限授予状态".to_owned(), "原生复验输出".to_owned()],
+        "evidence_gap" => vec![format!(
+            "{} 的真实验证输出与 terminal review",
+            criterion_id.unwrap_or("相关 criterion")
+        )],
+        _ => vec![format!(
+            "{} 的解除条件与验证 evidence",
+            node_id.unwrap_or("阻塞源")
+        )],
+    }
+}
+
+fn payload_string_list(payload: &Value, key: &str) -> Option<Vec<String>> {
+    let values = payload
+        .get(key)?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    (!values.is_empty()).then_some(values)
+}
+
+fn string_evidence_refs(references: &[String], generated_at: &str, label_key: &str) -> Vec<Value> {
+    references
+        .iter()
+        .map(|reference| {
+            json!({
+                "evidence_id": reference,
+                "kind": "event",
+                "grade": "hard_observed",
+                "label_key": label_key,
+                "locator": reference,
+                "captured_at": generated_at
+            })
+        })
+        .collect()
 }
 
 fn payload_text(payload: &Value, keys: &[&str]) -> Option<String> {
@@ -2835,6 +3435,31 @@ fn completion_view(lifecycle: &TaskLifecycleProjection) -> Value {
             "channel": confirmation.channel
         }),
     )
+}
+
+fn completion_gate_item(
+    gate: &str,
+    reason_code: &str,
+    passed: bool,
+    expected_state: &str,
+    observed_state: String,
+    missing_facts: Vec<String>,
+    blocker_ids: Vec<String>,
+    repair_actions: Vec<String>,
+) -> Value {
+    json!({
+        "gate": gate,
+        "status": if passed { "satisfied" } else { "blocked" },
+        "passed": passed,
+        "reason_code": reason_code,
+        "summary": if passed { format!("{gate} 已满足") } else { format!("{gate} 尚未满足") },
+        "expected_state": expected_state,
+        "observed_state": observed_state,
+        "satisfied_facts": if passed { vec![expected_state.to_owned()] } else { Vec::<String>::new() },
+        "missing_facts": if passed { Vec::<String>::new() } else { missing_facts },
+        "blocker_ids": blocker_ids,
+        "repair_actions": if passed { Vec::<String>::new() } else { repair_actions }
+    })
 }
 
 fn evidence_refs(
@@ -3962,6 +4587,22 @@ mod tests {
             json!({"criterion_id":"criterion.task.test.c01","reviewer":"reviewer","evidence_refs":["evt.blocked"],"reason":"macOS Accessibility permission was unavailable"}),
         ))
         .unwrap();
+        let blocked_bundle = repository.load_bundle("task.test").unwrap();
+        let blocked = &blocked_bundle.task_timeline["blocker_details"][0];
+        assert_eq!(blocked["source_type"], "criterion");
+        assert!(blocked["summary"]
+            .as_str()
+            .is_some_and(|summary| summary.contains("Native flow passes")));
+        assert!(blocked["why_blocked"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("permission")));
+        assert!(blocked["repair_actions"][0]["instructions"]
+            .as_str()
+            .is_some_and(|action| action.contains("criterion_review")));
+        assert_eq!(blocked["provenance"]["status"], "degraded");
+        assert!(blocked["provenance"]["unknown_fields"]
+            .as_array()
+            .is_some_and(|fields| fields.iter().any(|field| field == "missing_facts")));
         app.lifecycle_command(super::super::lifecycle::command(
             "criterion.passed",
             &project_id,
@@ -4122,5 +4763,84 @@ mod tests {
         assert_eq!(repository.current_task_id().unwrap(), "task.test");
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn derives_source_specific_gap_and_finding_blockers() {
+        let task: TaskDocument = serde_yaml::from_str(
+            "task_id: task.test\ntitle: Typed blockers\nintent: Explain blockers\nphase: implement\nphase_status: active\n",
+        )
+        .unwrap();
+        let mut lifecycle = TaskLifecycleProjection::empty("task.test");
+        lifecycle.sessions.insert(
+            "session.test".to_owned(),
+            super::super::lifecycle::SessionLifecycleProjection {
+                session_id: "session.test".to_owned(),
+                host: "Codex".to_owned(),
+                node_id: Some("node.test".to_owned()),
+                state: "gapped".to_owned(),
+                coverage: "degraded".to_owned(),
+            },
+        );
+        lifecycle.findings.insert(
+            "finding.test".to_owned(),
+            super::super::lifecycle::FindingProjection {
+                finding_id: "finding.test".to_owned(),
+                severity: "high".to_owned(),
+                state: "open".to_owned(),
+                target_node_id: Some("node.test".to_owned()),
+                evidence_refs: vec!["evt.finding".to_owned()],
+                attempt_ids: Vec::new(),
+            },
+        );
+
+        let details = blocker_details(&task, &[], &lifecycle, None, "2026-07-28T00:00:00Z");
+        assert!(details.iter().any(|detail| {
+            detail["source_type"] == "session"
+                && detail["missing_facts"]
+                    .as_array()
+                    .is_some_and(|facts| !facts.is_empty())
+        }));
+        assert!(details.iter().any(|detail| {
+            detail["source_type"] == "finding"
+                && detail["repair_actions"][0]["instructions"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("attempt_manage"))
+        }));
+    }
+
+    #[test]
+    fn completion_checklist_item_distinguishes_satisfied_and_blocked_facts() {
+        let item = completion_gate_item(
+            "criteria_green",
+            "completion.review_or_evidence_not_green",
+            false,
+            "all required criteria passed with fresh evidence",
+            "criterion.test=blocked".to_owned(),
+            vec!["Windows A07 evidence".to_owned()],
+            vec!["blocker.criterion.test".to_owned()],
+            vec!["run A07 on the Windows release artifact".to_owned()],
+        );
+        assert_eq!(item["status"], "blocked");
+        assert_eq!(
+            item["reason_code"],
+            "completion.review_or_evidence_not_green"
+        );
+        assert_eq!(item["missing_facts"][0], "Windows A07 evidence");
+        assert_eq!(item["satisfied_facts"], json!([]));
+    }
+
+    #[test]
+    fn eventless_blocked_state_is_explicitly_degraded_without_invented_facts() {
+        let detail = generic_blocker_detail(Some("node.legacy"));
+        assert_eq!(detail["reason_code"], "lifecycle.blocked.details_missing");
+        assert_eq!(detail["provenance"]["status"], "degraded");
+        assert_eq!(detail["provenance"]["source_event_ids"], json!([]));
+        assert!(detail["missing_facts"]
+            .as_array()
+            .is_some_and(|facts| facts.iter().any(|fact| fact == "原始阻塞原因")));
+        assert!(detail["repair_actions"][0]["instructions"]
+            .as_str()
+            .is_some_and(|action| action.contains("补录可核验事实")));
     }
 }

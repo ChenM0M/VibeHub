@@ -67,7 +67,10 @@ export function NodeBriefPanel({ data }: NodeBriefPanelProps) {
           <div className="space-y-1 text-xs">{data.protocol_records.map((record) => <div key={record.record} className="flex items-center justify-between gap-2"><span>{record.record}</span><span className={record.status === "complete" ? "text-emerald-600" : "text-orange-600"}>{record.status}{record.repair_action ? ` · ${record.repair_action}` : ""}</span></div>)}</div>
         </SubSection>
         <SubSection title="Completion Gate">
-          <div className="space-y-1 text-xs">{data.completion_gate.items.map((item) => <div key={item.gate} className="flex items-center justify-between"><span>{item.gate}</span><span className={item.passed ? "text-emerald-600" : "text-orange-600"}>{item.passed ? "PASS" : "BLOCKED"}</span></div>)}</div>
+          <div className="space-y-2 text-xs">{data.completion_gate.items.map((item) => <details key={item.gate} className="border-b border-border/60 pb-2 last:border-0" open={!item.passed}>
+            <summary className="flex cursor-pointer items-center justify-between gap-2"><span>{item.gate}</span><span className={item.passed ? "text-emerald-600" : "text-orange-600"}>{item.passed ? "PASS" : "BLOCKED"}</span></summary>
+            <div className="mt-1 space-y-1 text-muted-foreground"><p>{item.observed_state}</p>{item.missing_facts.map((fact) => <p key={fact}>- {fact}</p>)}{item.repair_actions.map((action) => <p key={action} className="text-foreground">{action}</p>)}</div>
+          </details>)}</div>
         </SubSection>
       </div>
 

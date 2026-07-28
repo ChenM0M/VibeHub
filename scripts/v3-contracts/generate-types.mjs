@@ -21,6 +21,7 @@ const schemas = [
   ["plan-graph-view.schema.json", "PlanGraphView"],
   ["node-brief.schema.json", "NodeBrief"],
   ["worktree-orchestration-view.schema.json", "WorktreeOrchestrationView"],
+  ["usage-overview.schema.json", "UsageOverview"],
 ];
 
 const exportedDefinitions = new Map([

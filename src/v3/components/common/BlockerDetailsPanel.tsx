@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, CircleHelp, ExternalLink, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, CircleHelp, Clipboard, ExternalLink, ShieldAlert } from "lucide-react";
 import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import type { BlockerDetail } from "@/v3/contracts/generated/project-overview-view";
 import { useTranslation } from "react-i18next";
@@ -11,6 +11,7 @@ interface BlockerDetailsPanelProps {
 
 export function BlockerDetailsPanel({ blockers = [], compact = false }: BlockerDetailsPanelProps) {
   const [expanded, setExpanded] = useState(false);
+  const [copiedAction, setCopiedAction] = useState<string>();
   const { t } = useTranslation();
   if (blockers.length === 0) return null;
 
@@ -49,16 +50,44 @@ export function BlockerDetailsPanel({ blockers = [], compact = false }: BlockerD
               </div>
             </div>
 
-            <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
-              <div className="border-l-2 border-orange-500/40 pl-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("v3.blockers.precondition")}</div>
-                <div className="mt-0.5 leading-relaxed">{blocker.precondition}</div>
-              </div>
-              <div className="border-l-2 border-blue-500/40 pl-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("v3.blockers.resumeAction")}</div>
-                <div className="mt-0.5 leading-relaxed">{blocker.resume_action}</div>
-              </div>
-            </div>
+             <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+               <div className="border-l-2 border-orange-500/40 pl-2">
+                 <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("v3.blockers.whyBlocked")}</div>
+                 <div className="mt-0.5 leading-relaxed">{blocker.why_blocked}</div>
+               </div>
+               <div className="border-l-2 border-blue-500/40 pl-2">
+                 <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("v3.blockers.stateDifference")}</div>
+                 <div className="mt-0.5 leading-relaxed"><span className="text-muted-foreground">{t("v3.blockers.expected")}</span>{blocker.expected_state}</div>
+                 <div className="mt-0.5 leading-relaxed"><span className="text-muted-foreground">{t("v3.blockers.observed")}</span>{blocker.observed_state}</div>
+               </div>
+             </div>
+
+             {blocker.missing_facts.length > 0 && <div className="mt-2 text-xs">
+               <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("v3.blockers.missingFacts")}</div>
+               <ul className="mt-1 list-inside list-disc space-y-0.5">{blocker.missing_facts.map((fact) => <li key={fact}>{fact}</li>)}</ul>
+             </div>}
+
+             <div className="mt-2 space-y-2">
+               <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("v3.blockers.nextSteps")}</div>
+               {blocker.repair_actions.map((action) => <div key={action.action_id} className="rounded bg-blue-500/5 p-2 text-xs">
+                 <div className="flex items-start justify-between gap-2">
+                   <div><div className="font-medium">{action.label}</div><div className="mt-0.5 break-words leading-relaxed">{action.instructions}</div></div>
+                   <button
+                     type="button"
+                     className="inline-flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-[10px] hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                     aria-label={t("v3.blockers.copyAction")}
+                     onClick={() => void navigator.clipboard.writeText(action.copy_text).then(() => {
+                       setCopiedAction(action.action_id);
+                       window.setTimeout(() => setCopiedAction(undefined), 1500);
+                     })}
+                   >
+                     {copiedAction === action.action_id ? <Check className="h-3 w-3" /> : <Clipboard className="h-3 w-3" />}
+                     {t(copiedAction === action.action_id ? "v3.blockers.copied" : "v3.blockers.copy")}
+                   </button>
+                 </div>
+                 <div className="mt-1 text-[10px] text-muted-foreground">{t("v3.blockers.verify", { value: action.verification })}</div>
+               </div>)}
+             </div>
 
             {blocker.criterion_id && (
               <div className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -70,7 +99,8 @@ export function BlockerDetailsPanel({ blockers = [], compact = false }: BlockerD
                 <ExternalLink className="h-3 w-3" />{t("v3.blockers.node")}<span className="font-mono">{blocker.node_id}</span>
               </div>
             )}
-            <EvidenceLink evidenceRefs={blocker.evidence_refs} className="mt-2" />
+            <div className="mt-2 text-[10px] text-muted-foreground">{t("v3.blockers.existingEvidence", { count: blocker.evidence_refs.length })}</div>
+            <EvidenceLink evidenceRefs={blocker.evidence_refs} className="mt-1" />
           </article>
         ))}
       </div>}

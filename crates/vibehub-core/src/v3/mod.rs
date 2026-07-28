@@ -1,5 +1,6 @@
 pub mod agent_specs;
 pub mod application;
+pub mod blockers;
 pub mod bootstrap;
 pub mod domain;
 pub mod event_store;
@@ -20,6 +21,7 @@ pub mod worktree;
 
 pub use agent_specs::*;
 pub use application::V3ApplicationService;
+pub use blockers::*;
 pub use bootstrap::*;
 pub use domain::*;
 pub use event_store::V3EventStore;

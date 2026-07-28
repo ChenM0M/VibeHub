@@ -24,16 +24,56 @@
       }
     },
     "EvidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/EvidenceRef" }, "uniqueItems": true },
+    "RepairAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "kind", "label", "instructions", "owner", "preconditions", "verification", "copy_text"],
+      "properties": {
+        "action_id": { "$ref": "#/$defs/StableId" },
+        "kind": { "enum": ["command", "manual", "navigate", "retry", "collect_evidence"] },
+        "label": { "type": "string", "minLength": 1 },
+        "instructions": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "preconditions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "verification": { "type": "string", "minLength": 1 },
+        "command": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "copy_text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "BlockerProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source_event_ids", "reconstructed_fields", "unknown_fields"],
+      "properties": {
+        "status": { "enum": ["native", "legacy", "degraded"] },
+        "source_event_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "reconstructed_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "unknown_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
     "BlockerDetail": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["blocker_id", "reason_code", "summary", "kind", "owner", "precondition", "resume_action", "evidence_refs"],
+      "required": ["model_version", "blocker_id", "reason_code", "source_type", "source_id", "summary", "why_blocked", "expected_state", "observed_state", "missing_facts", "impact", "kind", "owner", "preconditions", "repair_actions", "freshness", "provenance", "precondition", "resume_action", "evidence_refs"],
       "properties": {
+        "model_version": { "const": "1.0" },
         "blocker_id": { "$ref": "#/$defs/StableId" },
         "reason_code": { "type": "string", "minLength": 1 },
+        "source_type": { "enum": ["criterion", "finding", "session", "plan_node", "worktree", "lease", "integration", "task", "event", "unknown"] },
+        "source_id": { "type": "string", "minLength": 1 },
         "summary": { "type": "string", "minLength": 1 },
+        "why_blocked": { "type": "string", "minLength": 1 },
+        "expected_state": { "type": "string", "minLength": 1 },
+        "observed_state": { "type": "string", "minLength": 1 },
+        "missing_facts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "impact": { "type": "string", "minLength": 1 },
         "kind": { "enum": ["external_precondition", "permission", "evidence_gap", "dependency", "conflict", "workflow", "unknown"] },
         "owner": { "type": "string", "minLength": 1 },
+        "preconditions": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "repair_actions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/RepairAction" }, "uniqueItems": true },
+        "freshness": { "$ref": "#/$defs/Freshness" },
+        "provenance": { "$ref": "#/$defs/BlockerProvenance" },
         "precondition": { "type": "string", "minLength": 1 },
         "resume_action": { "type": "string", "minLength": 1 },
         "criterion_id": { "$ref": "#/$defs/StableId" },

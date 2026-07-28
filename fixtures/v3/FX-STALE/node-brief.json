@@ -197,26 +197,83 @@
   ],
   "coverage_mode": "enforced",
   "completion_gate": {
+    "all_passed": true,
+    "blocked_chain": [],
     "items": [
       {
         "gate": "plan_terminal",
-        "passed": true
+        "status": "satisfied",
+        "passed": true,
+        "reason_code": "completion.plan_terminal",
+        "summary": "plan_terminal satisfied",
+        "expected_state": "plan_terminal satisfied",
+        "observed_state": "plan_terminal satisfied",
+        "satisfied_facts": [
+          "plan_terminal satisfied"
+        ],
+        "missing_facts": [],
+        "blocker_ids": [],
+        "repair_actions": []
       },
       {
         "gate": "sessions_settled",
-        "passed": true
+        "status": "satisfied",
+        "passed": true,
+        "reason_code": "completion.sessions_settled",
+        "summary": "sessions_settled satisfied",
+        "expected_state": "sessions_settled satisfied",
+        "observed_state": "sessions_settled satisfied",
+        "satisfied_facts": [
+          "sessions_settled satisfied"
+        ],
+        "missing_facts": [],
+        "blocker_ids": [],
+        "repair_actions": []
       },
       {
         "gate": "results_terminal",
-        "passed": true
+        "status": "satisfied",
+        "passed": true,
+        "reason_code": "completion.results_terminal",
+        "summary": "results_terminal satisfied",
+        "expected_state": "results_terminal satisfied",
+        "observed_state": "results_terminal satisfied",
+        "satisfied_facts": [
+          "results_terminal satisfied"
+        ],
+        "missing_facts": [],
+        "blocker_ids": [],
+        "repair_actions": []
       },
       {
         "gate": "criteria_green",
-        "passed": true
+        "status": "satisfied",
+        "passed": true,
+        "reason_code": "completion.criteria_green",
+        "summary": "criteria_green satisfied",
+        "expected_state": "criteria_green satisfied",
+        "observed_state": "criteria_green satisfied",
+        "satisfied_facts": [
+          "criteria_green satisfied"
+        ],
+        "missing_facts": [],
+        "blocker_ids": [],
+        "repair_actions": []
       },
       {
         "gate": "findings_closed",
-        "passed": true
+        "status": "satisfied",
+        "passed": true,
+        "reason_code": "completion.findings_closed",
+        "summary": "findings_closed satisfied",
+        "expected_state": "findings_closed satisfied",
+        "observed_state": "findings_closed satisfied",
+        "satisfied_facts": [
+          "findings_closed satisfied"
+        ],
+        "missing_facts": [],
+        "blocker_ids": [],
+        "repair_actions": []
       }
     ]
   },

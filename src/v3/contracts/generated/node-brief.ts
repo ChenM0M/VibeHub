@@ -67,12 +67,21 @@ export interface NodeBrief {
   }[];
   coverage_mode: "enforced" | "legacy_degraded";
   completion_gate: {
+    all_passed: boolean;
+    blocked_chain: string[];
     items: {
       gate: string;
+      status: "satisfied" | "blocked";
       passed: boolean;
-      [k: string]: unknown;
+      reason_code: string;
+      summary: string;
+      expected_state: string;
+      observed_state: string;
+      satisfied_facts: string[];
+      missing_facts: string[];
+      blocker_ids: string[];
+      repair_actions: string[];
     }[];
-    [k: string]: unknown;
   };
   research_summary: string[];
   criteria: CriterionSummary[];
@@ -121,16 +130,62 @@ export interface EvidenceRef {
   excerpt?: string;
 }
 export interface BlockerDetail {
+  model_version: "1.0";
   blocker_id: string;
   reason_code: string;
+  source_type:
+    | "criterion"
+    | "finding"
+    | "session"
+    | "plan_node"
+    | "worktree"
+    | "lease"
+    | "integration"
+    | "task"
+    | "event"
+    | "unknown";
+  source_id: string;
   summary: string;
+  why_blocked: string;
+  expected_state: string;
+  observed_state: string;
+  missing_facts: string[];
+  impact: string;
   kind: "external_precondition" | "permission" | "evidence_gap" | "dependency" | "conflict" | "workflow" | "unknown";
   owner: string;
+  /**
+   * @minItems 1
+   */
+  preconditions: string[];
+  /**
+   * @minItems 1
+   */
+  repair_actions: RepairAction[];
+  freshness: "fresh" | "stale" | "rebuilding" | "unavailable";
+  provenance: BlockerProvenance;
   precondition: string;
   resume_action: string;
   criterion_id?: string;
   node_id?: string;
   evidence_refs: EvidenceRefs;
+}
+export interface RepairAction {
+  action_id: string;
+  kind: "command" | "manual" | "navigate" | "retry" | "collect_evidence";
+  label: string;
+  instructions: string;
+  owner: string;
+  preconditions: string[];
+  verification: string;
+  command?: string;
+  target?: string;
+  copy_text: string;
+}
+export interface BlockerProvenance {
+  status: "native" | "legacy" | "degraded";
+  source_event_ids: string[];
+  reconstructed_fields: string[];
+  unknown_fields: string[];
 }
 export interface WorktreeRef {
   worktree_id: string;

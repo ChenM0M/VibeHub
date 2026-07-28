@@ -48,7 +48,7 @@
       "contract": "node_brief",
       "schema": "node-brief.schema.json",
       "file": "node-brief.json",
-      "sha256": "6cadb6afa826fae2c6ad681c7c7b81712da6acade0d88d3ed9f98e0c2d1b5627"
+      "sha256": "5f81517118bf42cff8550fca918efc9d6689e5c6a3152db6c0d80269d27dc427"
     },
     {
       "contract": "worktree_orchestration",

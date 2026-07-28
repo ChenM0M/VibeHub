@@ -36,14 +36,30 @@
     "coverage_mode": { "enum": ["enforced", "legacy_degraded"] },
     "completion_gate": {
       "type": "object",
-      "required": ["items"],
+      "additionalProperties": false,
+      "required": ["all_passed", "blocked_chain", "items"],
       "properties": {
+        "all_passed": { "type": "boolean" },
+        "blocked_chain": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "items": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["gate", "passed"],
-            "properties": { "gate": { "type": "string" }, "passed": { "type": "boolean" } }
+            "additionalProperties": false,
+            "required": ["gate", "status", "passed", "reason_code", "summary", "expected_state", "observed_state", "satisfied_facts", "missing_facts", "blocker_ids", "repair_actions"],
+            "properties": {
+              "gate": { "type": "string", "minLength": 1 },
+              "status": { "enum": ["satisfied", "blocked"] },
+              "passed": { "type": "boolean" },
+              "reason_code": { "type": "string", "minLength": 1 },
+              "summary": { "type": "string", "minLength": 1 },
+              "expected_state": { "type": "string", "minLength": 1 },
+              "observed_state": { "type": "string", "minLength": 1 },
+              "satisfied_facts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+              "missing_facts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+              "blocker_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" }, "uniqueItems": true },
+              "repair_actions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+            }
           }
         }
       }

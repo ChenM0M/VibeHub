@@ -156,7 +156,10 @@ impl TaskLifecycleProjection {
                     matches!(
                         criterion.state,
                         CriterionState::Passed | CriterionState::NotApplicable
-                    ) && (!criterion.evidence_refs.is_empty()
+                    ) && (criterion
+                        .evidence_refs
+                        .iter()
+                        .any(|reference| valid_evidence_ref(reference))
                         || criterion.state == CriterionState::NotApplicable)
                 })
             })
@@ -187,6 +190,14 @@ impl TaskLifecycleProjection {
         hasher.update(format!("{}:{}:{}", self.task_id, self.version, criteria));
         format!("sha256:{:x}", hasher.finalize())
     }
+}
+
+pub fn valid_evidence_ref(reference: &str) -> bool {
+    let normalized = reference.trim().to_ascii_lowercase();
+    !normalized.is_empty()
+        && !normalized.starts_with("stale:")
+        && !normalized.starts_with("invalid:")
+        && !normalized.starts_with("unavailable:")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1623,4 +1634,11 @@ mod tests {
         assert_eq!(store.load_project("project.test").unwrap().len(), 120);
         fs::remove_dir_all(root).unwrap();
     }
+}
+#[test]
+fn stale_or_invalid_evidence_is_not_completion_evidence() {
+    assert!(valid_evidence_ref("cargo test: passed"));
+    assert!(!valid_evidence_ref("stale:old-build"));
+    assert!(!valid_evidence_ref("invalid:missing-artifact-hash"));
+    assert!(!valid_evidence_ref("unavailable:windows-host"));
 }
