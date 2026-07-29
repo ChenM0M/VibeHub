@@ -226,7 +226,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       if (refreshInFlight.current) return;
       refreshInFlight.current = true;
-      void loadCurrentBundle().finally(() => {
+      void loadCurrentBundle(undefined, { background: true }).finally(() => {
         refreshInFlight.current = false;
       });
     }, 4000);

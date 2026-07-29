@@ -3,7 +3,10 @@ use super::blockers::{
     BlockerDetail, BlockerKind, BlockerProvenance, BlockerProvenanceStatus, RepairAction,
     RepairActionKind, BLOCKER_MODEL_VERSION,
 };
-use super::lifecycle::{fold_task, valid_evidence_ref, CriterionState, TaskLifecycleProjection};
+use super::lifecycle::{
+    fold_task, is_terminal_plan_node_state, valid_evidence_ref, CriterionState,
+    TaskLifecycleProjection,
+};
 use super::orchestration::fold_task as fold_orchestration;
 use super::orchestration::LeaseState;
 use super::project_intelligence::{
@@ -645,7 +648,7 @@ impl V3ViewRepository {
         let incomplete_nodes = lifecycle
             .nodes
             .values()
-            .filter(|node| !matches!(node.state.as_str(), "completed" | "waived" | "superseded"))
+            .filter(|node| !is_terminal_plan_node_state(node.state.as_str()))
             .map(|node| format!("{}={}", node.node_id, node.state))
             .collect::<Vec<_>>();
         let unsettled_sessions = lifecycle
@@ -684,12 +687,27 @@ impl V3ViewRepository {
             .filter(|event| event.event_type == "session.recovered")
             .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
             .collect::<BTreeSet<_>>();
+        let risk_session_ids = task_events
+            .iter()
+            .filter(|event| event.event_type == "risk.logged")
+            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
+        let failed_result_session_ids = task_events
+            .iter()
+            .filter(|event| {
+                event.event_type == "agent.result_recorded"
+                    && event.payload.get("status").and_then(Value::as_str) == Some("failed")
+            })
+            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+            .collect::<BTreeSet<_>>();
         let sessions_without_progress = if required_records.contains(&"progress".to_owned()) {
             opened_session_ids
                 .iter()
                 .filter(|session_id| {
                     !progress_session_ids.contains(*session_id)
                         && !recovered_session_ids.contains(*session_id)
+                        && !(risk_session_ids.contains(*session_id)
+                            && failed_result_session_ids.contains(*session_id))
                 })
                 .cloned()
                 .collect::<Vec<_>>()
@@ -768,10 +786,10 @@ impl V3ViewRepository {
             .collect::<Vec<_>>();
         let items = vec![
             completion_gate_item("required_records", "completion.records_missing", missing_records.is_empty(), "所有 effective policy required_records 均存在", format!("缺少记录：{}", missing_records.join(", ")), missing_records.clone(), Vec::new(), missing_records.iter().map(|record| format!("通过 typed command 记录 {record}" )).collect()),
-            completion_gate_item("plan_terminal", "completion.plan_non_terminal", !planning_required || (!lifecycle.nodes.is_empty() && incomplete_nodes.is_empty()), "所有必需 plan node 均为 completed/waived/superseded", format!("未终结节点：{}", incomplete_nodes.join(", ")), incomplete_nodes.clone(), Vec::new(), vec!["按 DAG 顺序完成、waive 或 supersede 未终结节点".to_owned()]),
+            completion_gate_item("plan_terminal", "completion.plan_non_terminal", !planning_required || (!lifecycle.nodes.is_empty() && incomplete_nodes.is_empty()), "所有必需 plan node 均为 completed/waived/superseded/cancelled", format!("未终结节点：{}", incomplete_nodes.join(", ")), incomplete_nodes.clone(), Vec::new(), vec!["按 DAG 顺序完成、waive、supersede 或 cancel 未终结节点".to_owned()]),
             completion_gate_item("sessions_settled", "completion.session_unsettled", unsettled_sessions.is_empty(), "所有 session 均 closed，gap 已 recover", format!("未结 session：{}", unsettled_sessions.join(", ")), unsettled_sessions.clone(), Vec::new(), vec!["对 gapped session 先 session_recovery(recover)，记录 terminal result 后 session_close".to_owned()]),
             completion_gate_item("results_terminal", "completion.result_missing_or_non_terminal", sessions_without_result.is_empty(), "每个 opened session 都有 succeeded/failed terminal AgentResult", format!("缺少 terminal result 的 session：{}", sessions_without_result.join(", ")), sessions_without_result.clone(), Vec::new(), vec!["为列出的 session 调用 agent_result_record(status=succeeded|failed)".to_owned()]),
-            completion_gate_item("progress_evidence", "completion.progress_missing", sessions_without_progress.is_empty(), "policy 要求 progress 时，每个 session 都有 progress 事件，或中断 session 有 session.recovered 证据", format!("缺少 progress/recovery 证据的 session：{}", sessions_without_progress.join(", ")), sessions_without_progress.clone(), Vec::new(), vec!["session 仍开启时调用 event_log(kind=progress)；已中断则先 session_recovery(action=recover, evidence_refs=[...]) 再结束".to_owned()]),
+            completion_gate_item("progress_evidence", "completion.progress_missing", sessions_without_progress.is_empty(), "policy 要求 progress 时，每个 session 都有 progress 事件，或中断 session 有 session.recovered 证据，或阻塞 session 同时有 risk 事件与 failed terminal result", format!("缺少 progress/recovery 证据的 session：{}", sessions_without_progress.join(", ")), sessions_without_progress.clone(), Vec::new(), vec!["session 仍开启时调用 event_log(kind=progress)；已中断则先 session_recovery(action=recover, evidence_refs=[...]) 再结束；阻塞收尾则记录 event_log(kind=risk) 与 agent_result_record(status=failed)".to_owned()]),
             completion_gate_item("criteria_green", "completion.review_or_evidence_not_green", criterion_issues.is_empty(), "所有 required criterion 为 passed/not_applicable，且 passed evidence 有效且未标记 stale", format!("未通过项：{}", criterion_issues.join("；")), criterion_issues.clone(), current_blocker_details.iter().filter(|blocker| blocker.get("source_type").and_then(Value::as_str) == Some("criterion")).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["执行每项真实验证；缺记录则 review，blocked 则解除环境条件，invalid/stale evidence 则重新采集".to_owned()]),
             completion_gate_item("findings_closed", "completion.finding_open", open_findings.is_empty(), "所有 finding 均有 remediation attempt 且 closed", format!("未闭环 finding：{}", open_findings.join(", ")), open_findings.clone(), current_blocker_details.iter().filter(|blocker| blocker.get("source_type").and_then(Value::as_str) == Some("finding")).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["记录 remediation attempt 与验证 evidence，然后关闭 finding".to_owned()]),
             completion_gate_item("orchestration_settled", "completion.worktree_or_lease_unsettled", unsettled_worktrees.is_empty(), "所有 worktree 已 integrated/cleaned/abandoned，且无 active lease", format!("未结 orchestration：{}", unsettled_worktrees.join("；")), unsettled_worktrees.clone(), current_blocker_details.iter().filter(|blocker| matches!(blocker.get("source_type").and_then(Value::as_str), Some("worktree" | "lease" | "integration"))).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["完成或安全放弃 integration，并 release/reclaim lease".to_owned()]),

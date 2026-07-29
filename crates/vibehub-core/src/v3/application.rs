@@ -4,7 +4,8 @@ use super::domain::{
 };
 use super::event_store::V3EventStore;
 use super::lifecycle::{
-    apply_command_with_required_criteria, LifecycleCommand, PlanAddNodeCommand,
+    apply_command_with_required_criteria, is_terminal_plan_node_state,
+    plan_node_state_covers_criteria, LifecycleCommand, PlanAddNodeCommand,
     PlanSetDependenciesCommand, PlanSetStateCommand, TaskLifecycleProjection,
 };
 use super::orchestration::{self, OrchestrationCommand, OrchestrationProjection};
@@ -884,9 +885,10 @@ impl V3ApplicationService {
             .is_some_and(|policy| policy.planning_required)
         {
             if lifecycle.nodes.is_empty()
-                || lifecycle.nodes.values().any(|node| {
-                    !matches!(node.state.as_str(), "completed" | "waived" | "superseded")
-                })
+                || lifecycle
+                    .nodes
+                    .values()
+                    .any(|node| !is_terminal_plan_node_state(node.state.as_str()))
             {
                 return Err(session_error(
                     "V3_COMPLETION_PLAN_GATE_FAILED",
@@ -896,6 +898,7 @@ impl V3ApplicationService {
             let covered = lifecycle
                 .nodes
                 .values()
+                .filter(|node| plan_node_state_covers_criteria(node.state.as_str()))
                 .flat_map(|node| node.criterion_ids.iter().cloned())
                 .collect::<BTreeSet<_>>();
             if !required.is_subset(&covered) {
@@ -930,7 +933,7 @@ impl V3ApplicationService {
                 .any(|record| record == "progress")
         }) && task_sessions
             .iter()
-            .any(|(_, session)| session.progress_entries == 0 && session.recovered_gaps == 0)
+            .any(|(_, session)| !projection::session_has_milestone_evidence(session))
         {
             return Err(session_error(
                 "V3_COMPLETION_PROGRESS_GATE_FAILED",
@@ -1155,7 +1158,7 @@ pub(crate) fn canonical_criterion_id(task_id: &str, index: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::v3::lifecycle::command;
+    use crate::v3::lifecycle::{command, PlanCommandIdentity};
     use std::fs;
     use uuid::Uuid;
 
@@ -1302,6 +1305,223 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.code, "V3_AGENT_RESULT_INVALID");
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn write_planning_task(root: &Path, criteria: &[&str]) {
+        fs::create_dir_all(root.join(".vibehub/tasks/task.test")).unwrap();
+        let acceptance = criteria
+            .iter()
+            .map(|criterion| format!("- {criterion}\n"))
+            .collect::<String>();
+        fs::write(
+            root.join(".vibehub/tasks/task.test/task.yaml"),
+            format!(
+                "task_id: task.test\ntitle: Planning task\nintent: Verify plan completion gates\nphase: implement\nphase_status: active\nacceptance_criteria:\n{acceptance}workflow_profile: standard\nexecution_policy:\n  recommended_profile: standard\n  effective_profile: standard\n  policy_version: 1\n  enforcement_epoch: v3.1-hard-closure\n  trigger_reasons:\n  - multiple_verifiable_milestones\n  milestone_policy: standard\n  planning_required: true\n  review_required: true\n  required_records:\n  - plan\n  - session\n  - progress\n  - result\n  - review\n  upgrade_history: []\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    fn add_planning_node(
+        app: &V3ApplicationService,
+        version: u64,
+        node_id: &str,
+        criterion_ids: Vec<String>,
+    ) {
+        app.plan_add_node(PlanAddNodeCommand {
+            identity: PlanCommandIdentity {
+                project_id: "project.test".to_owned(),
+                task_id: "task.test".to_owned(),
+                actor: "codex".to_owned(),
+                expected_version: version,
+                idempotency_key: format!("plan.add.{node_id}"),
+            },
+            node_id: node_id.to_owned(),
+            title: node_id.to_owned(),
+            goal: "verify plan terminal gate".to_owned(),
+            scope: Vec::new(),
+            dependencies: Vec::new(),
+            criterion_ids,
+        })
+        .unwrap();
+    }
+
+    fn set_planning_node_state(
+        app: &V3ApplicationService,
+        version: u64,
+        node_id: &str,
+        state: &str,
+    ) {
+        app.plan_set_state(PlanSetStateCommand {
+            identity: PlanCommandIdentity {
+                project_id: "project.test".to_owned(),
+                task_id: "task.test".to_owned(),
+                actor: "codex".to_owned(),
+                expected_version: version,
+                idempotency_key: format!("plan.state.{node_id}.{state}"),
+            },
+            node_id: node_id.to_owned(),
+            state: state.to_owned(),
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn completion_plan_gate_accepts_cancelled_nodes_as_terminal() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-cancelled-{}", Uuid::new_v4()));
+        write_planning_task(&root, &["Only criterion"]);
+        let app = V3ApplicationService::open(&root).unwrap();
+
+        add_planning_node(
+            &app,
+            0,
+            "node.done",
+            vec!["criterion.task.test.c01".to_owned()],
+        );
+        add_planning_node(&app, 1, "node.dropped", Vec::new());
+        set_planning_node_state(&app, 2, "node.done", "active");
+        set_planning_node_state(&app, 3, "node.done", "completed");
+        set_planning_node_state(&app, 4, "node.dropped", "cancelled");
+        app.review_criterion(
+            "project.test",
+            "task.test",
+            "codex",
+            5,
+            "criterion.pass.1",
+            "criterion.task.test.c01",
+            "passed",
+            "reviewer",
+            vec!["test:review".to_owned()],
+            Value::Null,
+        )
+        .unwrap();
+
+        let lifecycle = app.task_lifecycle("project.test", "task.test").unwrap();
+        assert_eq!(lifecycle.nodes["node.dropped"].state, "cancelled");
+        app.propose_task_completion("project.test", "task.test", "codex", 6, "proposal.1")
+            .unwrap();
+        let proposed = app.task_lifecycle("project.test", "task.test").unwrap();
+        assert_eq!(proposed.state, "completion_pending");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cancelled_nodes_do_not_cover_required_criteria() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-coverage-{}", Uuid::new_v4()));
+        write_planning_task(&root, &["Only criterion"]);
+        let app = V3ApplicationService::open(&root).unwrap();
+
+        add_planning_node(
+            &app,
+            0,
+            "node.dropped",
+            vec!["criterion.task.test.c01".to_owned()],
+        );
+        set_planning_node_state(&app, 1, "node.dropped", "cancelled");
+        app.review_criterion(
+            "project.test",
+            "task.test",
+            "codex",
+            2,
+            "criterion.pass.1",
+            "criterion.task.test.c01",
+            "passed",
+            "reviewer",
+            vec!["test:review".to_owned()],
+            Value::Null,
+        )
+        .unwrap();
+
+        let error = app
+            .propose_task_completion("project.test", "task.test", "codex", 3, "proposal.1")
+            .unwrap_err();
+        assert_eq!(error.code, "V3_COMPLETION_CRITERION_COVERAGE_MISSING");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn blocked_session_with_risk_and_failed_result_satisfies_progress_gate() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-risk-{}", Uuid::new_v4()));
+        write_planning_task(&root, &["Only criterion"]);
+        let app = V3ApplicationService::open(&root).unwrap();
+
+        add_planning_node(
+            &app,
+            0,
+            "node.done",
+            vec!["criterion.task.test.c01".to_owned()],
+        );
+        set_planning_node_state(&app, 1, "node.done", "active");
+        app.session_open_with_context(
+            "project.test",
+            "task.test",
+            "session.blocked",
+            "codex",
+            0,
+            "open.blocked",
+            Some("/tmp/vibehub-test".to_owned()),
+            Some("node.done".to_owned()),
+            None,
+        )
+        .unwrap();
+        app.event_log(
+            "risk",
+            "project.test",
+            "task.test",
+            "session.blocked",
+            "codex",
+            1,
+            "risk.blocked",
+            json!({"summary": "blocked by upstream defect"}),
+        )
+        .unwrap();
+        app.agent_result_record(
+            "project.test",
+            "task.test",
+            "session.blocked",
+            "codex",
+            2,
+            "result.blocked",
+            "result.test",
+            Some("node.done".to_owned()),
+            json!({
+                "kind": "execution",
+                "request_source": "user_request",
+                "instruction": "Fix the defect",
+                "status": "failed",
+                "summary": "Blocked by upstream defect"
+            }),
+        )
+        .unwrap();
+        app.session_close(
+            "project.test",
+            "task.test",
+            "session.blocked",
+            "codex",
+            3,
+            "close.blocked",
+        )
+        .unwrap();
+        set_planning_node_state(&app, 2, "node.done", "completed");
+        app.review_criterion(
+            "project.test",
+            "task.test",
+            "codex",
+            3,
+            "criterion.pass.1",
+            "criterion.task.test.c01",
+            "passed",
+            "reviewer",
+            vec!["test:review".to_owned()],
+            Value::Null,
+        )
+        .unwrap();
+
+        app.propose_task_completion("project.test", "task.test", "codex", 4, "proposal.1")
+            .unwrap();
+        let proposed = app.task_lifecycle("project.test", "task.test").unwrap();
+        assert_eq!(proposed.state, "completion_pending");
         fs::remove_dir_all(root).unwrap();
     }
 

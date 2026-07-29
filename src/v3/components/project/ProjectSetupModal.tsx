@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Settings, FolderGit2, Code2, Bot, Rocket, X, Link, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { V3AgentSpecInspection, V3AgentSpecTarget, V3OutputLanguage, V3ProjectSettingsUpdateRequest } from "@/v3/contracts";
+import { projectSetupSignature, shouldAdoptProjectSetupValues } from "./projectSetupFormSync";
 import { useTranslation } from "react-i18next";
 
 interface ProjectSetupModalProps {
@@ -43,14 +44,22 @@ export function ProjectSetupModal({ mode, onClose, onSubmit, onSync, onForceSync
   const [gitUrl, setGitUrl] = useState(initialGitUrl);
   const [selectedTools, setSelectedTools] = useState<Set<V3AgentSpecTarget>>(new Set(initialTools));
   const [confirmForce, setConfirmForce] = useState(false);
+  const initialSignature = projectSetupSignature({ language: initialLanguage, gitUrl: initialGitUrl, tools: initialTools, revision: expectedRevision });
+  const syncedSignature = useRef(initialSignature);
+  const dirty = useRef(false);
 
   useEffect(() => {
+    if (initialSignature === syncedSignature.current) return;
+    const adopt = shouldAdoptProjectSetupValues({ nextSignature: initialSignature, syncedSignature: syncedSignature.current, dirty: dirty.current });
+    syncedSignature.current = initialSignature;
+    if (!adopt) return;
     setSelectedLang(initialLanguage);
     setGitUrl(initialGitUrl);
     setSelectedTools(new Set(initialTools));
-  }, [initialLanguage, initialGitUrl, initialTools]);
+  }, [initialSignature, initialLanguage, initialGitUrl, initialTools]);
 
   const toggleTool = (id: V3AgentSpecTarget) => setSelectedTools((previous) => {
+    dirty.current = true;
     const next = new Set(previous);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
@@ -83,11 +92,11 @@ export function ProjectSetupModal({ mode, onClose, onSubmit, onSync, onForceSync
         <div className="flex-1 space-y-8 overflow-y-auto p-6 scrollbar-auto-hide">
           <section className="space-y-3">
             <h3 className="flex items-center gap-2 text-sm font-semibold"><Code2 className="h-4 w-4 text-muted-foreground" />{t("v3.setup.outputLanguage")} <span className="text-red-500">*</span></h3>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{PROJECT_LANGUAGES.map((language) => <button key={language.id} type="button" onClick={() => setSelectedLang(language.id)} className={cn("flex flex-col items-center justify-center gap-2 rounded-lg border p-3 transition-all", selectedLang === language.id ? "border-blue-500 bg-blue-500/10 text-blue-600 ring-1 ring-blue-500 dark:text-blue-400" : "border-border/60 text-muted-foreground hover:bg-muted/50 hover:text-foreground")}><div className="flex h-8 w-8 items-center justify-center rounded border border-border/50 bg-background font-mono text-xs font-bold shadow-sm">{language.icon}</div><span className="text-[11px] font-medium">{t(language.nameKey)}</span></button>)}</div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{PROJECT_LANGUAGES.map((language) => <button key={language.id} type="button" onClick={() => { dirty.current = true; setSelectedLang(language.id); }} className={cn("flex flex-col items-center justify-center gap-2 rounded-lg border p-3 transition-all", selectedLang === language.id ? "border-blue-500 bg-blue-500/10 text-blue-600 ring-1 ring-blue-500 dark:text-blue-400" : "border-border/60 text-muted-foreground hover:bg-muted/50 hover:text-foreground")}><div className="flex h-8 w-8 items-center justify-center rounded border border-border/50 bg-background font-mono text-xs font-bold shadow-sm">{language.icon}</div><span className="text-[11px] font-medium">{t(language.nameKey)}</span></button>)}</div>
           </section>
           <section className="space-y-3">
             <h3 className="flex items-center gap-2 text-sm font-semibold"><FolderGit2 className="h-4 w-4 text-muted-foreground" />{t("v3.setup.remoteRepository")}</h3>
-            <div className="relative"><Link className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input type="text" placeholder="https://github.com/user/repo.git" value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} className="w-full rounded-md border border-border/60 bg-background py-2 pl-9 pr-4 text-sm transition-shadow placeholder:text-muted-foreground/50 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" /></div>
+            <div className="relative"><Link className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input type="text" placeholder="https://github.com/user/repo.git" value={gitUrl} onChange={(event) => { dirty.current = true; setGitUrl(event.target.value); }} className="w-full rounded-md border border-border/60 bg-background py-2 pl-9 pr-4 text-sm transition-shadow placeholder:text-muted-foreground/50 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" /></div>
             <p className="text-[11px] text-muted-foreground">{t("v3.setup.remoteHint")}</p>
           </section>
           <section className="space-y-3">

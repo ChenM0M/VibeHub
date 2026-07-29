@@ -126,7 +126,7 @@ interface V3State {
   leaveProject: () => void;
   inspectProjectLayout: () => Promise<V3ProjectLayoutStatus | null>;
   runLifecycleAction: (action: V3LifecycleAction, taskId?: string) => Promise<void>;
-  loadCurrentBundle: (taskIdOverride?: string | null) => Promise<V3FixtureBundle | null>;
+  loadCurrentBundle: (taskIdOverride?: string | null, options?: { background?: boolean }) => Promise<V3FixtureBundle | null>;
   loadLegacyArchive: () => Promise<void>;
   loadUsage: () => Promise<void>;
   loadTaskUsage: (taskId: string | null) => Promise<void>;
@@ -352,13 +352,14 @@ export const useV3Store = create<V3State>((set, get) => ({
     }
   },
 
-  loadCurrentBundle: async (taskIdOverride) => {
+  loadCurrentBundle: async (taskIdOverride, options) => {
     const { currentScenario: scenario, projectPath } = get();
     if (!scenario && !projectPath) return null;
     const loader = productionLoader;
     if (!scenario && !loader) return null;
     const requestId = ++loadRequestId;
-    set({ loading: true, error: null });
+    const background = options?.background === true;
+    if (!background) set({ loading: true, error: null });
     try {
       const previousProjectId = get().bundle?.projectOverview.project_id ?? null;
       const requestedTaskId = taskIdOverride === undefined ? get().selectedTaskId : taskIdOverride;
@@ -382,13 +383,16 @@ export const useV3Store = create<V3State>((set, get) => ({
       set({
         bundle,
         loading: false,
+        error: null,
         selectedTaskId,
         selectedNodeId,
       });
       return bundle;
     } catch (err) {
       if (requestId !== loadRequestId || get().projectPath !== projectPath || get().currentScenario !== scenario) return null;
-      set({ loading: false, error: errorMessage(err) });
+      const message = errorMessage(err);
+      if (background && get().error === message && get().loading === false) return null;
+      set({ loading: false, error: message });
       return null;
     }
   },

@@ -56,6 +56,16 @@ pub struct SessionProjection {
     pub agent_results: Vec<AgentResultEntry>,
 }
 
+pub fn session_has_milestone_evidence(session: &SessionProjection) -> bool {
+    session.progress_entries > 0
+        || session.recovered_gaps > 0
+        || (session.risk_entries > 0
+            && session
+                .agent_results
+                .iter()
+                .any(|result| result.status == "failed"))
+}
+
 pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
     let mut projection = V3Projection {
         schema_version: "1.0".to_owned(),

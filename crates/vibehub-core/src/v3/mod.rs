@@ -28,9 +28,9 @@ pub use event_store::V3EventStore;
 pub use execution_policy::*;
 pub use git_runner::*;
 pub use lifecycle::{
-    fold_task as fold_task_lifecycle, LifecycleCommand, PlanAddNodeCommand, PlanCommandIdentity,
-    PlanSetCriteriaCommand, PlanSetDependenciesCommand, PlanSetStateCommand,
-    TaskLifecycleProjection,
+    fold_task as fold_task_lifecycle, is_terminal_plan_node_state, plan_node_state_covers_criteria,
+    LifecycleCommand, PlanAddNodeCommand, PlanCommandIdentity, PlanSetCriteriaCommand,
+    PlanSetDependenciesCommand, PlanSetStateCommand, TaskLifecycleProjection,
 };
 pub use orchestration::{
     fold_task as fold_worktree_orchestration, LeaseProjection, LeaseState, OrchestrationCommand,

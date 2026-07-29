@@ -74,6 +74,14 @@ pub struct PlanNodeProjection {
     pub criterion_ids: BTreeSet<String>,
 }
 
+pub fn is_terminal_plan_node_state(state: &str) -> bool {
+    matches!(state, "completed" | "waived" | "superseded" | "cancelled")
+}
+
+pub fn plan_node_state_covers_criteria(state: &str) -> bool {
+    !matches!(state, "cancelled" | "superseded")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FindingProjection {
     pub finding_id: String,
