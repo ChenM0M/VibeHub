@@ -20,6 +20,7 @@ use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -338,7 +339,7 @@ impl V3ViewRepository {
                 }))
             })
             .collect();
-        let archived_tasks: Vec<Value> = project_tasks
+        let mut archived_tasks: Vec<Value> = project_tasks
             .iter()
             .filter_map(|project_task| {
                 let task_lifecycle = fold_task(&project_task.task_id, &events);
@@ -355,6 +356,7 @@ impl V3ViewRepository {
                 })
             })
             .collect();
+        sort_archived_tasks_newest_first(&mut archived_tasks);
         let effective_current_task_id = self.current_task_id().ok();
         let workspace = resolve_workspace(&self.root, task_id, &events);
         let workspace_native_root = native_path(&workspace.root);
@@ -2366,6 +2368,30 @@ fn agent_results_view(
         "freshness": "fresh", "completeness": if results.is_empty() {"unknown"} else {"complete"}, "state": state, "review_required": review_required, "next_action": if review_required { Value::String("run_review".to_owned()) } else { Value::Null }, "results": results,
         "evidence_refs": evidence_refs, "warnings": warnings, "errors": []
     })
+}
+
+fn sort_archived_tasks_newest_first(archived_tasks: &mut [Value]) {
+    archived_tasks.sort_by(|left, right| {
+        let left_terminal_at = left.get("terminal_at").and_then(Value::as_str);
+        let right_terminal_at = right.get("terminal_at").and_then(Value::as_str);
+        match (left_terminal_at, right_terminal_at) {
+            (Some(left_at), Some(right_at)) => right_at.cmp(left_at),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        }
+        .then_with(|| {
+            let left_task_id = left
+                .get("task_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let right_task_id = right
+                .get("task_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            left_task_id.cmp(right_task_id)
+        })
+    });
 }
 
 fn archived_task_summary(
@@ -4459,6 +4485,99 @@ mod tests {
         );
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archived_tasks_are_ordered_by_terminal_at_newest_first() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-v3-archive-order-{}", Uuid::new_v4()));
+        for task_id in [
+            "task.alpha",
+            "task.beta",
+            "task.gamma",
+            "task.delta",
+            "task.active",
+        ] {
+            let task_dir = root.join(".vibehub/tasks").join(task_id);
+            fs::create_dir_all(&task_dir).unwrap();
+            let phase_status = if task_id == "task.active" {
+                "active"
+            } else {
+                "completed"
+            };
+            fs::write(
+                task_dir.join("task.yaml"),
+                format!("task_id: {task_id}\ntitle: {task_id}\nintent: Verify archive ordering\nphase: implement\nphase_status: {phase_status}\nacceptance_criteria:\n- Visible in archive\ndependencies: []\n"),
+            )
+            .unwrap();
+        }
+        let repository = V3ViewRepository::open(&root).unwrap();
+        let project_id = repository.project_id();
+        let store = V3EventStore::open(&root).unwrap();
+        for (task_id, occurred_at) in [
+            ("task.alpha", "2026-01-01T00:00:00.000Z"),
+            ("task.beta", "2026-03-03T00:00:00.000Z"),
+            ("task.gamma", "2026-02-02T00:00:00.000Z"),
+        ] {
+            store
+                .append(EventDraft {
+                    event_type: "progress.logged".to_owned(),
+                    aggregate_id: format!("session.{task_id}"),
+                    expected_version: 0,
+                    idempotency_key: format!("archive.order.{task_id}"),
+                    project_id: ProjectId(project_id.clone()),
+                    task_id: TaskId(task_id.to_owned()),
+                    node_id: None,
+                    session_id: Some(SessionId(format!("session.{task_id}"))),
+                    worktree_id: None,
+                    lease_id: None,
+                    operation_id: None,
+                    actor: "agent".to_owned(),
+                    evidence_grade: EvidenceGrade::AgentReported,
+                    occurred_at: Some(occurred_at.to_owned()),
+                    commit_sha: None,
+                    payload: json!({"summary": "seed archive ordering"}),
+                })
+                .unwrap();
+        }
+
+        let bundle = repository.load_bundle("task.active").unwrap();
+        let archived = bundle.project_overview["archived_tasks"]
+            .as_array()
+            .unwrap();
+        let order: Vec<&str> = archived
+            .iter()
+            .map(|task| task["task_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            order,
+            vec!["task.beta", "task.gamma", "task.alpha", "task.delta"],
+            "archived tasks must be ordered by terminal_at descending with missing values last"
+        );
+        assert_eq!(archived[0]["terminal_at"], "2026-03-03T00:00:00.000Z");
+        assert_eq!(archived[2]["terminal_at"], "2026-01-01T00:00:00.000Z");
+        assert!(archived[3]["terminal_at"].is_null());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archive_ordering_breaks_terminal_at_ties_by_task_id() {
+        let mut archived = vec![
+            json!({"task_id": "task.zeta", "terminal_at": "2026-05-05T00:00:00.000Z"}),
+            json!({"task_id": "task.alpha", "terminal_at": "2026-05-05T00:00:00.000Z"}),
+            json!({"task_id": "task.no-terminal"}),
+            json!({"task_id": "task.newest", "terminal_at": "2026-06-06T00:00:00.000Z"}),
+        ];
+        sort_archived_tasks_newest_first(&mut archived);
+        let order: Vec<&str> = archived
+            .iter()
+            .map(|task| task["task_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            order,
+            vec!["task.newest", "task.alpha", "task.zeta", "task.no-terminal"]
+        );
     }
 
     #[test]
