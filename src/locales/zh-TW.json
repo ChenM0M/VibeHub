@@ -1566,5 +1566,10 @@
     "credits": "致謝",
     "creditsText": "感謝所有開源專案和貢獻者，尤其是 Tauri、React 和 shadcn/ui 團隊。",
     "madeWith": "由 VibeHub 團隊用心打造"
+  },
+  "tabs": {
+    "ariaLabel": "已開啟的專案標籤",
+    "close": "關閉標籤",
+    "listAll": "顯示全部標籤"
   }
 }

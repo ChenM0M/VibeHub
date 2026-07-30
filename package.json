@@ -14,6 +14,7 @@
     "v3:m4:stability": "node scripts/v3-task-lifecycle/stability.mjs",
     "v3:closure-refresh:check": "node scripts/v3-task-lifecycle/closure-refresh.mjs",
     "v3:cockpit-refresh:check": "node scripts/v3-cockpit/background-refresh.mjs",
+    "v3:tabs:check": "node scripts/v3-tabs/check.mjs",
     "release:check": "node scripts/release/preflight.mjs",
         "preview": "vite preview",
         "tauri": "tauri",

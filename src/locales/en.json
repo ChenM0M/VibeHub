@@ -1569,5 +1569,10 @@
     "credits": "Credits",
     "creditsText": "Thanks to all open source projects and contributors, especially the Tauri, React, and shadcn/ui teams.",
     "madeWith": "Made with care by the VibeHub team"
+  },
+  "tabs": {
+    "ariaLabel": "Open project tabs",
+    "close": "Close tab",
+    "listAll": "Show all tabs"
   }
 }

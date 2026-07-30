@@ -32,6 +32,7 @@ import { isV3PlaygroundRequested, V3_DEBUG_ENABLED } from '@/v3/debug';
 import { loadV3ProductionViews } from '@/services/v3ProductionViews';
 import { loadLegacyV2Archive } from '@/services/legacyV2';
 import { useV3Store } from '@/v3/stores/v3Store';
+import { useTabsStore } from '@/stores/tabsStore';
 import { tauriApi } from '@/services/tauri';
 import type { V3LifecycleApi, V3ProjectSettingsApi } from '@/v3/stores/v3Store';
 
@@ -62,14 +63,22 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
     const [launchProject, setLaunchProject] = useState<Project | null>(null);
     const [isCustomLaunchMode, setIsCustomLaunchMode] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
-    const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+    const selectedProjectId = useTabsStore((state) => state.activeTabId);
+    const openProjectTab = useTabsStore((state) => state.openTab);
+    const deactivateProjectTabs = useTabsStore((state) => state.deactivateTabs);
+    const pruneProjectTabs = useTabsStore((state) => state.pruneTabs);
     const showV3Playground = isV3PlaygroundRequested();
     const leaveV3Project = useV3Store((state) => state.leaveProject);
 
     useEffect(() => {
         leaveV3Project();
-        setSelectedProjectId(null);
-    }, [resetKey, selectedWorkspaceId, leaveV3Project]);
+        deactivateProjectTabs();
+    }, [resetKey, selectedWorkspaceId, leaveV3Project, deactivateProjectTabs]);
+
+    useEffect(() => {
+        if (!config) return;
+        pruneProjectTabs(config.projects.map((project) => project.id));
+    }, [config, pruneProjectTabs]);
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -208,7 +217,7 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
                 debugMode={V3_DEBUG_ENABLED}
                 onBack={() => {
                     leaveV3Project();
-                    setSelectedProjectId(null);
+                    deactivateProjectTabs();
                 }}
             />
         );
@@ -274,7 +283,7 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
                                                     setIsCustomLaunchMode(true);
                                                     setLaunchProject(project);
                                                 }}
-                                                onSelect={() => setSelectedProjectId(project.id)}
+                                                onSelect={() => openProjectTab(project.id)}
                                             />
                                         ))}
                                     </div>
@@ -306,7 +315,7 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
                                                     setIsCustomLaunchMode(true);
                                                     setLaunchProject(project);
                                                 }}
-                                                onSelect={() => setSelectedProjectId(project.id)}
+                                                onSelect={() => openProjectTab(project.id)}
                                             />
                                         ))}
                                     </div>
