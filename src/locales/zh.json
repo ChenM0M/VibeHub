@@ -1490,6 +1490,24 @@
         "noTransitions": "当前状态没有可用的后续转换。",
         "submitting": "提交中…",
         "submit": "提交实现计划变更"
+      },
+      "detail": {
+        "nodeFacts": "节点级事实（来自计划图）",
+        "goal": "实现目标",
+        "sessions": "执行会话",
+        "blockReasons": "阻塞原因",
+        "criteria": "本节点绑定的验收标准",
+        "noCriteria": "该节点未绑定验收标准",
+        "fullBrief": "该节点的完整简报",
+        "loading": "正在读取该节点的完整简报…",
+        "unavailable": "无法读取该节点的完整简报",
+        "unavailableHint": "以上节点级事实来自计划图，可继续查看；完整简报需要项目的实时数据通路。",
+        "retry": "重试",
+        "readiness": {
+          "ready": "依赖已就绪",
+          "blocked": "依赖未就绪",
+          "unknown": "就绪状态未知"
+        }
       }
     },
     "diagnostics": {

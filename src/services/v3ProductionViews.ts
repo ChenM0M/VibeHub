@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { V3FixtureBundle } from "@/v3/contracts/fixtureRepository";
 import type { V3ProductionLoader } from "@/v3/stores/v3Store";
+import type { NodeBrief } from "@/v3/contracts/generated/node-brief";
 import type { ProjectStructureView } from "@/v3/contracts/generated/project-structure-view";
 
 interface NativeV3ViewBundle {
@@ -31,6 +32,19 @@ export const loadV3ProductionViews: V3ProductionLoader = async (
     nodeBrief: native.node_brief,
   };
 };
+
+export const loadV3NodeBrief = async (
+  projectPath: string,
+  taskId: string,
+  nodeId: string,
+  expectedProjectId: string | null = null,
+): Promise<NodeBrief> =>
+  invoke<NodeBrief>("v3_load_node_brief", {
+    projectPath,
+    taskId,
+    nodeId,
+    expectedProjectId,
+  });
 
 export async function queryV3ProjectStructure(
   projectPath: string,

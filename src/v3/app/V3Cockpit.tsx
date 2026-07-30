@@ -13,7 +13,8 @@ import { EvidenceLink } from "@/v3/components/common/EvidenceLink";
 import { BlockerDetailsPanel } from "@/v3/components/common/BlockerDetailsPanel";
 import { V3PanelErrorBoundary } from "@/v3/components/common/V3PanelErrorBoundary";
 import { AcceptanceProgress } from "@/v3/components/task/AcceptanceProgress";
-import { NodeBriefPanel } from "@/v3/components/task/NodeBriefPanel";
+import { PlanNodeDetailPanel } from "@/v3/components/task/PlanNodeDetailPanel";
+import { planNodeDetailView } from "@/v3/components/task/planNodeDetail";
 import { StructureArchitecture } from "@/v3/components/project/StructureArchitecture";
 import { PlanGraph } from "@/v3/components/task/PlanGraph";
 import { AIUsagePanel } from "@/v3/components/task/AIUsagePanel";
@@ -22,8 +23,7 @@ import { ProjectSetupModal } from "@/v3/components/project/ProjectSetupModal";
 import { ProjectLifecycleModal } from "@/v3/components/project/ProjectLifecycleModal";
 import type { V3FixtureScenario } from "@/v3/contracts/fixtureRepository";
 import type { ProjectOverviewView } from "@/v3/contracts/generated/project-overview-view";
-import type { NodeBrief } from "@/v3/contracts/generated/node-brief";
-import type { V3LifecycleApi, V3ProductionLoader, V3ProjectSettingsApi, V3UsageLoader } from "@/v3/stores/v3Store";
+import type { V3LifecycleApi, V3NodeBriefLoader, V3ProductionLoader, V3ProjectSettingsApi, V3UsageLoader } from "@/v3/stores/v3Store";
 import type { LegacyV2Card } from "@/legacy-v2/contracts";
 import type { V3TaskCreateRequest, V3TaskCreateResult } from "@/v3/contracts";
 import type { V3AppendResult, V3PlanAddNodeCommand, V3PlanSetDependenciesCommand, V3PlanSetStateCommand } from "@/types";
@@ -65,6 +65,7 @@ interface V3CockpitProps {
   debugMode?: boolean;
   projectPath?: string;
   productionLoader?: V3ProductionLoader;
+  nodeBriefLoader?: V3NodeBriefLoader;
   legacyLoader?: LegacyV2Loader;
   usageLoader?: V3UsageLoader;
   lifecycleApi?: V3LifecycleApi;
@@ -98,7 +99,7 @@ function EventDetails({ details }: { details: Record<string, unknown> | undefine
   );
 }
 
-export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projectPath, productionLoader, legacyLoader, usageLoader, lifecycleApi, projectSettingsApi, planApi, openLegacyFile, revealProjectFile, openProjectFile, createTask, completeTask, closeTaskWithExceptions }: V3CockpitProps) {
+export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projectPath, productionLoader, nodeBriefLoader, legacyLoader, usageLoader, lifecycleApi, projectSettingsApi, planApi, openLegacyFile, revealProjectFile, openProjectFile, createTask, completeTask, closeTaskWithExceptions }: V3CockpitProps) {
   const { t, i18n } = useTranslation();
   const {
     currentScenario,
@@ -140,12 +141,14 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
     specsError,
     updateProjectSettings,
     syncAgentSpecs,
+    nodeBriefDetail,
+    loadNodeBrief,
+    clearNodeBrief,
   } = useV3Store();
   const [sourceMode, setSourceMode] = useState<V3SourceMode>(initialSourceMode);
   const [showScenarioDropdown, setShowScenarioDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [nodeBriefPanel, setNodeBriefPanel] = useState<NodeBrief | null>(null);
   const [highlightModuleId, setHighlightModuleId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [showTokenPanel, setShowTokenPanel] = useState(false);
@@ -207,7 +210,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   useEffect(() => {
     if (sourceMode === "production") {
       if (projectPath && productionLoader && lifecycleApi && activeProjectPath !== projectPath) {
-        selectProject(projectPath, productionLoader, legacyLoader, usageLoader, lifecycleApi, projectSettingsApi);
+        selectProject(projectPath, productionLoader, legacyLoader, usageLoader, lifecycleApi, projectSettingsApi, nodeBriefLoader);
       } else if (layoutStatus?.state === "v3" && !bundle && !loading && !error && activeProjectPath === projectPath) {
         void loadCurrentBundle();
       }
@@ -218,7 +221,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
     } else if (!bundle && !loading && !error) {
       void loadCurrentBundle();
     }
-  }, [sourceMode, projectPath, productionLoader, legacyLoader, usageLoader, lifecycleApi, projectSettingsApi, activeProjectPath, currentScenario, bundle, loading, error, layoutStatus, selectScenario, selectProject, loadCurrentBundle]);
+  }, [sourceMode, projectPath, productionLoader, nodeBriefLoader, legacyLoader, usageLoader, lifecycleApi, projectSettingsApi, activeProjectPath, currentScenario, bundle, loading, error, layoutStatus, selectScenario, selectProject, loadCurrentBundle]);
 
   useEffect(() => {
     if (sourceMode !== "production" || !projectPath || !productionLoader || layoutStatus?.state !== "v3") return;
@@ -270,6 +273,12 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
     selectedTaskId === planGraph?.task_id &&
     selectedTaskId === nodeBrief?.task_id;
   const selectedTaskAllGreen = Boolean(selectedTask && selectedTask.criteria.length > 0 && selectedTask.criteria.every((criterion) => criterion.status === "passed") && selectedTask.active_sessions === 0);
+
+  const inspectedNodeId = nodeBriefDetail?.nodeId ?? null;
+  const inspectedNodeDetail = useMemo(
+    () => planNodeDetailView(planGraph, inspectedNodeId, nodeBrief?.criteria ?? []),
+    [planGraph, inspectedNodeId, nodeBrief],
+  );
 
   const refreshAfterTaskClosure = async (taskId: string) => {
     const refreshedBundle = await loadCurrentBundle(null);
@@ -486,7 +495,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
             <AgentResultsPanel data={agentResults} />
           </V3PanelErrorBoundary>
         ) : <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">{t("v3.cockpit.primaryTaskOnly.agentResults")}</div>}
-        {selectedTaskHasDetail && <div className="mt-4 border-t border-border/50 pt-3"><div className="flex items-center gap-2"><div className="min-w-0 flex-1"><div className="text-xs font-semibold">{t("v3.cockpit.currentNodeBrief")}</div><div className="mt-1 truncate text-xs text-muted-foreground">{nodeBrief.goal}{nodeBrief.next_intent ? t("v3.cockpit.nextIntent", { intent: nodeBrief.next_intent }) : ""}</div></div><button type="button" onClick={() => setNodeBriefPanel(nodeBrief)} className="shrink-0 text-xs text-blue-600 hover:underline">{t("v3.cockpit.viewBrief")}</button></div></div>}
+        {selectedTaskHasDetail && <div className="mt-4 border-t border-border/50 pt-3"><div className="flex items-center gap-2"><div className="min-w-0 flex-1"><div className="text-xs font-semibold">{t("v3.cockpit.currentNodeBrief")}</div><div className="mt-1 truncate text-xs text-muted-foreground">{nodeBrief.goal}{nodeBrief.next_intent ? t("v3.cockpit.nextIntent", { intent: nodeBrief.next_intent }) : ""}</div></div><button type="button" onClick={() => void loadNodeBrief(nodeBrief.node_id)} className="shrink-0 text-xs text-blue-600 hover:underline">{t("v3.cockpit.viewBrief")}</button></div></div>}
       </div>
     </div>
   );
@@ -577,7 +586,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
     switch (activeTab) {
       case "overview": return renderOverview();
       case "timeline": return selectedTaskHasDetail ? renderTimeline() : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t("v3.cockpit.primaryTaskOnly.timeline")}</div>;
-      case "plan": return selectedTaskHasDetail ? <PlanGraph data={planGraph} taskTitle={selectedTask?.title} taskIntent={nodeBrief.goal || selectedTask?.title} mutationError={planMutationError} onAddNode={sourceMode === "production" && planApi ? (input) => mutatePlan("add", input) : undefined} onSetDependencies={sourceMode === "production" && planApi ? (input) => mutatePlan("dependencies", input) : undefined} onSetState={sourceMode === "production" && planApi ? (input) => mutatePlan("state", input) : undefined} onNodeClick={(node) => { if (node.node_id === nodeBrief.node_id) setNodeBriefPanel(nodeBrief); }} /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t("v3.cockpit.primaryTaskOnly.plan")}</div>;
+      case "plan": return selectedTaskHasDetail ? <PlanGraph data={planGraph} taskTitle={selectedTask?.title} taskIntent={nodeBrief.goal || selectedTask?.title} mutationError={planMutationError} onAddNode={sourceMode === "production" && planApi ? (input) => mutatePlan("add", input) : undefined} onSetDependencies={sourceMode === "production" && planApi ? (input) => mutatePlan("dependencies", input) : undefined} onSetState={sourceMode === "production" && planApi ? (input) => mutatePlan("state", input) : undefined} onNodeClick={(node) => void loadNodeBrief(node.node_id)} /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t("v3.cockpit.primaryTaskOnly.plan")}</div>;
       case "structure": return <StructureArchitecture data={structure} taskId={timeline.task_id} projectPath={activeProjectPath ?? undefined} onModuleClick={setHighlightModuleId} highlightModuleId={highlightModuleId} onRevealProjectFile={revealProjectFile} onOpenProjectFile={openProjectFile} />;
       default: return null;
     }
@@ -654,8 +663,8 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
                     title={hasDetail ? t("v3.cockpit.viewTask", { title: task.title }) : t("v3.cockpit.primaryTaskOnly.details")}
                     onClick={() => {
                       selectTask(task.task_id);
-                      setSelectedEventId(null);
-                      setNodeBriefPanel(null);
+                       setSelectedEventId(null);
+                       clearNodeBrief();
                       if (sourceMode === "production") void loadCurrentBundle();
                     }}
                     className={cn(
@@ -877,13 +886,19 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
         </div>
       )}
 
-      {/* 节点简报侧滑面板 — 加宽到 40rem */}
-      {nodeBriefPanel && (
-        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setNodeBriefPanel(null)}>
+      {/* 节点详情侧滑面板 — 任意状态的计划节点都能展开 */}
+      {nodeBriefDetail && (
+        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => clearNodeBrief()}>
           <div className="absolute inset-0 bg-black/20" />
           <div className="relative h-full w-[40rem] max-w-[90vw] overflow-auto border-l border-border bg-background shadow-xl animate-in slide-in-from-right-8 fade-in duration-200 ease-out" onClick={(e) => e.stopPropagation()}>
-            <button type="button" onClick={() => setNodeBriefPanel(null)} className="absolute right-3 top-3 z-10 rounded p-1 hover:bg-muted"><X className="h-4 w-4" /></button>
-            <NodeBriefPanel data={nodeBriefPanel} />
+            <button type="button" onClick={() => clearNodeBrief()} className="absolute right-3 top-3 z-10 rounded p-1 hover:bg-muted"><X className="h-4 w-4" /></button>
+            <PlanNodeDetailPanel
+              node={inspectedNodeDetail.node}
+              dependencies={inspectedNodeDetail.dependencies}
+              criteria={inspectedNodeDetail.criteria}
+              detail={nodeBriefDetail}
+              onRetry={() => void loadNodeBrief(nodeBriefDetail.nodeId)}
+            />
           </div>
         </div>
       )}

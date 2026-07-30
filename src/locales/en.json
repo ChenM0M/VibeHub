@@ -1493,6 +1493,24 @@
         "noTransitions": "No transitions are available from the current state.",
         "submitting": "Submitting…",
         "submit": "Submit plan change"
+      },
+      "detail": {
+        "nodeFacts": "Node-level facts (from the plan graph)",
+        "goal": "Goal",
+        "sessions": "Sessions",
+        "blockReasons": "Block reasons",
+        "criteria": "Criteria linked to this node",
+        "noCriteria": "No acceptance criteria are linked to this node",
+        "fullBrief": "Full brief for this node",
+        "loading": "Loading the full brief for this node…",
+        "unavailableHint": "The node-level facts above come from the plan graph and stay readable; the full brief needs the project's live data pathway.",
+        "unavailable": "The full brief for this node could not be loaded",
+        "retry": "Retry",
+        "readiness": {
+          "ready": "Dependencies ready",
+          "blocked": "Dependencies not ready",
+          "unknown": "Readiness unknown"
+        }
       }
     },
     "diagnostics": {

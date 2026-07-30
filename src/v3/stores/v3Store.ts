@@ -20,6 +20,7 @@ import type {
   V3RepairResult,
 } from "@/types";
 import type { LegacyV2Loader } from "@/services/legacyV2";
+import type { NodeBrief } from "@/v3/contracts/generated/node-brief";
 
 export type V3LifecycleAction = "initialize" | "migrate" | "recover" | "repair";
 
@@ -47,12 +48,33 @@ export type V3ProductionLoader = (
   expectedProjectId: string | null,
 ) => Promise<V3FixtureBundle>;
 
+export type V3NodeBriefLoader = (
+  projectPath: string,
+  taskId: string,
+  nodeId: string,
+  expectedProjectId: string | null,
+) => Promise<NodeBrief>;
+
+/**
+ * Detail state of the plan node the user asked to inspect. `unavailable` is a
+ * first-class outcome so the plan view can say why a node cannot be expanded
+ * instead of swallowing the click.
+ */
+export interface V3NodeBriefDetail {
+  nodeId: string;
+  status: "loading" | "ready" | "unavailable";
+  brief: NodeBrief | null;
+  error: string | null;
+}
+
 let productionLoader: V3ProductionLoader | null = null;
+let nodeBriefLoader: V3NodeBriefLoader | null = null;
 let legacyLoader: LegacyV2Loader | null = null;
 let usageLoader: V3UsageLoader | null = null;
 let lifecycleApi: V3LifecycleApi | null = null;
 let projectSettingsApi: V3ProjectSettingsApi | null = null;
 let loadRequestId = 0;
+let nodeBriefRequestId = 0;
 let legacyRequestId = 0;
 let usageRequestId = 0;
 let taskUsageRequestId = 0;
@@ -98,6 +120,7 @@ interface V3State {
   error: string | null;
   selectedTaskId: string | null;
   selectedNodeId: string | null;
+  nodeBriefDetail: V3NodeBriefDetail | null;
   legacyArchive: LegacyV2Archive | null;
   legacyLoading: boolean;
   legacyError: string | null;
@@ -122,7 +145,7 @@ interface V3State {
   specsError: string | null;
 
   selectScenario: (scenario: V3FixtureScenario) => void;
-  selectProject: (projectPath: string, loader: V3ProductionLoader, archiveLoader: LegacyV2Loader | undefined, localUsageLoader: V3UsageLoader | undefined, projectLifecycleApi: V3LifecycleApi, settingsApi?: V3ProjectSettingsApi) => void;
+  selectProject: (projectPath: string, loader: V3ProductionLoader, archiveLoader: LegacyV2Loader | undefined, localUsageLoader: V3UsageLoader | undefined, projectLifecycleApi: V3LifecycleApi, settingsApi?: V3ProjectSettingsApi, briefLoader?: V3NodeBriefLoader) => void;
   leaveProject: () => void;
   inspectProjectLayout: () => Promise<V3ProjectLayoutStatus | null>;
   runLifecycleAction: (action: V3LifecycleAction, taskId?: string) => Promise<void>;
@@ -139,6 +162,78 @@ interface V3State {
   goHome: () => void;
   selectTask: (taskId: string | null) => void;
   selectNode: (nodeId: string | null) => void;
+  loadNodeBrief: (nodeId: string) => Promise<NodeBrief | null>;
+  clearNodeBrief: () => void;
+}
+
+const PROJECT_SNAPSHOT_LIMIT = 5;
+
+type V3ProjectSnapshot = Pick<
+  V3State,
+  | "bundle"
+  | "selectedTaskId"
+  | "selectedNodeId"
+  | "legacyArchive"
+  | "usage"
+  | "taskUsage"
+  | "layoutStatus"
+  | "repairCandidates"
+  | "projectSettings"
+  | "agentSpecs"
+  | "currentView"
+  | "navStack"
+>;
+
+const projectSnapshots = new Map<string, V3ProjectSnapshot>();
+
+function blankProjectState() {
+  return {
+    bundle: null, loading: false, error: null,
+    selectedTaskId: null,
+    selectedNodeId: null,
+    nodeBriefDetail: null,
+    legacyArchive: null, legacyLoading: false, legacyError: null,
+    usage: null, usageLoading: false, usageError: null,
+    taskUsage: null, taskUsageLoading: false, taskUsageError: null,
+    layoutStatus: null, layoutLoading: false, layoutError: null,
+    lifecycleAction: null, lifecycleResult: null, lifecycleError: null, repairCandidates: [],
+    projectSettings: null, settingsLoading: false, settingsError: null,
+    agentSpecs: null, specsLoading: false, specsError: null,
+    currentView: "project-overview" as V3View,
+    navStack: [] as BreadcrumbCrumb[],
+  };
+}
+
+function captureProjectSnapshot(state: V3State): void {
+  if (!state.projectPath || state.currentScenario || !state.bundle) return;
+  projectSnapshots.delete(state.projectPath);
+  projectSnapshots.set(state.projectPath, {
+    bundle: state.bundle,
+    selectedTaskId: state.selectedTaskId,
+    selectedNodeId: state.selectedNodeId,
+    legacyArchive: state.legacyArchive,
+    usage: state.usage,
+    taskUsage: state.taskUsage,
+    layoutStatus: state.layoutStatus,
+    repairCandidates: state.repairCandidates,
+    projectSettings: state.projectSettings,
+    agentSpecs: state.agentSpecs,
+    currentView: state.currentView,
+    navStack: state.navStack,
+  });
+  while (projectSnapshots.size > PROJECT_SNAPSHOT_LIMIT) {
+    const oldest = projectSnapshots.keys().next().value;
+    if (oldest === undefined) break;
+    projectSnapshots.delete(oldest);
+  }
+}
+
+function readProjectSnapshot(projectPath: string): Partial<V3State> {
+  const snapshot = projectSnapshots.get(projectPath);
+  if (!snapshot) return {};
+  projectSnapshots.delete(projectPath);
+  projectSnapshots.set(projectPath, snapshot);
+  return { ...snapshot };
 }
 
 export const useV3Store = create<V3State>((set, get) => ({
@@ -151,6 +246,7 @@ export const useV3Store = create<V3State>((set, get) => ({
   error: null,
   selectedTaskId: null,
   selectedNodeId: null,
+  nodeBriefDetail: null,
   legacyArchive: null,
   legacyLoading: false,
   legacyError: null,
@@ -189,6 +285,8 @@ export const useV3Store = create<V3State>((set, get) => ({
     usageLoader = null;
     lifecycleApi = null;
     projectSettingsApi = null;
+    nodeBriefLoader = null;
+    nodeBriefRequestId += 1;
     set({
       currentScenario: scenario,
       projectPath: null,
@@ -197,6 +295,7 @@ export const useV3Store = create<V3State>((set, get) => ({
       error: null,
       selectedTaskId: null,
       selectedNodeId: null,
+      nodeBriefDetail: null,
       legacyArchive: null, legacyLoading: false, legacyError: null,
       usage: null, usageLoading: false, usageError: null,
       taskUsage: null, taskUsageLoading: false, taskUsageError: null,
@@ -212,7 +311,7 @@ export const useV3Store = create<V3State>((set, get) => ({
     void get().loadCurrentBundle();
   },
 
-  selectProject: (projectPath, loader, archiveLoader, localUsageLoader, projectLifecycleApi, settingsApi) => {
+  selectProject: (projectPath, loader, archiveLoader, localUsageLoader, projectLifecycleApi, settingsApi, briefLoader) => {
     loadRequestId += 1;
     legacyRequestId += 1;
     usageRequestId += 1;
@@ -221,26 +320,19 @@ export const useV3Store = create<V3State>((set, get) => ({
     lifecycleRequestId += 1;
     settingsRequestId += 1;
     specsRequestId += 1;
+    nodeBriefRequestId += 1;
+    captureProjectSnapshot(get());
     productionLoader = loader;
     legacyLoader = archiveLoader ?? null;
     usageLoader = localUsageLoader ?? null;
     lifecycleApi = projectLifecycleApi;
     projectSettingsApi = settingsApi ?? null;
+    nodeBriefLoader = briefLoader ?? null;
     set({
       projectPath,
       currentScenario: null,
-      bundle: null, loading: false, error: null,
-      selectedTaskId: null,
-      selectedNodeId: null,
-      legacyArchive: null, legacyLoading: false, legacyError: null,
-      usage: null, usageLoading: false, usageError: null,
-      taskUsage: null, taskUsageLoading: false, taskUsageError: null,
-      layoutStatus: null, layoutLoading: false, layoutError: null,
-      lifecycleAction: null, lifecycleResult: null, lifecycleError: null, repairCandidates: [],
-      projectSettings: null, settingsLoading: false, settingsError: null,
-      agentSpecs: null, specsLoading: false, specsError: null,
-      currentView: "project-overview",
-      navStack: [],
+      ...blankProjectState(),
+      ...readProjectSnapshot(projectPath),
     });
     void get().inspectProjectLayout();
   },
@@ -254,40 +346,17 @@ export const useV3Store = create<V3State>((set, get) => ({
     lifecycleRequestId += 1;
     settingsRequestId += 1;
     specsRequestId += 1;
+    captureProjectSnapshot(get());
     productionLoader = null;
     legacyLoader = null;
     usageLoader = null;
     lifecycleApi = null;
     projectSettingsApi = null;
+    nodeBriefLoader = null;
+    nodeBriefRequestId += 1;
     set({
       projectPath: null,
-      bundle: null,
-      loading: false,
-      error: null,
-      selectedTaskId: null,
-      selectedNodeId: null,
-      legacyArchive: null,
-      legacyLoading: false,
-      legacyError: null,
-      usage: null,
-      usageLoading: false,
-      usageError: null,
-      taskUsage: null, taskUsageLoading: false, taskUsageError: null,
-      layoutStatus: null,
-      layoutLoading: false,
-      layoutError: null,
-      lifecycleAction: null,
-      lifecycleResult: null,
-      lifecycleError: null,
-      repairCandidates: [],
-      projectSettings: null,
-      settingsLoading: false,
-      settingsError: null,
-      agentSpecs: null,
-      specsLoading: false,
-      specsError: null,
-      currentView: "project-overview",
-      navStack: [],
+      ...blankProjectState(),
     });
   },
 
@@ -579,6 +648,46 @@ export const useV3Store = create<V3State>((set, get) => ({
 
   selectTask: (taskId) => set({ selectedTaskId: taskId }),
   selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
+
+  loadNodeBrief: async (nodeId) => {
+    const { bundle, projectPath, currentScenario } = get();
+    if (!bundle) return null;
+    const known = bundle.planGraph.nodes.some((node) => node.node_id === nodeId);
+    if (!known) {
+      set({ nodeBriefDetail: { nodeId, status: "unavailable", brief: null, error: "V3_NODE_NOT_FOUND: node is not part of the projected plan" } });
+      return null;
+    }
+    // The bundle already carries the brief of the node the projection picked.
+    if (bundle.nodeBrief.node_id === nodeId) {
+      set({ selectedNodeId: nodeId, nodeBriefDetail: { nodeId, status: "ready", brief: bundle.nodeBrief, error: null } });
+      return bundle.nodeBrief;
+    }
+    const loader = nodeBriefLoader;
+    if (currentScenario || !loader || !projectPath) {
+      set({ selectedNodeId: nodeId, nodeBriefDetail: { nodeId, status: "unavailable", brief: null, error: "V3_NODE_BRIEF_UNAVAILABLE: this source only projects the current node brief" } });
+      return null;
+    }
+    const requestId = ++nodeBriefRequestId;
+    set({ selectedNodeId: nodeId, nodeBriefDetail: { nodeId, status: "loading", brief: null, error: null } });
+    try {
+      const brief = await loader(projectPath, bundle.planGraph.task_id, nodeId, bundle.projectOverview.project_id);
+      if (requestId !== nodeBriefRequestId || get().projectPath !== projectPath) return null;
+      if (brief.node_id !== nodeId) {
+        throw new Error(`V3_IDENTITY_MISMATCH: requested ${nodeId}, received ${brief.node_id}`);
+      }
+      set({ nodeBriefDetail: { nodeId, status: "ready", brief, error: null } });
+      return brief;
+    } catch (err) {
+      if (requestId !== nodeBriefRequestId || get().projectPath !== projectPath) return null;
+      set({ nodeBriefDetail: { nodeId, status: "unavailable", brief: null, error: errorMessage(err) } });
+      return null;
+    }
+  },
+
+  clearNodeBrief: () => {
+    nodeBriefRequestId += 1;
+    set({ nodeBriefDetail: null });
+  },
 }));
 
 function viewLabel(view: V3View): string {

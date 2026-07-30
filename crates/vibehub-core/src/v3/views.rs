@@ -862,6 +862,19 @@ impl V3ViewRepository {
         })
     }
 
+    /// Load only the NodeBrief of one explicitly requested plan node.
+    ///
+    /// The cockpit plan view needs the brief of whatever node the user clicked,
+    /// including `completed` ones that `select_node_id` never prefers. Returning
+    /// the whole bundle for that would ship megabytes of unrelated project
+    /// structure on every click, so this keeps the payload to the brief itself.
+    pub fn load_node_brief(&self, task_id: &str, node_id: &str) -> Result<Value, V3Error> {
+        validate_id("node_id", node_id)?;
+        Ok(self
+            .load_bundle_for_node(task_id, Some(node_id))?
+            .node_brief)
+    }
+
     pub fn workspace_root(&self, task_id: &str) -> Result<PathBuf, V3Error> {
         let events = self.store.load_project(&self.project_id())?;
         Ok(resolve_workspace(&self.root, task_id, &events).root)
@@ -4975,6 +4988,81 @@ mod tests {
         assert_eq!(bundle.plan_graph["execution"]["observed_sessions"], 1);
         assert_eq!(bundle.plan_graph["execution"]["planned_worktrees"], 1);
         assert_eq!(bundle.plan_graph["execution"]["observed_worktrees"], 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn node_brief_can_be_loaded_for_any_plan_node_including_completed_ones() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-brief-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        super::super::initialize_v3(&root).unwrap();
+        let created = create_v3_task(
+            &root,
+            V3TaskCreateRequest {
+                title: "Inspect any node".to_owned(),
+                intent: "Open the brief of a finished node".to_owned(),
+                acceptance_criteria: vec!["Every node is inspectable".to_owned()],
+                workflow_profile: "standard".to_owned(),
+                trigger_context: Default::default(),
+                profile_override: None,
+            },
+        )
+        .unwrap();
+        let repo = V3ViewRepository::open(&root).unwrap();
+        let project_id = repo.project_id();
+        let app = V3ApplicationService::open(&root).unwrap();
+        let initial_node_id = created.initial_node_id.clone().unwrap();
+        app.lifecycle_command(super::super::lifecycle::command(
+            "plan.node_added",
+            &project_id,
+            &created.task_id,
+            created.lifecycle_version,
+            "plan.second",
+            json!({"node_id":"node.second","title":"Second","goal":"Continue the work","scope":["src/second.rs"],"dependencies":[initial_node_id.clone()]}),
+        ))
+        .unwrap();
+        for (offset, state) in [(1, "active"), (2, "completed")] {
+            app.plan_set_state(PlanSetStateCommand {
+                identity: PlanCommandIdentity {
+                    project_id: project_id.clone(),
+                    task_id: created.task_id.clone(),
+                    actor: "test".to_owned(),
+                    expected_version: created.lifecycle_version + offset,
+                    idempotency_key: format!("plan.initial.{state}"),
+                },
+                node_id: initial_node_id.clone(),
+                state: state.to_owned(),
+            })
+            .unwrap();
+        }
+
+        // The default projection never prefers a completed node, so the cockpit
+        // could only ever open the brief of whatever node it happened to pick.
+        let default_brief = repo.load_bundle(&created.task_id).unwrap().node_brief;
+        assert_eq!(default_brief["node_id"], "node.second");
+
+        let completed_brief = repo
+            .load_node_brief(&created.task_id, &initial_node_id)
+            .unwrap();
+        assert_eq!(completed_brief["node_id"], initial_node_id.as_str());
+        assert_eq!(completed_brief["state"], "completed");
+        assert_eq!(completed_brief["goal"], "Open the brief of a finished node");
+        assert_eq!(completed_brief["task_id"], created.task_id.as_str());
+
+        let second_brief = repo
+            .load_node_brief(&created.task_id, "node.second")
+            .unwrap();
+        assert_eq!(second_brief["node_id"], "node.second");
+        assert_eq!(second_brief["goal"], "Continue the work");
+        assert_eq!(second_brief["scope"], json!(["src/second.rs"]));
+        assert_eq!(second_brief["dependencies"], json!([initial_node_id]));
+
+        let missing = repo
+            .load_node_brief(&created.task_id, "node.absent")
+            .unwrap_err();
+        assert_eq!(missing.code, "V3_NODE_NOT_FOUND");
+        let invalid = repo.load_node_brief(&created.task_id, "!!").unwrap_err();
+        assert_eq!(invalid.code, "V3_VALIDATION_ERROR");
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -29,7 +29,7 @@ import {
 import { SortableProjectCard } from '@/components/SortableProjectCard';
 import { V3Cockpit } from '@/v3/app/V3Cockpit';
 import { isV3PlaygroundRequested, V3_DEBUG_ENABLED } from '@/v3/debug';
-import { loadV3ProductionViews } from '@/services/v3ProductionViews';
+import { loadV3NodeBrief, loadV3ProductionViews } from '@/services/v3ProductionViews';
 import { loadLegacyV2Archive } from '@/services/legacyV2';
 import { useV3Store } from '@/v3/stores/v3Store';
 import { useTabsStore } from '@/stores/tabsStore';
@@ -199,6 +199,7 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
                 initialSourceMode="production"
                 projectPath={selectedProject.path}
                 productionLoader={loadV3ProductionViews}
+                nodeBriefLoader={loadV3NodeBrief}
                 legacyLoader={loadLegacyV2Archive}
                 usageLoader={tauriApi.vibehubReadLocalAgentUsage}
                 lifecycleApi={productionLifecycleApi}

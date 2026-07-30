@@ -1490,6 +1490,24 @@
         "noTransitions": "目前狀態沒有可用的後續轉換。",
         "submitting": "提交中…",
         "submit": "提交實作計畫變更"
+      },
+      "detail": {
+        "nodeFacts": "節點級事實（來自計畫圖）",
+        "goal": "實作目標",
+        "sessions": "執行工作階段",
+        "blockReasons": "阻塞原因",
+        "criteria": "此節點綁定的驗收標準",
+        "noCriteria": "此節點未綁定驗收標準",
+        "fullBrief": "此節點的完整簡報",
+        "loading": "正在讀取此節點的完整簡報…",
+        "unavailable": "無法讀取此節點的完整簡報",
+        "unavailableHint": "以上節點級事實來自計畫圖，可繼續查看；完整簡報需要專案的即時資料通路。",
+        "retry": "重試",
+        "readiness": {
+          "ready": "依賴已就緒",
+          "blocked": "依賴未就緒",
+          "unknown": "就緒狀態未知"
+        }
       }
     },
     "diagnostics": {

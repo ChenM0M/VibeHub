@@ -33,6 +33,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             gateway::init(app.handle());
+            #[cfg(target_os = "macos")]
+            install_macos_menu(app)?;
             Ok(())
         })
         .manage(AppState {
@@ -90,6 +92,7 @@ fn main() {
             commands::v3_memory_query,
             commands::v3_orchestration_command,
             commands::v3_load_view_bundle,
+            commands::v3_load_node_brief,
             commands::v3_query_project_structure,
             commands::vibehub_read_local_agent_usage,
             commands::vibehub_open_vibehub_file,
@@ -110,4 +113,57 @@ fn replay_pending_events_for_known_projects(storage: &Storage) {
     for project in config.projects {
         let _ = vibehub::events::replay_pending_events(project.path);
     }
+}
+
+/// The macOS default menu binds Cmd+W to "Close Window", which would kill the whole
+/// cockpit window instead of the focused project tab. Rebuild the standard menu without
+/// that accelerator and expose window closing on Cmd+Shift+W, matching browser semantics.
+#[cfg(target_os = "macos")]
+fn install_macos_menu(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+    use tauri::Manager;
+
+    let handle = app.handle().clone();
+    let app_submenu = SubmenuBuilder::new(&handle, "VibeHub")
+        .about(Some(AboutMetadata::default()))
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+    let edit_submenu = SubmenuBuilder::new(&handle, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    let close_window = MenuItemBuilder::new("Close Window")
+        .id("close-window")
+        .accelerator("CmdOrCtrl+Shift+W")
+        .build(&handle)?;
+    let window_submenu = SubmenuBuilder::new(&handle, "Window")
+        .minimize()
+        .fullscreen()
+        .separator()
+        .item(&close_window)
+        .build()?;
+    let menu = MenuBuilder::new(&handle)
+        .items(&[&app_submenu, &edit_submenu, &window_submenu])
+        .build()?;
+    app.set_menu(menu)?;
+    app.on_menu_event(|app_handle, event| {
+        if event.id() == "close-window" {
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.close();
+            }
+        }
+    });
+    Ok(())
 }
