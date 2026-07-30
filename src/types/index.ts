@@ -173,6 +173,8 @@ export interface LocalAgentUsageOverview {
     opencode: AgentUsageSourceSummary;
     cursor: AgentUsageSourceSummary;
     warnings: string[];
+    notices?: UsageNotice[];
+    observed_through_ms?: number | null;
     refresh?: UsageRefreshSummary;
     audit?: UsageAuditSummary;
 }
@@ -273,6 +275,14 @@ export interface AgentUsageSourceSummary {
     latest_updated_at_ms?: number | null;
     recent: AgentUsageRecentItem[];
     warnings: string[];
+    notices?: UsageNotice[];
+}
+
+/** Informational, expected observations aggregated by code with a count. */
+export interface UsageNotice {
+    code: string;
+    message: string;
+    count: number;
 }
 
 export interface AgentUsageTokenBreakdown {

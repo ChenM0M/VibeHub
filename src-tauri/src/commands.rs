@@ -1347,6 +1347,9 @@ pub async fn vibehub_read_local_agent_usage(
 ) -> Result<LocalAgentUsageOverview, String> {
     tokio::task::spawn_blocking(move || {
         let task_id = task_id.filter(|value| !value.trim().is_empty());
+        // The shared mtime/size cache keeps repeated panel refreshes off the
+        // transcript and SQLite files when nothing on disk changed.
+        let cache = local_agent_usage::shared_usage_cache();
         let usage = if let Some(task_id) = task_id {
             let repository =
                 V3ViewRepository::open(&project_path).map_err(|error| error.to_string())?;
@@ -1354,9 +1357,14 @@ pub async fn vibehub_read_local_agent_usage(
                 .load_bundle(&task_id)
                 .map_err(|error| error.to_string())?;
             let session_links = task_session_links(&bundle.task_timeline);
-            local_agent_usage::read_local_agent_usage_for_task(project_path, task_id, session_links)
+            local_agent_usage::read_local_agent_usage_for_task_with_cache(
+                project_path,
+                task_id,
+                session_links,
+                cache,
+            )
         } else {
-            local_agent_usage::read_local_agent_usage(project_path)
+            local_agent_usage::read_local_agent_usage_with_cache(project_path, cache)
         };
         usage.map_err(|error| error.to_string())
     })

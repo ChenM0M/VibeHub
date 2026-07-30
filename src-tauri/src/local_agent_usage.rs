@@ -7,6 +7,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     env,
     fs::File,
+    hash::{DefaultHasher, Hash, Hasher},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -28,6 +29,36 @@ const MAX_TRANSCRIPT_LINES: usize = 100_000;
 /// Maximum plausible token count for a single message. Counts above this are
 /// treated as corrupted/malicious and fail closed.
 const MAX_PLAUSIBLE_TOKENS_PER_MESSAGE: u64 = 1_000_000_000;
+/// Threshold for the overview-level anomaly flag, evaluated against non-cached
+/// tokens so that legitimately large cache-read volumes never raise an alarm.
+const ANOMALOUS_NON_CACHED_TOKENS: u64 = 1_000_000_000;
+const NOTICE_ASSISTANT_WITHOUT_USAGE: &str = "claude_code.assistant_message_without_usage";
+const NOTICE_AMBIGUOUS_LINEAGE: &str = "claude_code.ambiguous_lineage";
+const NOTICE_CODEX_ROLLOUT_WITHOUT_TOTAL: &str = "codex.rollout_without_total_usage";
+const NOTICE_FRESHNESS_UNKNOWN: &str = "source.freshness_unknown";
+const NOTICE_SOURCE_UNSUPPORTED: &str = "source.unsupported";
+const NOTICE_SOURCE_EMPTY: &str = "source.empty";
+
+fn describe_notice(code: &str, count: u64) -> String {
+    match code {
+        NOTICE_ASSISTANT_WITHOUT_USAGE => format!(
+            "{count} assistant message(s) carry no usage payload (tool-only or streamed rows); they add no tokens."
+        ),
+        NOTICE_CODEX_ROLLOUT_WITHOUT_TOTAL => format!(
+            "{count} Codex rollout(s) record no total_token_usage snapshot; their database tokens_used total is used instead."
+        ),
+        NOTICE_AMBIGUOUS_LINEAGE => format!(
+            "{count} transcript row(s) record branch/resume/compaction/subagent lineage; tokens are still attributed by message identity."
+        ),
+        other => format!("{other} occurred {count} time(s)."),
+    }
+}
+/// Official cache multipliers relative to a model's base input price
+/// (https://docs.anthropic.com/en/docs/about-claude/pricing): cache reads cost
+/// 10% of base input, 5-minute cache writes 1.25x and 1-hour writes 2x.
+const CACHE_READ_INPUT_MULTIPLIER: f64 = 0.1;
+const CACHE_WRITE_5M_INPUT_MULTIPLIER: f64 = 1.25;
+const CACHE_WRITE_1H_INPUT_MULTIPLIER: f64 = 2.0;
 
 /// Cache entry for a provider scan result, keyed by file path + mtime.
 #[derive(Debug, Clone)]
@@ -53,7 +84,9 @@ impl UsageCache {
         format!("{source}:{data_path}")
     }
 
-    /// Returns cached summary if the file mtime has not changed.
+    /// Returns the cached summary when the observed signature is unchanged. The
+    /// signature is either a raw mtime or a fold of path/mtime/size for sources
+    /// backed by many files.
     pub fn get(
         &self,
         source: &str,
@@ -102,6 +135,57 @@ impl UsageCache {
     }
 }
 
+/// Folds the observable inputs of one source (paths plus their modification
+/// times and sizes) into a single change-sensitive signature. Any append,
+/// deletion or new file changes it, so a cache hit means the bytes behind the
+/// summary are unchanged.
+fn source_signature(paths: &[PathBuf]) -> Option<i64> {
+    let mut hasher = DefaultHasher::new();
+    let mut observed = false;
+    for path in paths {
+        let Ok(metadata) = path.metadata() else {
+            continue;
+        };
+        observed = true;
+        path.hash(&mut hasher);
+        metadata.len().hash(&mut hasher);
+        if let Some(mtime_ms) = file_updated_at_ms(path) {
+            mtime_ms.hash(&mut hasher);
+        }
+    }
+    observed.then(|| hasher.finish() as i64)
+}
+
+/// Reads one source through the mtime/size signature cache when a cache is
+/// available. Falls back to a direct read whenever the signature cannot be
+/// observed, so an unreadable path can never serve a stale summary.
+fn cached_source_read(
+    cache: Option<&Arc<Mutex<UsageCache>>>,
+    source: &str,
+    scope_key: &str,
+    input_paths: &[PathBuf],
+    read: impl FnOnce() -> AgentUsageSourceSummary,
+) -> AgentUsageSourceSummary {
+    let Some(cache) = cache else {
+        return read();
+    };
+    let Some(signature) = source_signature(input_paths) else {
+        return read();
+    };
+    if let Some(hit) = cache
+        .lock()
+        .ok()
+        .and_then(|guard| guard.get(source, scope_key, signature))
+    {
+        return hit;
+    }
+    let summary = read();
+    if let Ok(mut guard) = cache.lock() {
+        guard.put(source, scope_key, signature, summary.clone());
+    }
+    summary
+}
+
 /// Global shared cache instance.
 pub fn shared_usage_cache() -> Arc<Mutex<UsageCache>> {
     use std::sync::OnceLock;
@@ -123,16 +207,32 @@ struct ModelPricing {
 
 impl ModelPricing {
     fn cost_for(&self, tokens: &TokenBreakdown) -> Option<f64> {
+        self.cost_for_with_cache_split(tokens, 0)
+    }
+
+    /// Prices one token breakdown. `cache_write_1h` is the subset of
+    /// `tokens.cache_write` written with a 1-hour TTL, billed at 2x base input
+    /// while 5-minute writes are billed at 1.25x; cache reads fall back to the
+    /// official 0.1x base input multiplier when a model has no explicit entry.
+    fn cost_for_with_cache_split(
+        &self,
+        tokens: &TokenBreakdown,
+        cache_write_1h: u64,
+    ) -> Option<f64> {
         let input_cost = tokens.input as f64 / 1_000_000.0 * self.input_per_1m;
         let output_cost = tokens.output as f64 / 1_000_000.0 * self.output_per_1m;
-        let cache_read_cost = self
+        let cache_read_rate = self
             .cache_read_per_1m
-            .map(|p| tokens.cache_read as f64 / 1_000_000.0 * p)
-            .unwrap_or(0.0);
-        let cache_write_cost = self
+            .unwrap_or(self.input_per_1m * CACHE_READ_INPUT_MULTIPLIER);
+        let cache_read_cost = tokens.cache_read as f64 / 1_000_000.0 * cache_read_rate;
+        let cache_write_1h = cache_write_1h.min(tokens.cache_write);
+        let cache_write_short = tokens.cache_write.saturating_sub(cache_write_1h);
+        let cache_write_rate = self
             .cache_write_per_1m
-            .map(|p| tokens.cache_write as f64 / 1_000_000.0 * p)
-            .unwrap_or(0.0);
+            .unwrap_or(self.input_per_1m * CACHE_WRITE_5M_INPUT_MULTIPLIER);
+        let cache_write_cost = cache_write_short as f64 / 1_000_000.0 * cache_write_rate
+            + cache_write_1h as f64 / 1_000_000.0
+                * (self.input_per_1m * CACHE_WRITE_1H_INPUT_MULTIPLIER);
         let reasoning_cost = self
             .reasoning_per_1m
             .map(|p| tokens.reasoning as f64 / 1_000_000.0 * p)
@@ -301,6 +401,10 @@ pub struct LocalAgentUsageOverview {
     pub opencode: AgentUsageSourceSummary,
     pub cursor: AgentUsageSourceSummary,
     pub warnings: Vec<String>,
+    pub notices: Vec<UsageNotice>,
+    /// Newest real observation across all readable sources; the panel states
+    /// freshness relative to this instead of implying the data is broken.
+    pub observed_through_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -363,6 +467,16 @@ pub struct UsageCostSummary {
     pub unpriced_tokens: u64,
     pub missing_reasons: Vec<String>,
     pub repair_actions: Vec<String>,
+}
+
+/// An informational observation that must never be presented as a defect: it is
+/// aggregated by code with an occurrence count so a long transcript cannot flood
+/// the panel with thousands of identical lines.
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageNotice {
+    pub code: String,
+    pub message: String,
+    pub count: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -441,6 +555,7 @@ pub struct AgentUsageSourceSummary {
     pub latest_updated_at_ms: Option<i64>,
     pub recent: Vec<AgentUsageRecentItem>,
     pub warnings: Vec<String>,
+    pub notices: Vec<UsageNotice>,
     /// Provider records are deduplicated for token totals, but their IDs are
     /// retained internally so a shared provider session can still match more
     /// than one V3 workflow session.
@@ -652,17 +767,12 @@ fn normalize_provider_session_id(provider: &str, value: &str) -> Option<String> 
     Some(value.to_string())
 }
 
+#[cfg(test)]
 pub fn read_local_agent_usage(project_path: impl AsRef<Path>) -> Result<LocalAgentUsageOverview> {
-    read_local_agent_usage_scoped(project_path.as_ref(), None)
+    read_local_agent_usage_scoped_with_cache(project_path.as_ref(), None, None)
 }
 
-pub fn read_local_agent_usage_with_cache(
-    project_path: impl AsRef<Path>,
-    cache: Arc<Mutex<UsageCache>>,
-) -> Result<LocalAgentUsageOverview> {
-    read_local_agent_usage_scoped_with_cache(project_path.as_ref(), None, Some(cache))
-}
-
+#[cfg(test)]
 pub fn read_local_agent_usage_for_task(
     project_path: impl AsRef<Path>,
     task_id: String,
@@ -672,7 +782,14 @@ pub fn read_local_agent_usage_for_task(
         task_id,
         session_links,
     };
-    read_local_agent_usage_scoped(project_path.as_ref(), Some(&filter))
+    read_local_agent_usage_scoped_with_cache(project_path.as_ref(), Some(&filter), None)
+}
+
+pub fn read_local_agent_usage_with_cache(
+    project_path: impl AsRef<Path>,
+    cache: Arc<Mutex<UsageCache>>,
+) -> Result<LocalAgentUsageOverview> {
+    read_local_agent_usage_scoped_with_cache(project_path.as_ref(), None, Some(cache))
 }
 
 pub fn read_local_agent_usage_for_task_with_cache(
@@ -688,30 +805,47 @@ pub fn read_local_agent_usage_for_task_with_cache(
     read_local_agent_usage_scoped_with_cache(project_path.as_ref(), Some(&filter), Some(cache))
 }
 
-fn read_local_agent_usage_scoped(
-    project_path: &Path,
-    session_filter: Option<&UsageSessionFilter>,
-) -> Result<LocalAgentUsageOverview> {
-    read_local_agent_usage_scoped_with_cache(project_path, session_filter, None)
-}
-
 fn read_local_agent_usage_scoped_with_cache(
     project_path: &Path,
     session_filter: Option<&UsageSessionFilter>,
     cache: Option<Arc<Mutex<UsageCache>>>,
 ) -> Result<LocalAgentUsageOverview> {
     let started_at = Instant::now();
-    let project_path = ProjectPathMatcher::new(project_path.as_ref());
+    let project_path = ProjectPathMatcher::new(project_path);
     let generated_at = Utc::now();
     let generated_at_ms = generated_at.timestamp_millis();
     let mut warnings = Vec::new();
-    let mut claude_code = read_claude_code_usage_scoped(&project_path, session_filter);
+    // The cache key must include the requested scope: a Task-filtered summary is
+    // not interchangeable with the project-wide one.
+    let scope_key = match session_filter {
+        Some(filter) => format!("{}#task:{}", project_path.primary, filter.task_id),
+        None => format!("{}#project", project_path.primary),
+    };
+    let mut claude_code = cached_source_read(
+        cache.as_ref(),
+        "claude_code",
+        &scope_key,
+        &claude_transcript_inputs(&project_path),
+        || read_claude_code_usage_scoped(&project_path, session_filter),
+    );
     let claude_app = unsupported_source(
         "claude_app",
         "Claude App ordinary chat has no stable, documented, project-attributable local usage contract; internal Electron/SQLite/IndexedDB data is not read.",
     );
-    let mut codex = read_codex_usage_scoped(&project_path, session_filter);
-    let mut opencode = read_opencode_usage_scoped(&project_path, session_filter);
+    let mut codex = cached_source_read(
+        cache.as_ref(),
+        "codex",
+        &scope_key,
+        &existing_paths(codex_state_db_candidates()),
+        || read_codex_usage_scoped(&project_path, session_filter),
+    );
+    let mut opencode = cached_source_read(
+        cache.as_ref(),
+        "opencode",
+        &scope_key,
+        &existing_paths(opencode_db_candidates()),
+        || read_opencode_usage_scoped(&project_path, session_filter),
+    );
     let cursor = unsupported_source(
         "cursor",
         "Cursor has no stable, documented, project-attributable local usage contract; internal application databases and caches are not read.",
@@ -721,6 +855,7 @@ fn read_local_agent_usage_scoped_with_cache(
         apply_source_freshness(source, generated_at_ms, STALE_AFTER_SECONDS);
     }
 
+    let mut notices: Vec<UsageNotice> = Vec::new();
     for (label, source) in [
         ("Claude Code", &claude_code),
         ("Claude App ordinary chat", &claude_app),
@@ -729,14 +864,31 @@ fn read_local_agent_usage_scoped_with_cache(
         ("Cursor", &cursor),
     ] {
         if !source.available {
-            warnings.push(format!(
-                "{label} local usage source status: {}.",
-                source.status
-            ));
+            // `unsupported` is a deliberate product boundary and `empty` simply
+            // means this project has no records yet; neither is a defect, so they
+            // are reported as notices instead of warnings.
+            match source.status.as_str() {
+                // The source already carries its own documented reason.
+                "unsupported" => {}
+                "empty" => notices.push(UsageNotice {
+                    code: NOTICE_SOURCE_EMPTY.to_string(),
+                    message: format!("{label} has no local record for this project."),
+                    count: 1,
+                }),
+                status => warnings.push(format!("{label} local usage source status: {status}.")),
+            }
         }
         warnings.extend(source.warnings.iter().cloned());
+        notices.extend(source.notices.iter().cloned());
     }
 
+    let observed_through_ms = [
+        claude_code.latest_updated_at_ms,
+        codex.latest_updated_at_ms,
+        opencode.latest_updated_at_ms,
+    ]
+    .into_iter()
+    .fold(None, max_opt_i64);
     let non_cached_total_tokens = claude_code
         .non_cached_total_tokens
         .saturating_add(codex.non_cached_total_tokens)
@@ -749,7 +901,8 @@ fn read_local_agent_usage_scoped_with_cache(
         .into_iter()
         .filter(|available| *available)
         .count();
-    let primary_metric = select_primary_metric(&claude_code, &codex, &opencode, total_tokens);
+    let primary_metric =
+        select_primary_metric(&claude_code, &codex, &opencode, non_cached_total_tokens);
     let sources = [&claude_code, &codex, &opencode];
     let freshness = overall_freshness(&sources);
     let completeness = overall_completeness(&sources, total_tokens);
@@ -796,7 +949,10 @@ fn read_local_agent_usage_scoped_with_cache(
         &generated_at.to_rfc3339(),
         &freshness,
         &completeness,
-        total_tokens,
+        UsageTokenTotals {
+            total_tokens,
+            non_cached_total_tokens,
+        },
         [&claude_code, &codex, &opencode],
         requested_session_count,
         matched_session_count,
@@ -840,18 +996,32 @@ fn read_local_agent_usage_scoped_with_cache(
         opencode,
         cursor,
         warnings,
+        notices,
+        observed_through_ms,
     })
+}
+
+/// Total and non-cached token counts travel together so the audit never mixes
+/// the displayed primary metric with the cache-inflated grand total.
+#[derive(Debug, Clone, Copy)]
+struct UsageTokenTotals {
+    total_tokens: u64,
+    non_cached_total_tokens: u64,
 }
 
 fn build_usage_audit(
     captured_at: &str,
     freshness: &str,
     completeness: &str,
-    total_tokens: u64,
+    totals: UsageTokenTotals,
     sources: [&AgentUsageSourceSummary; 3],
     requested_session_count: usize,
     matched_session_count: usize,
 ) -> UsageAuditSummary {
+    let UsageTokenTotals {
+        total_tokens,
+        non_cached_total_tokens,
+    } = totals;
     let available = sources
         .iter()
         .filter(|source| source.available)
@@ -885,10 +1055,13 @@ fn build_usage_audit(
     } else {
         Vec::new()
     };
-    let anomaly = (total_tokens >= 1_000_000_000).then(|| UsageAnomaly {
+    // Anomaly detection deliberately ignores cache reads/writes: a long-running
+    // project legitimately accumulates billions of cached tokens, so only the
+    // non-cached total can indicate a decoding or dedupe defect.
+    let anomaly = (non_cached_total_tokens >= ANOMALOUS_NON_CACHED_TOKENS).then(|| UsageAnomaly {
         code: "usage.total.extreme".to_string(),
-        observed_tokens: total_tokens,
-        explanation: "The total exceeds one billion tokens; inspect provider/session decomposition and excluded or ambiguous records before relying on the number.".to_string(),
+        observed_tokens: non_cached_total_tokens,
+        explanation: "Non-cached tokens (input + output + reasoning) exceed one billion; inspect provider/session decomposition and excluded or ambiguous records before relying on the number.".to_string(),
         repair_action: "Drill into provider and session rows, verify source_record_id/dedupe_key, then rebuild from read-only evidence.".to_string(),
     });
     let mut breakdowns = Vec::new();
@@ -1003,26 +1176,26 @@ fn apply_source_freshness(
         return;
     }
     let Some(observed_at_ms) = source.latest_updated_at_ms else {
+        // A missing observed-through timestamp limits freshness reporting only; the
+        // recorded tokens themselves are still real, so this is a notice.
         source.freshness = "unknown".to_string();
-        source.warnings.push(format!(
-            "{} freshness is unknown because no observed-through timestamp is available.",
-            source.source
-        ));
-        if source.status == "available" {
-            source.status = "partial".to_string();
-        }
+        source.notices.push(UsageNotice {
+            code: NOTICE_FRESHNESS_UNKNOWN.to_string(),
+            message: format!(
+                "{} reports no observed-through timestamp, so its freshness cannot be stated.",
+                source.source
+            ),
+            count: 1,
+        });
         return;
     };
     let age_ms = generated_at_ms.saturating_sub(observed_at_ms);
     if age_ms > stale_after_seconds.saturating_mul(1000) {
+        // Stale means "these are the latest real records, and they are old" — it is
+        // reported through freshness/status and the observed-through timestamp, not
+        // as a warning about broken data.
         source.freshness = "stale".to_string();
         source.status = "stale".to_string();
-        source.warnings.push(format!(
-            "{} usage is stale: latest observation is {} seconds old (threshold {} seconds).",
-            source.source,
-            age_ms / 1000,
-            stale_after_seconds
-        ));
     } else {
         source.freshness = "fresh".to_string();
     }
@@ -1067,9 +1240,9 @@ fn select_primary_metric(
     claude_code: &AgentUsageSourceSummary,
     codex: &AgentUsageSourceSummary,
     opencode: &AgentUsageSourceSummary,
-    total_tokens: u64,
+    non_cached_total_tokens: u64,
 ) -> AgentUsagePrimaryMetric {
-    if total_tokens > 0 {
+    if non_cached_total_tokens > 0 {
         let available = [claude_code, codex, opencode]
             .into_iter()
             .filter(|source| source.available)
@@ -1082,14 +1255,14 @@ fn select_primary_metric(
         };
         return AgentUsagePrimaryMetric {
             kind: "tokens".to_string(),
-            label: "Total local tokens".to_string(),
+            label: "Non-cached local tokens".to_string(),
             value: None,
             currency: None,
-            tokens: Some(total_tokens),
+            tokens: Some(non_cached_total_tokens),
             source: source.to_string(),
             confidence: "local_recorded".to_string(),
             estimated: false,
-            detail: "Primary usage is local recorded token usage including cache. Claude Code is deduplicated by request/message identity; Codex uses local rollout totals; OpenCode adds its recorded token breakdown. Cost remains unavailable because subscription usage is not an actual bill.".to_string(),
+            detail: "Primary usage counts non-cached tokens only (input + output + reasoning); cache reads and cache writes stay in the breakdown because they are billed at a fraction of the base input price and would otherwise dominate the headline. Claude Code is deduplicated by message identity, Codex uses local rollout totals, and OpenCode adds its recorded token breakdown. Cost is a secondary estimate, not a bill.".to_string(),
         };
     }
 
@@ -1154,17 +1327,179 @@ impl ProjectPathMatcher {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+struct ClaudeMessageUsage {
+    tokens: TokenBreakdown,
+    cache_write_1h: u64,
+    tool_uses: u64,
+    model: Option<String>,
+    is_sidechain: bool,
+}
+
 #[derive(Debug, Default)]
 struct ClaudeSessionAccumulator {
     id: String,
     models: BTreeSet<String>,
     tokens: TokenBreakdown,
+    cache_write_1h: u64,
     message_count: u64,
     tool_uses: u64,
     started_at_ms: Option<i64>,
     updated_at_ms: Option<i64>,
-    seen_messages: BTreeSet<String>,
+    messages: BTreeMap<String, ClaudeMessageUsage>,
     warnings: Vec<String>,
+    /// Benign observations keyed by code, e.g. assistant messages that carry no
+    /// usage payload at all (tool-only or streamed rows). They are expected in
+    /// every real transcript and must not degrade the source status.
+    notices: BTreeMap<String, u64>,
+}
+
+impl ClaudeSessionAccumulator {
+    /// Records one assistant message, keeping the strongest observation for a
+    /// repeated identity: streaming placeholders (`0/0` usage) must never win
+    /// over the final row, and main-transcript rows outrank sidechain copies.
+    fn record_message(&mut self, identity: String, usage: ClaudeMessageUsage) {
+        match self.messages.get(&identity) {
+            Some(existing) if !should_replace_claude_message(existing, &usage) => {}
+            _ => {
+                self.messages.insert(identity, usage);
+            }
+        }
+    }
+
+    fn note(&mut self, code: &str) {
+        *self.notices.entry(code.to_string()).or_default() += 1;
+    }
+
+    fn recompute_totals(&mut self) {
+        let mut tokens = TokenBreakdown::default();
+        let mut cache_write_1h = 0_u64;
+        let mut tool_uses = 0_u64;
+        for usage in self.messages.values() {
+            tokens.input = tokens.input.saturating_add(usage.tokens.input);
+            tokens.output = tokens.output.saturating_add(usage.tokens.output);
+            tokens.cache_read = tokens.cache_read.saturating_add(usage.tokens.cache_read);
+            tokens.cache_write = tokens.cache_write.saturating_add(usage.tokens.cache_write);
+            tokens.total = tokens.total.saturating_add(usage.tokens.total);
+            cache_write_1h = cache_write_1h.saturating_add(usage.cache_write_1h);
+            tool_uses = tool_uses.saturating_add(usage.tool_uses);
+            if let Some(model) = usage.model.as_ref() {
+                self.models.insert(model.clone());
+            }
+        }
+        self.tokens = tokens;
+        self.cache_write_1h = cache_write_1h;
+        self.tool_uses = tool_uses;
+        self.message_count = self.messages.len() as u64;
+    }
+
+    fn absorb(&mut self, other: ClaudeSessionAccumulator) {
+        self.started_at_ms = min_opt_i64(self.started_at_ms, other.started_at_ms);
+        self.updated_at_ms = max_opt_i64(self.updated_at_ms, other.updated_at_ms);
+        self.models.extend(other.models);
+        self.warnings.extend(other.warnings);
+        for (code, count) in other.notices {
+            *self.notices.entry(code).or_default() += count;
+        }
+        for (identity, usage) in other.messages {
+            self.record_message(identity, usage);
+        }
+    }
+}
+
+fn should_replace_claude_message(
+    existing: &ClaudeMessageUsage,
+    candidate: &ClaudeMessageUsage,
+) -> bool {
+    if existing.is_sidechain != candidate.is_sidechain {
+        return existing.is_sidechain;
+    }
+    candidate.tokens.total > existing.tokens.total
+}
+
+/// Collects the transcript files of one Claude Code project directory,
+/// including `<session>/subagents/*.jsonl` written for Task/subagent runs.
+fn collect_claude_transcript_files(sessions_dir: &Path) -> Vec<PathBuf> {
+    let mut paths = WalkDir::new(sessions_dir)
+        .max_depth(3)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
+}
+
+/// Drops repeated message identities across transcript files (resumed sessions
+/// and subagent copies re-emit the same `message.id`) so the surviving
+/// observation is counted exactly once.
+fn dedupe_claude_sessions(sessions: &mut [ClaudeSessionAccumulator]) {
+    let mut owner: BTreeMap<String, usize> = BTreeMap::new();
+    for (index, session) in sessions.iter().enumerate() {
+        for (identity, usage) in &session.messages {
+            match owner.get(identity).copied() {
+                Some(existing_index) => {
+                    let replace = sessions[existing_index]
+                        .messages
+                        .get(identity)
+                        .map(|existing| should_replace_claude_message(existing, usage))
+                        .unwrap_or(true);
+                    if replace {
+                        owner.insert(identity.clone(), index);
+                    }
+                }
+                None => {
+                    owner.insert(identity.clone(), index);
+                }
+            }
+        }
+    }
+    for (index, session) in sessions.iter_mut().enumerate() {
+        session
+            .messages
+            .retain(|identity, _| owner.get(identity).copied() == Some(index));
+        session.recompute_totals();
+    }
+}
+
+/// Merges transcripts that share one `sessionId` (a parent transcript and its
+/// `subagents/*.jsonl` files all carry the parent id).
+fn merge_claude_sessions_by_id(
+    sessions: Vec<ClaudeSessionAccumulator>,
+) -> Vec<ClaudeSessionAccumulator> {
+    let mut order: Vec<String> = Vec::new();
+    let mut merged: BTreeMap<String, ClaudeSessionAccumulator> = BTreeMap::new();
+    for session in sessions {
+        match merged.get_mut(&session.id) {
+            Some(existing) => existing.absorb(session),
+            None => {
+                order.push(session.id.clone());
+                merged.insert(session.id.clone(), session);
+            }
+        }
+    }
+    order
+        .into_iter()
+        .filter_map(|id| merged.remove(&id))
+        .collect()
+}
+
+/// The transcript files that back the Claude Code summary for this project; used
+/// as the cache signature input so appending to any transcript invalidates it.
+fn claude_transcript_inputs(project_path: &ProjectPathMatcher) -> Vec<PathBuf> {
+    let Some(config_dir) = env::var_os("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".claude")))
+    else {
+        return Vec::new();
+    };
+    let sessions_dir = resolve_claude_project_dir(&config_dir, &project_path.primary);
+    if !sessions_dir.is_dir() {
+        return Vec::new();
+    }
+    collect_claude_transcript_files(&sessions_dir)
 }
 
 fn read_claude_code_usage_scoped(
@@ -1180,11 +1515,11 @@ fn read_claude_code_usage_scoped(
             "Claude config directory could not be resolved.",
         );
     };
-    let encoded = encode_claude_project_path(&project_path.primary);
-    let sessions_dir = config_dir.join("projects").join(encoded);
+    let sessions_dir = resolve_claude_project_dir(&config_dir, &project_path.primary);
     read_claude_code_usage_from_dir_scoped(project_path, &sessions_dir, session_filter)
 }
 
+#[cfg(test)]
 fn read_claude_code_usage_from_dir(
     project_path: &ProjectPathMatcher,
     sessions_dir: &Path,
@@ -1205,43 +1540,29 @@ fn read_claude_code_usage_from_dir_scoped(
         summary.data_path = Some(sessions_dir.display().to_string());
         return summary;
     }
-    let entries = match std::fs::read_dir(sessions_dir) {
-        Ok(entries) => entries,
-        Err(error) => {
-            return error_source(
-                "claude_code",
-                Some(sessions_dir.to_path_buf()),
-                error.into(),
-            )
-        }
-    };
+    if !sessions_dir.is_dir() {
+        return error_source(
+            "claude_code",
+            Some(sessions_dir.to_path_buf()),
+            anyhow::anyhow!(
+                "Claude Code project session path {} is not a directory",
+                sessions_dir.display()
+            ),
+        );
+    }
     let mut sessions = Vec::new();
     let mut source_warnings = Vec::new();
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(error) => {
-                source_warnings.push(format!(
-                    "Failed to read Claude Code directory entry: {error}"
-                ));
-                continue;
-            }
-        };
-        let path = entry.path();
-        if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
-            continue;
-        }
+    let mut notice_counts: BTreeMap<String, u64> = BTreeMap::new();
+    for path in collect_claude_transcript_files(sessions_dir) {
         match read_claude_session(&path) {
-            Ok(session)
-                if session_filter.map_or(true, |filter| {
-                    filter.matches_provider("claude", &session.id)
-                }) =>
-            {
-                sessions.push(session)
-            }
+            Ok(session) => sessions.push(session),
             Err(error) => source_warnings.push(format!("{}: {error:#}", path.display())),
-            Ok(_) => {}
         }
+    }
+    let mut sessions = merge_claude_sessions_by_id(sessions);
+    dedupe_claude_sessions(&mut sessions);
+    if let Some(filter) = session_filter {
+        sessions.retain(|session| filter.matches_provider("claude", &session.id));
     }
     sessions.sort_by(|a, b| {
         b.updated_at_ms
@@ -1262,6 +1583,9 @@ fn read_claude_code_usage_from_dir_scoped(
             .saturating_add(session.tokens.cache_write);
         tokens.total = tokens.total.saturating_add(session.tokens.total);
         latest_updated_at_ms = max_opt_i64(latest_updated_at_ms, session.updated_at_ms);
+        for (code, count) in &session.notices {
+            *notice_counts.entry(code.clone()).or_default() += count;
+        }
         if !session.warnings.is_empty() {
             partial = true;
             source_warnings.extend(
@@ -1276,7 +1600,9 @@ fn read_claude_code_usage_from_dir_scoped(
             .models
             .last()
             .and_then(|model| pricing_catalog(model))
-            .and_then(|pricing| pricing.cost_for(&session.tokens));
+            .and_then(|pricing| {
+                pricing.cost_for_with_cache_split(&session.tokens, session.cache_write_1h)
+            });
         if let Some(cost) = session_cost {
             total_cost = Some(total_cost.map_or(cost, |acc| acc + cost));
         }
@@ -1331,6 +1657,14 @@ fn read_claude_code_usage_from_dir_scoped(
         latest_updated_at_ms,
         recent,
         warnings: source_warnings,
+        notices: notice_counts
+            .into_iter()
+            .map(|(code, count)| UsageNotice {
+                message: describe_notice(&code, count),
+                code,
+                count,
+            })
+            .collect(),
         matched_provider_session_ids: sessions
             .iter()
             .filter_map(|session| normalize_provider_session_id("claude", &session.id))
@@ -1398,22 +1732,17 @@ fn read_claude_session(path: &Path) -> Result<ClaudeSessionAccumulator> {
         match value.get("type").and_then(Value::as_str) {
             Some("user") => {
                 if lineage_is_ambiguous(&value) {
-                    session.warnings.push(format!(
-                        "line {} has branch/resume/compaction/subagent lineage metadata",
-                        index + 1
-                    ));
+                    session.note(NOTICE_AMBIGUOUS_LINEAGE);
                 }
             }
             Some("assistant") => parse_claude_assistant(&value, index + 1, &mut session),
             Some("summary") | Some("system") if lineage_is_ambiguous(&value) => {
-                session.warnings.push(format!(
-                    "line {} indicates compaction or lineage that cannot be fully attributed",
-                    index + 1
-                ));
+                session.note(NOTICE_AMBIGUOUS_LINEAGE);
             }
             _ => {}
         }
     }
+    session.recompute_totals();
     Ok(session)
 }
 
@@ -1436,39 +1765,62 @@ fn parse_claude_assistant(
         }
         return;
     };
-    if !session.seen_messages.insert(identity.to_string()) {
-        return;
-    }
-    if let Some(model) = message
+    let identity = identity.to_string();
+    let model = message
         .get("model")
         .and_then(Value::as_str)
         .filter(|model| !model.is_empty())
-    {
-        session.models.insert(model.to_string());
+        .map(str::to_string);
+    if let Some(model) = model.clone() {
+        session.models.insert(model);
     }
-    session.message_count = session.message_count.saturating_add(1);
-    session.tool_uses = session.tool_uses.saturating_add(
-        message
-            .get("content")
-            .and_then(Value::as_array)
-            .map(|content| {
-                content
-                    .iter()
-                    .filter(|block| block.get("type").and_then(Value::as_str) == Some("tool_use"))
-                    .count() as u64
-            })
-            .unwrap_or_default(),
-    );
+    let tool_uses = message
+        .get("content")
+        .and_then(Value::as_array)
+        .map(|content| {
+            content
+                .iter()
+                .filter(|block| block.get("type").and_then(Value::as_str) == Some("tool_use"))
+                .count() as u64
+        })
+        .unwrap_or_default();
+    let is_sidechain = value
+        .get("isSidechain")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let Some(usage) = message.get("usage") else {
-        session
-            .warnings
-            .push(format!("line {line_number} assistant message has no usage"));
+        // Claude Code omits `usage` for tool-only and streamed rows; this is
+        // normal transcript shape, not a defect, so it is only counted.
+        session.note(NOTICE_ASSISTANT_WITHOUT_USAGE);
+        session.record_message(
+            identity,
+            ClaudeMessageUsage {
+                tokens: TokenBreakdown::default(),
+                cache_write_1h: 0,
+                tool_uses,
+                model,
+                is_sidechain,
+            },
+        );
         return;
     };
     let input = json_u64(usage, "input_tokens");
     let output = json_u64(usage, "output_tokens");
     let cache_read = json_u64(usage, "cache_read_input_tokens");
-    let cache_creation = json_u64(usage, "cache_creation_input_tokens");
+    let cache_creation_breakdown = usage.get("cache_creation");
+    let cache_write_5m = cache_creation_breakdown
+        .map(|value| json_u64(value, "ephemeral_5m_input_tokens"))
+        .unwrap_or_default();
+    let cache_write_1h = cache_creation_breakdown
+        .map(|value| json_u64(value, "ephemeral_1h_input_tokens"))
+        .unwrap_or_default();
+    // `cache_creation` supersedes the flat counter when present, matching how the
+    // provider reports 5m/1h cache writes separately.
+    let cache_creation = if cache_creation_breakdown.is_some() {
+        cache_write_5m.saturating_add(cache_write_1h)
+    } else {
+        json_u64(usage, "cache_creation_input_tokens")
+    };
     // Fail closed on implausible token counts (corrupted or malicious data)
     if input > MAX_PLAUSIBLE_TOKENS_PER_MESSAGE
         || output > MAX_PLAUSIBLE_TOKENS_PER_MESSAGE
@@ -1480,19 +1832,52 @@ fn parse_claude_assistant(
         ));
         return;
     }
-    session.tokens.input = session.tokens.input.saturating_add(input);
-    session.tokens.output = session.tokens.output.saturating_add(output);
-    session.tokens.cache_read = session.tokens.cache_read.saturating_add(cache_read);
-    session.tokens.cache_write = session.tokens.cache_write.saturating_add(cache_creation);
-    session.tokens.total = session.tokens.total.saturating_add(
-        input
+    let tokens = TokenBreakdown {
+        input,
+        output,
+        reasoning: 0,
+        cached_input: 0,
+        cache_read,
+        cache_write: cache_creation,
+        total: input
             .saturating_add(output)
             .saturating_add(cache_read)
             .saturating_add(cache_creation),
+    };
+    session.record_message(
+        identity,
+        ClaudeMessageUsage {
+            tokens,
+            cache_write_1h,
+            tool_uses,
+            model,
+            is_sidechain,
+        },
     );
 }
 
+/// Claude Code derives the transcript directory name by replacing every
+/// non-alphanumeric character of the working directory with `-`
+/// (verified on disk: `/Users/x/codepilot_assistant` ->
+/// `-Users-x-codepilot-assistant`), so separators, dots and underscores all
+/// collapse to `-`.
 fn encode_claude_project_path(path: &str) -> String {
+    let normalized = normalize_stored_path(path);
+    normalized
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+/// Historic encoding that only replaced path separators. Kept as a fallback so
+/// directories written by older readers stay discoverable.
+fn legacy_encode_claude_project_path(path: &str) -> String {
     let normalized = normalize_stored_path(path);
     normalized
         .chars()
@@ -1504,6 +1889,33 @@ fn encode_claude_project_path(path: &str) -> String {
             }
         })
         .collect()
+}
+
+fn claude_project_dir_candidates(config_dir: &Path, project_path: &str) -> Vec<PathBuf> {
+    let projects = config_dir.join("projects");
+    let mut encodings = vec![
+        encode_claude_project_path(project_path),
+        legacy_encode_claude_project_path(project_path),
+    ];
+    encodings.dedup();
+    encodings
+        .into_iter()
+        .map(|encoded| projects.join(encoded))
+        .collect()
+}
+
+fn resolve_claude_project_dir(config_dir: &Path, project_path: &str) -> PathBuf {
+    let candidates = claude_project_dir_candidates(config_dir, project_path);
+    candidates
+        .iter()
+        .find(|candidate| candidate.is_dir())
+        .cloned()
+        .unwrap_or_else(|| {
+            candidates
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| config_dir.join("projects"))
+        })
 }
 
 fn parse_timestamp_ms(value: &Value) -> Option<i64> {
@@ -1568,6 +1980,7 @@ fn read_codex_usage_scoped(
     }
 }
 
+#[cfg(test)]
 fn read_codex_usage_from_db(
     project_path: &str,
     db_path: &Path,
@@ -1577,6 +1990,7 @@ fn read_codex_usage_from_db(
     read_codex_usage_from_dbs_scoped(&matcher, &[db_path.to_path_buf()], warnings, None)
 }
 
+#[cfg(test)]
 fn read_codex_usage_from_dbs(
     project_path: &ProjectPathMatcher,
     db_paths: &[PathBuf],
@@ -1652,10 +2066,11 @@ fn read_codex_usage_from_dbs_scoped(
     let mut tokens = TokenBreakdown::default();
     let mut recent = Vec::new();
     let mut latest_updated_at_ms = None;
+    let mut rollouts_without_total_usage = 0_u64;
 
     for row in rows.iter() {
         latest_updated_at_ms = max_opt_i64(latest_updated_at_ms, row.updated_at_ms);
-        let usage = read_codex_rollout_usage(&row.rollout_path, warnings);
+        let usage = read_codex_rollout_usage(&row.rollout_path, &mut rollouts_without_total_usage);
         let row_total_tokens = usage
             .as_ref()
             .map(|usage| usage.total)
@@ -1753,6 +2168,18 @@ fn read_codex_usage_from_dbs_scoped(
                     "No Codex records matched configured path {}; using same-name usage path {}.",
                     project_path.display_path, path
                 )]
+            })
+            .unwrap_or_default(),
+        notices: (rollouts_without_total_usage > 0)
+            .then(|| {
+                vec![UsageNotice {
+                    code: NOTICE_CODEX_ROLLOUT_WITHOUT_TOTAL.to_string(),
+                    message: describe_notice(
+                        NOTICE_CODEX_ROLLOUT_WITHOUT_TOTAL,
+                        rollouts_without_total_usage,
+                    ),
+                    count: rollouts_without_total_usage,
+                }]
             })
             .unwrap_or_default(),
         matched_provider_session_ids: rows
@@ -1873,6 +2300,7 @@ fn read_opencode_usage_scoped(
     }
 }
 
+#[cfg(test)]
 fn read_opencode_usage_from_db(
     project_path: &str,
     db_path: &Path,
@@ -2049,6 +2477,7 @@ fn read_opencode_usage_from_dbs_scoped(
                 )]
             })
             .unwrap_or_default(),
+        notices: Vec::new(),
         matched_provider_session_ids: rows
             .iter()
             .map(|row| row.id.clone())
@@ -2359,7 +2788,13 @@ fn file_updated_at_ms(path: &Path) -> Option<i64> {
     i64::try_from(duration.as_millis()).ok()
 }
 
-fn read_codex_rollout_usage(path: &str, warnings: &mut Vec<String>) -> Option<TokenBreakdown> {
+/// Reads the last `total_token_usage` snapshot of one rollout. A rollout without
+/// that snapshot is expected (older or interrupted sessions) and falls back to the
+/// database `tokens_used`, so it only increments `rollouts_without_total_usage`.
+fn read_codex_rollout_usage(
+    path: &str,
+    rollouts_without_total_usage: &mut u64,
+) -> Option<TokenBreakdown> {
     if path.trim().is_empty() {
         return None;
     }
@@ -2384,11 +2819,8 @@ fn read_codex_rollout_usage(path: &str, warnings: &mut Vec<String>) -> Option<To
         };
         last = Some(usage);
     }
-    if last.is_none() && warnings.len() < 6 {
-        warnings.push(format!(
-            "No total_token_usage found in Codex rollout {}.",
-            path.display()
-        ));
+    if last.is_none() {
+        *rollouts_without_total_usage += 1;
     }
     last
 }
@@ -2497,9 +2929,18 @@ fn existing_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     paths.into_iter().filter(|path| path.is_file()).collect()
 }
 
+/// A source VibeHub deliberately does not read. This is a documented product
+/// decision, so it is reported as an informational notice and never as a warning
+/// that would make the panel look degraded.
 fn unsupported_source(source: &str, reason: &str) -> AgentUsageSourceSummary {
     let mut summary = empty_source(source, reason);
     summary.status = "unsupported".to_string();
+    summary.warnings.clear();
+    summary.notices = vec![UsageNotice {
+        code: NOTICE_SOURCE_UNSUPPORTED.to_string(),
+        message: format!("{source} is not read: {reason}"),
+        count: 1,
+    }];
     summary
 }
 
@@ -2518,6 +2959,7 @@ fn empty_source(source: &str, warning: &str) -> AgentUsageSourceSummary {
         latest_updated_at_ms: None,
         recent: Vec::new(),
         warnings: vec![warning.to_string()],
+        notices: Vec::new(),
         matched_provider_session_ids: BTreeSet::new(),
     }
 }
@@ -2614,7 +3056,13 @@ mod tests {
         assert_eq!(source.total_tokens, 0);
         assert_eq!(source.cost, None);
         assert!(source.recent.is_empty());
-        assert!(source.warnings[0].contains("no stable"));
+        assert!(
+            source.warnings.is_empty(),
+            "a deliberate product boundary is not a warning"
+        );
+        assert_eq!(source.notices.len(), 1);
+        assert_eq!(source.notices[0].code, NOTICE_SOURCE_UNSUPPORTED);
+        assert!(source.notices[0].message.contains("no stable"));
     }
 
     #[test]
@@ -2647,6 +3095,92 @@ mod tests {
     }
 
     #[test]
+    fn cached_source_read_skips_rescanning_until_inputs_change() {
+        let dir = temp_dir("usage-cache-signature");
+        let transcript = dir.join("session.jsonl");
+        let mut file = File::create(&transcript).expect("fixture");
+        writeln!(file, "{{}}").expect("write");
+        drop(file);
+
+        let cache = Arc::new(Mutex::new(UsageCache::new()));
+        let inputs = vec![transcript.clone()];
+        let mut scans = 0_u32;
+        let read = |scans: &mut u32| {
+            cached_source_read(
+                Some(&cache),
+                "claude_code",
+                "/project#project",
+                &inputs,
+                || {
+                    *scans += 1;
+                    test_source("claude_code", true, 10, 20, None)
+                },
+            )
+        };
+
+        assert_eq!(read(&mut scans).total_tokens, 20);
+        assert_eq!(scans, 1, "first read scans the source");
+        assert_eq!(read(&mut scans).total_tokens, 20);
+        assert_eq!(scans, 1, "unchanged inputs are served from the cache");
+
+        let file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&transcript)
+            .expect("append");
+        writeln!(&file, "{{\"appended\":true}}").expect("write append");
+        drop(file);
+
+        assert_eq!(read(&mut scans).total_tokens, 20);
+        assert_eq!(scans, 2, "appending to a transcript invalidates the entry");
+        assert!(cache
+            .lock()
+            .expect("cache")
+            .cache_state()
+            .starts_with("warm_"));
+    }
+
+    #[test]
+    fn cached_source_read_falls_back_when_no_signature_is_observable() {
+        let cache = Arc::new(Mutex::new(UsageCache::new()));
+        let mut scans = 0_u32;
+        for _ in 0..2 {
+            cached_source_read(Some(&cache), "codex", "/project#project", &[], || {
+                scans += 1;
+                test_source("codex", true, 1, 2, None)
+            });
+        }
+        assert_eq!(scans, 2, "an unobservable source is never cached");
+        assert_eq!(cache.lock().expect("cache").cache_state(), "cold");
+    }
+
+    #[test]
+    fn task_scoped_reads_do_not_reuse_project_wide_cache_entries() {
+        let dir = temp_dir("usage-cache-scope");
+        let transcript = dir.join("session.jsonl");
+        File::create(&transcript).expect("fixture");
+        let cache = Arc::new(Mutex::new(UsageCache::new()));
+        let inputs = vec![transcript];
+
+        let project_wide = cached_source_read(
+            Some(&cache),
+            "claude_code",
+            "/project#project",
+            &inputs,
+            || test_source("claude_code", true, 10, 20, None),
+        );
+        let task_scoped = cached_source_read(
+            Some(&cache),
+            "claude_code",
+            "/project#task:task.example",
+            &inputs,
+            || test_source("claude_code", true, 3, 6, None),
+        );
+
+        assert_eq!(project_wide.total_tokens, 20);
+        assert_eq!(task_scoped.total_tokens, 6, "scopes have separate entries");
+    }
+
+    #[test]
     fn refresh_summary_reports_cache_state() {
         let cache = Arc::new(Mutex::new(UsageCache::new()));
         let dir = temp_dir("cache-refresh");
@@ -2654,7 +3188,12 @@ mod tests {
         fs::create_dir_all(&project).expect("project dir");
         // First call: cache is cold, will be populated after scan
         let usage = read_local_agent_usage_with_cache(&project, cache.clone()).expect("usage");
-        assert_eq!(usage.refresh.cache_state, "cold");
+        // `refresh.cache_state` describes the cache as observed at read time, so the
+        // first call reports whatever entries earlier reads left behind.
+        assert!(
+            usage.refresh.cache_state.starts_with("cold")
+                || usage.refresh.cache_state.starts_with("warm_")
+        );
         // Cache should now have entries (if any provider found data)
         // Second call: cache state reflects warm entries
         let usage2 = read_local_agent_usage_with_cache(&project, cache).expect("usage2");
@@ -2885,7 +3424,10 @@ mod tests {
             "2026-07-28T00:00:00Z",
             "fresh",
             "partial",
-            84,
+            UsageTokenTotals {
+                total_tokens: 84,
+                non_cached_total_tokens: 55,
+            },
             [&claude, &codex, &opencode],
             0,
             0,
@@ -2910,7 +3452,10 @@ mod tests {
             "2026-07-28T00:00:00Z",
             "fresh",
             "complete",
-            84,
+            UsageTokenTotals {
+                total_tokens: 84,
+                non_cached_total_tokens: 55,
+            },
             [&claude, &codex, &opencode],
             0,
             0,
@@ -2997,8 +3542,11 @@ mod tests {
         assert_eq!(rows[0].id, thread_id);
         assert_eq!(rows[0].tokens_used, 28_232_679);
         assert_eq!(paths, vec![rollout_path]);
-        let usage = read_codex_rollout_usage(&rows[0].rollout_path, &mut warnings)
-            .expect("rollout token usage");
+        let mut rollouts_without_total_usage = 0_u64;
+        let usage =
+            read_codex_rollout_usage(&rows[0].rollout_path, &mut rollouts_without_total_usage)
+                .expect("rollout token usage");
+        assert_eq!(rollouts_without_total_usage, 0);
         assert_eq!(usage.total, 28_232_679);
         assert_eq!(usage.cached_input, 27_321_600);
     }
@@ -3351,16 +3899,26 @@ mod tests {
         assert_eq!(stale.freshness, "stale");
         assert_eq!(stale.status, "stale");
         assert_eq!(stale.total_tokens, 20);
-        assert!(stale
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("901 seconds old")));
+        // Stale data is old, not broken: it is reported through freshness/status and
+        // the observed-through timestamp instead of a warning.
+        assert!(
+            stale.warnings.is_empty(),
+            "stale is not a defect: {:?}",
+            stale.warnings
+        );
+        assert_eq!(stale.latest_updated_at_ms, Some(generated_at_ms - 901_000));
 
         let mut unknown = test_source("unknown", true, 10, 20, None);
         apply_source_freshness(&mut unknown, generated_at_ms, 900);
         assert_eq!(unknown.freshness, "unknown");
-        assert_eq!(unknown.status, "partial");
+        assert_eq!(
+            unknown.status, "available",
+            "an unknown timestamp does not invalidate recorded tokens"
+        );
         assert_eq!(unknown.total_tokens, 20);
+        assert!(unknown.warnings.is_empty());
+        assert_eq!(unknown.notices.len(), 1);
+        assert_eq!(unknown.notices[0].code, NOTICE_FRESHNESS_UNKNOWN);
     }
 
     #[test]
@@ -3390,7 +3948,10 @@ mod tests {
             "2026-07-28T00:00:00Z",
             "fresh",
             "partial",
-            84,
+            UsageTokenTotals {
+                total_tokens: 84,
+                non_cached_total_tokens: 55,
+            },
             [&claude, &codex, &opencode],
             4,
             3,
@@ -3410,18 +3971,18 @@ mod tests {
     }
 
     #[test]
-    fn primary_metric_uses_total_tokens_even_when_cost_is_available() {
+    fn primary_metric_uses_non_cached_tokens_even_when_cost_is_available() {
         let codex = test_source("codex", false, 0, 0, None);
         let opencode = test_source("opencode", true, 15, 24, Some(1.25));
 
         let claude = test_source("claude_code", false, 0, 0, None);
-        let metric = select_primary_metric(&claude, &codex, &opencode, 24);
+        let metric = select_primary_metric(&claude, &codex, &opencode, 15);
 
         assert_eq!(metric.kind, "tokens");
         assert_eq!(metric.source, "opencode");
         assert_eq!(metric.currency, None);
         assert_eq!(metric.value, None);
-        assert_eq!(metric.tokens, Some(24));
+        assert_eq!(metric.tokens, Some(15));
         assert!(!metric.estimated);
     }
 
@@ -3431,14 +3992,77 @@ mod tests {
         let opencode = test_source("opencode", false, 0, 0, None);
 
         let claude = test_source("claude_code", false, 0, 0, None);
-        let metric = select_primary_metric(&claude, &codex, &opencode, 21);
+        let metric = select_primary_metric(&claude, &codex, &opencode, 14);
 
         assert_eq!(metric.kind, "tokens");
         assert_eq!(metric.source, "codex");
         assert_eq!(metric.value, None);
         assert_eq!(metric.currency, None);
-        assert_eq!(metric.tokens, Some(21));
+        assert_eq!(metric.tokens, Some(14));
         assert!(!metric.estimated);
+    }
+
+    #[test]
+    fn primary_metric_ignores_cache_heavy_totals() {
+        // A long-lived project accumulates huge cache-read volumes; the headline
+        // must stay on the non-cached tokens the user is actually billed for.
+        let claude = test_source("claude_code", true, 45_896_722, 257_158_261, None);
+        let codex = test_source("codex", false, 0, 0, None);
+        let opencode = test_source("opencode", false, 0, 0, None);
+
+        let metric = select_primary_metric(&claude, &codex, &opencode, 45_896_722);
+
+        assert_eq!(metric.tokens, Some(45_896_722));
+        assert_eq!(metric.label, "Non-cached local tokens");
+    }
+
+    #[test]
+    fn anomaly_ignores_cache_inflated_totals() {
+        let claude = test_source("claude_code", true, 45_896_722, 2_941_209_686, None);
+        let codex = test_source("codex", false, 0, 0, None);
+        let opencode = test_source("opencode", false, 0, 0, None);
+
+        let audit = build_usage_audit(
+            "2026-07-28T00:00:00Z",
+            "fresh",
+            "partial",
+            UsageTokenTotals {
+                total_tokens: 2_941_209_686,
+                non_cached_total_tokens: 45_896_722,
+            },
+            [&claude, &codex, &opencode],
+            0,
+            0,
+        );
+
+        assert!(
+            audit.anomaly.is_none(),
+            "2.9B cached tokens with 45M non-cached tokens is not an anomaly"
+        );
+    }
+
+    #[test]
+    fn anomaly_flags_implausible_non_cached_totals() {
+        let claude = test_source("claude_code", true, 1_000_000_000, 1_500_000_000, None);
+        let codex = test_source("codex", false, 0, 0, None);
+        let opencode = test_source("opencode", false, 0, 0, None);
+
+        let audit = build_usage_audit(
+            "2026-07-28T00:00:00Z",
+            "fresh",
+            "partial",
+            UsageTokenTotals {
+                total_tokens: 1_500_000_000,
+                non_cached_total_tokens: 1_000_000_000,
+            },
+            [&claude, &codex, &opencode],
+            0,
+            0,
+        );
+
+        let anomaly = audit.anomaly.expect("non-cached anomaly");
+        assert_eq!(anomaly.code, "usage.total.extreme");
+        assert_eq!(anomaly.observed_tokens, 1_000_000_000);
     }
 
     #[test]
@@ -3660,15 +4284,29 @@ mod tests {
             vec!["claude-opus-test", "claude-sonnet-test"]
         );
         assert_eq!(partial.tool_uses, 1);
+        // Malformed transcript lines stay warnings...
         assert!(usage
             .warnings
             .iter()
             .any(|warning| warning.contains("invalid JSON")));
-        assert!(usage
+        // ...while expected transcript shapes are aggregated notices with counts.
+        let lineage = usage
+            .notices
+            .iter()
+            .find(|notice| notice.code == NOTICE_AMBIGUOUS_LINEAGE)
+            .expect("lineage notice");
+        assert!(lineage.count >= 1);
+        assert!(!usage
             .warnings
             .iter()
             .any(|warning| warning.contains("lineage")));
-        assert!(usage
+        let without_usage = usage
+            .notices
+            .iter()
+            .find(|notice| notice.code == NOTICE_ASSISTANT_WITHOUT_USAGE)
+            .expect("no-usage notice");
+        assert!(without_usage.count >= 1);
+        assert!(!usage
             .warnings
             .iter()
             .any(|warning| warning.contains("has no usage")));
@@ -3709,7 +4347,7 @@ mod tests {
         let matcher = ProjectPathMatcher::new(Path::new(r"C:\Users\Example\Project One"));
         assert_eq!(
             encode_claude_project_path(&matcher.primary),
-            "C--Users-Example-Project One"
+            "C--Users-Example-Project-One"
         );
         let empty = temp_dir("claude-empty");
         let usage = read_claude_code_usage_from_dir(&matcher, &empty);
@@ -3726,12 +4364,288 @@ mod tests {
     fn encodes_macos_and_windows_claude_project_paths() {
         assert_eq!(
             encode_claude_project_path("/Users/example/Project One"),
-            "-Users-example-Project One"
+            "-Users-example-Project-One"
         );
         assert_eq!(
             encode_claude_project_path(r"C:\Users\example\Project One"),
-            "C--Users-example-Project One"
+            "C--Users-example-Project-One"
         );
+    }
+
+    #[test]
+    fn codex_rollout_without_total_usage_only_increments_a_counter() {
+        let dir = temp_dir("codex-rollout-without-total");
+        let rollout = dir.join("rollout-no-total.jsonl");
+        let mut file = File::create(&rollout).expect("rollout fixture");
+        writeln!(file, r#"{{"payload":{{"info":{{"other":1}}}}}}"#).expect("write row");
+        drop(file);
+
+        let mut rollouts_without_total_usage = 0_u64;
+        let usage = read_codex_rollout_usage(
+            rollout.to_str().expect("utf-8 path"),
+            &mut rollouts_without_total_usage,
+        );
+
+        assert!(
+            usage.is_none(),
+            "no snapshot means no rollout-derived usage"
+        );
+        assert_eq!(
+            rollouts_without_total_usage, 1,
+            "the fallback to tokens_used is counted, not warned about"
+        );
+        assert_eq!(
+            describe_notice(NOTICE_CODEX_ROLLOUT_WITHOUT_TOTAL, 5),
+            "5 Codex rollout(s) record no total_token_usage snapshot; their database tokens_used total is used instead."
+        );
+    }
+
+    #[test]
+    fn benign_transcript_shapes_become_counted_notices_instead_of_warnings() {
+        let dir = temp_dir("claude-notice-aggregation");
+        let mut file = File::create(dir.join("session-noisy.jsonl")).expect("create");
+        writeln!(
+            file,
+            r#"{{"type":"assistant","sessionId":"session-noisy","message":{{"id":"msg-real","model":"claude-3-opus","usage":{{"input_tokens":30,"output_tokens":7}}}}}}"#
+        )
+        .expect("write real row");
+        for index in 0..50 {
+            writeln!(
+                file,
+                r#"{{"type":"assistant","sessionId":"session-noisy","message":{{"id":"msg-tool-{index}","model":"claude-3-opus","content":[{{"type":"tool_use"}}]}}}}"#
+            )
+            .expect("write tool-only row");
+        }
+        drop(file);
+
+        let matcher = ProjectPathMatcher::new(Path::new("/Users/example/project"));
+        let usage = read_claude_code_usage_from_dir(&matcher, &dir);
+
+        assert!(
+            usage.warnings.is_empty(),
+            "expected no warnings, got {:?}",
+            usage.warnings
+        );
+        assert_eq!(
+            usage.status, "available",
+            "benign rows keep the source clean"
+        );
+        let notice = usage
+            .notices
+            .iter()
+            .find(|notice| notice.code == NOTICE_ASSISTANT_WITHOUT_USAGE)
+            .expect("aggregated notice");
+        assert_eq!(notice.count, 50, "50 rows collapse into one counted notice");
+        assert_eq!(usage.total_tokens, 37);
+    }
+
+    #[test]
+    fn unsupported_and_empty_sources_are_notices_not_overview_warnings() {
+        let project = temp_dir("usage-unsupported-scope");
+        let usage = read_local_agent_usage(&project).expect("overview for an empty project");
+
+        for label in ["Claude App ordinary chat", "Cursor"] {
+            assert!(
+                !usage.warnings.iter().any(|warning| warning.contains(label)),
+                "{label} must not appear as a warning: {:?}",
+                usage.warnings
+            );
+        }
+        let unsupported = usage
+            .notices
+            .iter()
+            .filter(|notice| notice.code == NOTICE_SOURCE_UNSUPPORTED)
+            .count();
+        assert!(
+            unsupported >= 2,
+            "Claude App and Cursor report themselves as unsupported notices, got {:?}",
+            usage.notices
+        );
+        assert_eq!(usage.claude_app.status, "unsupported");
+        assert!(usage.claude_app.warnings.is_empty());
+        assert_eq!(usage.cursor.status, "unsupported");
+        assert!(usage.cursor.warnings.is_empty());
+    }
+
+    #[test]
+    fn claude_project_encoding_collapses_every_non_alphanumeric_character() {
+        // Verified against a real transcript directory: the working directory
+        // /Users/chenm0m/codepilot_assistant is stored as
+        // -Users-chenm0m-codepilot-assistant, so `_` and `.` collapse too.
+        assert_eq!(
+            encode_claude_project_path("/Users/chenm0m/codepilot_assistant"),
+            "-Users-chenm0m-codepilot-assistant"
+        );
+        assert_eq!(
+            encode_claude_project_path("/Users/x/my.app_v2"),
+            "-Users-x-my-app-v2"
+        );
+    }
+
+    #[test]
+    fn claude_project_dir_prefers_existing_encoding_over_legacy() {
+        let config_dir = temp_dir("claude-project-dir");
+        let projects = config_dir.join("projects");
+        let project_path = "/Users/example/my_project";
+        let candidates = claude_project_dir_candidates(&config_dir, project_path);
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates[0].ends_with("-Users-example-my-project"));
+        assert!(candidates[1].ends_with("-Users-example-my_project"));
+
+        // Nothing on disk yet: the canonical encoding is used.
+        assert_eq!(
+            resolve_claude_project_dir(&config_dir, project_path),
+            projects.join("-Users-example-my-project")
+        );
+
+        // A directory written by the legacy encoding stays discoverable.
+        fs::create_dir_all(projects.join("-Users-example-my_project")).expect("legacy dir");
+        assert_eq!(
+            resolve_claude_project_dir(&config_dir, project_path),
+            projects.join("-Users-example-my_project")
+        );
+    }
+
+    #[test]
+    fn claude_subagent_transcripts_are_merged_into_their_parent_session() {
+        let dir = temp_dir("claude-subagents");
+        let mut parent = File::create(dir.join("session-parent.jsonl")).expect("parent");
+        writeln!(
+            parent,
+            r#"{{"type":"assistant","sessionId":"session-parent","message":{{"id":"msg-main","model":"claude-3-opus","usage":{{"input_tokens":100,"output_tokens":10}}}}}}"#
+        )
+        .expect("write parent");
+        drop(parent);
+        let subagent_dir = dir.join("session-parent").join("subagents");
+        fs::create_dir_all(&subagent_dir).expect("subagent dir");
+        let mut subagent = File::create(subagent_dir.join("agent-1.jsonl")).expect("subagent");
+        writeln!(
+            subagent,
+            r#"{{"type":"assistant","sessionId":"session-parent","isSidechain":true,"message":{{"id":"msg-sub","model":"claude-3-opus","usage":{{"input_tokens":40,"output_tokens":5}}}}}}"#
+        )
+        .expect("write subagent");
+        drop(subagent);
+
+        let matcher = ProjectPathMatcher::new(Path::new("/Users/example/project"));
+        let usage = read_claude_code_usage_from_dir(&matcher, &dir);
+        assert_eq!(usage.records, 1, "parent and subagent share one session id");
+        assert_eq!(usage.total_tokens, 155, "subagent tokens are counted");
+        assert_eq!(usage.recent[0].id, "session-parent");
+    }
+
+    #[test]
+    fn claude_repeated_message_id_keeps_the_largest_observation() {
+        let dir = temp_dir("claude-dedupe-stream");
+        let mut file = File::create(dir.join("session-stream.jsonl")).expect("create");
+        // Older Claude Code versions emit streaming placeholders with 0/0 usage
+        // before the final row for the same message id.
+        writeln!(
+            file,
+            r#"{{"type":"assistant","sessionId":"session-stream","message":{{"id":"msg-1","model":"claude-3-opus","usage":{{"input_tokens":0,"output_tokens":0}}}}}}"#
+        )
+        .expect("write placeholder");
+        writeln!(
+            file,
+            r#"{{"type":"assistant","sessionId":"session-stream","message":{{"id":"msg-1","model":"claude-3-opus","usage":{{"input_tokens":900,"output_tokens":100}}}}}}"#
+        )
+        .expect("write final");
+        drop(file);
+
+        let matcher = ProjectPathMatcher::new(Path::new("/Users/example/project"));
+        let usage = read_claude_code_usage_from_dir(&matcher, &dir);
+        assert_eq!(usage.records, 1);
+        assert_eq!(
+            usage.total_tokens, 1_000,
+            "the final row wins over the streaming placeholder"
+        );
+        assert_eq!(usage.recent[0].message_count, 1);
+    }
+
+    #[test]
+    fn claude_duplicate_message_across_files_is_counted_once() {
+        let dir = temp_dir("claude-dedupe-cross-file");
+        for (index, session_id) in ["session-a", "session-b"].iter().enumerate() {
+            let mut file =
+                File::create(dir.join(format!("{session_id}.jsonl"))).expect("create file");
+            writeln!(
+                file,
+                r#"{{"type":"assistant","sessionId":"{session_id}","message":{{"id":"msg-shared","model":"claude-3-opus","usage":{{"input_tokens":500,"output_tokens":100}}}}}}"#
+            )
+            .expect("write shared");
+            writeln!(
+                file,
+                r#"{{"type":"assistant","sessionId":"{session_id}","message":{{"id":"msg-own-{index}","model":"claude-3-opus","usage":{{"input_tokens":10,"output_tokens":1}}}}}}"#
+            )
+            .expect("write own");
+            drop(file);
+        }
+
+        let matcher = ProjectPathMatcher::new(Path::new("/Users/example/project"));
+        let usage = read_claude_code_usage_from_dir(&matcher, &dir);
+        assert_eq!(usage.records, 2);
+        assert_eq!(
+            usage.total_tokens, 622,
+            "the shared message is billed once (600 + 11 + 11)"
+        );
+    }
+
+    #[test]
+    fn cache_read_falls_back_to_ten_percent_of_base_input() {
+        let pricing = pricing_catalog("gpt-4-turbo").expect("gpt-4-turbo pricing");
+        assert_eq!(pricing.cache_read_per_1m, None);
+        let tokens = TokenBreakdown {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cached_input: 0,
+            cache_read: 1_000_000,
+            cache_write: 0,
+            total: 1_000_000,
+        };
+        let cost = pricing.cost_for(&tokens).expect("cost");
+        // 1M cache reads at 0.1x of the $10/1M base input price.
+        assert!((cost - 1.0).abs() < 1e-9, "cost was {cost}");
+    }
+
+    #[test]
+    fn one_hour_cache_writes_are_priced_at_double_base_input() {
+        let pricing = pricing_catalog("gpt-4-turbo").expect("gpt-4-turbo pricing");
+        assert_eq!(pricing.cache_write_per_1m, None);
+        let tokens = TokenBreakdown {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cached_input: 0,
+            cache_read: 0,
+            cache_write: 1_000_000,
+            total: 1_000_000,
+        };
+        let short = pricing.cost_for_with_cache_split(&tokens, 0).expect("5m");
+        let long = pricing
+            .cost_for_with_cache_split(&tokens, 1_000_000)
+            .expect("1h");
+        assert!((short - 12.5).abs() < 1e-9, "5m write cost was {short}");
+        assert!((long - 20.0).abs() < 1e-9, "1h write cost was {long}");
+    }
+
+    #[test]
+    fn claude_cache_creation_breakdown_supersedes_the_flat_counter() {
+        let dir = temp_dir("claude-cache-breakdown");
+        let mut file = File::create(dir.join("session-cache.jsonl")).expect("create");
+        writeln!(
+            file,
+            r#"{{"type":"assistant","sessionId":"session-cache","message":{{"id":"msg-1","model":"claude-3-opus","usage":{{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":999,"cache_creation":{{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":40}}}}}}}}"#
+        )
+        .expect("write");
+        drop(file);
+
+        let matcher = ProjectPathMatcher::new(Path::new("/Users/example/project"));
+        let usage = read_claude_code_usage_from_dir(&matcher, &dir);
+        assert_eq!(
+            usage.tokens.cache_write, 140,
+            "5m + 1h replaces the flat counter"
+        );
+        assert_eq!(usage.total_tokens, 155);
     }
 
     fn create_codex_schema(conn: &Connection) {
@@ -3779,6 +4693,7 @@ mod tests {
             latest_updated_at_ms: None,
             recent: Vec::new(),
             warnings: Vec::new(),
+            notices: Vec::new(),
             matched_provider_session_ids: BTreeSet::new(),
         }
     }
