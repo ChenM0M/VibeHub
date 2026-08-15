@@ -4995,6 +4995,7 @@ dependencies = [
  "vibehub-cli",
  "vibehub-core",
  "walkdir",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
