@@ -106,6 +106,10 @@ export function ProjectTabBar() {
     const closeTab = useTabsStore((state) => state.closeTab);
     const closeActiveTab = useTabsStore((state) => state.closeActiveTab);
     const reorderTabs = useTabsStore((state) => state.reorderTabs);
+    const diagnostics = useTabsStore((state) => state.diagnostics);
+    const hydrating = useTabsStore((state) => state.hydrating);
+    const retryHydrate = useTabsStore((state) => state.retryHydrate);
+    const deactivateTabs = useTabsStore((state) => state.deactivateTabs);
     const scrollRef = useRef<HTMLDivElement | null>(null);
 
     const tabs = useMemo<ProjectTab[]>(() => {
@@ -174,7 +178,21 @@ export function ProjectTabBar() {
         }
     }, [activeTabId, tabs.length]);
 
-    if (tabs.length === 0) return null;
+    const restoreNotice = diagnostics.length > 0 ? (
+        <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-900 dark:text-amber-100">
+            <span className="min-w-0 flex-1 truncate">
+                {t(`tabs.diagnostics.workspace_state.${diagnostics[0].code.replace(/^workspace_state\./, '')}`, { defaultValue: diagnostics[0].message })}
+            </span>
+            <button type="button" className="shrink-0 underline underline-offset-2 disabled:opacity-50" onClick={() => void retryHydrate()} disabled={hydrating}>
+                {hydrating ? t('tabs.restoring') : t('tabs.retryRestore')}
+            </button>
+            <button type="button" className="shrink-0 underline underline-offset-2" onClick={deactivateTabs}>
+                {t('tabs.openProjectList')}
+            </button>
+        </div>
+    ) : null;
+
+    if (tabs.length === 0) return restoreNotice;
 
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
@@ -186,7 +204,9 @@ export function ProjectTabBar() {
     };
 
     return (
-        <div className="flex h-9 shrink-0 items-end gap-1 border-b border-border/60 bg-muted/20 px-3">
+        <>
+            {restoreNotice}
+            <div className="flex h-9 shrink-0 items-end gap-1 border-b border-border/60 bg-muted/20 px-3">
             <div
                 ref={scrollRef}
                 role="tablist"
@@ -227,6 +247,7 @@ export function ProjectTabBar() {
                     ))}
                 </DropdownMenuContent>
             </DropdownMenu>
-        </div>
+            </div>
+        </>
     );
 }

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { tauriApi } from '@/services/tauri';
 import { AppConfig, Project, Tag, Theme } from '@/types';
+import { useTabsStore } from '@/stores/tabsStore';
 
 type EffectiveTheme = 'light' | 'dark';
 
@@ -108,6 +109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             await tauriApi.initializeDefaultConfigs();
             const config = await tauriApi.loadConfig();
             set({ config, isLoading: false });
+            await useTabsStore.getState().hydrate(config.projects);
             applyTheme(config.theme, (effectiveTheme) => set({ effectiveTheme }));
             watchSystemTheme(
                 () => get().config?.theme,
@@ -122,6 +124,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         try {
             const config = await tauriApi.loadConfig();
             set({ config });
+            useTabsStore.getState().reconcileProjects(config.projects);
             applyTheme(config.theme, (effectiveTheme) => set({ effectiveTheme }));
         } catch (error) {
             console.error('Failed to refresh config:', error);
@@ -133,6 +136,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             await tauriApi.refreshAllWorkspaces();
             const config = await tauriApi.loadConfig();
             set({ config });
+            useTabsStore.getState().reconcileProjects(config.projects);
             applyTheme(config.theme, (effectiveTheme) => set({ effectiveTheme }));
         } catch (error) {
             console.error('Failed to refresh workspaces:', error);

@@ -71,6 +71,7 @@ export function Home({ searchQuery, resetKey }: HomeProps) {
     const leaveV3Project = useV3Store((state) => state.leaveProject);
 
     useEffect(() => {
+        if (resetKey === 0 && selectedWorkspaceId === null) return;
         leaveV3Project();
         deactivateProjectTabs();
     }, [resetKey, selectedWorkspaceId, leaveV3Project, deactivateProjectTabs]);

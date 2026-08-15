@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/workspace-state.schema.json",
+  "title": "WorkspaceStateContract",
+  "oneOf": [
+    { "$ref": "#/$defs/WorkspaceState" },
+    { "$ref": "#/$defs/WorkspaceStateReadResult" },
+    { "$ref": "#/$defs/WorkspaceStateSaveRequest" },
+    { "$ref": "#/$defs/WorkspaceStateSaveResult" }
+  ],
+  "$defs": {
+    "WorkspaceProjectUiContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "current_view", "selected_task_id", "selected_node_id"],
+      "properties": {
+        "owner": { "const": "v3-cockpit" },
+        "current_view": { "type": "string", "minLength": 1 },
+        "selected_task_id": { "type": ["string", "null"] },
+        "selected_node_id": { "type": ["string", "null"] }
+      }
+    },
+    "WorkspaceProjectIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "canonical_path", "display_name", "ui_context"],
+      "properties": {
+        "project_id": { "type": "string", "minLength": 1 },
+        "canonical_path": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string", "minLength": 1 },
+        "ui_context": { "$ref": "#/$defs/WorkspaceProjectUiContext" }
+      }
+    },
+    "WorkspaceStateProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "writer", "reason"],
+      "properties": {
+        "source": { "enum": ["default", "user", "recovery", "migration"] },
+        "writer": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "WorkspaceState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "revision",
+        "open_projects",
+        "active_project_id",
+        "updated_at",
+        "updated_by",
+        "provenance"
+      ],
+      "properties": {
+        "schema_version": { "const": 3 },
+        "kind": { "const": "workspace_state" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "open_projects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WorkspaceProjectIdentity" }
+        },
+        "active_project_id": { "type": ["string", "null"] },
+        "updated_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "updated_by": { "type": "string", "minLength": 1 },
+        "provenance": { "$ref": "#/$defs/WorkspaceStateProvenance" }
+      }
+    },
+    "WorkspaceStateDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "recovery_action"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "project_id": { "type": ["string", "null"] },
+        "message": { "type": "string", "minLength": 1 },
+        "recovery_action": { "type": "string", "minLength": 1 }
+      }
+    },
+    "WorkspaceStateReadResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "state", "diagnostics", "recommended_action"],
+      "properties": {
+        "status": { "enum": ["missing", "present", "recovered", "partial", "invalid"] },
+        "state": {
+          "oneOf": [
+            { "$ref": "#/$defs/WorkspaceState" },
+            { "type": "null" }
+          ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WorkspaceStateDiagnostic" }
+        },
+        "recommended_action": { "type": ["string", "null"] }
+      }
+    },
+    "WorkspaceStateSaveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_revision", "state"],
+      "properties": {
+        "expected_revision": { "type": "integer", "minimum": 0 },
+        "state": { "$ref": "#/$defs/WorkspaceState" }
+      }
+    },
+    "WorkspaceStateSaveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "previous_revision", "backup_path", "diagnostics"],
+      "properties": {
+        "state": { "$ref": "#/$defs/WorkspaceState" },
+        "previous_revision": { "type": "integer", "minimum": 0 },
+        "backup_path": { "type": ["string", "null"] },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WorkspaceStateDiagnostic" }
+        }
+      }
+    }
+  }
+}

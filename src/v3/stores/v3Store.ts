@@ -21,6 +21,7 @@ import type {
 } from "@/types";
 import type { LegacyV2Loader } from "@/services/legacyV2";
 import type { NodeBrief } from "@/v3/contracts/generated/node-brief";
+import { useTabsStore } from "@/stores/tabsStore";
 
 export type V3LifecycleAction = "initialize" | "migrate" | "recover" | "repair";
 
@@ -114,6 +115,7 @@ interface V3State {
   currentScenario: V3FixtureScenario | null;
   projectPath: string | null;
   currentView: V3View;
+  cockpitTab: "overview" | "timeline" | "plan" | "structure";
   navStack: BreadcrumbCrumb[];
   bundle: V3FixtureBundle | null;
   loading: boolean;
@@ -158,6 +160,7 @@ interface V3State {
   updateProjectSettings: (request: V3ProjectSettingsUpdateRequest) => Promise<boolean>;
   syncAgentSpecs: (forceManagedRegion?: boolean) => Promise<boolean>;
   drillIn: (view: V3View, label: string) => void;
+  setCockpitTab: (tab: "overview" | "timeline" | "plan" | "structure") => void;
   goBack: () => void;
   goHome: () => void;
   selectTask: (taskId: string | null) => void;
@@ -181,6 +184,7 @@ type V3ProjectSnapshot = Pick<
   | "projectSettings"
   | "agentSpecs"
   | "currentView"
+  | "cockpitTab"
   | "navStack"
 >;
 
@@ -200,6 +204,7 @@ function blankProjectState() {
     projectSettings: null, settingsLoading: false, settingsError: null,
     agentSpecs: null, specsLoading: false, specsError: null,
     currentView: "project-overview" as V3View,
+    cockpitTab: "overview" as const,
     navStack: [] as BreadcrumbCrumb[],
   };
 }
@@ -219,6 +224,7 @@ function captureProjectSnapshot(state: V3State): void {
     projectSettings: state.projectSettings,
     agentSpecs: state.agentSpecs,
     currentView: state.currentView,
+    cockpitTab: state.cockpitTab,
     navStack: state.navStack,
   });
   while (projectSnapshots.size > PROJECT_SNAPSHOT_LIMIT) {
@@ -239,7 +245,8 @@ function readProjectSnapshot(projectPath: string): Partial<V3State> {
 export const useV3Store = create<V3State>((set, get) => ({
   currentScenario: null,
   projectPath: null,
-  currentView: "project-overview",
+    currentView: "project-overview",
+    cockpitTab: "overview",
   navStack: [],
   bundle: null,
   loading: false,
@@ -306,6 +313,7 @@ export const useV3Store = create<V3State>((set, get) => ({
       agentSpecs: null,
       specsLoading: false, specsError: null,
       currentView: "project-overview",
+      cockpitTab: "overview",
       navStack: [],
     });
     void get().loadCurrentBundle();
@@ -328,11 +336,22 @@ export const useV3Store = create<V3State>((set, get) => ({
     lifecycleApi = projectLifecycleApi;
     projectSettingsApi = settingsApi ?? null;
     nodeBriefLoader = briefLoader ?? null;
+    const persistedContext = useTabsStore.getState().getProjectUiContextForPath(projectPath);
+    const persistedView = [
+      "project-overview", "architecture-map", "structure-explorer", "global-timeline",
+      "task-timeline", "plan-graph", "acceptance-progress", "node-brief",
+    ].includes(persistedContext.current_view)
+      ? persistedContext.current_view as V3View
+      : "project-overview";
     set({
       projectPath,
       currentScenario: null,
       ...blankProjectState(),
       ...readProjectSnapshot(projectPath),
+      currentView: persistedView,
+      cockpitTab: persistedView === "task-timeline" ? "timeline" : persistedView === "plan-graph" || persistedView === "node-brief" ? "plan" : persistedView === "structure-explorer" || persistedView === "architecture-map" ? "structure" : "overview",
+      selectedTaskId: persistedContext.selected_task_id,
+      selectedNodeId: persistedContext.selected_node_id,
     });
     void get().inspectProjectLayout();
   },
@@ -441,8 +460,11 @@ export const useV3Store = create<V3State>((set, get) => ({
       }
       const previousTaskId = get().selectedTaskId;
       const previousNodeId = get().selectedNodeId;
+      const projectedUiSelectedTaskId = bundle.projectOverview.ui_selected_task_id ?? null;
       const selectedTaskId = previousTaskId && bundle.projectOverview.active_tasks.some((task) => task.task_id === previousTaskId)
         ? previousTaskId
+        : projectedUiSelectedTaskId && bundle.projectOverview.active_tasks.some((task) => task.task_id === projectedUiSelectedTaskId)
+          ? projectedUiSelectedTaskId
         : bundle.projectOverview.active_tasks.some((task) => task.task_id === bundle.taskTimeline.task_id)
           ? bundle.taskTimeline.task_id
           : bundle.projectOverview.active_tasks[0]?.task_id ?? null;
@@ -630,6 +652,17 @@ export const useV3Store = create<V3State>((set, get) => ({
       currentView: view,
       navStack: [...navStack, { view: currentView, label: currentLabel }],
     });
+    if (get().projectPath) useTabsStore.getState().setProjectUiContextForPath(get().projectPath!, { current_view: view });
+  },
+
+  setCockpitTab: (tab) => {
+    set({ cockpitTab: tab });
+    const project = get().projectPath;
+    if (project) {
+      useTabsStore.getState().setProjectUiContextForPath(project, {
+        current_view: tab === "overview" ? "project-overview" : tab === "timeline" ? "task-timeline" : tab === "plan" ? "plan-graph" : "structure-explorer",
+      });
+    }
   },
 
   goBack: () => {
@@ -640,14 +673,26 @@ export const useV3Store = create<V3State>((set, get) => ({
       currentView: last.view,
       navStack: navStack.slice(0, -1),
     });
+    const project = get().projectPath;
+    if (project) useTabsStore.getState().setProjectUiContextForPath(project, { current_view: last.view });
   },
 
   goHome: () => {
     set({ currentView: "project-overview", navStack: [] });
+    const project = get().projectPath;
+    if (project) useTabsStore.getState().setProjectUiContextForPath(project, { current_view: "project-overview" });
   },
 
-  selectTask: (taskId) => set({ selectedTaskId: taskId }),
-  selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
+  selectTask: (taskId) => {
+    set({ selectedTaskId: taskId });
+    const project = get().projectPath;
+    if (project) useTabsStore.getState().setProjectUiContextForPath(project, { selected_task_id: taskId });
+  },
+  selectNode: (nodeId) => {
+    set({ selectedNodeId: nodeId });
+    const project = get().projectPath;
+    if (project) useTabsStore.getState().setProjectUiContextForPath(project, { selected_node_id: nodeId });
+  },
 
   loadNodeBrief: async (nodeId) => {
     const { bundle, projectPath, currentScenario } = get();

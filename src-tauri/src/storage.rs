@@ -39,6 +39,12 @@ impl Storage {
         Ok(config)
     }
 
+    pub fn data_dir(&self) -> &std::path::Path {
+        self.config_path
+            .parent()
+            .expect("Storage config path must have a parent")
+    }
+
     pub fn save_config(&self, config: &AppConfig) -> Result<()> {
         let content = serde_json::to_string_pretty(config).context("Failed to serialize config")?;
 

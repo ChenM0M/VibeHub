@@ -10,6 +10,7 @@ const entry = `
   import assert from "node:assert/strict";
   import { useTabsStore } from "./src/stores/tabsStore.ts";
   import { useV3Store } from "./src/v3/stores/v3Store.ts";
+  import { tauriApi } from "./src/services/tauri.ts";
 
   const tabs = () => useTabsStore.getState();
   const reset = () => useTabsStore.setState({ tabs: [], activeTabId: null });
@@ -117,6 +118,165 @@ const entry = `
   // 7) The snapshot cache is bounded to five projects (LRU eviction).
   for (const path of ["/p3", "/p4", "/p5", "/p6", "/p7"]) await openProject(path);
   useV3Store.getState().leaveProject();
+
+  // 8) WorkspaceState hydration is generation-safe: a user mutation during a
+  // delayed restore wins, duplicate StrictMode hydration is coalesced, and the
+  // winning state is persisted against the recovered revision.
+  const persistenceProjects = [
+    { id: "persist-a", name: "Persist A", path: "/persist/a" },
+    { id: "persist-b", name: "Persist B", path: "/persist/b" },
+  ];
+  useTabsStore.setState({ tabs: [], activeTabId: null, hydrated: false, hydrating: false, persistedRevision: 0, diagnostics: [] });
+  let resolveRestore;
+  let restoreCalls = 0;
+  const saveCalls = [];
+  tauriApi.loadWorkspaceState = async () => {
+    restoreCalls += 1;
+    return await new Promise((resolve) => { resolveRestore = resolve; });
+  };
+  tauriApi.saveWorkspaceState = async ({ state }) => {
+    saveCalls.push(state);
+    return { state: { ...state, revision: state.revision + 1 }, previous_revision: state.revision, backup_path: null, diagnostics: [] };
+  };
+  const delayedHydration = useTabsStore.getState().hydrate(persistenceProjects);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await useTabsStore.getState().hydrate(persistenceProjects);
+  assert.equal(restoreCalls, 1, "duplicate StrictMode hydration must share one restore request");
+  useTabsStore.getState().openTab("persist-b");
+  resolveRestore({
+    status: "present",
+    state: {
+      schema_version: 3,
+      kind: "workspace_state",
+      revision: 7,
+      open_projects: [{ project_id: "persist-a", canonical_path: "/persist/a", display_name: "Persist A", ui_context: { owner: "v3-cockpit", current_view: "project-overview", selected_task_id: null, selected_node_id: null } }],
+      active_project_id: "persist-a",
+      updated_at: new Date().toISOString(),
+      updated_by: "test",
+      provenance: { source: "user", writer: "test", reason: "test" },
+    },
+    diagnostics: [],
+    recommended_action: null,
+  });
+  await delayedHydration;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(useTabsStore.getState().tabs, ["persist-b"], "a user tab opened during restore must not be overwritten by a stale response");
+  assert.equal(useTabsStore.getState().activeTabId, "persist-b", "the user mutation remains active after restore");
+  assert.deepEqual(saveCalls.at(-1).open_projects.map((project) => project.project_id), ["persist-b"], "the winning mutation is persisted");
+  assert.equal(saveCalls.at(-1).revision, 7, "the winning mutation uses the restored revision precondition");
+
+  // 8b) A close during recovery wins as well; a stale restored active project
+  // must not reopen the closed tab.
+  let resolveCloseRestore;
+  tauriApi.loadWorkspaceState = async () => await new Promise((resolve) => { resolveCloseRestore = resolve; });
+  useTabsStore.setState({ tabs: ["persist-a", "persist-b"], activeTabId: "persist-b", hydrated: true, hydrating: false, persistedRevision: 7, diagnostics: [] });
+  const delayedCloseHydration = useTabsStore.getState().retryHydrate();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  useTabsStore.getState().closeActiveTab();
+  resolveCloseRestore({
+    status: "present",
+    state: {
+      schema_version: 3,
+      kind: "workspace_state",
+      revision: 8,
+      open_projects: [
+        { project_id: "persist-a", canonical_path: "/persist/a", display_name: "Persist A", ui_context: { owner: "v3-cockpit", current_view: "project-overview", selected_task_id: null, selected_node_id: null } },
+        { project_id: "persist-b", canonical_path: "/persist/b", display_name: "Persist B", ui_context: { owner: "v3-cockpit", current_view: "project-overview", selected_task_id: null, selected_node_id: null } },
+      ],
+      active_project_id: "persist-b",
+      updated_at: new Date().toISOString(),
+      updated_by: "test",
+      provenance: { source: "user", writer: "test", reason: "test" },
+    },
+    diagnostics: [],
+    recommended_action: null,
+  });
+  await delayedCloseHydration;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(useTabsStore.getState().tabs, ["persist-a"], "a close during restore must not be undone by a stale response");
+  assert.equal(useTabsStore.getState().activeTabId, "persist-a", "closing the restored active tab selects the remaining neighbour");
+  assert.deepEqual(saveCalls.at(-1).open_projects.map((project) => project.project_id), ["persist-a"], "the close winner is persisted");
+
+  // 8c) A normal restart round-trip restores order, active project, UI context,
+  // and project-scoped state from the persisted document.
+  let persistedDocument = null;
+  tauriApi.saveWorkspaceState = async ({ state }) => {
+    persistedDocument = structuredClone({ ...state, revision: state.revision + 1 });
+    saveCalls.push(state);
+    return { state: persistedDocument, previous_revision: state.revision, backup_path: null, diagnostics: [] };
+  };
+  tauriApi.loadWorkspaceState = async () => ({
+    status: "missing",
+    state: null,
+    diagnostics: [],
+    recommended_action: null,
+  });
+  useTabsStore.setState({ tabs: [], activeTabId: null, hydrated: false, hydrating: false, persistedRevision: 0, diagnostics: [] });
+  await useTabsStore.getState().retryHydrate();
+  assert.deepEqual(useTabsStore.getState().tabs, [], "a cold start with no saved state opens an empty tab set");
+  assert.equal(useTabsStore.getState().activeTabId, null, "a cold start with no saved state has no active project");
+  useTabsStore.getState().openTab("persist-a");
+  useTabsStore.getState().openTab("persist-b");
+  useTabsStore.getState().reorderTabs(["persist-b", "persist-a"]);
+  useTabsStore.getState().activateTab("persist-a");
+  useTabsStore.getState().setProjectUiContext("persist-a", { current_view: "plan-graph", selected_task_id: "task-a", selected_node_id: "node-a" });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.ok(persistedDocument, "continuous tab mutations produce a persisted restart document");
+  const restartDocument = structuredClone(persistedDocument);
+  useTabsStore.getState().setProjectUiContext("persist-a", { current_view: "project-overview", selected_task_id: null, selected_node_id: null });
+  useTabsStore.setState({ tabs: [], activeTabId: null, hydrated: false, hydrating: false, persistedRevision: 0, diagnostics: [] });
+  tauriApi.loadWorkspaceState = async () => ({ status: "present", state: restartDocument, diagnostics: [], recommended_action: null });
+  await useTabsStore.getState().retryHydrate();
+  assert.deepEqual(useTabsStore.getState().tabs, ["persist-b", "persist-a"], "a restart restores the exact tab order");
+  assert.equal(useTabsStore.getState().activeTabId, "persist-a", "a restart restores the active project identity");
+  assert.equal(useTabsStore.getState().getProjectUiContext("persist-a").current_view, "plan-graph", "a restart restores project-scoped UI context");
+
+  // 9) Persistence failures surface a diagnostic but never roll back the local
+  // tab mutation; retrying restore remains available through the store action.
+  tauriApi.saveWorkspaceState = async () => { throw new Error("WORKSPACE_STATE_DISK_FULL"); };
+  useTabsStore.getState().openTab("persist-a");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(useTabsStore.getState().tabs, ["persist-b", "persist-a"], "a failed save must not roll back the local tab mutation");
+  assert.equal(useTabsStore.getState().diagnostics[0]?.code, "workspace_state.persistence_failed", "save failures remain visible as structured diagnostics");
+
+  // 10) Recovery keeps valid order, clears an invalid active project, restores
+  // project context, and reports identity changes instead of guessing by name.
+  tauriApi.saveWorkspaceState = async ({ state }) => {
+    saveCalls.push(state);
+    return { state: { ...state, revision: state.revision + 1 }, previous_revision: state.revision, backup_path: null, diagnostics: [] };
+  };
+  tauriApi.loadWorkspaceState = async () => ({
+    status: "partial",
+    state: {
+      schema_version: 3,
+      kind: "workspace_state",
+      revision: 12,
+      open_projects: [
+        { project_id: "persist-a", canonical_path: "/persist/a", display_name: "Same name", ui_context: { owner: "v3-cockpit", current_view: "plan-graph", selected_task_id: "task-a", selected_node_id: "node-a" } },
+        { project_id: "missing", canonical_path: "/deleted/project", display_name: "Same name", ui_context: { owner: "v3-cockpit", current_view: "overview", selected_task_id: null, selected_node_id: null } },
+        { project_id: "persist-b", canonical_path: "/persist/b", display_name: "Persist B", ui_context: { owner: "v3-cockpit", current_view: "structure-explorer", selected_task_id: null, selected_node_id: null } },
+      ],
+      active_project_id: "missing",
+      updated_at: new Date().toISOString(),
+      updated_by: "test",
+      provenance: { source: "recovery", writer: "test", reason: "test" },
+    },
+    diagnostics: [{ code: "workspace_state.project_missing", severity: "warning", project_id: "missing", message: "missing", recovery_action: "reopen" }],
+    recommended_action: "reopen",
+  });
+  useTabsStore.setState({ tabs: [], activeTabId: null, hydrated: false, hydrating: false, persistedRevision: 0, diagnostics: [] });
+  await useTabsStore.getState().retryHydrate();
+  assert.deepEqual(useTabsStore.getState().tabs, ["persist-a", "persist-b"], "recovery removes only invalid projects and preserves valid order");
+  assert.equal(useTabsStore.getState().activeTabId, null, "an invalid active project cannot remain active");
+  assert.equal(useTabsStore.getState().getProjectUiContext("persist-a").current_view, "plan-graph", "project UI context is restored with the project identity");
+  assert.equal(useTabsStore.getState().diagnostics[0]?.code, "workspace_state.project_missing", "invalid project recovery keeps a localized diagnostic");
+  useTabsStore.getState().reconcileProjects([
+    { ...persistenceProjects[0], path: "/moved/a" },
+    persistenceProjects[1],
+  ]);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(useTabsStore.getState().tabs, ["persist-b"], "a moved project is removed by identity, without matching a same-name project");
+  assert.equal(useTabsStore.getState().diagnostics[0]?.code, "workspace_state.project_identity_changed", "identity changes expose a repair diagnostic");
   useV3Store.getState().selectProject("/p2", loader, undefined, undefined, lifecycleApi);
   assert.equal(useV3Store.getState().bundle, null, "the oldest project snapshot is evicted once the cache is full");
   useV3Store.getState().leaveProject();
@@ -167,6 +327,7 @@ const surfaceAssertions = [
   [/DropdownMenuContent[\s\S]{0,400}activateTab\(tab\.id\)/, "an overflow dropdown can reach every open tab"],
   [/t\('tabs\.close'\)/, "the close control is localized"],
   [/t\('tabs\.listAll'\)/, "the overflow control is localized"],
+  [/t\('tabs\.openProjectList'\)/, "the recovery notice can return to the project list"],
 ];
 for (const [pattern, label] of surfaceAssertions) {
   assert.ok(pattern.test(tabBarSource), `ProjectTabBar: ${label}`);
