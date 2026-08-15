@@ -4,7 +4,7 @@ use super::blockers::{
     RepairActionKind, BLOCKER_MODEL_VERSION,
 };
 use super::lifecycle::{
-    fold_task, is_terminal_plan_node_state, valid_evidence_ref, CriterionState,
+    fold_task, is_terminal_plan_node_state, valid_evidence_ref, CriterionState, PlanNodeProjection,
     TaskLifecycleProjection,
 };
 use super::orchestration::fold_task as fold_orchestration;
@@ -12,10 +12,12 @@ use super::orchestration::LeaseState;
 use super::project_intelligence::{
     AnalyzerFinding, GitState, NodeKind, ProjectIndexService, ProjectModelSnapshot, ProjectPage,
 };
+use super::projection;
+use super::routing::TaskRouteCandidate;
 use super::worktree::WorktreeState;
 use super::{
-    resolve_project_scopes, EffectiveExecutionPolicy, EvidenceGrade, ProjectScopeSource, V3Error,
-    V3ErrorCategory, V3EventEnvelope, V3EventStore,
+    project_id, resolve_project_scopes, EffectiveExecutionPolicy, EvidenceGrade,
+    ProjectScopeSource, V3Error, V3ErrorCategory, V3EventEnvelope, V3EventStore,
 };
 use crate::process_util::silent_command;
 use crate::vibehub::current::resolve_current_task;
@@ -103,7 +105,7 @@ fn select_node_id(
     requested: Option<&str>,
 ) -> Result<String, V3Error> {
     if let Some(id) = requested {
-        if lifecycle.nodes.contains_key(id) {
+        if lifecycle.effective_node(id).is_some() {
             return Ok(id.to_owned());
         }
         return Err(V3Error::new(
@@ -115,21 +117,21 @@ fn select_node_id(
     }
     let choose = |states: &[&str]| {
         lifecycle
-            .nodes
-            .values()
+            .effective_nodes()
+            .map(|(_, node)| node)
             .find(|node| states.contains(&node.state.as_str()))
             .map(|node| node.node_id.clone())
     };
     Ok(choose(&["active"])
         .or_else(|| {
             lifecycle
-                .nodes
-                .values()
+                .effective_nodes()
+                .map(|(_, node)| node)
                 .find(|node| {
                     node.state == "ready"
                         || node.state == "planned"
                             && node.dependencies.iter().all(|dependency| {
-                                lifecycle.nodes.get(dependency).is_some_and(|value| {
+                                lifecycle.effective_node(dependency).is_some_and(|value| {
                                     matches!(value.state.as_str(), "completed" | "waived")
                                 })
                             })
@@ -137,8 +139,59 @@ fn select_node_id(
                 .map(|node| node.node_id.clone())
         })
         .or_else(|| choose(&["blocked", "failed"]))
-        .or_else(|| lifecycle.nodes.keys().next().cloned())
+        .or_else(|| lifecycle.effective_nodes().next().map(|(id, _)| id.clone()))
         .unwrap_or_default())
+}
+
+fn plan_node_layer(
+    node_id: &str,
+    nodes: &BTreeMap<String, PlanNodeProjection>,
+    memo: &mut BTreeMap<String, usize>,
+    visiting: &mut BTreeSet<String>,
+) -> usize {
+    if let Some(layer) = memo.get(node_id) {
+        return *layer;
+    }
+    if !visiting.insert(node_id.to_owned()) {
+        // The lifecycle validator normally prevents cycles. A malformed
+        // historical graph must still render deterministically and must not
+        // turn a dependency layer into an execution claim.
+        return 0;
+    }
+    let layer = nodes
+        .get(node_id)
+        .map(|node| {
+            node.dependencies
+                .iter()
+                .filter(|dependency| nodes.get(*dependency).is_some())
+                .map(|dependency| plan_node_layer(dependency, nodes, memo, visiting) + 1)
+                .max()
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+    visiting.remove(node_id);
+    memo.insert(node_id.to_owned(), layer);
+    layer
+}
+
+fn effective_plan_layers(
+    lifecycle: &TaskLifecycleProjection,
+) -> (BTreeMap<String, usize>, BTreeMap<usize, usize>) {
+    let effective_nodes = lifecycle
+        .effective_nodes()
+        .map(|(id, node)| (id.clone(), node.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut layers = BTreeMap::new();
+    for node_id in effective_nodes.keys() {
+        let mut visiting = BTreeSet::new();
+        let layer = plan_node_layer(node_id, &effective_nodes, &mut layers, &mut visiting);
+        layers.insert(node_id.clone(), layer);
+    }
+    let mut counts = BTreeMap::new();
+    for layer in layers.values() {
+        *counts.entry(*layer).or_insert(0) += 1;
+    }
+    (layers, counts)
 }
 
 impl V3ViewRepository {
@@ -259,14 +312,57 @@ impl V3ViewRepository {
     }
 
     pub fn project_id(&self) -> String {
-        let name = self
-            .root
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("project")
-            .to_ascii_lowercase()
-            .replace(|character: char| !character.is_ascii_alphanumeric(), "-");
-        format!("project.{name}")
+        project_id(&self.root)
+    }
+
+    /// Return every non-terminal project Task without consulting the legacy
+    /// current pointer as a write target. The pointer is exposed only as
+    /// `is_current_default` metadata for compatibility and UI display.
+    pub fn task_candidates(&self) -> Result<Value, V3Error> {
+        let project_id = self.project_id();
+        let events = self.store.load_project(&project_id)?;
+        let tasks = self.read_tasks()?;
+        let current_default = self.current_task_id().ok();
+        let candidates = tasks
+            .tasks
+            .iter()
+            .filter_map(|task| {
+                let lifecycle = fold_task(&task.task_id, &events);
+                let has_lifecycle = events
+                    .iter()
+                    .any(|event| event.aggregate_id == task.task_id);
+                let state = if has_lifecycle {
+                    projected_task_state(&lifecycle)
+                } else {
+                    task_state(task)
+                };
+                if is_terminal_task_state(state) {
+                    return None;
+                }
+                let active_session_count = sessions_for_task(&events, &task.task_id)
+                    .into_iter()
+                    .filter(|(_, open, closed)| *open && !*closed)
+                    .count() as u64;
+                Some(TaskRouteCandidate {
+                    task_id: task.task_id.clone(),
+                    title: task.title.clone(),
+                    intent: task.intent.clone(),
+                    state: state.to_owned(),
+                    project_id: Some(project_id.clone()),
+                    is_current_default: current_default.as_deref() == Some(task.task_id.as_str()),
+                    is_ui_selected: false,
+                    active_session_count,
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::to_value(candidates).map_err(|error| {
+            V3Error::new(
+                "V3_SERIALIZE_FAILED",
+                V3ErrorCategory::Internal,
+                false,
+                error.to_string(),
+            )
+        })
     }
 
     pub fn load_bundle(&self, task_id: &str) -> Result<V3ViewBundle, V3Error> {
@@ -283,6 +379,7 @@ impl V3ViewRepository {
         let project_id = self.project_id();
         let events = self.store.load_project(&project_id)?;
         let lifecycle = fold_task(task_id, &events);
+        let session_binding_projection = projection::fold(&project_id, &events).session_bindings;
         let orchestration = fold_orchestration(task_id, &events);
         let has_lifecycle = events.iter().any(|event| event.aggregate_id == task_id);
         let generated_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
@@ -307,6 +404,7 @@ impl V3ViewRepository {
         let task_read = self.read_tasks()?;
         let task_metadata_warnings = task_read.warnings;
         let project_tasks = task_read.tasks;
+        let effective_current_task_id = self.current_task_id().ok();
         let active_tasks: Vec<Value> = project_tasks
             .iter()
             .filter_map(|project_task| {
@@ -338,7 +436,9 @@ impl V3ViewRepository {
                     "criteria": task_criteria,
                     "blocker_details": task_blocker_details,
                     "relations": task_lifecycle.relations,
-                    "active_sessions": task_opened_sessions.saturating_sub(task_closed_sessions)
+                    "active_sessions": task_opened_sessions.saturating_sub(task_closed_sessions),
+                    "is_current_default": effective_current_task_id.as_deref() == Some(project_task.task_id.as_str()),
+                    "is_ui_selected": false
                 }))
             })
             .collect();
@@ -360,7 +460,6 @@ impl V3ViewRepository {
             })
             .collect();
         sort_archived_tasks_newest_first(&mut archived_tasks);
-        let effective_current_task_id = self.current_task_id().ok();
         let workspace = resolve_workspace(&self.root, task_id, &events);
         let workspace_native_root = native_path(&workspace.root);
         let resolved_scopes = resolve_project_scopes(&self.root, Some(&workspace.root))?;
@@ -465,6 +564,9 @@ impl V3ViewRepository {
             "model": {"state": model_state, "last_evidence_at": generated_at, "generator_version": structure_model_version, "indexed_files": indexed_files},
             "architecture": {"declared_docs": declared_docs, "modules": architecture_modules, "relationships": architecture_edges.len(), "confidence": architecture_confidence, "evidence_refs": architecture_evidence_refs},
             "current_task_id": effective_current_task_id,
+            "current_default_task_id": effective_current_task_id,
+            "ui_selected_task_id": Value::Null,
+            "session_bindings": session_binding_projection.clone(),
             "active_tasks": active_tasks,
             "archived_tasks": archived_tasks,
             "protocol_coverage": {"state": protocol_coverage(opened_sessions, closed_sessions, explicit_session_gaps), "opened_sessions": opened_sessions, "closed_sessions": closed_sessions, "gaps": explicit_session_gaps},
@@ -491,18 +593,76 @@ impl V3ViewRepository {
             .filter(|event| event.task_id.0 == task_id)
             .map(timeline_event)
             .collect();
+        let task_bindings = session_binding_projection
+            .iter()
+            .filter(|(_, binding)| binding.bound_task_id.as_deref() == Some(task_id))
+            .collect::<BTreeMap<_, _>>();
         let task_timeline = json!({
             "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "title": task.title, "state": current_task_state,
             "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": "fresh", "completeness": "complete",
-            "criteria": current_criteria, "blocker_details": current_blocker_details.clone(), "completion": completion_view(&lifecycle), "lanes": lanes, "events": timeline_events, "window": page(events.len()),
+            "criteria": current_criteria, "blocker_details": current_blocker_details.clone(), "completion": completion_view(&lifecycle), "lanes": lanes, "events": timeline_events, "session_bindings": task_bindings, "window": page(events.len()),
             "evidence_refs": evidence_refs, "warnings": task_metadata_warnings.clone(), "errors": []
         });
 
-        let graph_nodes: Vec<Value> = lifecycle.nodes.values().map(|node| {
-                let session_ids = lifecycle.sessions.values()
+        let (parallel_layers, parallel_layer_counts) = effective_plan_layers(&lifecycle);
+        let graph_nodes: Vec<Value> = lifecycle
+            .effective_nodes()
+            .map(|(_, node)| {
+                let session_ids = lifecycle
+                    .sessions
+                    .values()
                     .filter(|session| session.node_id.as_deref() == Some(node.node_id.as_str()))
                     .map(|session| session.session_id.clone())
                     .collect::<Vec<_>>();
+                let session_id_set = session_ids.iter().cloned().collect::<BTreeSet<_>>();
+                let result_events = events
+                    .iter()
+                    .filter(|event| {
+                        event.task_id.0 == task_id
+                            && event.event_type == "agent.result_recorded"
+                            && (event
+                                .node_id
+                                .as_ref()
+                                .is_some_and(|id| id.0 == node.node_id)
+                                || event
+                                    .session_id
+                                    .as_ref()
+                                    .is_some_and(|id| session_id_set.contains(&id.0)))
+                    })
+                    .collect::<Vec<_>>();
+                let agent_result_ids = result_events
+                    .iter()
+                    .map(|event| {
+                        event
+                            .payload
+                            .get("result_id")
+                            .and_then(Value::as_str)
+                            .filter(|id| !id.is_empty())
+                            .unwrap_or(event.event_id.as_str())
+                            .to_owned()
+                    })
+                    .collect::<Vec<_>>();
+                let execution_state = if result_events.iter().any(|event| {
+                    event.payload.get("status").and_then(Value::as_str) == Some("failed")
+                }) {
+                    "failed"
+                } else if result_events.iter().any(|event| {
+                    event.payload.get("status").and_then(Value::as_str) == Some("succeeded")
+                }) {
+                    "succeeded"
+                } else if session_ids.iter().any(|session_id| {
+                    lifecycle
+                        .sessions
+                        .get(session_id)
+                        .is_some_and(|session| session.state == "active")
+                }) {
+                    "session_active"
+                } else if session_ids.is_empty() {
+                    "not_started"
+                } else {
+                    "observed"
+                };
+                let layer = parallel_layers.get(&node.node_id).copied().unwrap_or(0);
                 let node_blocker_details = blocker_details(
                     &task,
                     &events,
@@ -512,21 +672,35 @@ impl V3ViewRepository {
                 );
                 json!({
                     "node_id": node.node_id, "title": node.title, "goal": node.goal, "state": view_node_state(&node.state),
-                    "readiness": if node.state == "blocked" || node.state == "failed" {"blocked"} else if node.dependencies.iter().all(|dependency| lifecycle.nodes.get(dependency).is_some_and(|value| value.state == "completed")) {"ready"} else {"blocked"},
+                    "readiness": if node.state == "blocked" || node.state == "failed" {"blocked"} else if node.dependencies.iter().all(|dependency| lifecycle.nodes.get(dependency).is_some_and(|value| value.is_historical_bootstrap() || value.state == "completed")) {"ready"} else {"blocked"},
                     "block_reasons": if node.state == "blocked" {vec!["lifecycle.blocked"]} else {Vec::<&str>::new()},
                     "blocker_details": node_blocker_details,
-                    "scope": node.scope, "criterion_ids": node.criterion_ids, "session_ids": session_ids
+                    "scope": node.scope, "criterion_ids": node.criterion_ids, "session_ids": session_ids,
+                    "agent_result_ids": agent_result_ids, "parallel_layer": layer,
+                    "parallel_candidate": parallel_layer_counts.get(&layer).copied().unwrap_or(0) > 1,
+                    "execution_state": execution_state
                 })
-            }).collect();
-        let scheduling_edges: Vec<Value> = lifecycle.nodes.values().flat_map(|node| node.dependencies.iter().map(|dependency| json!({
-            "edge_id": format!("schedule.{}.{}", dependency, node.node_id), "from_node_id": dependency, "to_node_id": node.node_id, "kind": "depends_on"
-        }))).collect();
+            })
+            .collect();
+        let scheduling_edges: Vec<Value> = lifecycle
+            .effective_nodes()
+            .flat_map(|(_, node)| {
+                node.dependencies
+                    .iter()
+                    .filter(|dependency| lifecycle.effective_node(dependency).is_some())
+                    .map(|dependency| json!({
+                        "edge_id": format!("schedule.{}.{}", dependency, node.node_id), "from_node_id": dependency, "to_node_id": node.node_id, "kind": "depends_on"
+                    }))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let trace_relations: Vec<Value> = lifecycle.findings.values().flat_map(|finding| finding.attempt_ids.iter().map(|attempt_id| json!({
             "relation_id": format!("trace.{}.{}", attempt_id, finding.finding_id), "from_id": attempt_id, "to_id": finding.finding_id, "kind": "addresses", "evidence_refs": []
         }))).collect();
         let node_id = select_node_id(&lifecycle, requested_node_id)?;
         let mut plan_warnings = task_metadata_warnings.clone();
-        if lifecycle.nodes.is_empty() && task.workflow_profile != "lightweight" {
+        let effective_plan_is_empty = lifecycle.effective_nodes().next().is_none();
+        if effective_plan_is_empty && task.workflow_profile != "lightweight" {
             plan_warnings.push(json!({
                 "code": "V3_PLAN_NOT_RECORDED",
                 "severity": "warning",
@@ -544,7 +718,7 @@ impl V3ViewRepository {
         let plan_graph = json!({
             "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "plan_version": lifecycle.version,
             "workflow_profile": task.workflow_profile, "planning_required": task.workflow_profile != "lightweight",
-            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": "fresh", "completeness": if task.workflow_profile == "lightweight" && lifecycle.nodes.is_empty() {"complete"} else if lifecycle.nodes.is_empty() {"unknown"} else {"partial"}, "graph_state": "valid",
+            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": "fresh", "completeness": if effective_plan_is_empty && task.workflow_profile == "lightweight" {"complete"} else if effective_plan_is_empty {"unknown"} else {"partial"}, "graph_state": "valid",
             "nodes": graph_nodes,
             "scheduling_edges": scheduling_edges, "trace_relations": trace_relations,
             "execution": {"planned_sessions": 0, "observed_sessions": sessions.len(), "planned_worktrees": planned_worktrees, "observed_worktrees": observed_worktrees},
@@ -617,7 +791,7 @@ impl V3ViewRepository {
             .filter(|event| event.task_id.0 == task.task_id)
             .collect::<Vec<_>>();
         let record_present = |record: &str| match record {
-            "plan" => !lifecycle.nodes.is_empty(),
+            "plan" => lifecycle.effective_nodes().next().is_some(),
             "session" => task_events
                 .iter()
                 .any(|event| event.event_type == "session.opened"),
@@ -646,10 +820,9 @@ impl V3ViewRepository {
             "partial"
         };
         let incomplete_nodes = lifecycle
-            .nodes
-            .values()
-            .filter(|node| !is_terminal_plan_node_state(node.state.as_str()))
-            .map(|node| format!("{}={}", node.node_id, node.state))
+            .effective_nodes()
+            .filter(|(_, node)| !is_terminal_plan_node_state(node.state.as_str()))
+            .map(|(_, node)| format!("{}={}", node.node_id, node.state))
             .collect::<Vec<_>>();
         let unsettled_sessions = lifecycle
             .sessions
@@ -786,7 +959,7 @@ impl V3ViewRepository {
             .collect::<Vec<_>>();
         let items = vec![
             completion_gate_item("required_records", "completion.records_missing", missing_records.is_empty(), "所有 effective policy required_records 均存在", format!("缺少记录：{}", missing_records.join(", ")), missing_records.clone(), Vec::new(), missing_records.iter().map(|record| format!("通过 typed command 记录 {record}" )).collect()),
-            completion_gate_item("plan_terminal", "completion.plan_non_terminal", !planning_required || (!lifecycle.nodes.is_empty() && incomplete_nodes.is_empty()), "所有必需 plan node 均为 completed/waived/superseded/cancelled", format!("未终结节点：{}", incomplete_nodes.join(", ")), incomplete_nodes.clone(), Vec::new(), vec!["按 DAG 顺序完成、waive、supersede 或 cancel 未终结节点".to_owned()]),
+            completion_gate_item("plan_terminal", "completion.plan_non_terminal", !planning_required || (lifecycle.effective_nodes().next().is_some() && incomplete_nodes.is_empty()), "所有必需 plan node 均为 completed/waived/superseded/cancelled", format!("未终结节点：{}", incomplete_nodes.join(", ")), incomplete_nodes.clone(), Vec::new(), vec!["按 DAG 顺序完成、waive、supersede 或 cancel 未终结节点".to_owned()]),
             completion_gate_item("sessions_settled", "completion.session_unsettled", unsettled_sessions.is_empty(), "所有 session 均 closed，gap 已 recover", format!("未结 session：{}", unsettled_sessions.join(", ")), unsettled_sessions.clone(), Vec::new(), vec!["对 gapped session 先 session_recovery(recover)，记录 terminal result 后 session_close".to_owned()]),
             completion_gate_item("results_terminal", "completion.result_missing_or_non_terminal", sessions_without_result.is_empty(), "每个 opened session 都有 succeeded/failed terminal AgentResult", format!("缺少 terminal result 的 session：{}", sessions_without_result.join(", ")), sessions_without_result.clone(), Vec::new(), vec!["为列出的 session 调用 agent_result_record(status=succeeded|failed)".to_owned()]),
             completion_gate_item("progress_evidence", "completion.progress_missing", sessions_without_progress.is_empty(), "policy 要求 progress 时，每个 session 都有 progress 事件，或中断 session 有 session.recovered 证据，或阻塞 session 同时有 risk 事件与 failed terminal result", format!("缺少 progress/recovery 证据的 session：{}", sessions_without_progress.join(", ")), sessions_without_progress.clone(), Vec::new(), vec!["session 仍开启时调用 event_log(kind=progress)；已中断则先 session_recovery(action=recover, evidence_refs=[...]) 再结束；阻塞收尾则记录 event_log(kind=risk) 与 agent_result_record(status=failed)".to_owned()]),
@@ -800,7 +973,7 @@ impl V3ViewRepository {
             "blocked_chain": items.iter().filter(|item| item["passed"] == false).map(|item| item["gate"].clone()).collect::<Vec<_>>(),
             "items": items
         });
-        let selected_node = lifecycle.nodes.get(&node_id);
+        let selected_node = lifecycle.effective_node(&node_id);
         let memory_scope = selected_node
             .map(|node| node.scope.clone())
             .unwrap_or_default();
@@ -836,8 +1009,8 @@ impl V3ViewRepository {
                 "required_records": required_records
             },
             "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": structure_freshness, "completeness": structure_completeness,
-            "goal": lifecycle.nodes.get(&node_id).map(|node| node.goal.as_str()).unwrap_or(&task.intent),
-            "scope": lifecycle.nodes.get(&node_id).map(|node| node.scope.clone()).unwrap_or_default(), "non_scope": [],
+            "goal": selected_node.map(|node| node.goal.as_str()).unwrap_or(&task.intent),
+            "scope": selected_node.map(|node| node.scope.clone()).unwrap_or_default(), "non_scope": [],
             "dependencies": selected_node.map(|node| node.dependencies.iter().cloned().collect::<Vec<_>>()).unwrap_or_default(),
             "accepted_decisions": [],
             "project_memory": injected_memory,
@@ -845,7 +1018,7 @@ impl V3ViewRepository {
             "coverage_mode": if effective_policy.is_some() {"enforced"} else {"legacy_degraded"},
             "completion_gate": completion_gate,
             "research_summary": [], "criteria": current_criteria, "files": [workspace_native_root],
-            "validation_commands": [], "state": lifecycle.nodes.get(&node_id).map(|node| view_node_state(&node.state)).unwrap_or_else(|| node_state(&task)), "next_intent": task.phase,
+            "validation_commands": [], "state": selected_node.map(|node| view_node_state(&node.state)).unwrap_or_else(|| node_state(&task)), "next_intent": task.phase,
             "blocker_details": current_blocker_details,
             "budget": {"max_tokens": max_tokens, "estimated_tokens": estimated_tokens, "truncated_sections": []},
             "source_versions": {"view_model": MODEL_VERSION, "project_model": structure_model_version}, "protocol_coverage": if explicit_session_gaps>0{"gapped"}else{protocol_state},
@@ -2488,31 +2661,26 @@ fn archived_task_summary(
         .map_or(0, Vec::len);
     let evidence_refs = evidence_refs(task, events, generated_at);
     let session_events = sessions_for_task(events, &task.task_id);
-    let plan_total = lifecycle.nodes.len();
+    let plan_total = lifecycle.effective_nodes().count();
     let plan_completed = lifecycle
-        .nodes
-        .values()
-        .filter(|node| node.state == "completed")
+        .effective_nodes()
+        .filter(|(_, node)| node.state == "completed")
         .count();
     let plan_cancelled = lifecycle
-        .nodes
-        .values()
-        .filter(|node| node.state == "cancelled")
+        .effective_nodes()
+        .filter(|(_, node)| node.state == "cancelled")
         .count();
     let plan_active = lifecycle
-        .nodes
-        .values()
-        .filter(|node| node.state == "active")
+        .effective_nodes()
+        .filter(|(_, node)| node.state == "active")
         .count();
     let plan_blocked = lifecycle
-        .nodes
-        .values()
-        .filter(|node| matches!(node.state.as_str(), "blocked" | "failed"))
+        .effective_nodes()
+        .filter(|(_, node)| matches!(node.state.as_str(), "blocked" | "failed"))
         .count();
     let plan_planned = lifecycle
-        .nodes
-        .values()
-        .filter(|node| matches!(node.state.as_str(), "planned" | "ready"))
+        .effective_nodes()
+        .filter(|(_, node)| matches!(node.state.as_str(), "planned" | "ready"))
         .count();
     let finding_total = lifecycle.findings.len();
     let finding_closed = lifecycle
@@ -2682,7 +2850,7 @@ fn blocker_details(
             )
         });
     let node_has_blocked_state = node_id
-        .and_then(|id| lifecycle.nodes.get(id))
+        .and_then(|id| lifecycle.effective_node(id))
         .is_some_and(|node| matches!(node.state.as_str(), "blocked" | "failed"));
 
     // Blocker details describe current workflow truth. Historical risk and blocked
@@ -2822,17 +2990,17 @@ fn blocker_details(
             ));
         }
 
-        for node in lifecycle
-            .nodes
-            .values()
-            .filter(|node| matches!(node.state.as_str(), "blocked" | "failed"))
+        for (_, node) in lifecycle
+            .effective_nodes()
+            .filter(|(_, node)| matches!(node.state.as_str(), "blocked" | "failed"))
         {
             let incomplete_dependencies = node
                 .dependencies
                 .iter()
                 .filter(|dependency| {
                     lifecycle.nodes.get(*dependency).is_none_or(|dependency| {
-                        !matches!(dependency.state.as_str(), "completed" | "waived")
+                        !dependency.is_historical_bootstrap()
+                            && !matches!(dependency.state.as_str(), "completed" | "waived")
                     })
                 })
                 .cloned()
@@ -3650,7 +3818,9 @@ fn sessions_for_task(events: &[V3EventEnvelope], task_id: &str) -> Vec<(String, 
 fn timeline_event(event: &V3EventEnvelope) -> Value {
     let kind = match event.event_type.as_str() {
         "risk.logged" | "finding.opened" | "finding.closed" | "finding.regressed" => "finding",
-        "session.opened" | "session.closed" => "session",
+        "session.opened" | "session.closed" | "session.task_bound" | "session.task_unbound" => {
+            "session"
+        }
         event_type if event_type.starts_with("criterion.") => "validation",
         event_type if event_type.starts_with("attempt.") => "attempt",
         event_type if event_type.starts_with("plan.") => "plan",
@@ -3741,23 +3911,31 @@ fn projected_task_state(lifecycle: &TaskLifecycleProjection) -> &str {
         "cancelled" => "cancelled",
         "closed_with_exceptions" => "closed_with_exceptions",
         "blocked" => "blocked",
-        _ if lifecycle.nodes.values().any(|node| node.state == "active") => "active",
         _ if lifecycle
-            .nodes
-            .values()
-            .any(|node| matches!(node.state.as_str(), "blocked" | "failed")) =>
+            .effective_nodes()
+            .any(|(_, node)| node.state == "active") =>
+        {
+            "active"
+        }
+        _ if lifecycle
+            .effective_nodes()
+            .any(|(_, node)| matches!(node.state.as_str(), "blocked" | "failed")) =>
         {
             "blocked"
         }
-        _ if !lifecycle.nodes.is_empty()
+        _ if lifecycle.effective_nodes().next().is_some()
             && lifecycle
-                .nodes
-                .values()
-                .all(|node| matches!(node.state.as_str(), "completed" | "cancelled")) =>
+                .effective_nodes()
+                .all(|(_, node)| matches!(node.state.as_str(), "completed" | "cancelled")) =>
         {
             "review"
         }
-        _ if lifecycle.nodes.values().any(|node| node.state == "ready") => "planned",
+        _ if lifecycle
+            .effective_nodes()
+            .any(|(_, node)| node.state == "ready") =>
+        {
+            "planned"
+        }
         _ if matches!(lifecycle.state.as_str(), "planned" | "active" | "review") => {
             lifecycle.state.as_str()
         }
@@ -3815,7 +3993,7 @@ mod tests {
     use crate::v3::{
         create_v3_task, EventDraft, EvidenceGrade, OrchestrationCommand, PlanAddNodeCommand,
         PlanCommandIdentity, PlanSetStateCommand, ProjectId, SessionId, TaskId,
-        V3ApplicationService, V3TaskCreateRequest,
+        V3ApplicationService, V3TaskCreateInitialPlanNode, V3TaskCreateRequest,
     };
     use std::collections::BTreeSet;
     use std::fs;
@@ -3858,6 +4036,9 @@ mod tests {
                 dependencies: BTreeSet::new(),
                 scope: Vec::new(),
                 criterion_ids: BTreeSet::new(),
+                origin: super::super::lifecycle::PlanNodeOrigin::Authored,
+                role: super::super::lifecycle::PlanNodeRole::Execution,
+                origin_contract_version: 1,
             },
         );
         assert_eq!(projected_task_state(&lifecycle), "blocked");
@@ -3913,7 +4094,14 @@ mod tests {
             assert_eq!(view["project_id"], project_id);
             assert_eq!(view["schema_version"], "1.0");
         }
-        assert_eq!(bundle.task_timeline["events"].as_array().unwrap().len(), 1);
+        let timeline_events = bundle.task_timeline["events"].as_array().unwrap();
+        assert_eq!(timeline_events.len(), 2);
+        assert!(timeline_events
+            .iter()
+            .any(|event| event["summary_key"] == "session.task_bound"));
+        assert!(timeline_events
+            .iter()
+            .any(|event| event["summary_key"] == "session.opened"));
         assert_eq!(bundle.task_timeline["completion"]["valid"], false);
         assert_eq!(bundle.task_timeline["completion"]["confirmed"], false);
         fs::remove_dir_all(root).unwrap();
@@ -3934,6 +4122,7 @@ mod tests {
                 workflow_profile: "standard".to_owned(),
                 trigger_context: Default::default(),
                 profile_override: None,
+                initial_plan: Vec::new(),
             },
         )
         .unwrap();
@@ -4917,22 +5106,31 @@ mod tests {
                 workflow_profile: "standard".to_owned(),
                 trigger_context: Default::default(),
                 profile_override: None,
+                initial_plan: vec![V3TaskCreateInitialPlanNode {
+                    node_id: Some("node.initial".to_owned()),
+                    title: "Initial".to_owned(),
+                    goal: "Start the projection work".to_owned(),
+                    scope: Vec::new(),
+                    depends_on: Vec::new(),
+                    criteria: vec![1],
+                    role: None,
+                }],
             },
         )
         .unwrap();
         let repo = V3ViewRepository::open(&root).unwrap();
         let project_id = repo.project_id();
         let app = V3ApplicationService::open(&root).unwrap();
+        let initial_node_id = created.initial_plan_node_ids[0].clone();
         app.lifecycle_command(super::super::lifecycle::command(
             "plan.node_added",
             &project_id,
             &created.task_id,
             created.lifecycle_version,
             "plan.second",
-            json!({"node_id":"node.second","title":"Second","goal":"Continue","scope":[],"dependencies":[created.initial_node_id.clone().unwrap()]}),
+            json!({"node_id":"node.second","title":"Second","goal":"Continue","scope":[],"dependencies":[initial_node_id.clone()]}),
         ))
         .unwrap();
-        let initial_node_id = created.initial_node_id.unwrap();
         app.plan_set_state(PlanSetStateCommand {
             identity: PlanCommandIdentity {
                 project_id: project_id.clone(),
@@ -5005,13 +5203,22 @@ mod tests {
                 workflow_profile: "standard".to_owned(),
                 trigger_context: Default::default(),
                 profile_override: None,
+                initial_plan: vec![V3TaskCreateInitialPlanNode {
+                    node_id: Some("node.initial".to_owned()),
+                    title: "Initial".to_owned(),
+                    goal: "Open the brief of a finished node".to_owned(),
+                    scope: Vec::new(),
+                    depends_on: Vec::new(),
+                    criteria: vec![1],
+                    role: None,
+                }],
             },
         )
         .unwrap();
         let repo = V3ViewRepository::open(&root).unwrap();
         let project_id = repo.project_id();
         let app = V3ApplicationService::open(&root).unwrap();
-        let initial_node_id = created.initial_node_id.clone().unwrap();
+        let initial_node_id = created.initial_plan_node_ids[0].clone();
         app.lifecycle_command(super::super::lifecycle::command(
             "plan.node_added",
             &project_id,
@@ -5212,6 +5419,9 @@ mod tests {
                 dependencies: BTreeSet::new(),
                 scope: Vec::new(),
                 criterion_ids: BTreeSet::new(),
+                origin: super::super::lifecycle::PlanNodeOrigin::Authored,
+                role: super::super::lifecycle::PlanNodeRole::Execution,
+                origin_contract_version: 1,
             },
         );
         lifecycle.nodes.insert(
@@ -5224,6 +5434,9 @@ mod tests {
                 dependencies: BTreeSet::from(["node.upstream".to_owned()]),
                 scope: Vec::new(),
                 criterion_ids: BTreeSet::new(),
+                origin: super::super::lifecycle::PlanNodeOrigin::Authored,
+                role: super::super::lifecycle::PlanNodeRole::Execution,
+                origin_contract_version: 1,
             },
         );
         lifecycle.sessions.insert(
@@ -5444,13 +5657,22 @@ mod tests {
                 workflow_profile: "standard".to_owned(),
                 trigger_context: Default::default(),
                 profile_override: None,
+                initial_plan: vec![V3TaskCreateInitialPlanNode {
+                    node_id: Some("node.initial".to_owned()),
+                    title: "Initial".to_owned(),
+                    goal: "Start the progress-gated work".to_owned(),
+                    scope: Vec::new(),
+                    depends_on: Vec::new(),
+                    criteria: vec![1],
+                    role: None,
+                }],
             },
         )
         .unwrap();
         let repo = V3ViewRepository::open(&root).unwrap();
         let project_id = repo.project_id();
         let app = V3ApplicationService::open(&root).unwrap();
-        let initial_node_id = created.initial_node_id.clone().unwrap();
+        let initial_node_id = created.initial_plan_node_ids[0].clone();
         app.plan_set_state(PlanSetStateCommand {
             identity: PlanCommandIdentity {
                 project_id: project_id.clone(),

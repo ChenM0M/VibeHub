@@ -25,14 +25,29 @@ export interface V3TaskCreateRequest {
    * @maxItems 100
    */
   acceptance_criteria: string[];
+  /**
+   * @maxItems 100
+   */
+  initial_plan?: V3TaskCreateInitialPlanNode[];
   [k: string]: unknown;
+}
+export interface V3TaskCreateInitialPlanNode {
+  node_id?: string;
+  title: string;
+  goal: string;
+  scope?: string[];
+  depends_on?: number[];
+  criteria?: number[];
+  role?: "execution" | "validation";
 }
 export interface V3TaskCreateResult {
   status: "created" | "already_exists";
   task_id: string;
   task_path: string;
   current_pointer_path: string;
+  current_pointer_updated: false;
   initial_node_id: string | null;
   lifecycle_version: number;
+  initial_plan_node_ids?: string[];
   [k: string]: unknown;
 }

@@ -34,7 +34,7 @@ const AI_TOOLS: { id: V3AgentSpecTarget | "cursor"; name: string; folder: string
 ];
 
 const statusTone = { missing: "text-amber-600", in_sync: "text-emerald-600", outdated: "text-amber-600", modified_outside: "text-orange-600", legacy_migratable: "text-orange-600", unsupported: "text-red-600" };
-const hostStatusTone = { missing: "text-amber-600", in_sync: "text-emerald-600", mismatched: "text-red-600", invalid: "text-red-600" };
+const hostStatusTone: Record<string, string> = { missing: "text-amber-600", in_sync: "text-emerald-600", mismatched: "text-red-600", invalid: "text-red-600", unsupported: "text-red-600", ambiguous: "text-orange-600" };
 
 const EMPTY_TARGETS: V3AgentSpecTarget[] = [];
 

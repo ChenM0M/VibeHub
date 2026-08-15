@@ -39,7 +39,26 @@
           "minItems": 1,
           "maxItems": 100,
           "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        },
+        "initial_plan": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/V3TaskCreateInitialPlanNode" }
         }
+      }
+    },
+    "V3TaskCreateInitialPlanNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "goal"],
+      "properties": {
+        "node_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "goal": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "scope": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 4096 } },
+        "depends_on": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "uniqueItems": true },
+        "criteria": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "uniqueItems": true },
+        "role": { "enum": ["execution", "validation"] }
       }
     },
     "V3TaskCreateResult": {
@@ -49,6 +68,7 @@
         "task_id",
         "task_path",
         "current_pointer_path",
+        "current_pointer_updated",
         "initial_node_id",
         "lifecycle_version"
       ],
@@ -57,8 +77,10 @@
         "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
         "task_path": { "type": "string", "minLength": 1 },
         "current_pointer_path": { "type": "string", "minLength": 1 },
+        "current_pointer_updated": { "type": "boolean", "const": false },
         "initial_node_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] },
-        "lifecycle_version": { "type": "integer", "minimum": 1 }
+        "lifecycle_version": { "type": "integer", "minimum": 1 },
+        "initial_plan_node_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" }, "uniqueItems": true }
       }
     }
   }

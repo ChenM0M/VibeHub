@@ -23,6 +23,9 @@ const schemaNames = [
   "project-settings.schema.json",
   "project-memory.schema.json",
   "agent-spec.schema.json",
+  "agent-profile.schema.json",
+  "workspace-state.schema.json",
+  "session-task-routing.schema.json",
   "project-overview-view.schema.json",
   "project-structure-view.schema.json",
   "agent-results-view.schema.json",
@@ -165,7 +168,7 @@ assert(planGraphSource.includes("style={{ width: 180, height: 120 }}"), "PlanGra
 for (const legacySurface of ["state.yaml", "agent-view", "adapters/", "commands/", "hooks/", "skills/"]) {
   assert(!rendererSources.includes(legacySurface), `renderer/source does not reference or generate retired ${legacySurface} surface`);
 }
-for (const generatedExport of ["task-create", "project-settings", "agent-spec", "application-command"]) {
+for (const generatedExport of ["task-create", "project-settings", "agent-spec", "agent-profile", "application-command"]) {
   assert(generatedContractsSource.includes(`./${generatedExport}`), `generated contract exports include ${generatedExport}`);
 }
 assert(/projectSettingsApi=\{productionProjectSettingsApi\}/.test(homeSource), "production route injects the real project settings/spec API");
@@ -179,7 +182,7 @@ assert(/if \(sourceMode === "production"\)[\s\S]{0,500}selectProject\(/.test(coc
 assert(/selectScenario: \(scenario\) => \{[\s\S]{0,250}loadRequestId \+= 1;[\s\S]{0,100}legacyRequestId \+= 1;[\s\S]{0,100}usageRequestId \+= 1;/.test(storeSource), "scenario selection invalidates all three read channels");
 assert(/selectScenario: \(scenario\) => \{[\s\S]*?set\(\{[\s\S]*?bundle: null,[\s\S]*?selectedTaskId: null,[\s\S]*?selectedNodeId: null,[\s\S]*?currentView: "project-overview",[\s\S]*?navStack: \[\][\s\S]*?\}\);/.test(storeSource), "scenario selection clears cross-source bundle, selection, and navigation state");
 assert(/selectProject: \(projectPath[\s\S]{0,250}loadRequestId \+= 1;[\s\S]{0,100}legacyRequestId \+= 1;[\s\S]{0,100}usageRequestId \+= 1;/.test(storeSource), "project selection invalidates all three read channels");
-assert(/selectProject: \(projectPath[\s\S]{0,500}layoutRequestId \+= 1;[\s\S]{0,100}lifecycleRequestId \+= 1;[\s\S]{0,1000}inspectProjectLayout\(\)/.test(storeSource), "production project selection invalidates lifecycle requests and inspects before loading views");
+assert(/selectProject: \(projectPath[\s\S]{0,1800}layoutRequestId \+= 1;[\s\S]{0,160}lifecycleRequestId \+= 1;[\s\S]{0,1800}inspectProjectLayout\(\)/.test(storeSource), "production project selection invalidates lifecycle requests and inspects before loading views");
 assert(/if \(status\.state === "v3"\)[\s\S]{0,300}loadCurrentBundle\(\)[\s\S]{0,200}loadLegacyArchive\(\)[\s\S]{0,200}loadUsage\(\)/.test(storeSource), "only an authoritative V3 inspection enables production read models");
 assert(/absent: "initialize"[\s\S]{0,100}v2: "migrate"[\s\S]{0,100}migration_interrupted: "recover"/.test(storeSource), "lifecycle actions map only from compatible inspected states");
 assert(/set\(\{ lifecycleAction: null, lifecycleResult: result \}\);[\s\S]{0,100}inspectProjectLayout\(\)/.test(storeSource), "successful lifecycle writes always re-inspect before loading views");
@@ -341,6 +344,7 @@ assert(taskCreateValidator({
   task_id: "task.contract",
   task_path: ".vibehub/tasks/task.contract/task.yaml",
   current_pointer_path: ".vibehub/tasks/current/task.yaml",
+  current_pointer_updated: false,
   initial_node_id: "node.contract.initial",
   lifecycle_version: 1,
 }), "task create result includes initial node and lifecycle version");
@@ -349,10 +353,59 @@ assert(taskCreateValidator({
   task_id: "task.lightweight",
   task_path: ".vibehub/tasks/task.lightweight/task.yaml",
   current_pointer_path: ".vibehub/tasks/current/task.yaml",
+  current_pointer_updated: false,
   initial_node_id: null,
   lifecycle_version: 2,
 }), "lightweight task create result has no synthetic initial node");
 assert(!taskCreateValidator({ title: "Contract", intent: "Missing criteria", acceptance_criteria: [] }), "task create rejects empty acceptance criteria");
+
+const routingSchema = schemas.get("session-task-routing.schema.json");
+const routingValidator = ajv.getSchema(routingSchema.$id);
+const routeDecisionValidator = ajv.compile({ $ref: `${routingSchema.$id}#/$defs/TaskRouteDecision` });
+assert(routingValidator({
+  schema_version: "1.0",
+  identity: {
+    project_id: "project.contract",
+    interaction_id: "interaction.contract",
+    session_id: "session.contract",
+  },
+  intent: "inspect the routing contract",
+  trigger: "ordinary_continuation",
+  candidates: [],
+  host_capabilities: {
+    state: "known",
+    supports_session_binding: true,
+    supports_binding_preconditions: true,
+    provider: "codex",
+  },
+}), `session-task routing request validates: ${ajv.errorsText(routingValidator.errors)}`);
+assert(routeDecisionValidator({
+  schema_version: "1.0",
+  project_id: "project.contract",
+  interaction_id: "interaction.contract",
+  session_id: "session.contract",
+  action: "new",
+  kind: "new",
+  binding_status: "unbound",
+  confidence: 100,
+  trigger: "new_execution",
+  reroute_performed: true,
+  rationale: "no active candidate task",
+}), `session-task routing decision validates: ${ajv.errorsText(routeDecisionValidator.errors)}`);
+assert(!routeDecisionValidator({
+  schema_version: "1.0",
+  project_id: "project.contract",
+  interaction_id: "interaction.contract",
+  session_id: "session.contract",
+  action: "ask",
+  kind: "ask",
+  binding_status: "invalid",
+  confidence: 0,
+  trigger: "ambiguous_candidate",
+  reroute_performed: true,
+  options: [{ task_id: "task.1", title: "One", state: "active", confidence: 50 }, { task_id: "task.2", title: "Two", state: "active", confidence: 49 }, { task_id: "task.3", title: "Three", state: "active", confidence: 48 }, { task_id: "task.4", title: "Four", state: "active", confidence: 47 }],
+  rationale: "ambiguous candidates",
+}), "session-task routing decision caps confirmation options at three");
 
 const settingsValidator = ajv.getSchema(schemas.get("project-settings.schema.json").$id);
 assert(settingsValidator({ expected_revision: 0, output_language: "zh-CN", agent_spec_targets: ["claude_code"] }), "project settings update accepts one language scalar and known targets");
@@ -360,7 +413,7 @@ assert(!settingsValidator({ expected_revision: 0, output_language: ["zh-CN"], ag
 assert(!settingsValidator({ expected_revision: 0, output_language: "zh-CN", agent_spec_targets: ["cursor"] }), "project settings rejects unsupported target");
 
 const agentSpecValidator = ajv.getSchema(schemas.get("agent-spec.schema.json").$id);
-assert(agentSpecValidator({ force_managed_region: false }), "agent spec sync request validates");
+assert(agentSpecValidator({ force_managed_region: false, migrate_global: false }), "agent spec sync request validates");
 assert(!agentSpecValidator({ force_managed_region: false, adapters: true }), "agent spec sync rejects legacy adapter fields");
 const agentSpecArtifact = (status) => ({
   path: "AGENTS.md",
@@ -370,6 +423,22 @@ const agentSpecArtifact = (status) => ({
   current_hash: null,
   desired_hash: "desired",
   last_written_hash: null,
+});
+const hostMcpInspection = (scope = "project", status = "mismatched") => ({
+  schema_version: "1.0",
+  consumer: "codex",
+  scope,
+  path: scope === "project" ? "repo/.codex/config.toml" : "/Users/alex/.codex/config.toml",
+  status,
+  reason: "contract sample",
+  server_name: "vibehub",
+  binary: "/bin/vibehub",
+  configured_project_root: "/other",
+  canonical_configured_project_root: null,
+  revision: "sha256:revision",
+  owned_fields: ["server_name", "command", "args"],
+  provenance: "host_config_file",
+  repair_action: "run typed host MCP sync",
 });
 const agentSpecInspection = (status) => ({
   spec_version: "3.0",
@@ -385,7 +454,7 @@ const agentSpecInspection = (status) => ({
     warnings: ["V3_NESTED_GIT_ROOT_DETECTED"],
   },
   effective_declarations: [{ path: "repo/AGENTS.md", consumers: ["codex"], precedence: 1, exists: true, contains_v3_region: true }],
-  mcp_hosts: [{ consumer: "codex", path: "repo/.codex/config.toml", status: "mismatched", reason: "wrong root", server_name: "vibehub", configured_project_root: "/other" }],
+  mcp_hosts: [hostMcpInspection()],
   artifacts: [agentSpecArtifact(status)],
 });
 assert(agentSpecValidator({
@@ -394,6 +463,23 @@ assert(agentSpecValidator({
   written_paths: [],
   skipped_paths: ["AGENTS.md"],
   blocking_paths: ["AGENTS.md"],
+  host_mcp: {
+    status: "synchronized",
+    inspections: [hostMcpInspection()],
+    written_paths: [],
+    skipped_paths: [],
+    blocking_paths: [],
+    global_migration: {
+      status: "unchanged",
+      path: "/Users/alex/.codex/config.toml",
+      backup_path: null,
+      before_revision: "sha256:revision",
+      after_revision: "sha256:revision",
+      removed_server_names: [],
+      preserved_bytes: true,
+      repair_action: null,
+    },
+  },
 }), "agent spec sync result exposes incomplete legacy migration");
 assert(!agentSpecValidator({
   status: "synchronized",
@@ -401,6 +487,223 @@ assert(!agentSpecValidator({
   written_paths: [],
   skipped_paths: ["AGENTS.md"],
 }), "agent spec sync result requires blocking paths");
+
+const agentProfileValidator = ajv.getSchema(schemas.get("agent-profile.schema.json").$id);
+const agentProfileTimestamp = "2026-08-09T00:00:00.000Z";
+const agentProfilePath = (native, platform = "macos") => ({
+  platform,
+  native,
+  display: native,
+  identity_key: platform + ":" + native,
+  path_kind: platform === "windows" ? "drive" : "absolute",
+  accessible: true,
+});
+const agentProfileCredential = {
+  kind: "env",
+  reference: "OPENAI_API_KEY",
+  display: "环境变量 OPENAI_API_KEY",
+  secret_state: "configured",
+  persisted_in_config: false,
+};
+const agentProfileProtocol = {
+  native_protocol: "openai_responses",
+  upstream_protocol: "openai_chat_completions",
+  route: "adapter",
+  compatibility: "supported",
+  adapter_id: "adapter.openai-chat-to-responses",
+  adapter_version: "1.0.0",
+  limitations: [],
+};
+const agentProfileThinking = {
+  supports_reasoning: true,
+  supports_effort: true,
+  selected: "medium",
+  options: ["low", "medium", "high"],
+  custom_allowed: false,
+};
+const agentProfileProvider = {
+  provider_id: "provider.deepseek",
+  display_name: "DeepSeek",
+  base_url: "https://api.deepseek.com/v1",
+  credential: agentProfileCredential,
+  protocol: agentProfileProtocol,
+  models: [{ model_id: "deepseek-chat", display_name: "DeepSeek Chat", enabled: true, thinking: agentProfileThinking }],
+};
+const agentProfileTarget = {
+  target_id: "runtime.macos.host",
+  kind: "host",
+  platform: "macos",
+  distribution: null,
+  display_name: "macOS host",
+  home_path: agentProfilePath("/Users/alex"),
+  source: "fixture",
+  capability_manifest_revision: "capabilities.agent-profile.1",
+};
+const agentProfileRevision = {
+  revision: 2,
+  content_sha256: "a".repeat(64),
+  observed_at: agentProfileTimestamp,
+};
+const agentProfileSource = {
+  path: agentProfilePath("/Users/alex/.codex/deepseek.config.toml"),
+  format: "toml",
+  scope: "profile",
+  profile_name: "deepseek",
+  last_modified: agentProfileTimestamp,
+};
+const agentProfileManaged = {
+  providers: [agentProfileProvider],
+  default_provider_id: "provider.deepseek",
+  default_model_id: "deepseek-chat",
+  small_model_id: null,
+};
+const agentProfileDefaultState = {
+  is_default: true,
+  selected_by: "vibehub",
+  projection: {
+    strategy: "base_config_projection",
+    target_path: agentProfilePath("/Users/alex/.codex/config.toml"),
+    managed_field_paths: ["model_provider", "model"],
+    warning: "项目级配置可能覆盖用户级默认",
+  },
+};
+const agentProfileDocument = {
+  profile_id: "profile.codex.deepseek",
+  display_name: "DeepSeek 默认",
+  agent: "codex",
+  runtime_target_id: "runtime.macos.host",
+  source: agentProfileSource,
+  revision: agentProfileRevision,
+  managed: agentProfileManaged,
+  default_state: agentProfileDefaultState,
+  preservation: {
+    unknown_fields_preserved: true,
+    comments_preserved: true,
+    formatting_preserved: true,
+    managed_field_paths: ["model_provider", "model"],
+    unmanaged_field_paths: ["approval_policy", "sandbox_mode"],
+    backup_path: agentProfilePath("/Users/alex/.codex/config.toml.vibehub-backup"),
+    rollback_available: true,
+  },
+  protocol: agentProfileProtocol,
+  schema_capability: {
+    schema_id: "codex.config.toml",
+    schema_version: "0.134",
+    compatibility: "supported",
+    supported_fields: ["model_provider", "model"],
+    unsupported_fields: [],
+    unknown_fields: [],
+  },
+  launch: {
+    executable: "codex",
+    profile_argument: "--profile",
+    settings_argument: null,
+    extra_arguments: [],
+  },
+};
+const agentProfileReadResult = {
+  schema_version: "1.0",
+  kind: "agent_profile_read_result",
+  generated_at: agentProfileTimestamp,
+  model_version: "agent-profile.fixture.1",
+  freshness: "fresh",
+  completeness: "complete",
+  evidence_refs: [],
+  warnings: [],
+  errors: [],
+  agent: "codex",
+  runtime_target: agentProfileTarget,
+  source: agentProfileSource,
+  revision: agentProfileRevision,
+  managed_fields: agentProfileManaged,
+  default_state: agentProfileDefaultState,
+  protocol: agentProfileProtocol,
+  profile: agentProfileDocument,
+  schema_capability: agentProfileDocument.schema_capability,
+};
+assert(agentProfileValidator(agentProfileReadResult), "agent profile read result validates: " + ajv.errorsText(agentProfileValidator.errors));
+assert(agentProfileValidator({
+  kind: "agent_profile_command",
+  command: "save",
+  agent: "codex",
+  runtime_target_id: "runtime.macos.host",
+  profile_id: "profile.codex.deepseek",
+  expected_revision: 2,
+  profile: agentProfileDocument,
+}), "agent profile save command validates with revision precondition");
+const agentProfileCrudCommands = [
+  {
+    command: "create",
+    profile_name: "new-profile",
+    template_profile_id: "profile.codex.template",
+  },
+  {
+    command: "clone",
+    source_profile_id: "profile.codex.deepseek",
+    profile_name: "cloned-profile",
+  },
+  {
+    command: "rename",
+    profile_id: "profile.codex.deepseek",
+    new_profile_name: "renamed-profile",
+  },
+  {
+    command: "delete",
+    profile_id: "profile.codex.deepseek",
+    replacement_profile_id: "profile.codex.template",
+  },
+];
+for (const crudCommand of agentProfileCrudCommands) {
+  assert(agentProfileValidator({
+    kind: "agent_profile_command",
+    agent: "codex",
+    runtime_target_id: "runtime.macos.host",
+    ...crudCommand,
+  }), `agent profile ${crudCommand.command} command validates`);
+}
+assert(!agentProfileValidator({
+  kind: "agent_profile_command",
+  agent: "codex",
+  runtime_target_id: "runtime.macos.host",
+  command: "rename",
+  profile_id: "profile.codex.deepseek",
+  new_profile_name: "",
+}), "agent profile rename rejects an empty profile name");
+for (const operation of ["create", "clone", "rename", "delete"]) {
+  assert(agentProfileValidator({
+    schema_version: "1.0",
+    kind: "agent_profile_save_result",
+    generated_at: agentProfileTimestamp,
+    model_version: "agent-profile.fixture.1",
+    freshness: "fresh",
+    completeness: "complete",
+    evidence_refs: [],
+    warnings: [],
+    errors: [],
+    operation,
+    profile: agentProfileDocument,
+    revision: agentProfileRevision,
+    backup_path: agentProfilePath("/Users/alex/.codex/profile.vibehub-backup.toml"),
+    rollback_available: true,
+  }), `agent profile ${operation} result validates`);
+}
+assert(!agentProfileValidator({
+  ...agentProfileReadResult,
+  profile: {
+    ...agentProfileDocument,
+    managed: {
+      ...agentProfileDocument.managed,
+      providers: [{
+        ...agentProfileProvider,
+        credential: { ...agentProfileCredential, persisted_in_config: true },
+      }],
+    },
+  },
+}), "agent profile rejects persisted plaintext credentials");
+assert(!agentProfileValidator({
+  ...agentProfileReadResult,
+  protocol: { ...agentProfileProtocol, route: "direct", compatibility: "unsupported" },
+}), "agent profile rejects unsupported direct route");
 
 const commandValidator = ajv.getSchema(schemas.get("application-command.schema.json").$id);
 assert(commandValidator({

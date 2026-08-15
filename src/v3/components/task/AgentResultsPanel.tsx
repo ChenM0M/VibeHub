@@ -90,7 +90,7 @@ export function AgentResultsPanel({ data }: { data: AgentResultsView }) {
         const artifacts = Array.isArray(result.artifacts) ? result.artifacts : [];
         const evidenceRefs = safeEvidenceRefs(result.evidence_refs);
         return (
-          <article key={result.result_id} className="rounded-md border border-border/50 bg-card/40 p-4">
+          <article key={result.result_id} className="min-w-0 rounded-md border border-border/50 bg-card/40 p-4 [overflow-wrap:anywhere]">
             <div className="flex items-start gap-2">
               <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
@@ -118,7 +118,7 @@ export function AgentResultsPanel({ data }: { data: AgentResultsView }) {
               const artifact = rawArtifact as unknown;
               const label = typeof artifact === "string" ? artifact : artifact && typeof artifact === "object" ? String((artifact as { label?: unknown; kind?: unknown; locator?: unknown }).label ?? (artifact as { kind?: unknown }).kind ?? (artifact as { locator?: unknown }).locator ?? t("v3.agentResults.unnamedArtifact")) : t("v3.agentResults.unnamedArtifact");
               const path = artifact && typeof artifact === "object" && (artifact as { path?: unknown }).path && typeof (artifact as { path?: unknown }).path === "object" ? (artifact as { path: { display?: unknown } }).path : null;
-              return <div key={`${result.result_id}-artifact-${index}`} className="inline-flex items-center gap-1.5 rounded border border-border/50 px-2 py-1 text-[11px]"><FileText className="h-3 w-3" />{label}{typeof path?.display === "string" && <span className="max-w-48 truncate text-muted-foreground">{path.display}</span>}</div>;
+              return <div key={`${result.result_id}-artifact-${index}`} className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded border border-border/50 px-2 py-1 text-[11px]"><FileText className="h-3 w-3 shrink-0" /><span className="min-w-0 [overflow-wrap:anywhere]">{label}</span>{typeof path?.display === "string" && <span className="min-w-0 max-w-48 truncate text-muted-foreground">{path.display}</span>}</div>;
             })}</div>}
             <div className="mt-3"><EvidenceLink evidenceRefs={evidenceRefs} /></div>
           </article>

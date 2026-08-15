@@ -29,6 +29,10 @@
         "properties": { "lane_id": { "$ref": "common.schema.json#/$defs/StableId" }, "kind": { "enum": ["task", "session", "node", "worktree"] }, "label": { "type": "string" }, "state": { "enum": ["open", "active", "idle", "closed", "gapped", "abandoned", "repaired"] }, "worktree_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }] } }
       }
     },
+    "session_bindings": {
+      "type": "object",
+      "additionalProperties": { "$ref": "session-task-routing.schema.json#/$defs/SessionTaskBinding" }
+    },
     "events": {
       "type": "array", "items": {
         "type": "object", "additionalProperties": false,

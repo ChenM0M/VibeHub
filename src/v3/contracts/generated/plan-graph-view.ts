@@ -28,6 +28,10 @@ export interface PlanGraphView {
     scope: string[];
     criterion_ids: string[];
     session_ids?: string[];
+    agent_result_ids?: string[];
+    parallel_layer?: number;
+    parallel_candidate?: boolean;
+    execution_state?: "not_started" | "session_active" | "observed" | "succeeded" | "failed";
     worktree?: WorktreeRef | null;
   }[];
   scheduling_edges: {

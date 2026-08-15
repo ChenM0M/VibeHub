@@ -65,7 +65,7 @@ const minimapNodeStrokeColor: Record<string, string> = {
   superseded: "#94a3b8",
 };
 
-type PlanNodeData = { title: string; state: string; readiness: string; block_reasons: string[]; sequence: number; session_ids: string[]; showSessions?: boolean; noSessionsLabel: string; listSeparator: string };
+type PlanNodeData = { title: string; state: string; readiness: string; block_reasons: string[]; sequence: number; session_ids: string[]; agent_result_ids: string[]; parallel_layer?: number; parallel_candidate?: boolean; execution_state?: string; showSessions?: boolean; noSessionsLabel: string; listSeparator: string };
 
 function PlanNode({ data, selected }: NodeProps) {
   const d = data as unknown as PlanNodeData;
@@ -189,7 +189,7 @@ export function PlanGraph({ data, taskTitle = "", taskIntent = "", onNodeClick, 
       return {
         id: node.node_id, type: "planNode", position: pos,
         measured: nodeMeasurements[node.node_id],
-        data: { title: node.title, state: node.state, readiness: node.readiness, block_reasons: node.block_reasons, sequence: sequence.get(node.node_id) ?? 0, session_ids: node.session_ids ?? [], showSessions, noSessionsLabel: t("v3.plan.noSessions"), listSeparator: t("v3.common.listSeparator") } as unknown as Record<string, unknown>,
+        data: { title: node.title, state: node.state, readiness: node.readiness, block_reasons: node.block_reasons, sequence: sequence.get(node.node_id) ?? 0, session_ids: node.session_ids ?? [], agent_result_ids: node.agent_result_ids ?? [], parallel_layer: node.parallel_layer, parallel_candidate: node.parallel_candidate, execution_state: node.execution_state, showSessions, noSessionsLabel: t("v3.plan.noSessions"), listSeparator: t("v3.common.listSeparator") } as unknown as Record<string, unknown>,
         selected: selectedNodeId === node.node_id,
       };
     });
@@ -358,6 +358,9 @@ export function PlanGraph({ data, taskTitle = "", taskIntent = "", onNodeClick, 
                   <div className="text-xs font-medium">{selectedNode.title}</div>
                   <div className="mt-0.5 text-[10px] text-muted-foreground">{t(`v3.common.nodeState.${selectedNode.state}`, { defaultValue: selectedNode.state })}</div>
                   <div className="mt-1 text-[10px] text-muted-foreground">{selectedNode.goal}</div>
+                  {selectedNode.parallel_candidate && <div className="mt-1 text-[10px] text-violet-600">{t("v3.plan.parallelCandidate", { layer: (selectedNode.parallel_layer ?? 0) + 1 })}</div>}
+                  <div className="mt-1 text-[10px] text-muted-foreground">{t("v3.plan.executionStateLabel", { value: t(`v3.plan.executionState.${selectedNode.execution_state ?? "not_started"}`, { defaultValue: selectedNode.execution_state ?? "not_started" }) })}</div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">{t("v3.plan.executionEvidence", { sessions: selectedNode.session_ids?.length ?? 0, results: selectedNode.agent_result_ids?.length ?? 0 })}</div>
                   {selectedNode.scope.length > 0 && <div className="mt-1 text-[10px]"><span className="text-muted-foreground">{t("v3.plan.scope")}</span>{selectedNode.scope.join(t("v3.common.listSeparator"))}</div>}
                   {selectedNode.block_reasons.length > 0 && <div className="mt-1 text-[10px] text-orange-600">{t("v3.plan.blocked", { value: selectedNode.block_reasons.join(t("v3.common.listSeparator")) })}</div>}
                   <div className="mt-1 text-[10px] text-blue-600">{t("v3.plan.nodeHint")}</div>

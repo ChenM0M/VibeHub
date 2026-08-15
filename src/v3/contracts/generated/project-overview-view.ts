@@ -47,6 +47,11 @@ export interface ProjectOverviewView {
     evidence_refs: EvidenceRefs;
   };
   current_task_id?: string | null;
+  current_default_task_id?: string | null;
+  ui_selected_task_id?: string | null;
+  session_bindings?: {
+    [k: string]: SessionTaskBinding;
+  };
   active_tasks: {
     task_id: string;
     title: string;
@@ -63,6 +68,8 @@ export interface ProjectOverviewView {
       evidence_refs: EvidenceRefs;
     }[];
     active_sessions: number;
+    is_current_default?: boolean;
+    is_ui_selected?: boolean;
   }[];
   archived_tasks?: ArchivedTaskSummary[];
   protocol_coverage: {
@@ -92,6 +99,29 @@ export interface EvidenceRef {
   locator: string;
   captured_at?: string;
   excerpt?: string;
+}
+export interface SessionTaskBinding {
+  schema_version: "1.0";
+  project_id: string;
+  interaction_id: string;
+  session_id: string;
+  agent_id?: string | null;
+  host?: string | null;
+  bound_task_id?: string | null;
+  binding_revision: number;
+  freshness: "fresh" | "stale" | "unknown";
+  source:
+    | "explicit_task_id"
+    | "explicit_title"
+    | "current_session"
+    | "created_and_start"
+    | "unique_candidate"
+    | "user_confirmed"
+    | "legacy_session_open"
+    | "unknown";
+  status: "unbound" | "bound" | "stale" | "invalid";
+  target_task_revision?: number | null;
+  bound_at?: string | null;
 }
 export interface CriterionSummary {
   criterion_id: string;

@@ -34,6 +34,9 @@ export interface TaskTimelineView {
     state: "open" | "active" | "idle" | "closed" | "gapped" | "abandoned" | "repaired";
     worktree_id?: string | null;
   }[];
+  session_bindings?: {
+    [k: string]: SessionTaskBinding;
+  };
   events: {
     timeline_event_id: string;
     kind:
@@ -146,6 +149,29 @@ export interface BlockerProvenance {
   source_event_ids: string[];
   reconstructed_fields: string[];
   unknown_fields: string[];
+}
+export interface SessionTaskBinding {
+  schema_version: "1.0";
+  project_id: string;
+  interaction_id: string;
+  session_id: string;
+  agent_id?: string | null;
+  host?: string | null;
+  bound_task_id?: string | null;
+  binding_revision: number;
+  freshness: "fresh" | "stale" | "unknown";
+  source:
+    | "explicit_task_id"
+    | "explicit_title"
+    | "current_session"
+    | "created_and_start"
+    | "unique_candidate"
+    | "user_confirmed"
+    | "legacy_session_open"
+    | "unknown";
+  status: "unbound" | "bound" | "stale" | "invalid";
+  target_task_revision?: number | null;
+  bound_at?: string | null;
 }
 export interface Page {
   cursor: string | null;

@@ -45,6 +45,16 @@
     "current_task_id": {
       "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }]
     },
+    "current_default_task_id": {
+      "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }]
+    },
+    "ui_selected_task_id": {
+      "anyOf": [{ "$ref": "common.schema.json#/$defs/StableId" }, { "type": "null" }]
+    },
+    "session_bindings": {
+      "type": "object",
+      "additionalProperties": { "$ref": "session-task-routing.schema.json#/$defs/SessionTaskBinding" }
+    },
     "active_tasks": {
       "type": "array",
       "items": {
@@ -59,6 +69,7 @@
           "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
           "relations": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["related_task_id", "relation_type", "confidence", "evidence_refs"], "properties": { "related_task_id": { "$ref": "common.schema.json#/$defs/StableId" }, "relation_type": { "type": "string", "minLength": 1 }, "confidence": { "$ref": "common.schema.json#/$defs/Confidence" }, "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" } } } },
           "active_sessions": { "type": "integer", "minimum": 0 }
+          ,"is_current_default": { "type": "boolean" }, "is_ui_selected": { "type": "boolean" }
         }
       }
     },

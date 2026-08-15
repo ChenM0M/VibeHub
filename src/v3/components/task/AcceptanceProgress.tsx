@@ -49,7 +49,7 @@ export function AcceptanceProgress({ criteria, className }: AcceptanceProgressPr
             <div key={criterion.criterion_id} className="py-2.5">
               <div className="flex items-center gap-2">
                 <CriterionBadge criterion={criterion} />
-                <span className="min-w-0 flex-1 text-sm font-medium">{criterion.title}</span>
+                <span className="min-w-0 flex-1 text-sm font-medium [overflow-wrap:anywhere]">{criterion.title}</span>
               </div>
               <EvidenceLink evidenceRefs={criterion.evidence_refs} />
             </div>

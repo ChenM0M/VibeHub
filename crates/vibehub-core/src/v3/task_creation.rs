@@ -1,11 +1,10 @@
 use super::application::canonical_criterion_id;
 use super::lifecycle::command;
 use super::{
-    inspect_project_layout, resolve_policy, EffectiveExecutionPolicy, EvidenceGrade,
-    ProfileOverride, ProjectLayoutState, TriggerContext, V3ApplicationService, V3Error,
-    V3ErrorCategory,
+    inspect_project_layout, project_id, resolve_policy, EffectiveExecutionPolicy, EvidenceGrade,
+    PlanNodeOrigin, PlanNodeRole, ProfileOverride, ProjectLayoutState, TriggerContext,
+    V3ApplicationService, V3Error, V3ErrorCategory, PLAN_NODE_ORIGIN_CONTRACT_VERSION,
 };
-use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -16,6 +15,25 @@ use uuid::Uuid;
 
 const MAX_FIELD_LENGTH: usize = 4096;
 const MAX_CRITERIA: usize = 100;
+const MAX_INITIAL_PLAN_NODES: usize = 100;
+
+/// A plan confirmed together with task creation. Dependencies and criteria use 1-based
+/// positions so callers do not need to know the generated task id or criterion ids.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct V3TaskCreateInitialPlanNode {
+    #[serde(default)]
+    pub node_id: Option<String>,
+    pub title: String,
+    pub goal: String,
+    #[serde(default)]
+    pub scope: Vec<String>,
+    #[serde(default)]
+    pub depends_on: Vec<usize>,
+    #[serde(default)]
+    pub criteria: Vec<usize>,
+    #[serde(default)]
+    pub role: Option<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct V3TaskCreateRequest {
@@ -28,6 +46,9 @@ pub struct V3TaskCreateRequest {
     pub trigger_context: TriggerContext,
     #[serde(default)]
     pub profile_override: Option<ProfileOverride>,
+    /// When present, this confirmed plan replaces the administrative bootstrap node.
+    #[serde(default)]
+    pub initial_plan: Vec<V3TaskCreateInitialPlanNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,8 +57,11 @@ pub struct V3TaskCreateResult {
     pub task_id: String,
     pub task_path: String,
     pub current_pointer_path: String,
+    pub current_pointer_updated: bool,
     pub initial_node_id: Option<String>,
     pub lifecycle_version: u64,
+    #[serde(default)]
+    pub initial_plan_node_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,16 +89,6 @@ struct TaskDocument {
     trigger_reasons: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
-struct CurrentTaskPointer<'a> {
-    schema_version: u32,
-    kind: &'a str,
-    task_id: &'a str,
-    path: String,
-    updated_at: String,
-    updated_by: &'a str,
-}
-
 pub fn create_v3_task(
     project_root: impl AsRef<Path>,
     request: V3TaskCreateRequest,
@@ -92,12 +106,13 @@ pub fn create_v3_task(
 
     let request = validate_request(request)?;
     let task_id = stable_task_id(&request);
-    let initial_node_id = stable_initial_node_id(&task_id);
     validate_task_id(&task_id)?;
     let tasks_root = project_root.join(".vibehub/tasks");
     ensure_safe_tasks_root(&tasks_root)?;
 
     let task_dir = tasks_root.join(&task_id);
+    let initial_plan = request.initial_plan.clone();
+    let plan_node_ids = initial_plan_node_ids(&task_id, &initial_plan)?;
     let policy = resolve_policy(
         &request.title,
         &request.intent,
@@ -177,12 +192,13 @@ pub fn create_v3_task(
             &application,
             &project_id,
             &task_id,
-            &initial_node_id,
             &document.title,
             &document.intent,
             &document.acceptance_criteria,
             &document.workflow_profile,
             &policy,
+            &initial_plan,
+            &plan_node_ids,
         )?
     } else {
         // Existing eventless tasks predate lifecycle recording. They remain read-only;
@@ -190,9 +206,6 @@ pub fn create_v3_task(
         0
     };
 
-    if let Err(error) = write_current_pointer(&tasks_root, &task_id) {
-        return Err(error);
-    }
     if pending_marker.exists() {
         fs::remove_file(&pending_marker)
             .map_err(|error| io_error("V3_TASK_RECOVERY_MARKER_REMOVE_FAILED", error))?;
@@ -203,8 +216,13 @@ pub fn create_v3_task(
         task_id: task_id.clone(),
         task_path: format!(".vibehub/tasks/{task_id}/task.yaml"),
         current_pointer_path: ".vibehub/tasks/current".to_owned(),
-        initial_node_id: (document.workflow_profile != "lightweight").then_some(initial_node_id),
+        current_pointer_updated: false,
+        // New standard/full tasks without a confirmed plan deliberately have
+        // no administrative placeholder node. The plan remains empty until a
+        // real authored node is added through the typed plan command.
+        initial_node_id: None,
         lifecycle_version,
+        initial_plan_node_ids: plan_node_ids,
     })
 }
 
@@ -212,12 +230,13 @@ fn append_creation_events(
     application: &V3ApplicationService,
     project_id: &str,
     task_id: &str,
-    initial_node_id: &str,
     title: &str,
     intent: &str,
     acceptance_criteria: &[String],
     workflow_profile: &str,
     policy: &EffectiveExecutionPolicy,
+    initial_plan: &[V3TaskCreateInitialPlanNode],
+    plan_node_ids: &[String],
 ) -> Result<u64, V3Error> {
     let mut created_command = command(
         "task.created",
@@ -230,26 +249,6 @@ fn append_creation_events(
     created_command.actor = "vibehub".to_owned();
     created_command.evidence_grade = Some(EvidenceGrade::HardObserved);
     application.lifecycle_command(created_command)?;
-
-    if workflow_profile != "lightweight" {
-        let mut node_command = command(
-            "plan.node_added",
-            &project_id,
-            task_id,
-            1,
-            &format!("create.{task_id}.initial-node"),
-            json!({
-                "node_id": initial_node_id,
-                "title": title,
-                "goal": intent,
-                "scope": [],
-                "dependencies": []
-            }),
-        );
-        node_command.actor = "vibehub".to_owned();
-        node_command.evidence_grade = Some(EvidenceGrade::HardObserved);
-        application.lifecycle_command(node_command)?;
-    }
 
     for (index, title) in acceptance_criteria.iter().enumerate() {
         let criterion_id = canonical_criterion_id(task_id, index);
@@ -273,6 +272,52 @@ fn append_creation_events(
         criterion_command.actor = "vibehub".to_owned();
         criterion_command.evidence_grade = Some(EvidenceGrade::HardObserved);
         application.lifecycle_command(criterion_command)?;
+    }
+    for (index, node) in initial_plan.iter().enumerate() {
+        let node_id = &plan_node_ids[index];
+        let lifecycle = application.task_lifecycle(project_id, task_id)?;
+        if let Some(existing) = lifecycle.nodes.get(node_id) {
+            if existing.is_historical_bootstrap() {
+                return Err(task_error(
+                    "V3_TASK_PLAN_INVALID",
+                    format!(
+                        "initial_plan node_id collides with historical bootstrap node: {node_id}"
+                    ),
+                ));
+            }
+            continue;
+        }
+        let dependencies: Vec<&str> = node
+            .depends_on
+            .iter()
+            .map(|position| plan_node_ids[position - 1].as_str())
+            .collect();
+        let criterion_ids: Vec<String> = node
+            .criteria
+            .iter()
+            .map(|position| canonical_criterion_id(task_id, position - 1))
+            .collect();
+        let mut node_command = command(
+            "plan.node_added",
+            project_id,
+            task_id,
+            lifecycle.version,
+            &format!("create.{task_id}.plan.n{:02}", index + 1),
+            json!({
+                "node_id": node_id,
+                "title": node.title,
+                "goal": node.goal,
+                "scope": node.scope,
+                "dependencies": dependencies,
+                "criterion_ids": criterion_ids,
+                "origin": PlanNodeOrigin::Authored.as_str(),
+                "role": node.role.clone().unwrap_or_else(|| PlanNodeRole::Execution.as_str().to_owned()),
+                "origin_contract_version": PLAN_NODE_ORIGIN_CONTRACT_VERSION,
+            }),
+        );
+        node_command.actor = "vibehub".to_owned();
+        node_command.evidence_grade = Some(EvidenceGrade::HardObserved);
+        application.lifecycle_command(node_command)?;
     }
     Ok(application.task_lifecycle(&project_id, task_id)?.version)
 }
@@ -305,6 +350,11 @@ fn validate_request(request: V3TaskCreateRequest) -> Result<V3TaskCreateRequest,
             "workflow_profile must be lightweight, standard, or full",
         ));
     }
+    let initial_plan = validate_initial_plan(
+        request.initial_plan,
+        acceptance_criteria.len(),
+        &request.workflow_profile,
+    )?;
     Ok(V3TaskCreateRequest {
         title,
         intent,
@@ -312,7 +362,138 @@ fn validate_request(request: V3TaskCreateRequest) -> Result<V3TaskCreateRequest,
         workflow_profile: request.workflow_profile,
         trigger_context: request.trigger_context,
         profile_override: request.profile_override,
+        initial_plan,
     })
+}
+
+fn validate_initial_plan(
+    plan: Vec<V3TaskCreateInitialPlanNode>,
+    criteria_count: usize,
+    workflow_profile: &str,
+) -> Result<Vec<V3TaskCreateInitialPlanNode>, V3Error> {
+    if plan.is_empty() {
+        return Ok(plan);
+    }
+    if workflow_profile == "lightweight" {
+        return Err(task_error(
+            "V3_TASK_PLAN_FORBIDDEN",
+            "lightweight tasks do not carry a plan",
+        ));
+    }
+    if plan.len() > MAX_INITIAL_PLAN_NODES {
+        return Err(task_error(
+            "V3_TASK_PLAN_INVALID",
+            format!("initial_plan must contain at most {MAX_INITIAL_PLAN_NODES} nodes"),
+        ));
+    }
+    let mut covered = vec![false; criteria_count];
+    let mut ids = std::collections::BTreeSet::new();
+    let validated = plan
+        .into_iter()
+        .enumerate()
+        .map(|(index, node)| {
+            let position = index + 1;
+            let node_id = node
+                .node_id
+                .map(|value| clean_plan_node_id(position, value))
+                .transpose()?;
+            if let Some(id) = &node_id {
+                if !ids.insert(id.clone()) {
+                    return Err(task_error(
+                        "V3_TASK_PLAN_INVALID",
+                        "initial_plan repeats a node_id",
+                    ));
+                }
+            }
+            if node
+                .depends_on
+                .iter()
+                .any(|dependency| *dependency == 0 || *dependency >= position)
+            {
+                return Err(task_error(
+                    "V3_TASK_PLAN_INVALID",
+                    "initial_plan dependencies must point to earlier nodes",
+                ));
+            }
+            let mut dependency_ids = std::collections::BTreeSet::new();
+            if node
+                .depends_on
+                .iter()
+                .any(|dependency| !dependency_ids.insert(*dependency))
+            {
+                return Err(task_error(
+                    "V3_TASK_PLAN_INVALID",
+                    "initial_plan repeats a dependency",
+                ));
+            }
+            let mut criterion_ids = std::collections::BTreeSet::new();
+            for criterion in &node.criteria {
+                if *criterion == 0 || *criterion > criteria_count {
+                    return Err(task_error(
+                        "V3_TASK_PLAN_INVALID",
+                        "initial_plan references a missing criterion",
+                    ));
+                }
+                if !criterion_ids.insert(*criterion) {
+                    return Err(task_error(
+                        "V3_TASK_PLAN_INVALID",
+                        "initial_plan repeats a criterion link",
+                    ));
+                }
+                covered[*criterion - 1] = true;
+            }
+            if node
+                .role
+                .as_deref()
+                .is_some_and(|role| !matches!(role, "execution" | "validation"))
+            {
+                return Err(task_error(
+                    "V3_TASK_PLAN_INVALID",
+                    "initial_plan role must be execution or validation",
+                ));
+            }
+            Ok(V3TaskCreateInitialPlanNode {
+                node_id,
+                title: clean_field(&format!("initial_plan[{index}].title"), node.title)?,
+                goal: clean_field(&format!("initial_plan[{index}].goal"), node.goal)?,
+                scope: node
+                    .scope
+                    .into_iter()
+                    .enumerate()
+                    .map(|(entry, value)| {
+                        clean_field(&format!("initial_plan[{index}].scope[{entry}]"), value)
+                    })
+                    .collect::<Result<_, _>>()?,
+                depends_on: node.depends_on,
+                criteria: node.criteria,
+                role: node.role,
+            })
+        })
+        .collect::<Result<Vec<_>, V3Error>>()?;
+    if covered.iter().any(|covered| !covered) {
+        return Err(task_error(
+            "V3_TASK_PLAN_COVERAGE_INCOMPLETE",
+            "initial_plan must cover every acceptance criterion",
+        ));
+    }
+    Ok(validated)
+}
+
+fn clean_plan_node_id(position: usize, node_id: String) -> Result<String, V3Error> {
+    let node_id = node_id.trim().to_owned();
+    if node_id.len() < 3
+        || node_id.len() > 127
+        || !node_id.starts_with("node.")
+        || !node_id.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-' | ':')
+        })
+    {
+        return Err(task_error(
+            "V3_TASK_PLAN_INVALID",
+            format!("initial_plan[{position}] node_id is invalid"),
+        ));
+    }
+    Ok(node_id)
 }
 
 fn clean_field(name: &str, value: String) -> Result<String, V3Error> {
@@ -355,22 +536,33 @@ fn stable_task_id(request: &V3TaskCreateRequest) -> String {
         hasher.update([0]);
         hasher.update(criterion.as_bytes());
     }
+    hasher.update([0]);
+    hasher.update(serde_json::to_vec(&request.initial_plan).unwrap_or_default());
     let digest = format!("{:x}", hasher.finalize());
     format!("task.{slug}.{}", &digest[..12])
 }
 
-fn stable_initial_node_id(task_id: &str) -> String {
-    format!("node.{task_id}.initial")
-}
-
-fn project_id(project_root: &Path) -> String {
-    let name = project_root
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("project")
-        .to_ascii_lowercase()
-        .replace(|character: char| !character.is_ascii_alphanumeric(), "-");
-    format!("project.{name}")
+fn initial_plan_node_ids(
+    task_id: &str,
+    plan: &[V3TaskCreateInitialPlanNode],
+) -> Result<Vec<String>, V3Error> {
+    let ids = plan
+        .iter()
+        .enumerate()
+        .map(|(index, node)| {
+            node.node_id
+                .clone()
+                .unwrap_or_else(|| format!("node.{task_id}.n{:02}", index + 1))
+        })
+        .collect::<Vec<_>>();
+    let unique = ids.iter().collect::<std::collections::BTreeSet<_>>();
+    if unique.len() != ids.len() {
+        return Err(task_error(
+            "V3_TASK_PLAN_INVALID",
+            "initial_plan generated node ids are not unique",
+        ));
+    }
+    Ok(ids)
 }
 
 fn validate_task_id(task_id: &str) -> Result<(), V3Error> {
@@ -428,47 +620,6 @@ fn write_new_atomic(path: &Path, content: &[u8]) -> Result<(), V3Error> {
     result
 }
 
-fn write_current_pointer(tasks_root: &Path, task_id: &str) -> Result<(), V3Error> {
-    let path = tasks_root.join("current");
-    if path.exists() {
-        let metadata = fs::symlink_metadata(&path)
-            .map_err(|error| io_error("V3_CURRENT_TASK_INVALID", error))?;
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return Err(task_error(
-                "V3_CURRENT_TASK_INVALID",
-                "current task pointer must be a regular file",
-            ));
-        }
-    }
-    let pointer = CurrentTaskPointer {
-        schema_version: 1,
-        kind: "current_task_pointer",
-        task_id,
-        path: format!(".vibehub/tasks/{task_id}"),
-        updated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
-        updated_by: "vibehub",
-    };
-    let content = serde_yaml::to_string(&pointer)
-        .map_err(|error| task_error("V3_CURRENT_TASK_WRITE_FAILED", error.to_string()))?;
-    let temporary = tasks_root.join(format!(".current.{}.tmp", Uuid::new_v4()));
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
-            .map_err(|error| io_error("V3_CURRENT_TASK_WRITE_FAILED", error))?;
-        file.write_all(content.as_bytes())
-            .and_then(|_| file.sync_all())
-            .map_err(|error| io_error("V3_CURRENT_TASK_WRITE_FAILED", error))?;
-        fs::rename(&temporary, &path)
-            .map_err(|error| io_error("V3_CURRENT_TASK_WRITE_FAILED", error))
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
 fn task_error(code: &str, message: impl Into<String>) -> V3Error {
     V3Error::new(code, V3ErrorCategory::Validation, false, message)
 }
@@ -480,7 +631,7 @@ fn io_error(code: &str, error: std::io::Error) -> V3Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::v3::{initialize_v3, V3EventStore, V3ViewRepository};
+    use crate::v3::{initialize_v3, LifecycleCommand, V3EventStore, V3ViewRepository};
     use std::path::PathBuf;
 
     fn temp_project() -> PathBuf {
@@ -497,31 +648,31 @@ mod tests {
             workflow_profile: "standard".to_owned(),
             trigger_context: Default::default(),
             profile_override: None,
+            initial_plan: Vec::new(),
         }
     }
 
     #[test]
-    fn creates_only_v3_metadata_and_current_pointer() {
+    fn creation_without_initial_plan_stays_in_planning_with_an_empty_graph() {
         let project = temp_project();
         initialize_v3(&project).unwrap();
         let result = create_v3_task(&project, request()).unwrap();
         assert_eq!(result.status, "created");
         assert!(project.join(&result.task_path).is_file());
-        assert_eq!(result.lifecycle_version, 3);
-        assert_eq!(
-            result.initial_node_id.as_deref(),
-            Some(format!("node.{}.initial", result.task_id).as_str())
-        );
+        assert_eq!(result.lifecycle_version, 2);
+        assert!(result.initial_node_id.is_none());
         let repository = V3ViewRepository::open(&project).unwrap();
         let bundle = repository.load_bundle(&result.task_id).unwrap();
         let nodes = bundle.plan_graph["nodes"].as_array().unwrap();
-        assert_eq!(nodes.len(), 1);
-        assert_eq!(nodes[0]["node_id"], result.initial_node_id.unwrap());
-        assert_eq!(nodes[0]["title"], request().title);
-        assert_eq!(nodes[0]["goal"], request().intent);
-        assert_eq!(nodes[0]["scope"], json!([]));
-        assert_eq!(bundle.plan_graph["plan_version"], 3);
+        assert!(nodes.is_empty());
+        assert_eq!(bundle.plan_graph["plan_version"], 2);
         assert_eq!(bundle.plan_graph["scheduling_edges"], json!([]));
+        assert!(bundle.plan_graph["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["code"] == "V3_PLAN_NOT_RECORDED"));
+        assert_eq!(bundle.node_brief["next_intent"], "plan");
         let lifecycle = V3ApplicationService::open(&project)
             .unwrap()
             .task_lifecycle(&repository.project_id(), &result.task_id)
@@ -543,6 +694,71 @@ mod tests {
     }
 
     #[test]
+    fn create_only_preserves_current_pointer_until_a_later_explicit_bind() {
+        let project = temp_project();
+        initialize_v3(&project).unwrap();
+        let first = create_v3_task(&project, request()).unwrap();
+        let current_pointer = project.join(".vibehub/tasks/current");
+        let pointer_content = format!(
+            "schema_version: 1\nkind: current_task_pointer\ntask_id: {}\npath: .vibehub/tasks/{}\nupdated_at: 2026-08-15T00:00:00Z\nupdated_by: test\n",
+            first.task_id, first.task_id
+        );
+        fs::write(&current_pointer, &pointer_content).unwrap();
+
+        let mut second_request = request();
+        second_request.title = "Start an independent task later".to_owned();
+        second_request.intent = "Create only, then bind explicitly".to_owned();
+        second_request.workflow_profile = "lightweight".to_owned();
+        let second = create_v3_task(&project, second_request).unwrap();
+        assert!(!second.current_pointer_updated);
+        assert_eq!(
+            fs::read_to_string(&current_pointer).unwrap(),
+            pointer_content
+        );
+
+        let repository = V3ViewRepository::open(&project).unwrap();
+        let project_id = repository.project_id();
+        let app = V3ApplicationService::open(&project).unwrap();
+        app.session_task_bind(
+            &project_id,
+            &second.task_id,
+            "session.create-and-start",
+            "interaction.create-and-start",
+            "codex",
+            super::super::routing::BindingSource::CreatedAndStart,
+            0,
+            "bind.create-and-start",
+            None,
+            None,
+            Some("codex".to_owned()),
+            None,
+        )
+        .unwrap();
+        app.session_open_with_context(
+            &project_id,
+            &second.task_id,
+            "session.create-and-start",
+            "codex",
+            1,
+            "open.create-and-start",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(repository.current_task_id().unwrap(), first.task_id);
+        let binding = app
+            .session_task_binding(&project_id, "session.create-and-start")
+            .unwrap();
+        assert_eq!(
+            binding.bound_task_id.as_deref(),
+            Some(second.task_id.as_str())
+        );
+        fs::remove_dir_all(project).unwrap();
+    }
+
+    #[test]
     fn identical_request_is_idempotent() {
         let project = temp_project();
         initialize_v3(&project).unwrap();
@@ -550,14 +766,204 @@ mod tests {
         let second = create_v3_task(&project, request()).unwrap();
         assert_eq!(first.task_id, second.task_id);
         assert_eq!(first.initial_node_id, second.initial_node_id);
-        assert_eq!(second.lifecycle_version, 3);
+        assert_eq!(second.lifecycle_version, 2);
         assert_eq!(second.status, "already_exists");
         let repository = V3ViewRepository::open(&project).unwrap();
         let events = V3EventStore::open(&project)
             .unwrap()
             .load_project(&repository.project_id())
             .unwrap();
-        assert_eq!(events.len(), 3);
+        assert_eq!(events.len(), 2);
+        fs::remove_dir_all(project).unwrap();
+    }
+
+    fn request_with_initial_plan() -> V3TaskCreateRequest {
+        V3TaskCreateRequest {
+            title: "Ship a planned task".to_owned(),
+            intent: "Create real authored nodes at task creation time".to_owned(),
+            acceptance_criteria: vec![
+                "The first node is covered".to_owned(),
+                "The second node is covered".to_owned(),
+                "The final node is covered".to_owned(),
+            ],
+            workflow_profile: "full".to_owned(),
+            trigger_context: Default::default(),
+            profile_override: None,
+            initial_plan: vec![
+                V3TaskCreateInitialPlanNode {
+                    node_id: Some("node.plan.first".to_owned()),
+                    title: "First node".to_owned(),
+                    goal: "Prepare the first stage".to_owned(),
+                    scope: vec!["src/first".to_owned()],
+                    depends_on: Vec::new(),
+                    criteria: vec![1],
+                    role: None,
+                },
+                V3TaskCreateInitialPlanNode {
+                    node_id: Some("node.plan.second".to_owned()),
+                    title: "Second node".to_owned(),
+                    goal: "Prepare the second stage".to_owned(),
+                    scope: vec!["src/second".to_owned()],
+                    depends_on: Vec::new(),
+                    criteria: vec![2],
+                    role: Some("validation".to_owned()),
+                },
+                V3TaskCreateInitialPlanNode {
+                    node_id: Some("node.plan.final".to_owned()),
+                    title: "Final node".to_owned(),
+                    goal: "Join both independent stages".to_owned(),
+                    scope: vec!["src/final".to_owned()],
+                    depends_on: vec![1, 2],
+                    criteria: vec![3],
+                    role: Some("execution".to_owned()),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn initial_plan_is_written_as_authored_nodes_without_bootstrap() {
+        let project = temp_project();
+        initialize_v3(&project).unwrap();
+        let request = request_with_initial_plan();
+        let result = create_v3_task(&project, request.clone()).unwrap();
+        assert!(result.initial_node_id.is_none());
+        assert_eq!(
+            result.initial_plan_node_ids,
+            vec!["node.plan.first", "node.plan.second", "node.plan.final"]
+        );
+        assert_eq!(result.lifecycle_version, 7);
+
+        let repository = V3ViewRepository::open(&project).unwrap();
+        let bundle = repository.load_bundle(&result.task_id).unwrap();
+        let nodes = bundle.plan_graph["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 3);
+        assert!(nodes.iter().all(|node| node["node_id"].is_string()));
+        let first = nodes
+            .iter()
+            .find(|node| node["node_id"] == "node.plan.first")
+            .unwrap();
+        let second = nodes
+            .iter()
+            .find(|node| node["node_id"] == "node.plan.second")
+            .unwrap();
+        let final_node = nodes
+            .iter()
+            .find(|node| node["node_id"] == "node.plan.final")
+            .unwrap();
+        assert_eq!(first["parallel_candidate"], true);
+        assert_eq!(second["parallel_candidate"], true);
+        assert_eq!(final_node["parallel_candidate"], false);
+        assert_eq!(final_node["parallel_layer"], 1);
+        assert_eq!(first["execution_state"], "not_started");
+        assert_eq!(
+            bundle.plan_graph["scheduling_edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        let app = V3ApplicationService::open(&project).unwrap();
+        let project_id = repository.project_id();
+        app.plan_set_state(crate::v3::PlanSetStateCommand {
+            identity: crate::v3::PlanCommandIdentity {
+                project_id: project_id.clone(),
+                task_id: result.task_id.clone(),
+                actor: "codex".to_owned(),
+                expected_version: result.lifecycle_version,
+                idempotency_key: "activate-first".to_owned(),
+            },
+            node_id: "node.plan.first".to_owned(),
+            state: "active".to_owned(),
+        })
+        .unwrap();
+        app.session_open_with_context(
+            &project_id,
+            &result.task_id,
+            "session.plan.first",
+            "codex",
+            0,
+            "open-first",
+            Some(project.to_string_lossy().into_owned()),
+            Some("node.plan.first".to_owned()),
+            None,
+        )
+        .unwrap();
+        let active_bundle = repository.load_bundle(&result.task_id).unwrap();
+        let active_first = active_bundle.plan_graph["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["node_id"] == "node.plan.first")
+            .unwrap();
+        assert_eq!(active_first["execution_state"], "session_active");
+        assert_eq!(
+            active_first["agent_result_ids"].as_array().unwrap().len(),
+            0
+        );
+        let lifecycle = V3ApplicationService::open(&project)
+            .unwrap()
+            .task_lifecycle(&repository.project_id(), &result.task_id)
+            .unwrap();
+        assert!(lifecycle
+            .effective_nodes()
+            .all(|(_, node)| !node.is_historical_bootstrap()));
+        assert!(lifecycle
+            .nodes
+            .values()
+            .all(|node| node.origin == super::super::lifecycle::PlanNodeOrigin::Authored));
+        fs::remove_dir_all(project).unwrap();
+    }
+
+    #[test]
+    fn historical_bootstrap_event_remains_in_timeline_but_is_excluded_from_current_plan() {
+        let project = temp_project();
+        initialize_v3(&project).unwrap();
+        let result = create_v3_task(&project, request()).unwrap();
+        let repository = V3ViewRepository::open(&project).unwrap();
+        let project_id = repository.project_id();
+        let app = V3ApplicationService::open(&project).unwrap();
+        app.lifecycle_command(LifecycleCommand {
+            event_type: "plan.node_added".to_owned(),
+            project_id: project_id.clone(),
+            task_id: result.task_id.clone(),
+            node_id: Some("node.task.legacy.initial".to_owned().into()),
+            session_id: None,
+            actor: "vibehub".to_owned(),
+            expected_version: result.lifecycle_version,
+            idempotency_key: "legacy-bootstrap-event".to_owned(),
+            evidence_grade: Some(crate::v3::EvidenceGrade::HardObserved),
+            payload: json!({"node_id":"node.task.legacy.initial","title":"Legacy placeholder","goal":"Administrative bootstrap","scope":[],"dependencies":[]}),
+        }).unwrap();
+        let lifecycle = app.task_lifecycle(&project_id, &result.task_id).unwrap();
+        assert!(lifecycle.nodes["node.task.legacy.initial"].is_historical_bootstrap());
+        app.plan_add_node(crate::v3::PlanAddNodeCommand {
+            identity: crate::v3::PlanCommandIdentity {
+                project_id: project_id.clone(),
+                task_id: result.task_id.clone(),
+                actor: "codex".to_owned(),
+                expected_version: result.lifecycle_version + 1,
+                idempotency_key: "authored-after-legacy".to_owned(),
+            },
+            node_id: "node.authored.real".to_owned(),
+            title: "Real node".to_owned(),
+            goal: "Actual implementation".to_owned(),
+            scope: vec!["src".to_owned()],
+            dependencies: Vec::new(),
+            criterion_ids: vec![canonical_criterion_id(&result.task_id, 0)],
+        })
+        .unwrap();
+        let bundle = repository.load_bundle(&result.task_id).unwrap();
+        assert_eq!(bundle.plan_graph["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            bundle.plan_graph["nodes"][0]["node_id"],
+            "node.authored.real"
+        );
+        assert!(bundle.task_timeline["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["node_id"] == "node.task.legacy.initial"));
         fs::remove_dir_all(project).unwrap();
     }
 

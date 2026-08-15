@@ -21,6 +21,10 @@
           "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
           "scope": { "type": "array", "items": { "type": "string" } }, "criterion_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" } },
           "session_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" }, "uniqueItems": true },
+          "agent_result_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/StableId" }, "uniqueItems": true },
+          "parallel_layer": { "type": "integer", "minimum": 0 },
+          "parallel_candidate": { "type": "boolean" },
+          "execution_state": { "enum": ["not_started", "session_active", "observed", "succeeded", "failed"] },
           "worktree": { "anyOf": [{ "$ref": "common.schema.json#/$defs/WorktreeRef" }, { "type": "null" }] }
         }
       }

@@ -14,6 +14,9 @@ const schemas = [
   ["project-settings.schema.json", "V3ProjectSettingsContract"],
   ["project-memory.schema.json", "ProjectMemoryProjection"],
   ["agent-spec.schema.json", "V3AgentSpecContract"],
+  ["agent-profile.schema.json", "V3AgentProfileContract"],
+  ["workspace-state.schema.json", "WorkspaceStateContract"],
+  ["session-task-routing.schema.json", "SessionTaskRoutingContract"],
   ["project-overview-view.schema.json", "ProjectOverviewView"],
   ["project-structure-view.schema.json", "ProjectStructureView"],
   ["agent-results-view.schema.json", "AgentResultsView"],
@@ -29,7 +32,7 @@ const exportedDefinitions = new Map([
     "V3ApplicationCommand", "PlanNodeAdd", "PlanDependenciesSet", "PlanNodeStateSet",
     "SessionOpen", "EventLog", "SessionClose", "AgentResultRecord", "WorktreeCommand", "Rebuild",
   ]],
-  ["task-create.schema.json", ["V3TaskCreateContract", "V3TaskCreateRequest", "V3TaskCreateResult"]],
+  ["task-create.schema.json", ["V3TaskCreateContract", "V3TaskCreateInitialPlanNode", "V3TaskCreateRequest", "V3TaskCreateResult"]],
   ["project-settings.schema.json", [
     "V3ProjectSettingsContract", "V3OutputLanguage", "V3AgentSpecTarget",
     "V3ProjectSettings", "V3ProjectSettingsInspection", "V3ProjectSettingsUpdateRequest",
@@ -37,8 +40,28 @@ const exportedDefinitions = new Map([
   ["project-memory.schema.json", ["ProjectMemoryProjection", "MemoryEntry"]],
   ["agent-spec.schema.json", [
     "V3AgentSpecContract", "V3AgentSpecArtifactStatus", "V3AgentSpecSyncStatus", "V3AgentSpecArtifactInspection",
+    "HostConfigScope", "HostConfigStatus", "HostMcpSyncStatus", "GlobalMcpMigrationStatus",
     "ProjectScopeInspection", "EffectiveAgentDeclaration", "McpHostConfigInspection",
+    "HostMcpSyncResult", "GlobalMcpMigrationResult",
     "V3AgentSpecInspection", "V3AgentSpecSyncRequest", "V3AgentSpecSyncResult",
+  ]],
+  ["agent-profile.schema.json", [
+    "V3AgentProfileContract", "AgentKind", "AgentProfileReadResult", "AgentProfileDiscoverResult",
+    "AgentProfileSummary", "AgentProfileCommand", "CreateCommand", "CloneCommand", "RenameCommand", "DeleteCommand",
+    "AgentProfileSaveResult", "AgentProfileDiagnosticsResult", "AgentProfileDocument", "RuntimeTarget", "NativePath",
+    "ConfigSource", "ConfigRevision", "CredentialReference", "ThinkingProfile", "ModelProfile",
+    "ProviderProfile", "ManagedProfileFields", "DefaultState", "DefaultProjection",
+    "PreservationSummary", "ProtocolCapability", "SchemaCapability", "LaunchSpec",
+  ]],
+  ["workspace-state.schema.json", [
+    "WorkspaceStateContract", "WorkspaceState", "WorkspaceProjectIdentity", "WorkspaceProjectUiContext",
+    "WorkspaceStateProvenance", "WorkspaceStateDiagnostic", "WorkspaceStateReadResult",
+    "WorkspaceStateSaveRequest", "WorkspaceStateSaveResult",
+  ]],
+  ["session-task-routing.schema.json", [
+    "SessionTaskRoutingContract", "BindingStatus", "BindingFreshness", "BindingSource", "RouteAction",
+    "RouteTrigger", "HostCapabilityState", "HostCapabilities", "SessionTaskIdentity", "SessionTaskBinding",
+    "TaskRouteCandidate", "RouteOption", "RouteRequest", "TaskRouteDecision",
   ]],
 ]);
 

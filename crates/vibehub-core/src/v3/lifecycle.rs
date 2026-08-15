@@ -30,6 +30,8 @@ pub const LIFECYCLE_EVENT_TYPES: &[&str] = &[
     "attempt.completed",
     "attempt.failed",
     "session.opened",
+    "session.task_bound",
+    "session.task_unbound",
     "session.heartbeat",
     "session.closed",
     "session.gap_detected",
@@ -62,6 +64,82 @@ pub struct CriterionProjection {
     pub version: u64,
 }
 
+pub const PLAN_NODE_ORIGIN_CONTRACT_VERSION: u32 = 1;
+pub const TASK_BOOTSTRAP_ACTOR: &str = "vibehub";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanNodeOrigin {
+    Authored,
+    TaskBootstrap,
+    Migration,
+}
+
+impl PlanNodeOrigin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Authored => "authored",
+            Self::TaskBootstrap => "task_bootstrap",
+            Self::Migration => "migration",
+        }
+    }
+
+    fn parse(value: Option<&str>, actor: &str, node_id: &str) -> Self {
+        match value {
+            Some("task_bootstrap") => Self::TaskBootstrap,
+            Some("migration") => Self::Migration,
+            Some("authored") => Self::Authored,
+            // Pre-origin events used the V3 writer as the actor for the
+            // administrative placeholder. Keep those events auditable while
+            // excluding only that legacy shape from the effective plan.
+            None if actor == TASK_BOOTSTRAP_ACTOR && node_id.ends_with(".initial") => {
+                Self::TaskBootstrap
+            }
+            _ => Self::Authored,
+        }
+    }
+}
+
+impl Default for PlanNodeOrigin {
+    fn default() -> Self {
+        Self::Authored
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanNodeRole {
+    Execution,
+    Validation,
+    Administrative,
+}
+
+impl PlanNodeRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Execution => "execution",
+            Self::Validation => "validation",
+            Self::Administrative => "administrative",
+        }
+    }
+
+    fn parse(value: Option<&str>, origin: PlanNodeOrigin) -> Self {
+        match value {
+            Some("validation") => Self::Validation,
+            Some("administrative") => Self::Administrative,
+            Some("execution") => Self::Execution,
+            None if origin == PlanNodeOrigin::TaskBootstrap => Self::Administrative,
+            _ => Self::Execution,
+        }
+    }
+}
+
+impl Default for PlanNodeRole {
+    fn default() -> Self {
+        Self::Execution
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanNodeProjection {
     pub node_id: String,
@@ -72,6 +150,18 @@ pub struct PlanNodeProjection {
     pub scope: Vec<String>,
     #[serde(default)]
     pub criterion_ids: BTreeSet<String>,
+    #[serde(default)]
+    pub origin: PlanNodeOrigin,
+    #[serde(default)]
+    pub role: PlanNodeRole,
+    #[serde(default)]
+    pub origin_contract_version: u32,
+}
+
+impl PlanNodeProjection {
+    pub fn is_historical_bootstrap(&self) -> bool {
+        self.origin == PlanNodeOrigin::TaskBootstrap && self.role == PlanNodeRole::Administrative
+    }
 }
 
 pub fn is_terminal_plan_node_state(state: &str) -> bool {
@@ -171,6 +261,18 @@ impl TaskLifecycleProjection {
                         || criterion.state == CriterionState::NotApplicable)
                 })
             })
+    }
+
+    pub fn effective_nodes(&self) -> impl Iterator<Item = (&String, &PlanNodeProjection)> {
+        self.nodes
+            .iter()
+            .filter(|(_, node)| !node.is_historical_bootstrap())
+    }
+
+    pub fn effective_node(&self, node_id: &str) -> Option<&PlanNodeProjection> {
+        self.nodes
+            .get(node_id)
+            .filter(|node| !node.is_historical_bootstrap())
     }
 
     pub fn has_open_findings(&self) -> bool {
@@ -299,6 +401,9 @@ impl From<PlanAddNodeCommand> for LifecycleCommand {
             "scope": command.scope,
             "dependencies": command.dependencies,
             "criterion_ids": command.criterion_ids,
+            "origin": PlanNodeOrigin::Authored.as_str(),
+            "role": PlanNodeRole::Execution.as_str(),
+            "origin_contract_version": PLAN_NODE_ORIGIN_CONTRACT_VERSION,
         });
         let node_id = payload["node_id"].as_str().unwrap_or_default().to_owned();
         command
@@ -494,6 +599,12 @@ fn apply_event(projection: &mut TaskLifecycleProjection, event: &V3EventEnvelope
             else {
                 return;
             };
+            let origin = PlanNodeOrigin::parse(
+                payload.get("origin").and_then(Value::as_str),
+                &event.actor,
+                &node_id,
+            );
+            let role = PlanNodeRole::parse(payload.get("role").and_then(Value::as_str), origin);
             projection.nodes.insert(
                 node_id.clone(),
                 PlanNodeProjection {
@@ -504,6 +615,12 @@ fn apply_event(projection: &mut TaskLifecycleProjection, event: &V3EventEnvelope
                     dependencies: string_set(payload, "dependencies"),
                     scope: string_vec(payload, "scope"),
                     criterion_ids: string_set(payload, "criterion_ids"),
+                    origin,
+                    role,
+                    origin_contract_version: payload
+                        .get("origin_contract_version")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0) as u32,
                 },
             );
         }
@@ -656,6 +773,12 @@ fn apply_event(projection: &mut TaskLifecycleProjection, event: &V3EventEnvelope
                     state: state.to_owned(),
                     coverage: coverage.to_owned(),
                 });
+            if let Some(node_id) = event.node_id.as_ref().map(|id| id.0.clone()) {
+                entry.node_id = Some(node_id);
+            }
+            if let Some(host) = payload.get("host").and_then(Value::as_str) {
+                entry.host = host.to_owned();
+            }
             entry.state = state.to_owned();
             entry.coverage = coverage.to_owned();
         }

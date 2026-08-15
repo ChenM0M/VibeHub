@@ -105,6 +105,8 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
     currentScenario,
     projectPath: activeProjectPath,
     selectedTaskId,
+    cockpitTab,
+    setCockpitTab,
     selectScenario,
     selectProject,
     selectTask,
@@ -147,7 +149,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   } = useV3Store();
   const [sourceMode, setSourceMode] = useState<V3SourceMode>(initialSourceMode);
   const [showScenarioDropdown, setShowScenarioDropdown] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const activeTab = cockpitTab;
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [highlightModuleId, setHighlightModuleId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -161,6 +163,10 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   const [taskIntent, setTaskIntent] = useState("");
   const [taskWorkflowProfile, setTaskWorkflowProfile] = useState<V3TaskCreateRequest["workflow_profile"]>("standard");
   const [taskCriteria, setTaskCriteria] = useState("");
+  const [taskInitialPlanEnabled, setTaskInitialPlanEnabled] = useState(false);
+  const [taskPlanTitle, setTaskPlanTitle] = useState("");
+  const [taskPlanGoal, setTaskPlanGoal] = useState("");
+  const [taskPlanScope, setTaskPlanScope] = useState("");
   const [taskCreatePending, setTaskCreatePending] = useState(false);
   const [taskCreateError, setTaskCreateError] = useState<string | null>(null);
   const [planMutationError, setPlanMutationError] = useState<string | null>(null);
@@ -188,17 +194,32 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
     setTaskCreatePending(true);
     setTaskCreateError(null);
     try {
+      const initialPlan = taskInitialPlanEnabled && taskWorkflowProfile !== "lightweight"
+        ? [{
+            title: taskPlanTitle.trim() || taskTitle.trim(),
+            goal: taskPlanGoal.trim() || taskIntent.trim(),
+            scope: taskPlanScope.split("\n").map((item) => item.trim()).filter(Boolean),
+            depends_on: [],
+            criteria: criteria.map((_, index) => index + 1),
+            role: "execution" as const,
+          }]
+        : [];
       await createTask(projectPath, {
         title: taskTitle.trim(),
         intent: taskIntent.trim(),
         acceptance_criteria: criteria,
         workflow_profile: taskWorkflowProfile ?? "standard",
+        initial_plan: initialPlan,
       });
       setShowCreateTask(false);
       setTaskTitle("");
       setTaskIntent("");
       setTaskCriteria("");
       setTaskWorkflowProfile("standard");
+      setTaskInitialPlanEnabled(false);
+      setTaskPlanTitle("");
+      setTaskPlanGoal("");
+      setTaskPlanScope("");
       await loadCurrentBundle();
     } catch (err) {
       setTaskCreateError((err as Error).message);
@@ -351,7 +372,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   }, [timeline]);
 
   function renderCreateTaskDialog() {
-    return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => !taskCreatePending && setShowCreateTask(false)}><div role="dialog" aria-modal="true" aria-labelledby="v3-create-task-title" className="w-full max-w-lg space-y-4 rounded-lg border border-border bg-background p-6 shadow-xl" onClick={(event) => event.stopPropagation()}><div><h3 id="v3-create-task-title" className="text-lg font-semibold">{t("v3.cockpit.create.title")}</h3><p className="mt-1 text-sm text-muted-foreground">{t("v3.cockpit.create.description")}</p></div><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.create.titleLabel")}</span><input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.titlePlaceholder")} /></label><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.create.intentLabel")}</span><textarea value={taskIntent} onChange={(event) => setTaskIntent(event.target.value)} className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.intentPlaceholder")} /></label><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.workflowLabel")}</span><select value={taskWorkflowProfile} onChange={(event) => setTaskWorkflowProfile(event.target.value as V3TaskCreateRequest["workflow_profile"])} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="lightweight">{t("v3.cockpit.workflow.lightweight")}</option><option value="standard">{t("v3.cockpit.workflow.standard")}</option><option value="full">{t("v3.cockpit.workflow.full")}</option></select><span className="text-[11px] text-muted-foreground">{t("v3.cockpit.workflowHint")}</span></label><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.create.criteriaLabel")}</span><textarea value={taskCriteria} onChange={(event) => setTaskCriteria(event.target.value)} className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.criteriaPlaceholder")} /></label>{taskCreateError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{taskCreateError}</div>}<div className="flex justify-end gap-2"><Button variant="outline" disabled={taskCreatePending} onClick={() => setShowCreateTask(false)}>{t("v3.common.cancel")}</Button><Button disabled={taskCreatePending} onClick={() => void submitTask()}>{t(taskCreatePending ? "v3.cockpit.create.creating" : "v3.cockpit.create.submit")}</Button></div></div></div>;
+    return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => !taskCreatePending && setShowCreateTask(false)}><div role="dialog" aria-modal="true" aria-labelledby="v3-create-task-title" className="w-full max-w-lg space-y-4 rounded-lg border border-border bg-background p-6 shadow-xl" onClick={(event) => event.stopPropagation()}><div><h3 id="v3-create-task-title" className="text-lg font-semibold">{t("v3.cockpit.create.title")}</h3><p className="mt-1 text-sm text-muted-foreground">{t("v3.cockpit.create.description")}</p></div><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.create.titleLabel")}</span><input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.titlePlaceholder")} /></label><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.create.intentLabel")}</span><textarea value={taskIntent} onChange={(event) => setTaskIntent(event.target.value)} className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.intentPlaceholder")} /></label><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.workflowLabel")}</span><select value={taskWorkflowProfile} onChange={(event) => { const value = event.target.value as V3TaskCreateRequest["workflow_profile"]; setTaskWorkflowProfile(value); if (value === "lightweight") setTaskInitialPlanEnabled(false); }} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="lightweight">{t("v3.cockpit.workflow.lightweight")}</option><option value="standard">{t("v3.cockpit.workflow.standard")}</option><option value="full">{t("v3.cockpit.workflow.full")}</option></select><span className="text-[11px] text-muted-foreground">{t("v3.cockpit.workflowHint")}</span></label><label className="block space-y-1"><span className="text-sm font-medium">{t("v3.cockpit.create.criteriaLabel")}</span><textarea value={taskCriteria} onChange={(event) => setTaskCriteria(event.target.value)} className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.criteriaPlaceholder")} /></label>{taskWorkflowProfile !== "lightweight" && <fieldset className="space-y-2 rounded-md border border-border/60 p-3"><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={taskInitialPlanEnabled} onChange={(event) => setTaskInitialPlanEnabled(event.target.checked)} className="mt-0.5" /><span><span className="font-medium">{t("v3.cockpit.create.initialPlanLabel")}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">{t("v3.cockpit.create.initialPlanHint")}</span></span></label>{taskInitialPlanEnabled && <div className="space-y-2 border-t border-border/50 pt-2"><input value={taskPlanTitle} onChange={(event) => setTaskPlanTitle(event.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.planTitlePlaceholder")} /><textarea value={taskPlanGoal} onChange={(event) => setTaskPlanGoal(event.target.value)} className="min-h-16 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.planGoalPlaceholder")} /><textarea value={taskPlanScope} onChange={(event) => setTaskPlanScope(event.target.value)} className="min-h-16 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder={t("v3.cockpit.create.planScopePlaceholder")} /></div>}</fieldset>}{taskCreateError && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{taskCreateError}</div>}<div className="flex justify-end gap-2"><Button variant="outline" disabled={taskCreatePending} onClick={() => setShowCreateTask(false)}>{t("v3.common.cancel")}</Button><Button disabled={taskCreatePending} onClick={() => void submitTask()}>{t(taskCreatePending ? "v3.cockpit.create.creating" : "v3.cockpit.create.submit")}</Button></div></div></div>;
   }
 
   function renderProjectSetupModal() {
@@ -481,14 +502,14 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
 
   const renderOverview = () => (
     <div className="grid h-full gap-4 lg:grid-cols-2">
-      <div className="flex flex-col gap-4 overflow-auto pr-1">
+      <div className="flex min-w-0 flex-col gap-4 overflow-x-hidden overflow-y-auto pr-1">
         <BlockerDetailsPanel blockers={selectedTask?.blocker_details ?? timeline.blocker_details} />
         <div className="bg-card rounded-md shadow-sm p-5 border border-border/30">
           <AcceptanceProgress criteria={criteria} />
         </div>
         <AIUsagePanel scope="task" taskId={selectedTask?.task_id ?? null} usage={taskUsage} loading={taskUsageLoading} error={taskUsageError} onRefresh={() => void loadTaskUsage(selectedTask?.task_id ?? null)} />
       </div>
-      <div className="bg-card rounded-md shadow-sm p-5 border border-border/30 overflow-auto">
+      <div className="min-w-0 overflow-x-hidden overflow-y-auto rounded-md border border-border/30 bg-card p-5 shadow-sm">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><FileText className="h-4 w-4 text-muted-foreground" />{t("v3.cockpit.agentResults")}</div>
         {selectedTaskId === agentResults.task_id ? (
           <V3PanelErrorBoundary resetKey={`${agentResults.task_id}:${agentResults.generated_at}`} title={t("v3.cockpit.agentResultsUnavailable")}>
@@ -574,7 +595,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
       if (kind === "dependencies") await planApi.setDependencies(projectPath, { ...identity, node_id: input.nodeId, dependencies: input.dependencies ?? [] });
       if (kind === "state") await planApi.setState(projectPath, { ...identity, node_id: input.nodeId, state: input.state! });
       await loadCurrentBundle();
-      setActiveTab("plan");
+      setCockpitTab("plan");
       return true;
     } catch (err) {
       setPlanMutationError(err instanceof Error ? err.message : String(err));
@@ -684,7 +705,9 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
                     <div className="relative z-10">
                       <div className="flex items-start gap-2">
                         <div className="line-clamp-2 flex-1 text-sm font-medium leading-snug">{task.title}</div>
-                        {overview.current_task_id === task.task_id && <span className="shrink-0 rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">{t("v3.cockpit.current")}</span>}
+                        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                          {overview.current_task_id === task.task_id && <span className="rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">{t("v3.cockpit.current")}</span>}
+                        </div>
                       </div>
                       <div className="mt-1.5 flex items-center gap-2 text-xs">
                         <span className="flex items-center gap-1.5">
@@ -762,7 +785,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
               const Icon = tab.icon;
               const active = activeTab === tab.id;
               return (
-                <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={cn("relative flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors", active ? "text-foreground font-medium" : "text-muted-foreground hover:text-foreground")}>
+                <button key={tab.id} type="button" onClick={() => setCockpitTab(tab.id)} className={cn("relative flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors", active ? "text-foreground font-medium" : "text-muted-foreground hover:text-foreground")}>
                   <Icon className="h-3.5 w-3.5" />{t(tab.labelKey)}
                   {active && (
                     <motion.div

@@ -312,6 +312,7 @@ mod tests {
                 workflow_profile: "standard".to_owned(),
                 trigger_context: Default::default(),
                 profile_override: None,
+                initial_plan: Vec::new(),
             },
         )
         .unwrap();
@@ -366,6 +367,7 @@ mod tests {
                 workflow_profile: "standard".to_owned(),
                 trigger_context: Default::default(),
                 profile_override: None,
+                initial_plan: Vec::new(),
             },
         )
         .unwrap();
