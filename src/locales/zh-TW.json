@@ -842,6 +842,11 @@
         "intentPlaceholder": "描述此任務要達成的結果",
         "criteriaLabel": "驗收標準",
         "criteriaPlaceholder": "每行一項，例如：\n建置通過\n錯誤狀態可見",
+        "initialPlanLabel": "建立時寫入初始實作計畫",
+        "initialPlanHint": "可立即寫入一個涵蓋全部驗收標準的真實 authored 節點；不勾選則保持空計畫並進入 planning。",
+        "planTitlePlaceholder": "初始節點標題（留空使用任務標題）",
+        "planGoalPlaceholder": "初始節點目標（留空使用任務目標）",
+        "planScopePlaceholder": "初始節點範圍，每行一項（可選）",
         "validation": "請填寫任務標題、目標和至少一項驗收標準",
         "creating": "建立中…",
         "submit": "建立任務"
@@ -1453,7 +1458,7 @@
     },
     "plan": {
       "title": "實作計畫",
-      "description": "記錄實作路徑、相依項目、節點狀態與執行工作階段；驗收門檻請見「驗收進度」。",
+      "description": "記錄實作路徑、相依項目、節點狀態與執行工作階段；相依層只表示並行候選，不代表已執行；驗收門檻請見「驗收進度」。",
       "noSessions": "暫無工作階段",
       "completedCount": "{{completed}}/{{total}} 節點完成",
       "activeCount": "{{count}} 進行中",
@@ -1463,7 +1468,17 @@
       "editDependencies": "編輯相依項目",
       "updateState": "更新狀態",
       "emptyTitle": "暫無已記錄的實作路徑",
-      "emptyDescription": "V3 僅顯示透過計畫命令記錄的節點；驗收標準不會自動成為計畫節點。",
+      "emptyDescription": "目前任務仍處於 planning，尚未記錄真實實作節點。請先建立計畫；取消操作不能把佔位節點偽裝成已執行計畫。",
+      "parallelCandidate": "相依層 {{layer}} 的並行候選（不代表已並行執行）",
+      "executionStateLabel": "執行事實：{{value}}",
+      "executionEvidence": "Session {{sessions}} · Agent result {{results}}",
+      "executionState": {
+        "not_started": "尚無執行事實",
+        "session_active": "Session 執行中",
+        "observed": "已觀察 Session，尚無 terminal result",
+        "succeeded": "已有成功 Agent result",
+        "failed": "已有失敗 Agent result"
+      },
       "lightweightTitle": "輕量任務不需要計畫圖",
       "lightweightDescription": "此任務只保留最小 session、結果和必要風險記錄，不會建立或提示補建計畫節點。",
       "agentDistribution": "Agent 調度與分布",
@@ -1563,6 +1578,190 @@
       }
     }
   },
+  "agentProfiles": {
+    "title": "Agent 設定",
+    "navLabel": "Agent 設定",
+    "subtitle": "管理 Provider、模型、思考層級與預設項目。協定轉接和憑證讀取由背景處理。",
+    "securityNote": "只儲存憑證參照，不讀取 Secret",
+    "selectAgent": "選擇 Agent",
+    "runtimeTarget": "執行環境",
+    "selectRuntimeTarget": "選擇 Agent 執行環境",
+    "discoveringRuntimes": "正在探索本機和 WSL…",
+    "selectRuntime": "選擇執行環境",
+    "refreshProfiles": "重新整理 Profile 清單",
+    "loadingProfiles": "正在讀取真實設定與版本…",
+    "agents": {
+      "opencodeDescription": "Provider、模型和 variants",
+      "claudeCodeDescription": "settings Profile 和思考開關",
+      "codexDescription": "TOML Profile 和 reasoning"
+    },
+    "common": {
+      "add": "新增",
+      "applyToDraft": "套用至草稿",
+      "cancel": "取消",
+      "confirmDelete": "確認刪除",
+      "default": "預設",
+      "defaultProfile": "預設 Profile",
+      "delete": "刪除",
+      "notConfigured": "尚未設定",
+      "notSelected": "尚未選擇",
+      "refresh": "重新整理",
+      "rename": "重新命名",
+      "save": "儲存",
+      "unknown": "未知",
+      "unsaved": "尚未儲存"
+    },
+    "compatibility": {
+      "editable": "可編輯",
+      "partial": "部分支援",
+      "partialShort": "部分",
+      "readOnly": "唯讀"
+    },
+    "empty": {
+      "noProfilesTitle": "這個執行環境尚未設定",
+      "noProfilesDescription": "{{agent}} 的設定會顯示在這裡。建立後返回此頁重新整理即可。",
+      "selectRuntimeTitle": "請先選擇執行環境",
+      "selectRuntimeDescription": "VibeHub 會分開處理 macOS、Windows 和每個 WSL 發行版，不會猜測路徑。"
+    },
+    "profiles": {
+      "title": "Profiles",
+      "listLabel": "Profile 清單",
+      "count": "{{count}} 個設定",
+      "create": "新增 Profile",
+      "cloneCurrent": "複製目前 Profile",
+      "openCodeSingle": "OpenCode 使用單一設定"
+    },
+    "actions": {
+      "setDefault": "設為預設",
+      "launchOnce": "僅此次啟動"
+    },
+    "route": {
+      "adapter": "自動轉接",
+      "direct": "直接連線",
+      "pending": "協定待確認"
+    },
+    "credentials": {
+      "notConfigured": "尚未設定憑證參照",
+      "none": "不使用憑證",
+      "environment": "環境變數參照",
+      "agentManaged": "由 Agent 自行管理"
+    },
+    "providers": {
+      "title": "Provider 與模型",
+      "description": "新增、編輯和刪除都在圖形化編輯器中完成，儲存時才寫回原生設定。",
+      "add": "新增 Provider",
+      "edit": "編輯 Provider",
+      "delete": "刪除 Provider",
+      "deleteNamed": "刪除 {{name}}",
+      "empty": "尚無 Provider。點擊「新增 Provider」開始設定。"
+    },
+    "models": {
+      "count": "{{count}} 個模型",
+      "add": "新增模型",
+      "edit": "編輯模型",
+      "editNamed": "編輯 {{name}}",
+      "delete": "刪除模型",
+      "deleteNamed": "刪除 {{name}}",
+      "disabled": "已停用",
+      "currentDefault": "目前預設",
+      "noThinkingOptions": "尚未宣告思考層級",
+      "empty": "這個 Provider 尚無模型。點擊「新增模型」以表單新增。"
+    },
+    "advanced": {
+      "sectionLabel": "進階備援設定",
+      "title": "進階 JSON/TOML 備援",
+      "description": "僅用於查看原生來源或處理未受管欄位，不是新增模型的主要入口",
+      "managedProjection": "受管投影（可選擇編輯）",
+      "editorLabel": "進階 JSON/TOML 設定編輯器",
+      "nativeSource": "原生來源",
+      "protocolDiagnostics": "協定診斷",
+      "unmanagedNote": "未知欄位、permissions、hooks、MCP、sandbox 等未受管內容不會被圖形化編輯器覆寫。"
+    },
+    "backup": {
+      "available": "本次寫入已建立可復原備份",
+      "restore": "復原本次備份"
+    },
+    "forms": {
+      "displayName": "顯示名稱",
+      "credentialKind": "憑證參照類型",
+      "credentialReference": "憑證參照",
+      "displayText": "介面顯示",
+      "nativeProtocol": "原生協定",
+      "upstreamProtocol": "上游協定",
+      "enableModel": "啟用模型",
+      "supportsReasoning": "支援 reasoning",
+      "supportsEffort": "支援思考層級",
+      "thinkingOptions": "思考層級 / variants",
+      "thinkingOptionsHint": "點擊層級設為預設；右側 × 僅從草稿移除。",
+      "defaultThinking": "預設思考層級",
+      "deleteVariant": "刪除 variant {{option}}",
+      "addVariant": "新增 variant",
+      "allowCustomEffort": "允許自訂思考層級"
+    },
+    "dialogs": {
+      "profile": {
+        "titles": {
+          "create": "新增 Profile",
+          "clone": "複製 Profile",
+          "rename": "重新命名 Profile",
+          "delete": "刪除 Profile"
+        },
+        "description": "使用圖形化表單管理 Profile 檔名，原始設定內容會由 VibeHub 保留。",
+        "deleteDescription": "確定要刪除「{{name}}」嗎？刪除操作仍會經過預設 Profile 門禁。",
+        "replacement": "替代預設 Profile",
+        "selectReplacement": "選擇替代項目",
+        "name": "Profile 名稱"
+      },
+      "entityDelete": {
+        "providerTitle": "刪除 Provider",
+        "modelTitle": "刪除模型",
+        "description": "刪除「{{name}}」後，儲存草稿才會真正寫回設定。目前預設項目會自動切換到可用的替代項目。"
+      },
+      "provider": {
+        "createTitle": "新增 Provider",
+        "editTitle": "編輯 Provider",
+        "description": "填寫 Provider 基本資訊和憑證參照。不會讀取或儲存 API Key 原文。",
+        "protocolNote": "協定只描述連線能力，不會把 Secret 寫入設定。Claude Code 的原生 Provider 和協定由轉接器固定維護。"
+      },
+      "model": {
+        "createTitle": "新增模型",
+        "editTitle": "編輯模型",
+        "description": "模型 ID、顯示名稱、啟用狀態、思考層級和 variants 都可在此修改。",
+        "capabilityNote": "Claude Code 和 Codex 的原生模型能力較窄；介面保留一致的編輯體驗，轉接器只寫回真正支援的欄位。"
+      }
+    },
+    "notices": {
+      "noTargets": "沒有找到可用的本機或 WSL 執行環境。",
+      "saved": "設定已儲存；版本、備份和原子寫回門禁均已通過。",
+      "defaultChanged": "預設 Profile 已切換；未受管欄位保持原樣。",
+      "launched": "Agent 已啟動；協定轉換和 Sidecar 由背景依能力證據處理。",
+      "restored": "已從同目錄備份復原，並重新讀取目前版本。",
+      "profileCreated": "已建立 Profile「{{name}}」。",
+      "profileCloned": "已複製 Profile「{{name}}」。",
+      "profileRenamed": "Profile 已重新命名為「{{name}}」。",
+      "profileDeleted": "Profile 已刪除。",
+      "claudeSingleProvider": "Claude Code 原生 settings 只提供一個 Anthropic Provider；請編輯既有 Provider 欄位。",
+      "claudeCannotDeleteProvider": "Claude Code 的原生 settings 不支援刪除唯一的 Provider。",
+      "advancedApplied": "進階 JSON 已載入草稿；儲存仍沿用同一套 Schema、版本、備份和原子寫回門禁。"
+    },
+    "errors": {
+      "desktopRuntimeRequired": "目前頁面未連線至 VibeHub 桌面執行環境，請在應用程式視窗中讀取本機設定。",
+      "saveFailed": "{{message}}；請重新讀取後再儲存。",
+      "activateFailed": "{{message}}；預設切換未覆寫外部較新的內容。",
+      "restoreFailed": "{{message}}；備份未被刪除。",
+      "profileNameRequired": "請輸入 Profile 名稱。",
+      "replacementRequired": "目前 Profile 是預設項目，請先選擇替代 Profile。",
+      "providerIdInvalid": "Provider ID 必須是非空的字母、數字、點、底線或連字號。",
+      "providerNameRequired": "請輸入 Provider 顯示名稱。",
+      "baseUrlInvalid": "Base URL 不是有效的 URL。",
+      "providerExists": "此 Provider ID 已存在。",
+      "credentialReferenceInvalid": "環境變數參照格式不正確，例如 OPENAI_API_KEY。",
+      "modelFieldsRequired": "Model ID 和顯示名稱都不能為空。",
+      "modelExists": "此 Model ID 已存在於目前 Provider。",
+      "advancedIdentityImmutable": "Profile ID 或執行環境不能在進階編輯器中修改。",
+      "advancedProvidersMissing": "進階設定缺少 managed.providers。"
+    }
+  },
   "update": {
     "newVersion": "發現新版本",
     "later": "稍後提醒",
@@ -1588,6 +1787,24 @@
   "tabs": {
     "ariaLabel": "已開啟的專案標籤",
     "close": "關閉標籤",
-    "listAll": "顯示全部標籤"
+    "listAll": "顯示全部標籤",
+    "restoring": "正在恢復…",
+    "retryRestore": "重試",
+    "openProjectList": "開啟專案列表",
+    "diagnostics": {
+      "workspace_state": {
+        "migrated_from_legacy_v2": "已恢復更新前版本的工作區標籤，並安全遷移至新格式。",
+        "migrated_from_transitional_v1": "已保留過渡版本的工作區狀態，並遷移至正式格式。",
+        "recovered_from_backup": "上次工作區狀態損壞，已從備份恢復。",
+        "invalid": "已儲存的工作區狀態損壞，請重新開啟專案以重建。",
+        "project_missing": "有專案已無法存取，已從標籤中安全移除。",
+        "project_identity_changed": "有專案的身分或路徑已變更，已從標籤中安全移除。",
+        "project_inaccessible": "有專案路徑不存在或無法存取，已從標籤中安全移除。",
+        "duplicate_project_id": "恢復結果中的重複專案身分已移除。",
+        "duplicate_canonical_path": "恢復結果中的重複或別名路徑已移除。",
+        "active_project_removed": "Active Project 已不再屬於有效的開啟標籤。",
+        "persistence_failed": "最新標籤變更儲存失敗。"
+      }
+    }
   }
 }

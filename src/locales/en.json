@@ -842,6 +842,11 @@
         "intentPlaceholder": "Describe the outcome this task should achieve",
         "criteriaLabel": "Acceptance criteria",
         "criteriaPlaceholder": "One per line, for example:\nBuild passes\nError state is visible",
+        "initialPlanLabel": "Write an initial implementation plan at creation",
+        "initialPlanHint": "Writes one real authored node covering every acceptance criterion; leave it off to keep an empty plan in planning.",
+        "planTitlePlaceholder": "Initial node title (blank uses task title)",
+        "planGoalPlaceholder": "Initial node goal (blank uses task goal)",
+        "planScopePlaceholder": "Initial node scope, one item per line (optional)",
         "validation": "Enter a title, goal, and at least one acceptance criterion",
         "creating": "Creating…",
         "submit": "Create task"
@@ -1456,7 +1461,7 @@
     },
     "plan": {
       "title": "Implementation plan",
-      "description": "Record implementation paths, dependencies, node states, and execution sessions; see Acceptance progress for completion gates.",
+      "description": "Record implementation paths, dependencies, node states, and execution sessions; dependency layers are only parallel candidates, not execution claims; see Acceptance progress for completion gates.",
       "noSessions": "No sessions",
       "completedCount": "{{completed}}/{{total}} nodes completed",
       "activeCount": "{{count}} active",
@@ -1466,7 +1471,17 @@
       "editDependencies": "Edit dependencies",
       "updateState": "Update state",
       "emptyTitle": "No implementation path recorded",
-      "emptyDescription": "V3 shows only nodes recorded through plan commands; acceptance criteria do not automatically become plan nodes.",
+      "emptyDescription": "This task is still planning with no real implementation node. Create a plan first; cancelling a placeholder cannot turn it into an executed plan.",
+      "parallelCandidate": "Layer {{layer}} parallel candidate (not an execution claim)",
+      "executionStateLabel": "Execution facts: {{value}}",
+      "executionEvidence": "Sessions {{sessions}} · Agent results {{results}}",
+      "executionState": {
+        "not_started": "No execution facts",
+        "session_active": "Session active",
+        "observed": "Session observed; no terminal result",
+        "succeeded": "Successful Agent result recorded",
+        "failed": "Failed Agent result recorded"
+      },
       "lightweightTitle": "Lightweight tasks do not need a plan graph",
       "lightweightDescription": "This task keeps only the minimal session, result, and necessary risk records; no plan node is created or requested.",
       "agentDistribution": "Agent scheduling and distribution",
@@ -1566,6 +1581,190 @@
       }
     }
   },
+  "agentProfiles": {
+    "title": "Agent Profiles",
+    "navLabel": "Agent Profiles",
+    "subtitle": "Manage providers, models, reasoning levels, and defaults. Protocol adaptation and credential access run in the background.",
+    "securityNote": "Stores credential references only; never reads secrets",
+    "selectAgent": "Select an Agent",
+    "runtimeTarget": "Runtime target",
+    "selectRuntimeTarget": "Select an Agent runtime target",
+    "discoveringRuntimes": "Discovering local and WSL runtimes…",
+    "selectRuntime": "Select a runtime",
+    "refreshProfiles": "Refresh Profile list",
+    "loadingProfiles": "Reading the real configuration and revision…",
+    "agents": {
+      "opencodeDescription": "Providers, models, and variants",
+      "claudeCodeDescription": "Settings Profiles and thinking controls",
+      "codexDescription": "TOML Profiles and reasoning"
+    },
+    "common": {
+      "add": "Add",
+      "applyToDraft": "Apply to draft",
+      "cancel": "Cancel",
+      "confirmDelete": "Delete",
+      "default": "Default",
+      "defaultProfile": "Default Profile",
+      "delete": "Delete",
+      "notConfigured": "Not configured",
+      "notSelected": "Not selected",
+      "refresh": "Refresh",
+      "rename": "Rename",
+      "save": "Save",
+      "unknown": "Unknown",
+      "unsaved": "Unsaved"
+    },
+    "compatibility": {
+      "editable": "Editable",
+      "partial": "Partially supported",
+      "partialShort": "Partial",
+      "readOnly": "Read only"
+    },
+    "empty": {
+      "noProfilesTitle": "No configuration for this runtime",
+      "noProfilesDescription": "{{agent}} configuration will appear here. Return and refresh after creating it.",
+      "selectRuntimeTitle": "Select a runtime first",
+      "selectRuntimeDescription": "VibeHub keeps macOS, Windows, and every WSL distribution separate and never guesses paths."
+    },
+    "profiles": {
+      "title": "Profiles",
+      "listLabel": "Profile list",
+      "count": "{{count}} Profiles",
+      "create": "Create Profile",
+      "cloneCurrent": "Clone current Profile",
+      "openCodeSingle": "OpenCode uses one configuration"
+    },
+    "actions": {
+      "setDefault": "Set as default",
+      "launchOnce": "Launch once"
+    },
+    "route": {
+      "adapter": "Automatic adaptation",
+      "direct": "Direct",
+      "pending": "Protocol pending"
+    },
+    "credentials": {
+      "notConfigured": "No credential reference",
+      "none": "No credentials",
+      "environment": "Environment variable reference",
+      "agentManaged": "Managed by the Agent"
+    },
+    "providers": {
+      "title": "Providers and models",
+      "description": "Add, edit, and delete through the visual editor, then save to write the native configuration.",
+      "add": "Add Provider",
+      "edit": "Edit Provider",
+      "delete": "Delete Provider",
+      "deleteNamed": "Delete {{name}}",
+      "empty": "No Provider yet. Select “Add Provider” to get started."
+    },
+    "models": {
+      "count": "{{count}} models",
+      "add": "Add model",
+      "edit": "Edit model",
+      "editNamed": "Edit {{name}}",
+      "delete": "Delete model",
+      "deleteNamed": "Delete {{name}}",
+      "disabled": "Disabled",
+      "currentDefault": "Current default",
+      "noThinkingOptions": "No reasoning levels declared",
+      "empty": "This Provider has no models. Select “Add model” to create one with the form."
+    },
+    "advanced": {
+      "sectionLabel": "Advanced fallback configuration",
+      "title": "Advanced JSON/TOML fallback",
+      "description": "Use this only to inspect native sources or handle unmanaged fields, not as the primary model editor",
+      "managedProjection": "Managed projection (optional editing)",
+      "editorLabel": "Advanced JSON/TOML configuration editor",
+      "nativeSource": "Native source",
+      "protocolDiagnostics": "Protocol diagnostics",
+      "unmanagedNote": "The visual editor preserves unmanaged fields such as unknown properties, permissions, hooks, MCP, and sandbox settings."
+    },
+    "backup": {
+      "available": "A recoverable backup was created for this write",
+      "restore": "Restore this backup"
+    },
+    "forms": {
+      "displayName": "Display name",
+      "credentialKind": "Credential reference type",
+      "credentialReference": "Credential reference",
+      "displayText": "Display text",
+      "nativeProtocol": "Native protocol",
+      "upstreamProtocol": "Upstream protocol",
+      "enableModel": "Enable model",
+      "supportsReasoning": "Supports reasoning",
+      "supportsEffort": "Supports reasoning levels",
+      "thinkingOptions": "Reasoning levels / variants",
+      "thinkingOptionsHint": "Select a level to make it the default; × removes it from the draft only.",
+      "defaultThinking": "Default reasoning level",
+      "deleteVariant": "Delete variant {{option}}",
+      "addVariant": "Add variant",
+      "allowCustomEffort": "Allow custom reasoning levels"
+    },
+    "dialogs": {
+      "profile": {
+        "titles": {
+          "create": "Create Profile",
+          "clone": "Clone Profile",
+          "rename": "Rename Profile",
+          "delete": "Delete Profile"
+        },
+        "description": "Manage Profile filenames with the visual form. VibeHub preserves the original configuration content.",
+        "deleteDescription": "Delete “{{name}}”? The default Profile guard still applies.",
+        "replacement": "Replacement default Profile",
+        "selectReplacement": "Select a replacement",
+        "name": "Profile name"
+      },
+      "entityDelete": {
+        "providerTitle": "Delete Provider",
+        "modelTitle": "Delete model",
+        "description": "Deleting “{{name}}” changes the draft only until you save. The default automatically moves to an available replacement."
+      },
+      "provider": {
+        "createTitle": "Add Provider",
+        "editTitle": "Edit Provider",
+        "description": "Enter the Provider details and credential reference. The API key value is never read or stored here.",
+        "protocolNote": "Protocols describe connection capability only and never write a secret into the configuration. The adapter owns Claude Code's native Provider and protocol."
+      },
+      "model": {
+        "createTitle": "Add model",
+        "editTitle": "Edit model",
+        "description": "Edit the model ID, display name, enabled state, reasoning levels, and variants.",
+        "capabilityNote": "Claude Code and Codex expose narrower native model controls. The UI keeps one editing experience while each adapter writes only supported fields."
+      }
+    },
+    "notices": {
+      "noTargets": "No local or WSL runtime target was found.",
+      "saved": "Configuration saved. Revision, backup, and atomic-write guards all passed.",
+      "defaultChanged": "Default Profile changed. Unmanaged fields were preserved.",
+      "launched": "Agent launched. Protocol conversion and the Sidecar are handled in the background from capability evidence.",
+      "restored": "Restored from the adjacent backup and read the current revision again.",
+      "profileCreated": "Created Profile “{{name}}”.",
+      "profileCloned": "Cloned Profile “{{name}}”.",
+      "profileRenamed": "Renamed the Profile to “{{name}}”.",
+      "profileDeleted": "Profile deleted.",
+      "claudeSingleProvider": "Claude Code's native settings expose one Anthropic Provider. Edit the existing Provider fields.",
+      "claudeCannotDeleteProvider": "Claude Code's native settings do not allow deleting its only Provider.",
+      "advancedApplied": "Advanced JSON loaded into the draft. Save still uses the same schema, revision, backup, and atomic-write guards."
+    },
+    "errors": {
+      "desktopRuntimeRequired": "This page is not connected to the VibeHub desktop runtime. Open it in the app to read local configuration.",
+      "saveFailed": "{{message}} Read the configuration again before saving.",
+      "activateFailed": "{{message}} The default change did not overwrite newer external content.",
+      "restoreFailed": "{{message}} The backup was not deleted.",
+      "profileNameRequired": "Enter a Profile name.",
+      "replacementRequired": "This is the default Profile. Select a replacement first.",
+      "providerIdInvalid": "Provider ID must contain letters, numbers, dots, underscores, or hyphens.",
+      "providerNameRequired": "Enter a Provider display name.",
+      "baseUrlInvalid": "Base URL is not valid.",
+      "providerExists": "That Provider ID already exists.",
+      "credentialReferenceInvalid": "Use a valid environment variable reference, such as OPENAI_API_KEY.",
+      "modelFieldsRequired": "Model ID and display name are required.",
+      "modelExists": "That Model ID already exists under this Provider.",
+      "advancedIdentityImmutable": "Profile ID and runtime target cannot be changed in the advanced editor.",
+      "advancedProvidersMissing": "The advanced configuration is missing managed.providers."
+    }
+  },
   "update": {
     "newVersion": "New Version Available",
     "later": "Remind Later",
@@ -1591,6 +1790,24 @@
   "tabs": {
     "ariaLabel": "Open project tabs",
     "close": "Close tab",
-    "listAll": "Show all tabs"
+    "listAll": "Show all tabs",
+    "restoring": "Restoring…",
+    "retryRestore": "Retry",
+    "openProjectList": "Open project list",
+    "diagnostics": {
+      "workspace_state": {
+        "migrated_from_legacy_v2": "Workspace tabs from the previous version were restored and safely migrated.",
+        "migrated_from_transitional_v1": "Workspace state from the transitional version was preserved and migrated to the official format.",
+        "recovered_from_backup": "The last workspace state was damaged and has been recovered from a backup.",
+        "invalid": "The saved workspace state is damaged. Open projects again to rebuild it.",
+        "project_missing": "An open project is unavailable and was removed from the tabs.",
+        "project_identity_changed": "An open project changed identity or path and was removed from the tabs.",
+        "project_inaccessible": "An open project is not accessible and was removed from the tabs.",
+        "duplicate_project_id": "A duplicate project identity was removed from the restored tabs.",
+        "duplicate_canonical_path": "A duplicate or aliased project path was removed from the restored tabs.",
+        "active_project_removed": "The active project is no longer one of the valid open tabs.",
+        "persistence_failed": "The latest tab change could not be saved."
+      }
+    }
   }
 }

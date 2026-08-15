@@ -842,6 +842,11 @@
         "intentPlaceholder": "描述这个任务要达成的结果",
         "criteriaLabel": "验收标准",
         "criteriaPlaceholder": "每行一条，例如：\n构建通过\n错误状态可见",
+        "initialPlanLabel": "创建时写入初始实现计划",
+        "initialPlanHint": "可立即写入一个覆盖全部验收标准的真实 authored 节点；不勾选则保持空计划并进入 planning。",
+        "planTitlePlaceholder": "初始节点标题（留空使用任务标题）",
+        "planGoalPlaceholder": "初始节点目标（留空使用任务目标）",
+        "planScopePlaceholder": "初始节点范围，每行一项（可选）",
         "validation": "请填写任务标题、目标和至少一条验收标准",
         "creating": "创建中…",
         "submit": "创建任务"
@@ -1453,7 +1458,7 @@
     },
     "plan": {
       "title": "实现计划",
-      "description": "记录实现路径、依赖、节点状态和执行会话；验收门槛见“验收进度”。",
+      "description": "记录实现路径、依赖、节点状态和执行会话；依赖层只表示并行候选，不代表已经执行；验收门槛见“验收进度”。",
       "noSessions": "暂无会话",
       "completedCount": "{{completed}}/{{total}} 节点完成",
       "activeCount": "{{count}} 进行中",
@@ -1463,7 +1468,17 @@
       "editDependencies": "编辑依赖",
       "updateState": "更新状态",
       "emptyTitle": "暂无已记录的实现路径",
-      "emptyDescription": "V3 只有通过计划命令记录的节点才会出现在这里；验收标准不会自动变成计划节点。",
+      "emptyDescription": "当前任务仍处于 planning，尚未记录真实实现节点。请先建立计划；取消操作不能把占位节点伪装成已执行计划。",
+      "parallelCandidate": "依赖层 {{layer}} 的并行候选（不代表已并行执行）",
+      "executionStateLabel": "执行事实：{{value}}",
+      "executionEvidence": "Session {{sessions}} · Agent result {{results}}",
+      "executionState": {
+        "not_started": "尚无执行事实",
+        "session_active": "Session 执行中",
+        "observed": "已观察 Session，尚无 terminal result",
+        "succeeded": "已有成功 Agent result",
+        "failed": "已有失败 Agent result"
+      },
       "lightweightTitle": "轻量任务不需要计划图",
       "lightweightDescription": "该任务只保留最小 session、结果和必要风险记录，不会创建或提示补建计划节点。",
       "agentDistribution": "Agent 调度与分布",
@@ -1563,6 +1578,190 @@
       }
     }
   },
+  "agentProfiles": {
+    "title": "Agent 配置",
+    "navLabel": "Agent 配置",
+    "subtitle": "管理 Provider、模型、思考档位与默认项。协议适配和凭据读取由后台处理。",
+    "securityNote": "只保存凭据引用，不读取 Secret",
+    "selectAgent": "选择 Agent",
+    "runtimeTarget": "运行环境",
+    "selectRuntimeTarget": "选择 Agent 运行环境",
+    "discoveringRuntimes": "正在发现本机和 WSL…",
+    "selectRuntime": "选择运行环境",
+    "refreshProfiles": "刷新 Profile 列表",
+    "loadingProfiles": "正在读取真实配置与版本…",
+    "agents": {
+      "opencodeDescription": "Provider、模型和 variants",
+      "claudeCodeDescription": "settings Profile 和思考开关",
+      "codexDescription": "TOML Profile 和 reasoning"
+    },
+    "common": {
+      "add": "添加",
+      "applyToDraft": "应用到草稿",
+      "cancel": "取消",
+      "confirmDelete": "确认删除",
+      "default": "默认",
+      "defaultProfile": "默认 Profile",
+      "delete": "删除",
+      "notConfigured": "未配置",
+      "notSelected": "未选择",
+      "refresh": "刷新",
+      "rename": "重命名",
+      "save": "保存",
+      "unknown": "未知",
+      "unsaved": "未保存"
+    },
+    "compatibility": {
+      "editable": "可编辑",
+      "partial": "部分支持",
+      "partialShort": "部分",
+      "readOnly": "只读"
+    },
+    "empty": {
+      "noProfilesTitle": "这个运行环境还没有配置",
+      "noProfilesDescription": "{{agent}} 的配置会在这里呈现。创建后返回此页面刷新即可。",
+      "selectRuntimeTitle": "先选择一个运行环境",
+      "selectRuntimeDescription": "VibeHub 会把 macOS、Windows 和每个 WSL 发行版分开处理，不猜测路径。"
+    },
+    "profiles": {
+      "title": "Profiles",
+      "listLabel": "Profile 列表",
+      "count": "{{count}} 个配置",
+      "create": "新建 Profile",
+      "cloneCurrent": "复制当前 Profile",
+      "openCodeSingle": "OpenCode 使用单一配置"
+    },
+    "actions": {
+      "setDefault": "设为默认",
+      "launchOnce": "仅此次启动"
+    },
+    "route": {
+      "adapter": "自动适配",
+      "direct": "直连",
+      "pending": "协议待确认"
+    },
+    "credentials": {
+      "notConfigured": "未配置凭据引用",
+      "none": "不使用凭据",
+      "environment": "环境变量引用",
+      "agentManaged": "由 Agent 自己管理"
+    },
+    "providers": {
+      "title": "Provider 与模型",
+      "description": "新增、编辑和删除都在图形化编辑器中完成，保存时再写回原生配置。",
+      "add": "新增 Provider",
+      "edit": "编辑 Provider",
+      "delete": "删除 Provider",
+      "deleteNamed": "删除 {{name}}",
+      "empty": "还没有 Provider。点击“新增 Provider”开始配置。"
+    },
+    "models": {
+      "count": "{{count}} 个模型",
+      "add": "新增模型",
+      "edit": "编辑模型",
+      "editNamed": "编辑 {{name}}",
+      "delete": "删除模型",
+      "deleteNamed": "删除 {{name}}",
+      "disabled": "已停用",
+      "currentDefault": "当前默认",
+      "noThinkingOptions": "未声明思考档位",
+      "empty": "这个 Provider 还没有模型。点击“新增模型”用表单添加。"
+    },
+    "advanced": {
+      "sectionLabel": "高级兜底配置",
+      "title": "高级 JSON/TOML 兜底",
+      "description": "仅用于查看原生来源或处理未受管字段，不是新增模型的主入口",
+      "managedProjection": "受管投影（可选编辑）",
+      "editorLabel": "高级 JSON/TOML 配置编辑器",
+      "nativeSource": "原生来源",
+      "protocolDiagnostics": "协议诊断",
+      "unmanagedNote": "未知字段、permissions、hooks、MCP、sandbox 等未受管内容不会被图形化编辑器覆盖。"
+    },
+    "backup": {
+      "available": "本次写入有可恢复备份",
+      "restore": "恢复本次备份"
+    },
+    "forms": {
+      "displayName": "显示名称",
+      "credentialKind": "凭据引用类型",
+      "credentialReference": "凭据引用",
+      "displayText": "界面显示",
+      "nativeProtocol": "原生协议",
+      "upstreamProtocol": "上游协议",
+      "enableModel": "启用模型",
+      "supportsReasoning": "支持 reasoning",
+      "supportsEffort": "支持思考档位",
+      "thinkingOptions": "思考档位 / variants",
+      "thinkingOptionsHint": "点击档位设为默认；右侧 × 仅从草稿中移除。",
+      "defaultThinking": "默认思考档位",
+      "deleteVariant": "删除 variant {{option}}",
+      "addVariant": "新增 variant",
+      "allowCustomEffort": "允许自定义思考档位"
+    },
+    "dialogs": {
+      "profile": {
+        "titles": {
+          "create": "新建 Profile",
+          "clone": "复制 Profile",
+          "rename": "重命名 Profile",
+          "delete": "删除 Profile"
+        },
+        "description": "使用图形化表单管理 Profile 文件名，原始配置内容会由 VibeHub 保留。",
+        "deleteDescription": "确定删除“{{name}}”吗？删除操作仍会经过默认 Profile 门禁。",
+        "replacement": "替代默认 Profile",
+        "selectReplacement": "选择替代项",
+        "name": "Profile 名称"
+      },
+      "entityDelete": {
+        "providerTitle": "删除 Provider",
+        "modelTitle": "删除模型",
+        "description": "删除“{{name}}”后，保存草稿才会真正写回配置。当前默认项会自动切换到可用的替代项。"
+      },
+      "provider": {
+        "createTitle": "新增 Provider",
+        "editTitle": "编辑 Provider",
+        "description": "填写 Provider 基础信息和凭据引用。不会读取或保存 API Key 原文。",
+        "protocolNote": "协议只描述连接能力，不会把 Secret 写进配置。Claude Code 的原生 Provider 和协议由适配器固定维护。"
+      },
+      "model": {
+        "createTitle": "新增模型",
+        "editTitle": "编辑模型",
+        "description": "模型 ID、显示名称、启用状态、思考档位和 variants 都可以在这里修改。",
+        "capabilityNote": "Claude Code 和 Codex 的原生模型能力较窄；界面会保留统一编辑体验，适配器只写回它们真正支持的字段。"
+      }
+    },
+    "notices": {
+      "noTargets": "没有发现可用的本机或 WSL 运行环境。",
+      "saved": "配置已保存；版本、备份和原子写回门禁均已通过。",
+      "defaultChanged": "默认 Profile 已切换；未受管字段保持原样。",
+      "launched": "Agent 已启动；协议转换和 Sidecar 由后台按能力证据处理。",
+      "restored": "已从同目录备份恢复，并重新读取当前版本。",
+      "profileCreated": "已创建 Profile“{{name}}”。",
+      "profileCloned": "已复制 Profile“{{name}}”。",
+      "profileRenamed": "Profile 已重命名为“{{name}}”。",
+      "profileDeleted": "Profile 已删除。",
+      "claudeSingleProvider": "Claude Code 原生 settings 只提供一个 Anthropic Provider；请编辑现有 Provider 的字段。",
+      "claudeCannotDeleteProvider": "Claude Code 的原生 settings 不支持删除唯一 Provider。",
+      "advancedApplied": "高级 JSON 已载入草稿；保存仍复用同一套 Schema、版本、备份和原子写回门禁。"
+    },
+    "errors": {
+      "desktopRuntimeRequired": "当前页面没有连接 VibeHub 桌面运行时，请在应用窗口中读取本机配置。",
+      "saveFailed": "{{message}}；请重新读取后再保存。",
+      "activateFailed": "{{message}}；默认切换未覆盖外部新内容。",
+      "restoreFailed": "{{message}}；备份未被删除。",
+      "profileNameRequired": "请输入 Profile 名称。",
+      "replacementRequired": "当前 Profile 是默认项，请先选择替代 Profile。",
+      "providerIdInvalid": "Provider ID 必须是非空的字母、数字、点、下划线或短横线。",
+      "providerNameRequired": "请输入 Provider 显示名称。",
+      "baseUrlInvalid": "Base URL 不是有效 URL。",
+      "providerExists": "这个 Provider ID 已经存在。",
+      "credentialReferenceInvalid": "环境变量引用格式不正确，例如 OPENAI_API_KEY。",
+      "modelFieldsRequired": "Model ID 和显示名称都不能为空。",
+      "modelExists": "这个 Model ID 在当前 Provider 下已经存在。",
+      "advancedIdentityImmutable": "Profile ID 或运行环境不能在高级编辑器中修改。",
+      "advancedProvidersMissing": "高级配置缺少 managed.providers。"
+    }
+  },
   "update": {
     "newVersion": "发现新版本",
     "later": "稍后提醒",
@@ -1588,6 +1787,24 @@
   "tabs": {
     "ariaLabel": "已打开的项目标签",
     "close": "关闭标签",
-    "listAll": "显示全部标签"
+    "listAll": "显示全部标签",
+    "restoring": "正在恢复…",
+    "retryRestore": "重试",
+    "openProjectList": "打开项目列表",
+    "diagnostics": {
+      "workspace_state": {
+        "migrated_from_legacy_v2": "已恢复更新前版本的工作区标签，并安全迁移到新格式。",
+        "migrated_from_transitional_v1": "已保留过渡版本的工作区状态，并迁移到正式格式。",
+        "recovered_from_backup": "上次工作区状态损坏，已从备份恢复。",
+        "invalid": "已保存的工作区状态损坏，请重新打开项目以重建。",
+        "project_missing": "有项目已不可访问，已从标签中安全移除。",
+        "project_identity_changed": "有项目的身份或路径已变化，已从标签中安全移除。",
+        "project_inaccessible": "有项目路径不存在或不可访问，已从标签中安全移除。",
+        "duplicate_project_id": "恢复结果中的重复项目身份已移除。",
+        "duplicate_canonical_path": "恢复结果中的重复或别名路径已移除。",
+        "active_project_removed": "Active Project 已不再属于有效的打开标签。",
+        "persistence_failed": "最新标签变化保存失败。"
+      }
+    }
   }
 }
