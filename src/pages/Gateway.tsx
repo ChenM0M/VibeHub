@@ -5,7 +5,8 @@ import { listen } from '@tauri-apps/api/event';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Server, Coins, Database, Zap, Bot, MessageSquare, Code2, Copy, Check } from 'lucide-react';
+import { Server, Coins, Database, Zap, Copy, Check } from 'lucide-react';
+import { ClaudeBrandIcon, CodexBrandIcon, OpenAiBrandIcon } from '@/components/AgentBrandIcons';
 import { GatewayConfig, Provider, GatewayStats } from '@/types/gateway';
 import { ProviderForm } from '@/components/gateway/ProviderForm';
 import { StatsCard } from '@/components/gateway/StatsCard';
@@ -148,7 +149,7 @@ export function Gateway() {
                     <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <Bot className="h-5 w-5 text-blue-500" />
+                                <ClaudeBrandIcon className="h-5 w-5 text-foreground" data-brand-icon="claude" />
                                 <CardTitle className="text-base">{t('gateway.claudeCode')}</CardTitle>
                             </div>
                             <Switch
@@ -186,7 +187,7 @@ export function Gateway() {
                     <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <Code2 className="h-5 w-5 text-green-500" />
+                                <CodexBrandIcon className="h-5 w-5 text-foreground" data-brand-icon="codex" />
                                 <CardTitle className="text-base">{t('gateway.codex')}</CardTitle>
                             </div>
                             <Switch
@@ -224,7 +225,7 @@ export function Gateway() {
                     <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <MessageSquare className="h-5 w-5 text-yellow-500" />
+                                <OpenAiBrandIcon className="h-5 w-5 text-foreground" data-brand-icon="openai" />
                                 <CardTitle className="text-base">{t('gateway.openaiChat')}</CardTitle>
                             </div>
                             <Switch

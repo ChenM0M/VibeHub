@@ -22,6 +22,13 @@ export function Settings() {
     const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
     const [storageBusy, setStorageBusy] = useState(false);
     const [storageMessage, setStorageMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+    const settingsConfig = config ?? {
+        workspaces: [],
+        tags: [],
+        projects: [],
+        theme: 'auto' as const,
+        recent_projects: [],
+    };
 
     useEffect(() => {
         tauriApi.getStorageInfo()
@@ -162,10 +169,8 @@ export function Settings() {
         }
     };
 
-    if (!config) return null;
-
     return (
-        <div className="container mx-auto max-w-4xl py-8 space-y-8 animate-slide-in">
+        <div className="container mx-auto max-w-6xl py-8 space-y-8 animate-slide-in">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">{t('settings.title')}</h1>
@@ -176,7 +181,7 @@ export function Settings() {
             </div>
 
             <Tabs defaultValue="workspaces" className="w-full">
-                <TabsList className="grid w-full grid-cols-3 mb-8">
+                <TabsList className="mb-8 grid w-full grid-cols-2 md:grid-cols-3">
                     <TabsTrigger value="workspaces" className="flex items-center gap-2">
                         <FolderOpen className="h-4 w-4" />
                         {t('common.workspaces')}
@@ -206,7 +211,7 @@ export function Settings() {
                     </div>
 
                     <div className="grid gap-4">
-                        {config.workspaces.map((workspace) => (
+                        {settingsConfig.workspaces.map((workspace) => (
                             <div
                                 key={workspace.id}
                                 className="flex items-center justify-between p-4 rounded-lg border bg-card text-card-foreground shadow-sm"
@@ -233,7 +238,7 @@ export function Settings() {
                             </div>
                         ))}
 
-                        {config.workspaces.length === 0 && (
+                        {settingsConfig.workspaces.length === 0 && (
                             <div className="text-center py-12 border border-dashed rounded-lg text-muted-foreground">
                                 <FolderOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
                                 <p>{t('settings.workspaces.noWorkspaces')}</p>
@@ -260,7 +265,7 @@ export function Settings() {
                     </div>
 
                     <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                        {config.tags.map((tag) => (
+                        {settingsConfig.tags.map((tag) => (
                             <div
                                 key={tag.id}
                                 className="flex items-center justify-between p-3 rounded-lg border bg-card hover:shadow-md transition-shadow cursor-pointer group"
@@ -305,7 +310,7 @@ export function Settings() {
                         </div>
                         <div className="flex items-center gap-4">
                             <Button
-                                variant={config.theme === 'light' ? 'default' : 'outline'}
+                                variant={settingsConfig.theme === 'light' ? 'default' : 'outline'}
                                 onClick={() => setTheme('light')}
                                 className="w-32"
                             >
@@ -313,7 +318,7 @@ export function Settings() {
                                 {t('settings.appearance.light')}
                             </Button>
                             <Button
-                                variant={config.theme === 'dark' ? 'default' : 'outline'}
+                                variant={settingsConfig.theme === 'dark' ? 'default' : 'outline'}
                                 onClick={() => setTheme('dark')}
                                 className="w-32"
                             >
@@ -321,7 +326,7 @@ export function Settings() {
                                 {t('settings.appearance.dark')}
                             </Button>
                             <Button
-                                variant={config.theme === 'auto' ? 'default' : 'outline'}
+                                variant={settingsConfig.theme === 'auto' ? 'default' : 'outline'}
                                 onClick={() => setTheme('auto')}
                                 className="w-32"
                             >

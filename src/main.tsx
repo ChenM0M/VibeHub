@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { Layout } from '@/components/Layout';
 import { Home } from '@/pages/Home';
 import { Settings } from '@/pages/Settings';
+import { AgentProfiles } from '@/pages/AgentProfiles';
 import { Gateway } from '@/pages/Gateway';
 import { About } from '@/pages/About';
 import { UpdateChecker } from '@/components/UpdateChecker';
@@ -10,11 +11,18 @@ import { useAppStore } from '@/stores/appStore';
 import '@/styles/globals.css';
 import './i18n';
 
-type PageType = 'home' | 'settings' | 'gateway' | 'about';
+export type PageType = 'home' | 'settings' | 'gateway' | 'agent-profiles' | 'about';
+
+function pageFromHash(): PageType {
+    const value = window.location.hash.replace(/^#/, '');
+    return value === 'settings' || value === 'gateway' || value === 'agent-profiles' || value === 'about'
+        ? value
+        : 'home';
+}
 
 function App() {
     const { initializeApp } = useAppStore();
-    const [currentPage, setCurrentPage] = useState<PageType>('home');
+    const [currentPage, setCurrentPage] = useState<PageType>(() => pageFromHash());
     const [homeResetKey, setHomeResetKey] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
     const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
@@ -22,6 +30,9 @@ function App() {
 
     useEffect(() => {
         initializeApp();
+        const handleHashChange = () => setCurrentPage(pageFromHash());
+        window.addEventListener('hashchange', handleHashChange);
+        return () => window.removeEventListener('hashchange', handleHashChange);
     }, []);
 
     const handleCheckUpdate = () => {
@@ -39,6 +50,10 @@ function App() {
             setHomeResetKey((key) => key + 1);
         }
         setCurrentPage(page);
+        const nextHash = page === 'home' ? '' : `#${page}`;
+        if (window.location.hash !== nextHash) {
+            window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${nextHash}`);
+        }
     };
 
     return (
@@ -57,6 +72,7 @@ function App() {
                 {currentPage === 'home' && <Home searchQuery={searchQuery} resetKey={homeResetKey} />}
                 {currentPage === 'settings' && <Settings />}
                 {currentPage === 'gateway' && <Gateway />}
+                {currentPage === 'agent-profiles' && <AgentProfiles />}
                 {currentPage === 'about' && <About />}
             </Layout>
         </>

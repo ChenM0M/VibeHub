@@ -8,6 +8,7 @@ import {
     ChevronRight,
     ChevronDown,
     Activity,
+    Bot,
     RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -19,7 +20,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { useEffect } from 'react';
 
-type PageType = 'home' | 'settings' | 'gateway' | 'about';
+type PageType = 'home' | 'settings' | 'gateway' | 'agent-profiles' | 'about';
 
 interface SidebarProps {
     className?: string;
@@ -96,6 +97,14 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
                     >
                         <Activity className="mr-2 h-4 w-4" />
                         {t('gateway.title', 'AI Gateway')}
+                    </Button>
+                    <Button
+                        variant={currentPage === 'agent-profiles' ? "secondary" : "ghost"}
+                        className="w-full justify-start rounded-lg"
+                        onClick={() => onNavigate('agent-profiles')}
+                    >
+                        <Bot className="mr-2 h-4 w-4" />
+                        {t('agentProfiles.navLabel')}
                     </Button>
                     <Button
                         variant={currentPage === 'settings' ? "secondary" : "ghost"}
