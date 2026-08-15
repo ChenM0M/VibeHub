@@ -1478,13 +1478,21 @@ mod tests {
         let result = sync_host_mcp_configs_with_home(&root, &binary, None).unwrap();
         assert_eq!(result.status, HostMcpSyncStatus::Synchronized);
         let codex = fs::read_to_string(root.join(".codex/config.toml")).unwrap();
-        assert!(codex.contains("command = \""));
-        assert!(codex.contains("mcp-stdio"));
+        let codex: toml::Value = toml::from_str(&codex).unwrap();
+        let canonical_root = root.canonicalize().unwrap().to_string_lossy().into_owned();
+        assert_eq!(
+            codex["mcp_servers"]["vibehub"]["command"].as_str(),
+            Some(binary.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            codex["mcp_servers"]["vibehub"]["args"][1].as_str(),
+            Some(canonical_root.as_str())
+        );
         let claude: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(root.join(".mcp.json")).unwrap()).unwrap();
         assert_eq!(
             claude["mcpServers"]["vibehub"]["args"][1],
-            root.canonicalize().unwrap().to_string_lossy().as_ref()
+            serde_json::Value::String(canonical_root.clone())
         );
         let opencode: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(root.join("opencode.json")).unwrap()).unwrap();

@@ -352,7 +352,7 @@ fn desired_artifacts(
                 .strip_prefix(control_root)
                 .unwrap_or(&path)
                 .to_string_lossy()
-                .into_owned();
+                .replace('\\', "/");
             DesiredArtifact {
                 path,
                 relative_path,
@@ -1172,10 +1172,22 @@ mod tests {
         let codex = fs::read_to_string(root.join(".codex/config.toml")).unwrap();
         let claude = fs::read_to_string(root.join(".mcp.json")).unwrap();
         let opencode = fs::read_to_string(root.join("opencode.json")).unwrap();
-        let control_root = root.to_string_lossy();
-        assert!(codex.contains(control_root.as_ref()));
-        assert!(claude.contains(control_root.as_ref()));
-        assert!(opencode.contains(control_root.as_ref()));
+        let control_root = root.canonicalize().unwrap().to_string_lossy().into_owned();
+        let codex: toml::Value = toml::from_str(&codex).unwrap();
+        assert_eq!(
+            codex["mcp_servers"]["vibehub"]["args"][1].as_str(),
+            Some(control_root.as_str())
+        );
+        let claude: serde_json::Value = serde_json::from_str(&claude).unwrap();
+        assert_eq!(
+            claude["mcpServers"]["vibehub"]["args"][1],
+            serde_json::Value::String(control_root.clone())
+        );
+        let opencode: serde_json::Value = serde_json::from_str(&opencode).unwrap();
+        assert_eq!(
+            opencode["mcp"]["vibehub"]["command"][2],
+            serde_json::Value::String(control_root.clone())
+        );
         assert!(root.join(".vibehub/runtime/agent-specs.yaml").is_file());
         fs::remove_dir_all(root).unwrap();
     }

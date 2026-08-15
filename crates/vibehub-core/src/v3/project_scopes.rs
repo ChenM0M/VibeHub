@@ -657,7 +657,7 @@ fn relative_or_native(root: &Path, path: &Path) -> String {
 }
 
 fn display(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+    path.to_string_lossy().replace('\\', "/")
 }
 
 fn scope_error(code: &str, message: String) -> V3Error {
@@ -710,9 +710,17 @@ mod tests {
     fn host_config_reports_project_identity_mismatch() {
         let root = root();
         fs::create_dir_all(root.join(".git")).unwrap();
+        let binary = if cfg!(windows) {
+            r"C:\bin\vibehub.exe"
+        } else {
+            "/bin/vibehub"
+        };
         fs::write(
             root.join("opencode.json"),
-            r#"{"mcp":{"vibehub":{"type":"local","command":["/bin/vibehub","mcp-stdio","/wrong/project"]}}}"#,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "mcp": {"vibehub": {"type": "local", "command": [binary, "mcp-stdio", "/wrong/project"]}}
+            }))
+            .unwrap(),
         )
         .unwrap();
         let scopes = resolve_project_scopes(&root, None).unwrap();
@@ -730,12 +738,17 @@ mod tests {
         let root = root();
         fs::create_dir_all(root.join(".git")).unwrap();
         let canonical = root.canonicalize().unwrap();
+        let binary = if cfg!(windows) {
+            r"C:\bin\vibehub.exe"
+        } else {
+            "/bin/vibehub"
+        };
         fs::write(
             root.join("opencode.json"),
-            format!(
-                r#"{{"mcp":{{"vibehub":{{"type":"local","command":["/bin/vibehub","mcp-stdio","{}"]}}}}}}"#,
-                canonical.to_string_lossy()
-            ),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "mcp": {"vibehub": {"type": "local", "command": [binary, "mcp-stdio", canonical.to_string_lossy()]}}
+            }))
+            .unwrap(),
         )
         .unwrap();
         let scopes = resolve_project_scopes(&root, None).unwrap();
@@ -751,9 +764,17 @@ mod tests {
     fn root_alignment_flags_host_config_mismatch_and_requires_restart() {
         let root = root();
         fs::create_dir_all(root.join(".git")).unwrap();
+        let binary = if cfg!(windows) {
+            r"C:\bin\vibehub.exe"
+        } else {
+            "/bin/vibehub"
+        };
         fs::write(
             root.join("opencode.json"),
-            r#"{"mcp":{"vibehub":{"type":"local","command":["/bin/vibehub","mcp-stdio","/wrong/project"]}}}"#,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "mcp": {"vibehub": {"type": "local", "command": [binary, "mcp-stdio", "/wrong/project"]}}
+            }))
+            .unwrap(),
         )
         .unwrap();
         let scopes = resolve_project_scopes(&root, None).unwrap();
