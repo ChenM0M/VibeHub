@@ -300,11 +300,8 @@ impl WorkspaceStateStore {
         let temporary = parent.join(format!(".workspace-state.{}.tmp", Uuid::new_v4()));
         let original_mode = current.as_ref().and_then(|_| file_mode(&self.path));
 
-        fs::write(&temporary, &bytes).context("写入 WorkspaceState 临时文件失败")?;
-        if let Some(mode) = original_mode {
-            set_file_mode(&temporary, mode).context("保留 WorkspaceState 文件权限失败")?;
-        }
-        sync_file(&temporary).context("同步 WorkspaceState 临时文件失败")?;
+        write_synced(&temporary, &bytes, original_mode)
+            .context("写入并同步 WorkspaceState 临时文件失败")?;
         if let Some(current_bytes) = current_bytes.as_deref() {
             match current_source {
                 WorkspaceStateSource::LegacyV2 => {
@@ -322,8 +319,8 @@ impl WorkspaceStateStore {
         if let Some(current_bytes) = current_bytes {
             let backup = self.path.with_file_name(BACKUP_FILE_NAME);
             let backup_tmp = parent.join(format!(".workspace-state-backup.{}.tmp", Uuid::new_v4()));
-            fs::write(&backup_tmp, current_bytes).context("写入 WorkspaceState 备份失败")?;
-            sync_file(&backup_tmp).context("同步 WorkspaceState 备份失败")?;
+            write_synced(&backup_tmp, &current_bytes, None)
+                .context("写入并同步 WorkspaceState 备份失败")?;
             replace_file(&backup_tmp, &backup).context("替换 WorkspaceState 备份失败")?;
         }
         if let Err(error) = replace_file(&temporary, &self.path) {
@@ -803,17 +800,17 @@ fn file_mode(path: &Path) -> Option<u32> {
 fn file_mode(_path: &Path) -> Option<u32> {
     None
 }
-#[cfg(unix)]
-fn set_file_mode(path: &Path, mode: u32) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(Into::into)
-}
-#[cfg(not(unix))]
-fn set_file_mode(_path: &Path, _mode: u32) -> Result<()> {
+fn write_synced(path: &Path, bytes: &[u8], mode: Option<u32>) -> Result<()> {
+    use std::io::Write;
+    let mut file = fs::File::create(path)?;
+    file.write_all(bytes)?;
+    #[cfg(unix)]
+    if let Some(mode) = mode {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(mode))?;
+    }
+    file.sync_all()?;
     Ok(())
-}
-fn sync_file(path: &Path) -> Result<()> {
-    fs::File::open(path)?.sync_all().map_err(Into::into)
 }
 #[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<()> {
