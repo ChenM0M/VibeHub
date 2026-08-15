@@ -2,6 +2,13 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.1
+
+- 修复 Windows 上 Workspace State 保存时对临时文件二次打开导致的 `Access denied`：写入与 `fsync` 现在使用同一个打开的文件句柄，并保留 Unix 权限元数据。
+- 修复 Windows 上 Agent 声明、有效声明与嵌套 Git 项目投影路径使用 `\` 而非 `/` 的问题。
+- Windows CI 测试覆盖补齐：Agent Profiles fixture 按平台生成 OpenCode 配置目录，host MCP launcher 断言改为解析配置值，symlink 测试限定 Unix。
+- 修复 Windows 上 `src-tauri` 缺少 `windows-sys` 目标依赖导致 Release 构建失败的问题。
+
 ## v3.3.0
 
 ### Agent Profiles
