@@ -2,6 +2,43 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.0
+
+### Agent Profiles
+
+- 新增 OpenCode、Claude Code 与 Codex 三类 Agent 的配置管理：Provider、Base URL、Key 引用、模型、默认/小模型与 variants/思考档位。
+- Claude Code 以 Profile 抽象管理多份 settings；Codex 管理原生 Profile 与 `--profile` 临时启动；OpenCode 直接管理当前配置并支持临时启动。
+- 提供带 revision、备份与回滚的无损读写、Secret 隔离、并发保护与自动 sidecar 生命周期。
+- macOS / Windows / WSL 独立配置发现与安全启动边界；未知 Schema 或协议 fail-closed。
+
+### V3 Session–Task 路由与多项目 MCP
+
+- 新增轻量 Session–Task 绑定契约：所有 Task 级写入都要求显式 binding 与 binding revision，session_open 保留兼容的创建即绑定路径。
+- `task_candidates` / `task_route` 提供可审计的任务路由决策；不同项目只能读写各自的 project_id，跨项目写入与资源读取返回结构化拒绝。
+- MCP 采用单实例单项目、canonical project root 与 fail-closed 身份校验；初始化和迁移会同步受信项目级 MCP 配置，不再把具体项目根写入全局配置。
+- 新增多项目隔离冒烟测试，覆盖同名项目、嵌套 Git root、symlink alias 与未受信项目启动拒绝。
+
+### Workspace State
+
+- 持久化项目标签顺序、active project 与 V3 cockpit 的视图/任务/节点上下文。
+- 后端使用 revision、原子写入与损坏回退；启动时恢复多项目标签并校验项目身份。
+
+### Guided Intake 与计划视图
+
+- 任务创建可直接承载带 scope、依赖、criterion 覆盖与 role 的初始实现计划。
+- 旧 bootstrap 节点不再进入有效计划；计划图、时间线与完成门禁统一使用 effective nodes。
+- 新增 initial plan 创建界面、节点 origin/role 契约与对应视图字段。
+
+### 文档与测试
+
+- 三语 README 增加视觉导览，截图迁移到 `assets/readme`。
+- V3 契约、MCP、i18n 与标签栏检查覆盖新表面；多项目 MCP 冒烟测试适配 binding 门禁。
+
+### 已知例外
+
+- Windows 原生手测项 `A07`、`E07`、`F07–F10`、`G05` 仍须在发布后使用 v3.3.0 正式 Release 的 Windows artifact 与真实 SHA-256 手测，发布时保持待验收状态。
+- Apple / Windows 代码签名为可选增强：凭据缺失时产物为 macOS ad-hoc 签名与 Windows unsigned，不等同于正式签名。
+
 ## v3.2.0
 
 ### Token 用量统计与费用报告重构
