@@ -2458,6 +2458,14 @@ mod tests {
     use std::fs;
     use uuid::Uuid;
 
+    fn opencode_config_dir(root: &Path) -> PathBuf {
+        if cfg!(windows) {
+            root.join("AppData").join("Roaming").join("opencode")
+        } else {
+            root.join(".config").join("opencode")
+        }
+    }
+
     #[test]
     fn secret_like_error_text_is_redacted_without_touching_paths() {
         let message = safe_storage_message("path /tmp/config api_key=sk-secret-value");
@@ -2508,11 +2516,11 @@ mod tests {
     fn typed_profile_flow_discovers_reads_and_saves_all_three_adapters() {
         let root =
             std::env::temp_dir().join(format!("vibehub-agent-profile-command-{}", Uuid::new_v4()));
-        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        fs::create_dir_all(opencode_config_dir(&root)).unwrap();
         fs::create_dir_all(root.join(".claude")).unwrap();
         fs::create_dir_all(root.join(".codex")).unwrap();
         fs::write(
-            root.join(".config/opencode/opencode.jsonc"),
+            opencode_config_dir(&root).join("opencode.jsonc"),
             r#"{
   "$schema": "https://opencode.ai/config.json",
   "model": "openai/gpt-5",
@@ -2596,11 +2604,11 @@ mod tests {
             "vibehub-agent-profile-integration-{}",
             Uuid::new_v4()
         ));
-        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        fs::create_dir_all(opencode_config_dir(&root)).unwrap();
         fs::create_dir_all(root.join(".claude")).unwrap();
         fs::create_dir_all(root.join(".codex")).unwrap();
         fs::write(
-            root.join(".config/opencode/opencode.json"),
+            opencode_config_dir(&root).join("opencode.json"),
             r#"{"$schema":"https://opencode.ai/config.json","model":"openai/gpt-5","provider":{"openai":{"env":["OPENAI_API_KEY"],"options":{"baseURL":"https://api.openai.com/v1"},"models":{"gpt-5":{"reasoning":true}}}}}"#,
         )
         .unwrap();
