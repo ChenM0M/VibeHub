@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent_profiles;
 mod app_paths;
 mod commands;
 mod gateway;
@@ -12,6 +13,7 @@ mod scanner;
 mod storage;
 mod updater;
 mod vibehub;
+mod workspace_state;
 
 use commands::AppState;
 use std::sync::Mutex;
@@ -43,6 +45,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::load_config,
             commands::save_config,
+            commands::load_workspace_state,
+            commands::save_workspace_state,
             commands::export_settings_bundle,
             commands::import_settings_bundle,
             commands::scan_workspace,
@@ -81,6 +85,11 @@ fn main() {
             commands::v3_agent_specs_status,
             commands::v3_agent_specs_sync,
             commands::v3_create_task,
+            commands::v3_task_candidates,
+            commands::v3_task_route,
+            commands::v3_session_task_binding,
+            commands::v3_session_task_bind,
+            commands::v3_session_task_unbind,
             commands::v3_complete_task,
             commands::v3_close_task_with_exceptions,
             commands::v3_plan_add_node,
@@ -94,6 +103,19 @@ fn main() {
             commands::v3_load_view_bundle,
             commands::v3_load_node_brief,
             commands::v3_query_project_structure,
+            agent_profiles::v3_agent_profile_discover,
+            agent_profiles::v3_agent_profile_runtime_targets,
+            agent_profiles::v3_agent_profile_read,
+            agent_profiles::v3_agent_profile_save,
+            agent_profiles::v3_agent_profile_validate,
+            agent_profiles::v3_agent_profile_activate,
+            agent_profiles::v3_agent_profile_launch,
+            agent_profiles::v3_agent_profile_restore,
+            agent_profiles::v3_agent_profile_diagnostics,
+            agent_profiles::v3_agent_profile_create,
+            agent_profiles::v3_agent_profile_clone,
+            agent_profiles::v3_agent_profile_rename,
+            agent_profiles::v3_agent_profile_delete,
             commands::vibehub_read_local_agent_usage,
             commands::vibehub_open_vibehub_file,
             commands::vibehub_reveal_project_file,

@@ -1,9 +1,12 @@
 export type { V3EventEnvelope } from "./event-envelope";
 export type { V3ApplicationCommand, PlanNodeAdd, PlanDependenciesSet, PlanNodeStateSet, SessionOpen, EventLog, SessionClose, AgentResultRecord, WorktreeCommand, Rebuild } from "./application-command";
-export type { V3TaskCreateContract, V3TaskCreateRequest, V3TaskCreateResult } from "./task-create";
+export type { V3TaskCreateContract, V3TaskCreateInitialPlanNode, V3TaskCreateRequest, V3TaskCreateResult } from "./task-create";
 export type { V3ProjectSettingsContract, V3OutputLanguage, V3AgentSpecTarget, V3ProjectSettings, V3ProjectSettingsInspection, V3ProjectSettingsUpdateRequest } from "./project-settings";
 export type { ProjectMemoryProjection, MemoryEntry } from "./project-memory";
-export type { V3AgentSpecContract, V3AgentSpecArtifactStatus, V3AgentSpecSyncStatus, V3AgentSpecArtifactInspection, ProjectScopeInspection, EffectiveAgentDeclaration, McpHostConfigInspection, V3AgentSpecInspection, V3AgentSpecSyncRequest, V3AgentSpecSyncResult } from "./agent-spec";
+export type { V3AgentSpecContract, V3AgentSpecArtifactStatus, V3AgentSpecSyncStatus, V3AgentSpecArtifactInspection, HostConfigScope, HostConfigStatus, HostMcpSyncStatus, GlobalMcpMigrationStatus, ProjectScopeInspection, EffectiveAgentDeclaration, McpHostConfigInspection, HostMcpSyncResult, GlobalMcpMigrationResult, V3AgentSpecInspection, V3AgentSpecSyncRequest, V3AgentSpecSyncResult } from "./agent-spec";
+export type { V3AgentProfileContract, AgentKind, AgentProfileReadResult, AgentProfileDiscoverResult, AgentProfileSummary, AgentProfileCommand, CreateCommand, CloneCommand, RenameCommand, DeleteCommand, AgentProfileSaveResult, AgentProfileDiagnosticsResult, AgentProfileDocument, RuntimeTarget, NativePath, ConfigSource, ConfigRevision, CredentialReference, ThinkingProfile, ModelProfile, ProviderProfile, ManagedProfileFields, DefaultState, DefaultProjection, PreservationSummary, ProtocolCapability, SchemaCapability, LaunchSpec } from "./agent-profile";
+export type { WorkspaceStateContract, WorkspaceState, WorkspaceProjectIdentity, WorkspaceProjectUiContext, WorkspaceStateProvenance, WorkspaceStateDiagnostic, WorkspaceStateReadResult, WorkspaceStateSaveRequest, WorkspaceStateSaveResult } from "./workspace-state";
+export type { SessionTaskRoutingContract, BindingStatus, BindingFreshness, BindingSource, RouteAction, RouteTrigger, HostCapabilityState, HostCapabilities, SessionTaskIdentity, SessionTaskBinding, TaskRouteCandidate, RouteOption, RouteRequest, TaskRouteDecision } from "./session-task-routing";
 export type { ProjectOverviewView } from "./project-overview-view";
 export type { ProjectStructureView } from "./project-structure-view";
 export type { AgentResultsView } from "./agent-results-view";

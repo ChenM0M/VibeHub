@@ -14,6 +14,10 @@ use crate::{
     updater,
     vibehub::cockpit,
     vibehub::project_structure,
+    workspace_state::{
+        KnownProject, WorkspaceState, WorkspaceStateReadResult, WorkspaceStateSaveRequest,
+        WorkspaceStateSaveResult, WorkspaceStateStore,
+    },
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -27,17 +31,115 @@ use tauri::State;
 use vibehub_core::{
     legacy_v2::{self, LegacyV2Archive},
     v3::{
-        self, AgentSpecInspection, AgentSpecSyncRequest, AgentSpecSyncResult, AppendResult,
-        LifecycleCommand, MemoryCommand, MemoryEntry, MemoryQuery, OrchestrationCommand,
-        PlanAddNodeCommand, PlanSetCriteriaCommand, PlanSetDependenciesCommand,
-        PlanSetStateCommand, ProjectLayoutStatus, V3ApplicationService, V3BootstrapResult,
-        V3ProjectSettingsInspection, V3ProjectSettingsUpdateRequest, V3RepairCandidate,
-        V3RepairResult, V3TaskCreateRequest, V3TaskCreateResult, V3ViewBundle, V3ViewRepository,
+        self, route_session_task, AgentSpecInspection, AgentSpecSyncRequest, AgentSpecSyncResult,
+        AppendResult, BindingSource, LifecycleCommand, MemoryCommand, MemoryEntry, MemoryQuery,
+        OrchestrationCommand, PlanAddNodeCommand, PlanSetCriteriaCommand,
+        PlanSetDependenciesCommand, PlanSetStateCommand, ProjectLayoutStatus, RouteRequest,
+        SessionTaskBinding, TaskRouteCandidate, TaskRouteDecision, V3ApplicationService,
+        V3BootstrapResult, V3ProjectSettingsInspection, V3ProjectSettingsUpdateRequest,
+        V3RepairCandidate, V3RepairResult, V3TaskCreateRequest, V3TaskCreateResult, V3ViewBundle,
+        V3ViewRepository,
     },
 };
 
 pub struct AppState {
     pub storage: Mutex<Storage>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceStateCommandError {
+    pub code: String,
+    pub message: String,
+    pub recovery_action: String,
+    pub diagnostics: Vec<crate::workspace_state::WorkspaceStateDiagnostic>,
+}
+
+fn workspace_state_error(error: anyhow::Error, fallback_code: &str) -> WorkspaceStateCommandError {
+    let message = error.to_string();
+    let code = message
+        .split(':')
+        .next()
+        .filter(|candidate| candidate.starts_with("WORKSPACE_STATE_"))
+        .unwrap_or(fallback_code)
+        .to_string();
+    WorkspaceStateCommandError {
+        code,
+        message,
+        recovery_action: "重试操作；若仍失败，请检查状态文件权限并从项目列表重新打开项目。"
+            .to_string(),
+        diagnostics: vec![],
+    }
+}
+
+fn known_projects(config: &AppConfig) -> Vec<KnownProject> {
+    config
+        .projects
+        .iter()
+        .map(|project| KnownProject {
+            id: project.id.clone(),
+            display_name: project.name.clone(),
+            canonical_path: project.path.clone(),
+        })
+        .collect()
+}
+
+fn workspace_state_store(storage: &Storage) -> WorkspaceStateStore {
+    WorkspaceStateStore::new(storage.data_dir().to_path_buf())
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct WorkspaceStateSaveCommand {
+    pub expected_revision: u64,
+    pub state: WorkspaceState,
+}
+
+#[tauri::command]
+pub async fn load_workspace_state(
+    state: State<'_, AppState>,
+) -> Result<WorkspaceStateReadResult, WorkspaceStateCommandError> {
+    let storage = state
+        .storage
+        .lock()
+        .map_err(|error| WorkspaceStateCommandError {
+            code: "WORKSPACE_STATE_LOCK_FAILED".to_string(),
+            message: error.to_string(),
+            recovery_action: "重试读取工作区状态。".to_string(),
+            diagnostics: vec![],
+        })?;
+    let config = storage
+        .load_config()
+        .map_err(|error| workspace_state_error(error, "WORKSPACE_STATE_CONFIG_READ_FAILED"))?;
+    workspace_state_store(&storage)
+        .read(&known_projects(&config))
+        .map_err(|error| workspace_state_error(error, "WORKSPACE_STATE_READ_FAILED"))
+}
+
+#[tauri::command]
+pub async fn save_workspace_state(
+    command: WorkspaceStateSaveCommand,
+    state: State<'_, AppState>,
+) -> Result<WorkspaceStateSaveResult, WorkspaceStateCommandError> {
+    let storage = state
+        .storage
+        .lock()
+        .map_err(|error| WorkspaceStateCommandError {
+            code: "WORKSPACE_STATE_LOCK_FAILED".to_string(),
+            message: error.to_string(),
+            recovery_action: "重试保存工作区状态。".to_string(),
+            diagnostics: vec![],
+        })?;
+    let config = storage
+        .load_config()
+        .map_err(|error| workspace_state_error(error, "WORKSPACE_STATE_CONFIG_READ_FAILED"))?;
+    workspace_state_store(&storage)
+        .save(
+            WorkspaceStateSaveRequest {
+                expected_revision: command.expected_revision,
+                state: command.state,
+            },
+            &known_projects(&config),
+        )
+        .map_err(|error| workspace_state_error(error, "WORKSPACE_STATE_SAVE_FAILED"))
 }
 
 #[tauri::command]
@@ -166,6 +268,167 @@ pub async fn v3_create_task(
     })
     .await
     .map_err(|error| format!("V3_TASK_CREATE_TASK_FAILED: {error}"))?
+}
+
+fn read_v3_task_candidates(
+    repository: &V3ViewRepository,
+) -> Result<Vec<TaskRouteCandidate>, String> {
+    serde_json::from_value(
+        repository
+            .task_candidates()
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("V3_TASK_ROUTE_CANDIDATES_INVALID: {error}"))
+}
+
+fn ensure_v3_project_identity(
+    repository: &V3ViewRepository,
+    expected_project_id: &str,
+) -> Result<(), String> {
+    let actual_project_id = repository.project_id();
+    if actual_project_id != expected_project_id {
+        return Err(format!(
+            "V3_IDENTITY_MISMATCH: expected project {expected_project_id}, received {actual_project_id}"
+        ));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn v3_task_candidates(
+    project_path: String,
+    expected_project_id: Option<String>,
+) -> Result<Vec<TaskRouteCandidate>, String> {
+    tokio::task::spawn_blocking(move || {
+        let repository = V3ViewRepository::open(project_path).map_err(|error| error.to_string())?;
+        if let Some(expected) = expected_project_id.as_deref() {
+            ensure_v3_project_identity(&repository, expected)?;
+        }
+        read_v3_task_candidates(&repository)
+    })
+    .await
+    .map_err(|error| format!("V3_TASK_CANDIDATES_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_task_route(
+    project_path: String,
+    mut request: RouteRequest,
+) -> Result<TaskRouteDecision, String> {
+    tokio::task::spawn_blocking(move || {
+        let repository = V3ViewRepository::open(project_path).map_err(|error| error.to_string())?;
+        ensure_v3_project_identity(&repository, &request.identity.project_id)?;
+        if request.candidates.is_empty() {
+            request.candidates = read_v3_task_candidates(&repository)?;
+        }
+        Ok(route_session_task(&request))
+    })
+    .await
+    .map_err(|error| format!("V3_TASK_ROUTE_TASK_FAILED: {error}"))?
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct V3SessionTaskBindRequest {
+    pub project_id: String,
+    pub task_id: String,
+    pub session_id: String,
+    pub interaction_id: String,
+    pub actor: String,
+    pub source: BindingSource,
+    pub expected_version: u64,
+    pub idempotency_key: String,
+    pub expected_binding_revision: Option<u64>,
+    pub agent_id: Option<String>,
+    pub host: Option<String>,
+    pub provider_session_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn v3_session_task_binding(
+    project_path: String,
+    project_id: String,
+    session_id: String,
+) -> Result<SessionTaskBinding, String> {
+    tokio::task::spawn_blocking(move || {
+        let repository =
+            V3ViewRepository::open(&project_path).map_err(|error| error.to_string())?;
+        ensure_v3_project_identity(&repository, &project_id)?;
+        V3ApplicationService::open(project_path)
+            .and_then(|application| application.session_task_binding(&project_id, &session_id))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_SESSION_BINDING_READ_TASK_FAILED: {error}"))?
+}
+
+#[tauri::command]
+pub async fn v3_session_task_bind(
+    project_path: String,
+    request: V3SessionTaskBindRequest,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let repository =
+            V3ViewRepository::open(&project_path).map_err(|error| error.to_string())?;
+        ensure_v3_project_identity(&repository, &request.project_id)?;
+        V3ApplicationService::open(project_path)
+            .and_then(|application| {
+                application.session_task_bind(
+                    &request.project_id,
+                    &request.task_id,
+                    &request.session_id,
+                    &request.interaction_id,
+                    &request.actor,
+                    request.source,
+                    request.expected_version,
+                    &request.idempotency_key,
+                    request.expected_binding_revision,
+                    request.agent_id,
+                    request.host,
+                    request.provider_session_id,
+                )
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_SESSION_BIND_TASK_FAILED: {error}"))?
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct V3SessionTaskUnbindRequest {
+    pub project_id: String,
+    pub task_id: String,
+    pub session_id: String,
+    pub actor: String,
+    pub expected_version: u64,
+    pub idempotency_key: String,
+    pub expected_binding_revision: Option<u64>,
+}
+
+#[tauri::command]
+pub async fn v3_session_task_unbind(
+    project_path: String,
+    request: V3SessionTaskUnbindRequest,
+) -> Result<AppendResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let repository =
+            V3ViewRepository::open(&project_path).map_err(|error| error.to_string())?;
+        ensure_v3_project_identity(&repository, &request.project_id)?;
+        V3ApplicationService::open(project_path)
+            .and_then(|application| {
+                application.session_task_unbind(
+                    &request.project_id,
+                    &request.task_id,
+                    &request.session_id,
+                    &request.actor,
+                    request.expected_version,
+                    &request.idempotency_key,
+                    request.expected_binding_revision,
+                )
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_SESSION_UNBIND_TASK_FAILED: {error}"))?
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
