@@ -10,10 +10,15 @@ use super::lifecycle::{
 };
 use super::orchestration::{self, OrchestrationCommand, OrchestrationProjection};
 use super::projection::{self, V3Projection};
+use super::routing::{
+    BindingFreshness, BindingSource, BindingStatus, SessionTaskBinding, SessionTaskIdentity,
+    SESSION_TASK_ROUTING_SCHEMA_VERSION,
+};
+use chrono::{SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -30,6 +35,7 @@ struct SessionFacts {
     terminal_result: bool,
     task_id: Option<String>,
     node_id: Option<String>,
+    binding: Option<SessionTaskBinding>,
 }
 fn session_error(code: &str, message: &str) -> V3Error {
     V3Error::new(
@@ -117,6 +123,30 @@ impl V3ApplicationService {
         provider: Option<String>,
         provider_session_id: Option<String>,
     ) -> Result<AppendResult, V3Error> {
+        let facts_before_open = self.session_facts(project_id, session_id)?;
+        let mut open_expected_version = expected_version;
+        if facts_before_open.binding.is_none() && !facts_before_open.exists {
+            // A direct session_open carries an explicit task_id, so this is a
+            // compatibility create-and-start path rather than a fuzzy route.
+            // Persist the binding first so every following task-scoped write is
+            // still checked against a typed binding fact.
+            self.session_task_bind(
+                project_id,
+                task_id,
+                session_id,
+                session_id,
+                actor,
+                BindingSource::LegacySessionOpen,
+                expected_version,
+                &format!("{idempotency_key}.binding"),
+                None,
+                None,
+                provider.clone(),
+                None,
+            )?;
+            open_expected_version = self.aggregate_version(project_id, session_id)?;
+        }
+        self.require_session_binding(project_id, task_id, session_id, None)?;
         if let Some(policy) = self.enforced_task_policy(task_id)? {
             if policy.planning_required {
                 let node_id = node_id.as_deref().ok_or_else(|| {
@@ -126,7 +156,7 @@ impl V3ApplicationService {
                     )
                 })?;
                 let lifecycle = self.task_lifecycle(project_id, task_id)?;
-                let node = lifecycle.nodes.get(node_id).ok_or_else(|| {
+                let node = lifecycle.effective_node(node_id).ok_or_else(|| {
                     session_error(
                         "V3_SESSION_NODE_NOT_FOUND",
                         "session node does not exist in the task plan",
@@ -134,7 +164,7 @@ impl V3ApplicationService {
                 })?;
                 if node.state != "active"
                     || !node.dependencies.iter().all(|dependency| {
-                        lifecycle.nodes.get(dependency).is_some_and(|value| {
+                        lifecycle.effective_node(dependency).is_some_and(|value| {
                             matches!(value.state.as_str(), "completed" | "waived")
                         })
                     })
@@ -163,7 +193,24 @@ impl V3ApplicationService {
         {
             payload["provider_session_id"] = Value::String(provider_session_id);
         }
-        if self.session_facts(project_id, session_id)?.exists {
+        let facts_after_binding = self.session_facts(project_id, session_id)?;
+        if facts_after_binding.open || facts_after_binding.closed || facts_after_binding.gapped {
+            if let Some(existing) = self
+                .store
+                .load_project(project_id)?
+                .into_iter()
+                .find(|event| {
+                    event.aggregate_id == session_id
+                        && event.task_id.0 == task_id
+                        && event.event_type == "session.opened"
+                        && event.idempotency_key == idempotency_key
+                })
+            {
+                // Binding events are part of the session aggregate now. Return
+                // the original session.opened event for an exact retry instead
+                // of reusing a pre-binding expected-version calculation.
+                return Ok(AppendResult::Duplicate { event: existing });
+            }
             if self.store.load_project(project_id)?.iter().any(|event| {
                 event.aggregate_id == session_id
                     && event.event_type == "session.opened"
@@ -175,7 +222,7 @@ impl V3ApplicationService {
                     task_id,
                     session_id,
                     actor,
-                    expected_version,
+                    open_expected_version,
                     idempotency_key,
                     payload,
                     node_id,
@@ -193,12 +240,200 @@ impl V3ApplicationService {
             task_id,
             session_id,
             actor,
-            expected_version,
+            open_expected_version,
             idempotency_key,
             payload,
             node_id,
             worktree_id,
         )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn session_task_bind(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        interaction_id: &str,
+        actor: &str,
+        source: BindingSource,
+        expected_version: u64,
+        idempotency_key: &str,
+        expected_binding_revision: Option<u64>,
+        agent_id: Option<String>,
+        host: Option<String>,
+        _provider_session_id: Option<String>,
+    ) -> Result<AppendResult, V3Error> {
+        if interaction_id.trim().is_empty() {
+            return Err(session_error(
+                "V3_TASK_BINDING_IDENTITY_REQUIRED",
+                "interaction_id is required for Session–Task binding",
+            ));
+        }
+        self.validate_binding_target(project_id, task_id)?;
+        let facts = self.session_facts(project_id, session_id)?;
+        let current_revision = facts
+            .binding
+            .as_ref()
+            .map(|binding| binding.binding_revision)
+            .unwrap_or(0);
+        if expected_binding_revision.is_some_and(|expected| expected != current_revision) {
+            return Err(V3Error::new(
+                "V3_TASK_BINDING_REVISION_CONFLICT",
+                super::domain::V3ErrorCategory::VersionConflict,
+                true,
+                "expected Session–Task binding revision does not match the current binding",
+            )
+            .with_detail(
+                "expected_binding_revision",
+                expected_binding_revision.unwrap_or(0),
+            )
+            .with_detail("current_binding_revision", current_revision));
+        }
+        let target_task_revision = self.task_lifecycle(project_id, task_id)?.version;
+        let identity = SessionTaskIdentity {
+            project_id: project_id.to_owned(),
+            interaction_id: interaction_id.to_owned(),
+            session_id: session_id.to_owned(),
+            agent_id,
+            host,
+        };
+        let binding = SessionTaskBinding {
+            schema_version: SESSION_TASK_ROUTING_SCHEMA_VERSION.to_owned(),
+            project_id: project_id.to_owned(),
+            interaction_id: identity.interaction_id.clone(),
+            session_id: identity.session_id.clone(),
+            agent_id: identity.agent_id.clone(),
+            host: identity.host.clone(),
+            bound_task_id: Some(task_id.to_owned()),
+            binding_revision: current_revision.saturating_add(1),
+            freshness: BindingFreshness::Fresh,
+            source,
+            status: BindingStatus::Bound,
+            target_task_revision: Some(target_task_revision),
+            bound_at: Some(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)),
+        };
+        self.store.append(EventDraft {
+            event_type: "session.task_bound".to_owned(),
+            aggregate_id: session_id.to_owned(),
+            expected_version,
+            idempotency_key: idempotency_key.to_owned(),
+            project_id: ProjectId(project_id.to_owned()),
+            task_id: TaskId(task_id.to_owned()),
+            node_id: None,
+            session_id: Some(SessionId(session_id.to_owned())),
+            worktree_id: None,
+            lease_id: None,
+            operation_id: None,
+            actor: actor.to_owned(),
+            evidence_grade: EvidenceGrade::HardObserved,
+            occurred_at: None,
+            commit_sha: None,
+            payload: json!({
+                "schema_version": SESSION_TASK_ROUTING_SCHEMA_VERSION,
+                "binding": binding,
+                "binding_revision": current_revision.saturating_add(1),
+            }),
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn session_task_unbind(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        actor: &str,
+        expected_version: u64,
+        idempotency_key: &str,
+        expected_binding_revision: Option<u64>,
+    ) -> Result<AppendResult, V3Error> {
+        let facts = self.session_facts(project_id, session_id)?;
+        let current = facts.binding.ok_or_else(|| {
+            session_error(
+                "V3_TASK_BINDING_REQUIRED",
+                "session has no recorded Task binding",
+            )
+        })?;
+        if current.bound_task_id.as_deref() != Some(task_id) {
+            return Err(session_error(
+                "V3_TASK_BINDING_MISMATCH",
+                "session binding does not target the requested Task",
+            ));
+        }
+        if expected_binding_revision.is_some_and(|expected| expected != current.binding_revision) {
+            return Err(V3Error::new(
+                "V3_TASK_BINDING_REVISION_CONFLICT",
+                super::domain::V3ErrorCategory::VersionConflict,
+                true,
+                "expected Session–Task binding revision does not match the current binding",
+            ));
+        }
+        let binding = SessionTaskBinding {
+            schema_version: SESSION_TASK_ROUTING_SCHEMA_VERSION.to_owned(),
+            project_id: project_id.to_owned(),
+            interaction_id: current.interaction_id,
+            session_id: session_id.to_owned(),
+            agent_id: current.agent_id,
+            host: current.host,
+            bound_task_id: None,
+            binding_revision: current.binding_revision.saturating_add(1),
+            freshness: BindingFreshness::Unknown,
+            source: BindingSource::UserConfirmed,
+            status: BindingStatus::Unbound,
+            target_task_revision: None,
+            bound_at: None,
+        };
+        self.store.append(EventDraft {
+            event_type: "session.task_unbound".to_owned(),
+            aggregate_id: session_id.to_owned(),
+            expected_version,
+            idempotency_key: idempotency_key.to_owned(),
+            project_id: ProjectId(project_id.to_owned()),
+            task_id: TaskId(task_id.to_owned()),
+            node_id: None,
+            session_id: Some(SessionId(session_id.to_owned())),
+            worktree_id: None,
+            lease_id: None,
+            operation_id: None,
+            actor: actor.to_owned(),
+            evidence_grade: EvidenceGrade::UserConfirmed,
+            occurred_at: None,
+            commit_sha: None,
+            payload: json!({"schema_version": SESSION_TASK_ROUTING_SCHEMA_VERSION, "binding": binding}),
+        })
+    }
+
+    pub fn session_task_binding(
+        &self,
+        project_id: &str,
+        session_id: &str,
+    ) -> Result<SessionTaskBinding, V3Error> {
+        let facts = self.session_facts(project_id, session_id)?;
+        Ok(facts.binding.unwrap_or_else(|| {
+            SessionTaskBinding::unbound(&SessionTaskIdentity {
+                project_id: project_id.to_owned(),
+                interaction_id: session_id.to_owned(),
+                session_id: session_id.to_owned(),
+                agent_id: None,
+                host: None,
+            })
+        }))
+    }
+
+    /// Validate the binding precondition for any Task-scoped write whose
+    /// operation is not itself a session bind/open action. The caller may use
+    /// this before constructing a plan, criterion, finding, memory, or
+    /// orchestration command.
+    pub fn validate_task_binding(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        expected_binding_revision: Option<u64>,
+    ) -> Result<(), V3Error> {
+        self.require_session_binding(project_id, task_id, session_id, expected_binding_revision)
+            .map(|_| ())
     }
 
     pub fn event_log(
@@ -814,6 +1049,16 @@ impl V3ApplicationService {
                 facts.open = true;
                 facts.node_id = event.node_id.map(|id| id.0);
             }
+            if matches!(
+                event.event_type.as_str(),
+                "session.task_bound" | "session.task_unbound"
+            ) {
+                facts.binding = event
+                    .payload
+                    .get("binding")
+                    .cloned()
+                    .and_then(|value| serde_json::from_value::<SessionTaskBinding>(value).ok());
+            }
             if event.event_type == "session.closed" {
                 facts.open = false;
                 facts.closed = true;
@@ -835,6 +1080,100 @@ impl V3ApplicationService {
         }
         Ok(facts)
     }
+
+    fn validate_binding_target(&self, project_id: &str, task_id: &str) -> Result<(), V3Error> {
+        let lifecycle = self.task_lifecycle(project_id, task_id)?;
+        if matches!(
+            lifecycle.state.as_str(),
+            "completed" | "cancelled" | "closed_with_exceptions" | "superseded"
+        ) {
+            return Err(V3Error::new(
+                "V3_TASK_BINDING_MISMATCH",
+                super::domain::V3ErrorCategory::StaleResource,
+                false,
+                "cannot bind a session to a terminal Task",
+            )
+            .with_detail("task_id", task_id.to_owned())
+            .with_detail("task_state", lifecycle.state));
+        }
+        Ok(())
+    }
+
+    fn require_session_binding(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        session_id: &str,
+        expected_binding_revision: Option<u64>,
+    ) -> Result<SessionTaskBinding, V3Error> {
+        let facts = self.session_facts(project_id, session_id)?;
+        let binding = facts.binding.ok_or_else(|| {
+            V3Error::new(
+                "V3_TASK_BINDING_REQUIRED",
+                super::domain::V3ErrorCategory::PermissionDenied,
+                false,
+                "task-scoped write requires an explicit Session–Task binding",
+            )
+            .with_detail("session_id", session_id.to_owned())
+            .with_detail("requested_task_id", task_id.to_owned())
+            .with_detail(
+                "repair_action",
+                "call session_task_bind after confirming the target Task",
+            )
+        })?;
+        if binding.project_id != project_id
+            || binding.session_id != session_id
+            || binding.bound_task_id.as_deref() != Some(task_id)
+        {
+            return Err(V3Error::new(
+                "V3_TASK_BINDING_MISMATCH",
+                super::domain::V3ErrorCategory::ScopeMismatch,
+                false,
+                "Session–Task binding does not match the requested project, session, or Task",
+            )
+            .with_detail(
+                "bound_task_id",
+                binding.bound_task_id.clone().unwrap_or_default(),
+            )
+            .with_detail("requested_task_id", task_id.to_owned())
+            .with_detail("binding_revision", binding.binding_revision));
+        }
+        if binding.status != BindingStatus::Bound || binding.freshness != BindingFreshness::Fresh {
+            return Err(V3Error::new(
+                "V3_TASK_BINDING_STALE",
+                super::domain::V3ErrorCategory::StaleResource,
+                false,
+                "Session–Task binding is stale or invalid; rebind before writing",
+            )
+            .with_detail(
+                "binding_status",
+                serde_json::to_value(binding.status).unwrap_or(Value::Null),
+            )
+            .with_detail(
+                "binding_freshness",
+                serde_json::to_value(binding.freshness).unwrap_or(Value::Null),
+            )
+            .with_detail(
+                "repair_action",
+                "call session_task_bind with the current Task",
+            ));
+        }
+        if expected_binding_revision.is_some_and(|expected| expected != binding.binding_revision) {
+            return Err(V3Error::new(
+                "V3_TASK_BINDING_REVISION_CONFLICT",
+                super::domain::V3ErrorCategory::VersionConflict,
+                true,
+                "Session–Task binding revision is stale",
+            )
+            .with_detail(
+                "expected_binding_revision",
+                expected_binding_revision.unwrap_or(0),
+            )
+            .with_detail("current_binding_revision", binding.binding_revision));
+        }
+        self.validate_binding_target(project_id, task_id)?;
+        Ok(binding)
+    }
     fn require_open_session(
         &self,
         project_id: &str,
@@ -842,12 +1181,7 @@ impl V3ApplicationService {
         session_id: &str,
     ) -> Result<SessionFacts, V3Error> {
         let facts = self.session_facts(project_id, session_id)?;
-        if facts.task_id.as_deref() != Some(task_id) {
-            return Err(session_error(
-                "V3_SESSION_SCOPE_MISMATCH",
-                "session does not belong to task",
-            ));
-        }
+        self.require_session_binding(project_id, task_id, session_id, None)?;
         if !facts.open || facts.closed || facts.gapped {
             return Err(session_error(
                 "V3_SESSION_NOT_OPEN",
@@ -884,11 +1218,10 @@ impl V3ApplicationService {
             .as_ref()
             .is_some_and(|policy| policy.planning_required)
         {
-            if lifecycle.nodes.is_empty()
+            if lifecycle.effective_nodes().next().is_none()
                 || lifecycle
-                    .nodes
-                    .values()
-                    .any(|node| !is_terminal_plan_node_state(node.state.as_str()))
+                    .effective_nodes()
+                    .any(|(_, node)| !is_terminal_plan_node_state(node.state.as_str()))
             {
                 return Err(session_error(
                     "V3_COMPLETION_PLAN_GATE_FAILED",
@@ -896,10 +1229,9 @@ impl V3ApplicationService {
                 ));
             }
             let covered = lifecycle
-                .nodes
-                .values()
-                .filter(|node| plan_node_state_covers_criteria(node.state.as_str()))
-                .flat_map(|node| node.criterion_ids.iter().cloned())
+                .effective_nodes()
+                .filter(|(_, node)| plan_node_state_covers_criteria(node.state.as_str()))
+                .flat_map(|(_, node)| node.criterion_ids.iter().cloned())
                 .collect::<BTreeSet<_>>();
             if !required.is_subset(&covered) {
                 return Err(session_error(
@@ -961,7 +1293,11 @@ impl V3ApplicationService {
                 "full-profile worktrees, leases, and integrations must be settled",
             ));
         }
-        let facts = json!({"lifecycle":lifecycle.completion_digest(),"nodes":lifecycle.nodes,"sessions":task_sessions,"worktrees":orchestration.worktrees,"policy":policy,"model":"completion-gate-1"});
+        let effective_nodes = lifecycle
+            .effective_nodes()
+            .map(|(node_id, node)| (node_id.clone(), node.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let facts = json!({"lifecycle":lifecycle.completion_digest(),"nodes":effective_nodes,"sessions":task_sessions,"worktrees":orchestration.worktrees,"policy":policy,"model":"completion-gate-1"});
         let mut hasher = Sha256::new();
         hasher.update(serde_json::to_vec(&facts).unwrap_or_default());
         Ok(format!("sha256:{:x}", hasher.finalize()))
@@ -987,10 +1323,39 @@ impl V3ApplicationService {
         node_id: Option<String>,
         worktree_id: Option<String>,
     ) -> Result<AppendResult, V3Error> {
+        // Binding facts are a new aggregate concern. Historical callers used
+        // session versions that counted only opened/log/result events, so a
+        // request whose version is exactly behind the number of binding facts
+        // is accepted as an auditable compatibility read and normalized to
+        // the real event-store version. New MCP/CLI callers resolve the real
+        // aggregate version and take the direct branch.
+        let events = self.store.load_project(project_id)?;
+        let current_version = events
+            .iter()
+            .filter(|event| event.aggregate_id == session_id)
+            .map(|event| event.aggregate_version)
+            .max()
+            .unwrap_or(0);
+        let binding_events = events
+            .iter()
+            .filter(|event| {
+                event.aggregate_id == session_id
+                    && matches!(
+                        event.event_type.as_str(),
+                        "session.task_bound" | "session.task_unbound"
+                    )
+            })
+            .count() as u64;
+        let effective_expected_version =
+            if expected_version.saturating_add(binding_events) == current_version {
+                current_version
+            } else {
+                expected_version
+            };
         self.store.append(EventDraft {
             event_type: event_type.to_owned(),
             aggregate_id: session_id.to_owned(),
-            expected_version,
+            expected_version: effective_expected_version,
             idempotency_key: idempotency_key.to_owned(),
             project_id: ProjectId::from(project_id),
             task_id: TaskId::from(task_id),
@@ -1321,6 +1686,150 @@ mod tests {
             ),
         )
         .unwrap();
+    }
+
+    fn write_basic_task(root: &Path) {
+        fs::create_dir_all(root.join(".vibehub/tasks/task.test")).unwrap();
+        fs::write(
+            root.join(".vibehub/tasks/task.test/task.yaml"),
+            "task_id: task.test\ntitle: Binding task\nintent: Verify Session binding\nphase: implement\nphase_status: active\nacceptance_criteria:\n- Session binding is enforced\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn task_scoped_writes_fail_closed_without_binding_and_after_unbind() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-binding-gate-{}", Uuid::new_v4()));
+        write_basic_task(&root);
+        let app = V3ApplicationService::open(&root).unwrap();
+
+        let unbound_error = app
+            .event_log(
+                "progress",
+                "project.test",
+                "task.test",
+                "session.unbound",
+                "codex",
+                0,
+                "progress.unbound",
+                json!({"summary": "must be rejected"}),
+            )
+            .unwrap_err();
+        assert_eq!(unbound_error.code, "V3_TASK_BINDING_REQUIRED");
+
+        app.session_task_bind(
+            "project.test",
+            "task.test",
+            "session.bound",
+            "interaction.bound",
+            "codex",
+            BindingSource::UserConfirmed,
+            0,
+            "bind.1",
+            None,
+            Some("agent.codex".to_owned()),
+            Some("codex".to_owned()),
+            None,
+        )
+        .unwrap();
+        let binding = app
+            .session_task_binding("project.test", "session.bound")
+            .unwrap();
+        assert_eq!(binding.status, BindingStatus::Bound);
+        assert_eq!(binding.binding_revision, 1);
+
+        let revision_error = app
+            .validate_task_binding("project.test", "task.test", "session.bound", Some(0))
+            .unwrap_err();
+        assert_eq!(revision_error.code, "V3_TASK_BINDING_REVISION_CONFLICT");
+
+        app.session_open_with_context(
+            "project.test",
+            "task.test",
+            "session.bound",
+            "codex",
+            1,
+            "open.1",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        app.event_log(
+            "progress",
+            "project.test",
+            "task.test",
+            "session.bound",
+            "codex",
+            2,
+            "progress.bound",
+            json!({"summary": "binding verified"}),
+        )
+        .unwrap();
+
+        app.session_task_unbind(
+            "project.test",
+            "task.test",
+            "session.bound",
+            "codex",
+            3,
+            "unbind.1",
+            Some(1),
+        )
+        .unwrap();
+        let unbound = app
+            .session_task_binding("project.test", "session.bound")
+            .unwrap();
+        assert_eq!(unbound.status, BindingStatus::Unbound);
+        assert_eq!(unbound.binding_revision, 2);
+        let after_unbind_error = app
+            .event_log(
+                "progress",
+                "project.test",
+                "task.test",
+                "session.bound",
+                "codex",
+                4,
+                "progress.after-unbind",
+                json!({"summary": "must be rejected"}),
+            )
+            .unwrap_err();
+        assert_eq!(after_unbind_error.code, "V3_TASK_BINDING_MISMATCH");
+
+        let projection = app.rebuild("project.test").unwrap();
+        assert_eq!(
+            projection.session_bindings["session.bound"].status,
+            BindingStatus::Unbound
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn task_scoped_binding_rejects_a_different_task() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-v3-binding-mismatch-{}", Uuid::new_v4()));
+        write_basic_task(&root);
+        let app = V3ApplicationService::open(&root).unwrap();
+        app.session_task_bind(
+            "project.test",
+            "task.test",
+            "session.bound",
+            "interaction.bound",
+            "codex",
+            BindingSource::ExplicitTaskId,
+            0,
+            "bind.1",
+            None,
+            None,
+            Some("codex".to_owned()),
+            None,
+        )
+        .unwrap();
+        let error = app
+            .validate_task_binding("project.test", "task.other", "session.bound", Some(1))
+            .unwrap_err();
+        assert_eq!(error.code, "V3_TASK_BINDING_MISMATCH");
+        fs::remove_dir_all(root).unwrap();
     }
 
     fn add_planning_node(

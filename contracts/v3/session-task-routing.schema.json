@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/session-task-routing.schema.json",
+  "title": "SessionTaskRoutingContract",
+  "oneOf": [
+    { "$ref": "#/$defs/RouteRequest" },
+    { "$ref": "#/$defs/TaskRouteDecision" }
+  ],
+  "$defs": {
+    "RouteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "identity", "intent", "trigger", "candidates", "host_capabilities"],
+      "properties": {
+        "schema_version": { "const": "1.0" },
+        "identity": { "$ref": "#/$defs/SessionTaskIdentity" },
+        "intent": { "type": "string" },
+        "trigger": { "$ref": "#/$defs/RouteTrigger" },
+        "explicit_task_id": { "type": ["string", "null"] },
+        "explicit_task_title": { "type": ["string", "null"] },
+        "current_binding": { "anyOf": [{ "$ref": "#/$defs/SessionTaskBinding" }, { "type": "null" }] },
+        "just_created_task_id": { "type": ["string", "null"] },
+        "explicit_start": { "type": "boolean" },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/TaskRouteCandidate" } },
+        "project_current_default_task_id": { "type": ["string", "null"] },
+        "ui_selected_task_id": { "type": ["string", "null"] },
+        "host_capabilities": { "$ref": "#/$defs/HostCapabilities" }
+      }
+    },
+    "BindingStatus": { "type": "string", "enum": ["unbound", "bound", "stale", "invalid"] },
+    "BindingFreshness": { "type": "string", "enum": ["fresh", "stale", "unknown"] },
+    "BindingSource": { "type": "string", "enum": ["explicit_task_id", "explicit_title", "current_session", "created_and_start", "unique_candidate", "user_confirmed", "legacy_session_open", "unknown"] },
+    "RouteAction": { "type": "string", "enum": ["continue", "bind", "ask", "new"] },
+    "RouteTrigger": { "type": "string", "enum": ["ordinary_continuation", "explicit_task", "explicit_switch", "new_execution", "binding_invalid", "binding_stale", "scope_conflict", "ambiguous_candidate"] },
+    "HostCapabilityState": { "type": "string", "enum": ["known", "unknown"] },
+    "HostCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "supports_session_binding", "supports_binding_preconditions"],
+      "properties": {
+        "state": { "$ref": "#/$defs/HostCapabilityState" },
+        "supports_session_binding": { "type": "boolean" },
+        "supports_binding_preconditions": { "type": "boolean" },
+        "provider": { "type": ["string", "null"] }
+      }
+    },
+    "SessionTaskIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "interaction_id", "session_id"],
+      "properties": {
+        "project_id": { "type": "string", "minLength": 1 },
+        "interaction_id": { "type": "string", "minLength": 1 },
+        "session_id": { "type": "string", "minLength": 1 },
+        "agent_id": { "type": ["string", "null"] },
+        "host": { "type": ["string", "null"] }
+      }
+    },
+    "SessionTaskBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "project_id", "interaction_id", "session_id", "binding_revision", "freshness", "source", "status"],
+      "properties": {
+        "schema_version": { "const": "1.0" },
+        "project_id": { "type": "string", "minLength": 1 },
+        "interaction_id": { "type": "string", "minLength": 1 },
+        "session_id": { "type": "string", "minLength": 1 },
+        "agent_id": { "type": ["string", "null"] },
+        "host": { "type": ["string", "null"] },
+        "bound_task_id": { "type": ["string", "null"] },
+        "binding_revision": { "type": "integer", "minimum": 0 },
+        "freshness": { "$ref": "#/$defs/BindingFreshness" },
+        "source": { "$ref": "#/$defs/BindingSource" },
+        "status": { "$ref": "#/$defs/BindingStatus" },
+        "target_task_revision": { "type": ["integer", "null"], "minimum": 0 },
+        "bound_at": { "type": ["string", "null"] }
+      }
+    },
+    "TaskRouteCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "title", "intent", "state"],
+      "properties": {
+        "task_id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "intent": { "type": "string" },
+        "state": { "type": "string" },
+        "project_id": { "type": ["string", "null"] },
+        "is_current_default": { "type": "boolean" },
+        "is_ui_selected": { "type": "boolean" },
+        "active_session_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "RouteOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "title", "state", "confidence"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "title": { "type": "string" },
+        "state": { "type": "string" },
+        "confidence": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "TaskRouteDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "project_id", "interaction_id", "session_id", "action", "kind", "binding_status", "confidence", "trigger", "reroute_performed", "rationale"],
+      "properties": {
+        "schema_version": { "const": "1.0" },
+        "project_id": { "type": "string" },
+        "interaction_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "action": { "$ref": "#/$defs/RouteAction" },
+        "kind": { "$ref": "#/$defs/RouteAction" },
+        "binding_status": { "$ref": "#/$defs/BindingStatus" },
+        "candidate_task_id": { "type": ["string", "null"] },
+        "selected_task_id": { "type": ["string", "null"] },
+        "binding_source": { "anyOf": [{ "$ref": "#/$defs/BindingSource" }, { "type": "null" }] },
+        "binding_revision": { "type": ["integer", "null"], "minimum": 0 },
+        "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "trigger": { "$ref": "#/$defs/RouteTrigger" },
+        "options": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/RouteOption" } },
+        "confirmation_question": { "type": ["string", "null"] },
+        "diagnostic_code": { "type": ["string", "null"] },
+        "reroute_performed": { "type": "boolean" },
+        "rationale": { "type": "string" }
+      }
+    }
+  }
+}

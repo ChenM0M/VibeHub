@@ -1,8 +1,8 @@
 use super::{
-    effective_agent_declarations, inspect_mcp_host_configs, inspect_project_layout,
+    effective_agent_declarations, inspect_host_mcp_configs, inspect_project_layout,
     read_project_settings, resolve_project_scopes, AgentSpecTarget, EffectiveAgentDeclaration,
-    McpHostConfigInspection, OutputLanguage, ProjectLayoutState, ProjectScopeInspection, V3Error,
-    V3ErrorCategory, V3ProjectSettings,
+    HostMcpSyncResult, McpHostConfigInspection, OutputLanguage, ProjectLayoutState,
+    ProjectScopeInspection, V3Error, V3ErrorCategory, V3ProjectSettings,
 };
 use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -63,6 +63,8 @@ pub struct AgentSpecInspection {
 pub struct AgentSpecSyncRequest {
     #[serde(default)]
     pub force_managed_region: bool,
+    #[serde(default)]
+    pub migrate_global: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +74,7 @@ pub struct AgentSpecSyncResult {
     pub written_paths: Vec<String>,
     pub skipped_paths: Vec<String>,
     pub blocking_paths: Vec<String>,
+    pub host_mcp: HostMcpSyncResult,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,7 +144,7 @@ pub fn inspect_agent_specs(project_root: impl AsRef<Path>) -> Result<AgentSpecIn
         settings_revision: settings.revision,
         scope: scopes.inspection(),
         effective_declarations: effective_agent_declarations(&scopes, &settings.agent_spec_targets),
-        mcp_hosts: inspect_mcp_host_configs(&scopes, &settings.agent_spec_targets),
+        mcp_hosts: inspect_host_mcp_configs(&scopes, &settings.agent_spec_targets, None),
         artifacts: items.into_iter().map(|item| item.public).collect(),
     })
 }
@@ -150,7 +153,20 @@ pub fn sync_agent_specs(
     project_root: impl AsRef<Path>,
     request: AgentSpecSyncRequest,
 ) -> Result<AgentSpecSyncResult, V3Error> {
-    sync_agent_specs_with_hook(project_root.as_ref(), request, |_, _| Ok(()))
+    let root = project_root.as_ref();
+    let migrate_global = request.migrate_global;
+    let mut result = sync_agent_specs_with_hook(root, request, |_, _| Ok(()))?;
+    let host_mcp = if migrate_global {
+        super::sync_host_mcp_configs(root, None)?
+    } else {
+        super::sync_project_host_mcp_configs(root, None)?
+    };
+    result.host_mcp = host_mcp;
+    result.inspection = inspect_agent_specs(root)?;
+    if result.host_mcp.status != super::HostMcpSyncStatus::Synchronized {
+        result.status = AgentSpecSyncStatus::Incomplete;
+    }
+    Ok(result)
 }
 
 fn sync_agent_specs_with_hook(
@@ -253,17 +269,19 @@ fn sync_agent_specs_with_hook(
             )
         }
     };
+    let host_mcp = super::empty_host_mcp_sync_result();
     let blocking_paths = inspection
         .artifacts
         .iter()
         .filter(|item| item.status != AgentSpecArtifactStatus::InSync)
         .map(|item| item.path.clone())
         .collect::<Vec<_>>();
-    let status = if blocking_paths.is_empty() {
-        AgentSpecSyncStatus::Synchronized
-    } else {
-        AgentSpecSyncStatus::Incomplete
-    };
+    let status =
+        if blocking_paths.is_empty() && host_mcp.status == super::HostMcpSyncStatus::Synchronized {
+            AgentSpecSyncStatus::Synchronized
+        } else {
+            AgentSpecSyncStatus::Incomplete
+        };
     Ok(AgentSpecSyncResult {
         status,
         inspection,
@@ -273,6 +291,7 @@ fn sync_agent_specs_with_hook(
             .collect(),
         skipped_paths,
         blocking_paths,
+        host_mcp,
     })
 }
 
@@ -365,6 +384,7 @@ fn render_region(consumers: &[AgentSpecTarget], language: OutputLanguage) -> Str
             "VibeHub V3 的任务、计划及其事件是工作流事实来源；文件或聊天叙述不是事实来源。",
             "工作流状态读写必须使用 V3 typed commands 或 MCP 工具；通过 MCP 写入时 expected_version 与 idempotency_key 可省略（服务端自动解析）；显式提供时必须准确，配置类命令必须遵守其 revision/precondition 契约。",
             "禁止直接写入事件日志、投影或 current pointer；只能通过受支持的命令接口改变状态。",
+            "未绑定 Session 只能进行只读检查和讨论；执行前必须通过 task_candidates/task_view 与 task_route 明确目标，调用 session_task_bind 后再提交带 session_id 与 binding_revision 的 Task-scoped 写入。task_create 是 create-only，不改变 current/default；current/default 与 UI selected_task_id 都不能替代 Session binding。",
             "禁止恢复 V2 state、run、agent-view、adapters 或其他旧协议文件。",
             "开始工作前必须读取 V3 current task、task lifecycle、plan 和 session 投影；不得用 V2 status/sync/output 或旧仓库 skills 推断当前状态。",
             "优先使用已连接的 V3 MCP；MCP 不可用时使用能输出 V3 JSON 的 CLI fallback。在 VibeHub 源码仓库中优先使用由当前源码构建的 <project_root>/target/debug/vibehub，不得假定 PATH 中的旧安装包兼容。若命令启动 GUI、没有 JSON 或版本不兼容，必须停止状态变更并明确报告控制面不可用。",
@@ -390,6 +410,7 @@ fn render_region(consumers: &[AgentSpecTarget], language: OutputLanguage) -> Str
             "先計畫後執行是 standard 與 full 的預設動作：只要 execution_policy.planning_required=true，任何程式碼或檔案修改前都必須用 plan_node_add / plan_dependencies_set 建立或細化可核驗計畫；若 task_view 已回傳充分計畫則沿用而不重複新增節點。無法確定複雜度時按 standard 處理並要求計畫，不得預設走 lightweight 略過計畫。",
             "工作流程狀態讀寫必須使用 V3 typed commands 或 MCP 工具；透過 MCP 寫入時 expected_version 與 idempotency_key 可省略（服務端自動解析）；顯式提供時必須準確，設定類命令必須遵守其 revision/precondition 契約。",
             "禁止直接寫入事件日誌、投影或 current pointer；只能透過受支援的命令介面改變狀態。禁止恢復 V2 state、run、agent-view、adapters 或其他舊協定檔案。",
+            "未綁定 Session 只能進行唯讀檢查與討論；執行前必須透過 task_candidates/task_view 與 task_route 明確目標，呼叫 session_task_bind 後再提交帶有 session_id 與 binding_revision 的 Task-scoped 寫入。task_create 是 create-only，不改變 current/default；current/default 與 UI selected_task_id 都不能取代 Session binding。",
             "開始工作前必須讀取 V3 current task、task lifecycle、plan 與 session 投影；不得用 V2 status/sync/output 或舊倉庫 skills 推斷目前狀態。",
             "優先使用已連線的 V3 MCP；MCP 不可用時使用能輸出 V3 JSON 的 CLI fallback。在 VibeHub 原始碼倉庫中優先使用由目前原始碼建置的 <project_root>/target/debug/vibehub，不得假定 PATH 中的舊安裝套件相容。若命令啟動 GUI、沒有 JSON 或版本不相容，必須停止狀態變更並明確回報控制面不可用。",
             "按 workflow_profile 縮放執行：lightweight 僅記錄最小 session/event/result、真實驗收與必要風險，不建立任務圖或強制 progress 里程碑；standard 使用常規計畫與審查；full 使用完整計畫、finding、證據和確認門檻。判斷結果必須在第一則狀態更新中明確記錄，standard/full 還必須寫入 progress。",
@@ -413,6 +434,7 @@ fn render_region(consumers: &[AgentSpecTarget], language: OutputLanguage) -> Str
             "Plan-before-execute is the default for standard and full: whenever execution_policy.planning_required=true, use plan_node_add / plan_dependencies_set to create or refine a verifiable plan before any code or file change; when task_view already returns a sufficient plan, reuse it instead of adding duplicate nodes. When complexity is unclear, treat it as standard and require a plan rather than defaulting to lightweight without planning.",
             "Read and mutate workflow state through V3 typed commands or MCP tools; when writing through MCP, expected_version and idempotency_key may be omitted (the server resolves them automatically), while explicitly provided values must be accurate; configuration mutations must follow their revision/precondition contract.",
             "Never write event logs, projections, or the current pointer directly; state changes must go through supported command interfaces. Do not restore V2 state, run, agent-view, adapters, or any other legacy protocol files.",
+            "An unbound Session is read-only for inspection and discussion; before execution, use task_candidates/task_view and task_route to identify the target, call session_task_bind, and submit Task-scoped writes with session_id and binding_revision. task_create is create-only and does not change current/default; current/default and UI selected_task_id never substitute for a Session binding.",
             "Before work, read the V3 current task, task lifecycle, plan, and session projections; never infer current state from V2 status/sync/output or legacy repository skills.",
             "Prefer a connected V3 MCP server; when MCP is unavailable, use a CLI fallback that emits V3 JSON. In a VibeHub source checkout, prefer <project_root>/target/debug/vibehub built from the current source and never assume an older PATH installation is compatible. If it launches a GUI, emits no JSON, or is incompatible, stop state mutations and report that the control plane is unavailable.",
             "Scale execution by workflow_profile: lightweight records only the minimum session/event/result, real acceptance checks, and necessary risks, without a task graph or forced progress milestones; standard uses the normal plan and review flow; full uses complete planning, findings, evidence, and confirmation gates. Record the decision in the first status update, and also in progress for standard/full.",
@@ -1022,6 +1044,7 @@ mod tests {
             root,
             AgentSpecSyncRequest {
                 force_managed_region: force,
+                migrate_global: false,
             },
         )
         .unwrap()
@@ -1052,6 +1075,11 @@ mod tests {
                 "standard",
                 "full",
                 "session_open",
+                "task_candidates",
+                "task_route",
+                "session_task_bind",
+                "binding_revision",
+                "selected_task_id",
                 "criterion_review",
                 "accepted",
                 "passed",
@@ -1130,8 +1158,6 @@ mod tests {
             ".claude/commands",
             ".claude/hooks",
             ".claude/skills",
-            "opencode.json",
-            ".codex",
             ".vibehub/adapters",
             ".vibehub/agent-view",
         ] {
@@ -1140,6 +1166,16 @@ mod tests {
                 "forbidden path created: {forbidden}"
             );
         }
+        assert!(root.join(".codex/config.toml").is_file());
+        assert!(root.join(".mcp.json").is_file());
+        assert!(root.join("opencode.json").is_file());
+        let codex = fs::read_to_string(root.join(".codex/config.toml")).unwrap();
+        let claude = fs::read_to_string(root.join(".mcp.json")).unwrap();
+        let opencode = fs::read_to_string(root.join("opencode.json")).unwrap();
+        let control_root = root.to_string_lossy();
+        assert!(codex.contains(control_root.as_ref()));
+        assert!(claude.contains(control_root.as_ref()));
+        assert!(opencode.contains(control_root.as_ref()));
         assert!(root.join(".vibehub/runtime/agent-specs.yaml").is_file());
         fs::remove_dir_all(root).unwrap();
     }
@@ -1322,6 +1358,7 @@ mod tests {
             &root,
             AgentSpecSyncRequest {
                 force_managed_region: false,
+                migrate_global: false,
             },
             |_, write_number| {
                 if write_number == 1 {

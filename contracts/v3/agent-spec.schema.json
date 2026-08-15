@@ -15,6 +15,12 @@
     "V3AgentSpecSyncStatus": {
       "enum": ["synchronized", "incomplete"]
     },
+    "HostConfigScope": {
+      "enum": ["user", "project"]
+    },
+    "HostConfigStatus": {
+      "enum": ["missing", "in_sync", "mismatched", "invalid", "unsupported", "ambiguous"]
+    },
     "V3AgentSpecArtifactInspection": {
       "type": "object",
       "required": [
@@ -70,14 +76,26 @@
     "McpHostConfigInspection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["consumer", "path", "status", "reason", "server_name", "configured_project_root"],
+      "required": [
+        "schema_version", "consumer", "scope", "path", "status", "reason", "server_name",
+        "binary", "configured_project_root", "canonical_configured_project_root", "revision",
+        "owned_fields", "provenance", "repair_action"
+      ],
       "properties": {
+        "schema_version": { "type": "string", "minLength": 1 },
         "consumer": { "$ref": "#/$defs/AgentSpecTarget" },
+        "scope": { "$ref": "#/$defs/HostConfigScope" },
         "path": { "type": "string", "minLength": 1 },
-        "status": { "enum": ["missing", "in_sync", "mismatched", "invalid"] },
+        "status": { "$ref": "#/$defs/HostConfigStatus" },
         "reason": { "type": "string", "minLength": 1 },
         "server_name": { "type": ["string", "null"] },
-        "configured_project_root": { "type": ["string", "null"] }
+        "binary": { "type": ["string", "null"] },
+        "configured_project_root": { "type": ["string", "null"] },
+        "canonical_configured_project_root": { "type": ["string", "null"] },
+        "revision": { "type": ["string", "null"] },
+        "owned_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "provenance": { "type": "string", "minLength": 1 },
+        "repair_action": { "type": ["string", "null"] }
       }
     },
     "V3AgentSpecInspection": {
@@ -100,18 +118,54 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "force_managed_region": { "type": "boolean", "default": false }
+        "force_managed_region": { "type": "boolean", "default": false },
+        "migrate_global": { "type": "boolean", "default": false }
       }
     },
     "V3AgentSpecSyncResult": {
       "type": "object",
-      "required": ["status", "inspection", "written_paths", "skipped_paths", "blocking_paths"],
+      "required": ["status", "inspection", "written_paths", "skipped_paths", "blocking_paths", "host_mcp"],
       "properties": {
         "status": { "$ref": "#/$defs/V3AgentSpecSyncStatus" },
         "inspection": { "$ref": "#/$defs/V3AgentSpecInspection" },
         "written_paths": { "type": "array", "items": { "type": "string" } },
         "skipped_paths": { "type": "array", "items": { "type": "string" } },
-        "blocking_paths": { "type": "array", "items": { "type": "string" } }
+        "blocking_paths": { "type": "array", "items": { "type": "string" } },
+        "host_mcp": { "$ref": "#/$defs/HostMcpSyncResult" }
+      }
+    },
+    "HostMcpSyncStatus": {
+      "enum": ["synchronized", "incomplete"]
+    },
+    "GlobalMcpMigrationStatus": {
+      "enum": ["missing", "unchanged", "migrated"]
+    },
+    "GlobalMcpMigrationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "path", "backup_path", "before_revision", "after_revision", "removed_server_names", "preserved_bytes", "repair_action"],
+      "properties": {
+        "status": { "$ref": "#/$defs/GlobalMcpMigrationStatus" },
+        "path": { "type": ["string", "null"] },
+        "backup_path": { "type": ["string", "null"] },
+        "before_revision": { "type": ["string", "null"] },
+        "after_revision": { "type": ["string", "null"] },
+        "removed_server_names": { "type": "array", "items": { "type": "string" } },
+        "preserved_bytes": { "type": "boolean" },
+        "repair_action": { "type": ["string", "null"] }
+      }
+    },
+    "HostMcpSyncResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "inspections", "written_paths", "skipped_paths", "blocking_paths", "global_migration"],
+      "properties": {
+        "status": { "$ref": "#/$defs/HostMcpSyncStatus" },
+        "inspections": { "type": "array", "items": { "$ref": "#/$defs/McpHostConfigInspection" } },
+        "written_paths": { "type": "array", "items": { "type": "string" } },
+        "skipped_paths": { "type": "array", "items": { "type": "string" } },
+        "blocking_paths": { "type": "array", "items": { "type": "string" } },
+        "global_migration": { "$ref": "#/$defs/GlobalMcpMigrationResult" }
       }
     }
   }

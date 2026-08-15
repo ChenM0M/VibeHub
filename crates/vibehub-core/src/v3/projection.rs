@@ -2,6 +2,7 @@ use super::domain::{V3Error, V3ErrorCategory, V3EventEnvelope};
 use super::lifecycle::{self, TaskLifecycleProjection, LIFECYCLE_EVENT_TYPES};
 use super::orchestration::{self, WorktreeProjection, ORCHESTRATION_EVENT_TYPES};
 use super::project_memory::{self, MemoryProjection, MEMORY_EVENT_TYPES};
+use super::routing::SessionTaskBinding;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,6 +19,8 @@ pub struct V3Projection {
     #[serde(default)]
     pub tasks: BTreeMap<String, TaskLifecycleProjection>,
     pub sessions: BTreeMap<String, SessionProjection>,
+    #[serde(default)]
+    pub session_bindings: BTreeMap<String, SessionTaskBinding>,
     pub worktrees: BTreeMap<String, WorktreeProjection>,
     #[serde(default)]
     pub project_memory: Option<MemoryProjection>,
@@ -75,6 +78,7 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
         aggregate_versions: BTreeMap::new(),
         tasks: BTreeMap::new(),
         sessions: BTreeMap::new(),
+        session_bindings: BTreeMap::new(),
         worktrees: BTreeMap::new(),
         project_memory: None,
         unknown_event_types: Vec::new(),
@@ -109,6 +113,29 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
             }
             continue;
         };
+        if event.event_type == "session.task_bound" {
+            if let Some(binding) = event
+                .payload
+                .get("binding")
+                .cloned()
+                .and_then(|value| serde_json::from_value::<SessionTaskBinding>(value).ok())
+            {
+                projection
+                    .session_bindings
+                    .insert(session_id.clone(), binding);
+            }
+        } else if event.event_type == "session.task_unbound" {
+            if let Some(binding) = event
+                .payload
+                .get("binding")
+                .cloned()
+                .and_then(|value| serde_json::from_value::<SessionTaskBinding>(value).ok())
+            {
+                projection
+                    .session_bindings
+                    .insert(session_id.clone(), binding);
+            }
+        }
         let session = projection
             .sessions
             .entry(session_id)

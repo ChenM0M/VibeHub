@@ -2,8 +2,9 @@ use std::fs;
 use std::io::{self, Read};
 
 use vibehub_core::v3::{
-    AgentSpecSyncRequest, LifecycleCommand, MemoryCommand, MemoryQuery, PlanAddNodeCommand,
-    PlanSetCriteriaCommand, PlanSetDependenciesCommand, PlanSetStateCommand, V3ApplicationService,
+    route_session_task, AgentSpecSyncRequest, BindingSource, LifecycleCommand, MemoryCommand,
+    MemoryQuery, PlanAddNodeCommand, PlanSetCriteriaCommand, PlanSetDependenciesCommand,
+    PlanSetStateCommand, RouteRequest, TaskRouteCandidate, V3ApplicationService,
     V3TaskCreateRequest, V3ViewRepository,
 };
 use vibehub_core::vibehub;
@@ -125,6 +126,8 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   v3 <project> agent-specs-status
   v3 <project> agent-specs-sync [--force-managed-region]
   v3 <project> session-open <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> [working_directory] [node_id|-] [worktree_id|-] [provider] [provider_session_id|-]
+  v3 <project> session-bind <project_id> <task_id> <session_id> <interaction_id> <actor> <expected_version> <idempotency_key> <source> [expected_binding_revision|-] [agent_id|-] [host|-]
+  v3 <project> session-unbind <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> [expected_binding_revision|-]
   v3 <project> event-log <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> <progress|risk> <details_json>
   v3 <project> agent-result <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> <result_id> <node_id|-> <details_json>
   v3 <project> session-close <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key>
@@ -135,6 +138,7 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   v3 <project> view-bundle <task_id>
   v3 <project> task-lifecycle <project_id> <task_id>
   v3 <project> task-candidates
+  v3 <project> task-route <request_json_path|--stdin|->
   v3 <project> task-view <task_id>
   v3 <project> task-view <task_id> [node_id]
   v3 <project> policy-upgrade <project_id> <task_id> <actor> <expected_version> <idempotency_key> <target_profile> <reason>
@@ -526,6 +530,7 @@ fn run_v3_action(project_root: &str, args: &[String]) {
                 project_root,
                 AgentSpecSyncRequest {
                     force_managed_region: args.iter().any(|arg| arg == "--force-managed-region"),
+                    migrate_global: args.iter().any(|arg| arg == "--migrate-global"),
                 },
             ));
             return;
@@ -565,6 +570,75 @@ fn run_v3_action(project_root: &str, args: &[String]) {
                 )
             };
             print_v3_json(result);
+        }
+        "session-bind" => {
+            if args.len() < 9 {
+                v3_usage_error(command, "expected project_id task_id session_id interaction_id actor expected_version idempotency_key source");
+            }
+            let expected_version = args[6].parse::<u64>().unwrap_or_else(|error| {
+                v3_usage_error(command, &format!("invalid expected_version: {error}"))
+            });
+            let source =
+                serde_json::from_value::<BindingSource>(serde_json::Value::String(args[8].clone()))
+                    .unwrap_or_else(|_| v3_usage_error(command, "invalid binding source"));
+            let expected_binding_revision = args
+                .get(9)
+                .and_then(|value| optional_v3_value(Some(value)))
+                .map(|value| {
+                    value.parse::<u64>().unwrap_or_else(|error| {
+                        v3_usage_error(
+                            command,
+                            &format!("invalid expected_binding_revision: {error}"),
+                        )
+                    })
+                });
+            let agent_id = optional_v3_value(args.get(10));
+            let host = optional_v3_value(args.get(11));
+            print_v3_json(app.session_task_bind(
+                &args[1],
+                &args[2],
+                &args[3],
+                &args[4],
+                &args[5],
+                source,
+                expected_version,
+                &args[7],
+                expected_binding_revision,
+                agent_id,
+                host,
+                None,
+            ));
+        }
+        "session-unbind" => {
+            if args.len() < 7 {
+                v3_usage_error(
+                    command,
+                    "expected project_id task_id session_id actor expected_version idempotency_key",
+                );
+            }
+            let expected_version = args[5].parse::<u64>().unwrap_or_else(|error| {
+                v3_usage_error(command, &format!("invalid expected_version: {error}"))
+            });
+            let expected_binding_revision = args
+                .get(7)
+                .and_then(|value| optional_v3_value(Some(value)))
+                .map(|value| {
+                    value.parse::<u64>().unwrap_or_else(|error| {
+                        v3_usage_error(
+                            command,
+                            &format!("invalid expected_binding_revision: {error}"),
+                        )
+                    })
+                });
+            print_v3_json(app.session_task_unbind(
+                &args[1],
+                &args[2],
+                &args[3],
+                &args[4],
+                expected_version,
+                &args[6],
+                expected_binding_revision,
+            ));
         }
         "event-log" => {
             let (project_id, task_id, session_id, actor, expected_version, idempotency_key) =
@@ -703,17 +777,41 @@ fn run_v3_action(project_root: &str, args: &[String]) {
         "task-candidates" => {
             let repository =
                 V3ViewRepository::open(project_root).unwrap_or_else(|error| print_v3_error(error));
-            let task_id = repository
-                .current_task_id()
-                .unwrap_or_else(|error| print_v3_error(error));
-            let bundle = repository
-                .load_bundle(&task_id)
-                .unwrap_or_else(|error| print_v3_error(error));
-            print_v3_json(Ok(bundle
-                .project_overview
-                .get("active_tasks")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!([]))));
+            print_v3_json(repository.task_candidates());
+        }
+        "task-route" => {
+            let Some(json_path) = args.get(1) else {
+                v3_usage_error(
+                    command,
+                    "missing route request JSON path (use --stdin or - to read from stdin)",
+                );
+            };
+            let (content, label) = read_v3_command_content(json_path, "task route request");
+            let mut request =
+                serde_json::from_str::<RouteRequest>(&content).unwrap_or_else(|error| {
+                    eprintln!("Invalid task route JSON '{}': {error}", label);
+                    std::process::exit(2);
+                });
+            if request.candidates.is_empty() {
+                let repository = V3ViewRepository::open(project_root)
+                    .unwrap_or_else(|error| print_v3_error(error));
+                request.candidates = serde_json::from_value::<Vec<TaskRouteCandidate>>(
+                    repository
+                        .task_candidates()
+                        .unwrap_or_else(|error| print_v3_error(error)),
+                )
+                .unwrap_or_else(|error| {
+                    print_v3_error(vibehub_core::v3::V3Error::new(
+                        "V3_TASK_ROUTE_CANDIDATES_INVALID",
+                        vibehub_core::v3::V3ErrorCategory::Internal,
+                        false,
+                        error.to_string(),
+                    ))
+                });
+            }
+            print_v3_json(Ok::<_, vibehub_core::v3::V3Error>(route_session_task(
+                &request,
+            )));
         }
         "task-view" => {
             let Some(task_id) = args.get(1) else {

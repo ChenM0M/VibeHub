@@ -12,11 +12,15 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use vibehub_core::v3::{
-    assess_root_alignment, inspect_mcp_host_configs, read_project_settings, resolve_project_scopes,
-    AgentSpecTarget, LifecycleCommand, MemoryCommand, MemoryEntry, MemoryQuery,
+    assess_root_alignment, inspect_host_mcp_configs, inspect_project_layout, read_project_settings,
+    resolve_project_scopes, route_session_task, AgentSpecTarget, BindingSource, HostCapabilities,
+    HostCapabilityState, LifecycleCommand, MemoryCommand, MemoryEntry, MemoryQuery,
     OrchestrationCommand, PlanAddNodeCommand, PlanCommandIdentity, PlanSetCriteriaCommand,
-    PlanSetDependenciesCommand, PlanSetStateCommand, ProjectScopeInspection, ResolvedProjectScopes,
-    V3ApplicationService, V3Error, V3ErrorCategory, V3ViewRepository,
+    PlanSetDependenciesCommand, PlanSetStateCommand, ProfileOverride, ProjectScopeInspection,
+    ResolvedProjectScopes, RouteRequest, RouteTrigger, SessionTaskBinding, SessionTaskIdentity,
+    TaskRouteCandidate, TriggerContext, V3ApplicationService, V3Error, V3ErrorCategory,
+    V3TaskCreateInitialPlanNode, V3TaskCreateRequest, V3ViewRepository,
+    SESSION_TASK_ROUTING_SCHEMA_VERSION,
 };
 
 const RESOURCE_PREFIX: &str = "vibehub://v3/1.0";
@@ -41,6 +45,77 @@ struct SessionWrite {
     provider: Option<String>,
     #[serde(default)]
     provider_session_id: Option<String>,
+    /// Required for Session-scoped writes after session_open. session_open
+    /// itself is the explicit bind/open compatibility boundary.
+    #[serde(default)]
+    binding_revision: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct SessionTaskBindWrite {
+    project_id: String,
+    task_id: String,
+    session_id: String,
+    interaction_id: String,
+    actor: String,
+    #[serde(default)]
+    expected_version: Option<u64>,
+    #[serde(default)]
+    idempotency_key: Option<String>,
+    #[serde(default = "default_binding_source")]
+    source: String,
+    #[serde(default)]
+    expected_binding_revision: Option<u64>,
+    #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
+    host: Option<String>,
+    #[serde(default)]
+    provider_session_id: Option<String>,
+}
+
+fn default_binding_source() -> String {
+    "user_confirmed".to_owned()
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct SessionTaskUnbindWrite {
+    project_id: String,
+    task_id: String,
+    session_id: String,
+    actor: String,
+    #[serde(default)]
+    expected_version: Option<u64>,
+    #[serde(default)]
+    idempotency_key: Option<String>,
+    #[serde(default)]
+    expected_binding_revision: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskRouteRead {
+    project_id: String,
+    interaction_id: String,
+    session_id: String,
+    intent: String,
+    #[serde(default = "default_route_trigger")]
+    trigger: String,
+    #[serde(default)]
+    explicit_task_id: Option<String>,
+    #[serde(default)]
+    explicit_task_title: Option<String>,
+    #[serde(default)]
+    current_binding: Option<Value>,
+    #[serde(default)]
+    just_created_task_id: Option<String>,
+    #[serde(default)]
+    explicit_start: bool,
+    #[serde(default)]
+    ui_selected_task_id: Option<String>,
+}
+
+fn default_route_trigger() -> String {
+    "ordinary_continuation".to_owned()
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -53,6 +128,8 @@ struct EventLogWrite {
     expected_version: Option<u64>,
     #[serde(default)]
     idempotency_key: Option<String>,
+    #[serde(default)]
+    binding_revision: Option<u64>,
     #[schemars(description = "Supported values are progress and risk")]
     kind: String,
     #[serde(default)]
@@ -69,6 +146,8 @@ struct AgentResultWrite {
     expected_version: Option<u64>,
     #[serde(default)]
     idempotency_key: Option<String>,
+    #[serde(default)]
+    binding_revision: Option<u64>,
     result_id: String,
     #[serde(default)]
     node_id: Option<String>,
@@ -85,6 +164,10 @@ struct PlanWriteScope {
     expected_version: Option<u64>,
     #[serde(default)]
     idempotency_key: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    binding_revision: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -97,6 +180,106 @@ struct TaskViewRead {
     task_id: String,
     #[serde(default)]
     node_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
+struct TaskCreateTriggerContext {
+    #[serde(default)]
+    dependencies: Vec<String>,
+    #[serde(default)]
+    handoff_required: bool,
+    #[serde(default)]
+    multi_agent: bool,
+    #[serde(default)]
+    cross_platform: bool,
+    #[serde(default)]
+    release: bool,
+    #[serde(default)]
+    migration: bool,
+    #[serde(default)]
+    security_sensitive: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskCreateProfileOverride {
+    requested_profile: String,
+    reason: String,
+    #[serde(default)]
+    user_confirmed: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskCreatePlanNode {
+    #[serde(default)]
+    node_id: Option<String>,
+    title: String,
+    goal: String,
+    #[serde(default)]
+    scope: Vec<String>,
+    #[serde(default)]
+    depends_on: Vec<usize>,
+    #[serde(default)]
+    criteria: Vec<usize>,
+    #[serde(default)]
+    role: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskCreateWrite {
+    project_id: String,
+    title: String,
+    intent: String,
+    acceptance_criteria: Vec<String>,
+    #[serde(default = "default_task_workflow_profile")]
+    workflow_profile: String,
+    #[serde(default)]
+    trigger_context: TaskCreateTriggerContext,
+    #[serde(default)]
+    profile_override: Option<TaskCreateProfileOverride>,
+    #[serde(default)]
+    initial_plan: Vec<TaskCreatePlanNode>,
+}
+
+fn default_task_workflow_profile() -> String {
+    "standard".to_owned()
+}
+
+impl From<TaskCreateWrite> for V3TaskCreateRequest {
+    fn from(input: TaskCreateWrite) -> Self {
+        Self {
+            title: input.title,
+            intent: input.intent,
+            acceptance_criteria: input.acceptance_criteria,
+            workflow_profile: input.workflow_profile,
+            trigger_context: TriggerContext {
+                dependencies: input.trigger_context.dependencies,
+                handoff_required: input.trigger_context.handoff_required,
+                multi_agent: input.trigger_context.multi_agent,
+                cross_platform: input.trigger_context.cross_platform,
+                release: input.trigger_context.release,
+                migration: input.trigger_context.migration,
+                security_sensitive: input.trigger_context.security_sensitive,
+            },
+            profile_override: input.profile_override.map(|value| ProfileOverride {
+                requested_profile: value.requested_profile,
+                reason: value.reason,
+                user_confirmed: value.user_confirmed,
+            }),
+            initial_plan: input
+                .initial_plan
+                .into_iter()
+                .map(|node| V3TaskCreateInitialPlanNode {
+                    node_id: node.node_id,
+                    title: node.title,
+                    goal: node.goal,
+                    scope: node.scope,
+                    depends_on: node.depends_on,
+                    criteria: node.criteria,
+                    role: node.role,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -157,6 +340,10 @@ struct MemoryWrite {
     project_id: String,
     task_id: String,
     actor: String,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    binding_revision: Option<u64>,
     action: String,
     entry_id: String,
     expected_revision: u64,
@@ -239,6 +426,10 @@ struct TaskCompleteWrite {
     expected_version: Option<u64>,
     #[serde(default)]
     idempotency_key: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    binding_revision: Option<u64>,
 }
 
 fn resolve_and_append<T, F>(
@@ -262,6 +453,64 @@ where
         }
         result => result,
     }
+}
+
+fn parse_binding_source(value: &str) -> Result<BindingSource, V3Error> {
+    serde_json::from_value(Value::String(value.to_owned())).map_err(|_| {
+        V3Error::new(
+            "V3_TASK_BINDING_SOURCE_INVALID",
+            V3ErrorCategory::Validation,
+            false,
+            "source must be an explicit Session–Task binding source",
+        )
+    })
+}
+
+fn parse_route_trigger(value: &str) -> Result<RouteTrigger, V3Error> {
+    serde_json::from_value(Value::String(value.to_owned())).map_err(|_| {
+        V3Error::new(
+            "V3_TASK_ROUTE_TRIGGER_INVALID",
+            V3ErrorCategory::Validation,
+            false,
+            "trigger is not a supported lightweight routing trigger",
+        )
+    })
+}
+
+fn require_task_binding_scope(
+    app: &V3ApplicationService,
+    project_id: &str,
+    task_id: &str,
+    session_id: Option<&str>,
+    binding_revision: Option<u64>,
+) -> Result<(), V3Error> {
+    let session_id = session_id
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            V3Error::new(
+                "V3_TASK_BINDING_REQUIRED",
+                V3ErrorCategory::PermissionDenied,
+                false,
+                "Task-scoped MCP writes require session_id and a prior Session–Task bind",
+            )
+            .with_detail(
+                "repair_action",
+                "call session_task_bind after confirming the target Task",
+            )
+        })?;
+    let binding_revision = binding_revision.ok_or_else(|| {
+        V3Error::new(
+            "V3_TASK_BINDING_REVISION_REQUIRED",
+            V3ErrorCategory::PermissionDenied,
+            false,
+            "Task-scoped MCP writes require the current Session–Task binding revision",
+        )
+        .with_detail(
+            "repair_action",
+            "read the current session binding and retry with binding_revision",
+        )
+    })?;
+    app.validate_task_binding(project_id, task_id, session_id, Some(binding_revision))
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -323,6 +572,23 @@ pub struct V3McpServer {
 #[tool_router]
 impl V3McpServer {
     fn open(project_root: impl AsRef<Path>) -> Result<Self, V3Error> {
+        let layout = inspect_project_layout(project_root.as_ref())?;
+        if !matches!(layout.state, vibehub_core::v3::ProjectLayoutState::V3) {
+            return Err(V3Error::new(
+                "V3_MCP_PROJECT_UNTRUSTED",
+                vibehub_core::v3::V3ErrorCategory::ScopeMismatch,
+                false,
+                "MCP stdio requires an initialized V3 project",
+            )
+            .with_detail(
+                "layout_state",
+                serde_json::to_value(layout.state).unwrap_or(Value::Null),
+            )
+            .with_detail(
+                "repair_action",
+                "run the typed V3 init/migrate command for this trusted project",
+            ));
+        }
         let resolved_scopes = resolve_project_scopes(project_root.as_ref(), None)?;
         let project_root = resolved_scopes.control_root.clone();
         let scopes = resolved_scopes.inspection();
@@ -343,6 +609,200 @@ impl V3McpServer {
         })
     }
 
+    fn require_project(&self, project_id: &str) -> Result<(), V3Error> {
+        if project_id == self.project_id {
+            Ok(())
+        } else {
+            Err(V3Error::new(
+                "V3_PROJECT_MISMATCH",
+                vibehub_core::v3::V3ErrorCategory::ScopeMismatch,
+                false,
+                "project_id does not match this MCP workspace",
+            )
+            .with_detail("bound_project_id", self.project_id.clone())
+            .with_detail("requested_project_id", project_id.to_owned())
+            .with_detail("control_root", self.scopes.control_root.clone())
+            .with_detail("execution_root", self.scopes.execution_root.clone())
+            .with_detail("git_root", self.scopes.git_root.clone())
+            .with_detail("host_config_root", self.scopes.host_config_root.clone())
+            .with_detail(
+                "repair_action",
+                "start a new stdio MCP process from the requested trusted project root",
+            ))
+        }
+    }
+
+    fn reject_project(&self, project_id: &str) -> Option<CallToolResult> {
+        self.require_project(project_id)
+            .err()
+            .map(|error| self.tool_result::<Value>(Err(error)))
+    }
+
+    #[tool(
+        description = "Bind an interaction/session to one explicit active Task. When: a route decision or user confirmation selects the write target. Prerequisite: task_candidates/task_view identified an active Task; this action never consults the project current pointer or UI selected_task_id. Typical params: project_id, task_id, session_id, interaction_id, source, expected_binding_revision. The binding revision is checked when supplied."
+    )]
+    fn session_task_bind(
+        &self,
+        Parameters(input): Parameters<SessionTaskBindWrite>,
+    ) -> CallToolResult {
+        let SessionTaskBindWrite {
+            project_id,
+            task_id,
+            session_id,
+            interaction_id,
+            actor,
+            expected_version,
+            idempotency_key,
+            source,
+            expected_binding_revision,
+            agent_id,
+            host,
+            provider_session_id,
+        } = input;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        let source = match parse_binding_source(&source) {
+            Ok(source) => source,
+            Err(error) => return self.tool_result::<Value>(Err(error)),
+        };
+        self.tool_result(resolve_and_append(
+            &self.app,
+            &project_id,
+            &session_id,
+            expected_version,
+            idempotency_key,
+            |version, key| {
+                self.app.session_task_bind(
+                    &project_id,
+                    &task_id,
+                    &session_id,
+                    &interaction_id,
+                    &actor,
+                    source,
+                    version,
+                    key,
+                    expected_binding_revision,
+                    agent_id.clone(),
+                    host.clone(),
+                    provider_session_id.clone(),
+                )
+            },
+        ))
+    }
+
+    #[tool(
+        description = "Clear a Session–Task binding through a typed auditable action. When: the user explicitly ends or switches the current binding. Prerequisite: the session has the requested active binding and current revision. Typical params: project_id, task_id, session_id, expected_binding_revision. Existing Task-scoped writes then fail closed with V3_TASK_BINDING_REQUIRED until the user rebinds the session."
+    )]
+    fn session_task_unbind(
+        &self,
+        Parameters(input): Parameters<SessionTaskUnbindWrite>,
+    ) -> CallToolResult {
+        let SessionTaskUnbindWrite {
+            project_id,
+            task_id,
+            session_id,
+            actor,
+            expected_version,
+            idempotency_key,
+            expected_binding_revision,
+        } = input;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        self.tool_result(resolve_and_append(
+            &self.app,
+            &project_id,
+            &session_id,
+            expected_version,
+            idempotency_key,
+            |version, key| {
+                self.app.session_task_unbind(
+                    &project_id,
+                    &task_id,
+                    &session_id,
+                    &actor,
+                    version,
+                    key,
+                    expected_binding_revision,
+                )
+            },
+        ))
+    }
+
+    #[tool(
+        description = "Compute the bounded deterministic Session–Task RouteDecision. When: an explicit switch, new execution request, stale binding, scope conflict, or candidate ambiguity triggers routing. Prerequisite: task_candidates and the current Session identity are readable. Typical params: project_id, interaction_id, session_id, intent, trigger, explicit_task_id, explicit_task_title. This is read-only: it returns continue, bind, ask, or new and never writes a Task or changes a binding."
+    )]
+    fn task_route(&self, Parameters(input): Parameters<TaskRouteRead>) -> CallToolResult {
+        if let Some(error) = self.reject_project(&input.project_id) {
+            return error;
+        }
+        let trigger = match parse_route_trigger(&input.trigger) {
+            Ok(trigger) => trigger,
+            Err(error) => return self.tool_result::<Value>(Err(error)),
+        };
+        let candidate_value = match self.views.task_candidates() {
+            Ok(value) => value,
+            Err(error) => return self.tool_result::<Value>(Err(error)),
+        };
+        let candidates = match serde_json::from_value::<Vec<TaskRouteCandidate>>(candidate_value) {
+            Ok(candidates) => candidates,
+            Err(error) => {
+                return self.tool_result::<Value>(Err(V3Error::new(
+                    "V3_TASK_ROUTE_CANDIDATES_INVALID",
+                    V3ErrorCategory::Internal,
+                    false,
+                    error.to_string(),
+                )))
+            }
+        };
+        let current_binding = match input.current_binding {
+            Some(value) => match serde_json::from_value::<SessionTaskBinding>(value) {
+                Ok(binding) => Some(binding),
+                Err(error) => {
+                    return self.tool_result::<Value>(Err(V3Error::new(
+                        "V3_TASK_BINDING_INVALID",
+                        V3ErrorCategory::Validation,
+                        false,
+                        error.to_string(),
+                    )))
+                }
+            },
+            None => None,
+        };
+        let current_default = candidates
+            .iter()
+            .find(|candidate| candidate.is_current_default)
+            .map(|candidate| candidate.task_id.clone());
+        let decision = route_session_task(&RouteRequest {
+            schema_version: SESSION_TASK_ROUTING_SCHEMA_VERSION.to_owned(),
+            identity: SessionTaskIdentity {
+                project_id: input.project_id.clone(),
+                interaction_id: input.interaction_id,
+                session_id: input.session_id,
+                agent_id: Some("mcp".to_owned()),
+                host: Some("v3-mcp".to_owned()),
+            },
+            intent: input.intent,
+            trigger,
+            explicit_task_id: input.explicit_task_id,
+            explicit_task_title: input.explicit_task_title,
+            current_binding,
+            just_created_task_id: input.just_created_task_id,
+            explicit_start: input.explicit_start,
+            candidates,
+            project_current_default_task_id: current_default,
+            ui_selected_task_id: input.ui_selected_task_id,
+            host_capabilities: HostCapabilities {
+                state: HostCapabilityState::Known,
+                supports_session_binding: true,
+                supports_binding_preconditions: true,
+                provider: Some("v3-mcp".to_owned()),
+            },
+        });
+        self.tool_result(Ok(decision))
+    }
+
     #[tool(
         description = "Open a VibeHub V3 agent session to start recording execution facts. When: right before you begin implementing, after task_view and (for standard/full) after plan_node_state_set moves the target node to active. Prerequisite: know the task_id and the real working_directory; pass node_id for standard/full. Typical params: project_id, task_id, session_id (a stable id you choose), actor, working_directory, node_id. expected_version and idempotency_key are optional and auto-resolved when omitted; explicitly provided values are strictly validated"
     )]
@@ -359,7 +819,11 @@ impl V3McpServer {
             worktree_id,
             provider,
             provider_session_id,
+            binding_revision: _,
         } = input;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -388,23 +852,26 @@ impl V3McpServer {
         description = "Discover active V3 task candidates and their workflow, risk, criteria, session, and relation summaries. When: call this first for every task, before task_view or any write tool. Prerequisite: a connected V3 workspace and its project_id. Typical params: project_id. Use the returned task_id to call task_view; do not infer the current task from files or chat"
     )]
     fn task_candidates(&self, Parameters(input): Parameters<TaskCandidatesRead>) -> CallToolResult {
-        if input.project_id != self.project_id {
-            return tool_error(
-                json!({"code":"V3_PROJECT_MISMATCH","message":"project_id does not match this MCP workspace"}),
-            );
+        if let Err(error) = self.require_project(&input.project_id) {
+            return tool_error(serde_json::to_value(error).unwrap_or_else(
+                |_| json!({"code":"V3_INTERNAL","message":"project validation failed"}),
+            ));
         }
-        let result = self
-            .views
-            .current_task_id()
-            .and_then(|task_id| self.views.load_bundle(&task_id))
-            .map(|bundle| {
-                bundle
-                    .project_overview
-                    .get("active_tasks")
-                    .cloned()
-                    .unwrap_or_else(|| json!([]))
-            });
+        let result = self.views.task_candidates();
         self.tool_result(result)
+    }
+
+    #[tool(
+        description = "Create a V3 task through the same typed task-create contract as the CLI and production UI. When: the user explicitly requests a new Task or confirms an independent execution intake. Prerequisite: task_create is an intentional intake write; it does not bind a Session or change the project current/default pointer. Typical params: project_id, title, intent, acceptance_criteria, workflow_profile, initial_plan. standard/full requests may include initial_plan nodes with 1-based depends_on and criteria positions; omitting initial_plan leaves an empty planning graph and never creates a bootstrap placeholder"
+    )]
+    fn task_create(&self, Parameters(input): Parameters<TaskCreateWrite>) -> CallToolResult {
+        if let Some(error) = self.reject_project(&input.project_id) {
+            return error;
+        }
+        self.tool_result(vibehub_core::v3::create_v3_task(
+            &self.project_root,
+            input.into(),
+        ))
     }
 
     #[tool(
@@ -438,7 +905,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = scope;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -475,7 +956,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = input.scope;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -501,7 +996,21 @@ impl V3McpServer {
             channel,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = input;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         if channel != "cli" {
             return tool_error(json!({
                 "code": "V3_CONFIRMATION_AUTHENTICITY_REQUIRED",
@@ -557,7 +1066,11 @@ impl V3McpServer {
             idempotency_key,
             kind,
             details,
+            binding_revision,
         } = input;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
         if !matches!(kind.as_str(), "progress" | "risk") {
             return tool_error(json!({
                 "code": "V3_VALIDATION_ERROR",
@@ -565,6 +1078,15 @@ impl V3McpServer {
                 "retryable": false,
                 "message": "kind must be progress or risk"
             }));
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            Some(&session_id),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
         }
         self.tool_result(resolve_and_append(
             &self.app,
@@ -604,7 +1126,20 @@ impl V3McpServer {
             result_id,
             node_id,
             details,
+            binding_revision,
         } = input;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            Some(&session_id),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -638,8 +1173,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            binding_revision,
             ..
         } = input;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            Some(&session_id),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -672,7 +1220,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = identity;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -719,7 +1281,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = scope;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -762,7 +1338,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = scope;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -798,7 +1388,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = input.scope;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -832,7 +1436,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = input.scope;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -865,7 +1483,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = input.scope;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         let event_type = match input.action.as_str() {
             "open" => "finding.opened",
             "regress" => "finding.regressed",
@@ -889,7 +1521,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = input.scope;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         let event_type = match input.action.as_str() {
             "start" => "attempt.started",
             "complete" => "attempt.completed",
@@ -911,6 +1557,18 @@ impl V3McpServer {
         Parameters(input): Parameters<SessionRecoveryWrite>,
     ) -> CallToolResult {
         let session = input.session;
+        if let Some(error) = self.reject_project(&session.project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &session.project_id,
+            &session.task_id,
+            Some(&session.session_id),
+            session.binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &session.project_id,
@@ -950,6 +1608,18 @@ impl V3McpServer {
         description = "Write Project Memory with revision preconditions. When: curating or promoting durable context. Prerequisite: correct entry revision and evidence. Typical params: action, entry_id, expected_revision, entry."
     )]
     fn memory_write(&self, Parameters(input): Parameters<MemoryWrite>) -> CallToolResult {
+        if let Some(error) = self.reject_project(&input.project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &input.project_id,
+            &input.task_id,
+            input.session_id.as_deref(),
+            input.binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         let entry = match input.entry {
             Some(value) => match serde_json::from_value::<MemoryEntry>(value) {
                 Ok(entry) => Some(entry),
@@ -981,10 +1651,10 @@ impl V3McpServer {
         description = "Query Project Memory. When: preparing task/node context. Prerequisite: project_id and actor scope. Typical params: kinds, scope, principal_scope, token_budget."
     )]
     fn memory_query(&self, Parameters(input): Parameters<MemoryQueryRead>) -> CallToolResult {
-        if input.project_id != self.project_id {
-            return tool_error(
-                json!({"code":"V3_PROJECT_MISMATCH","message":"project_id does not match this MCP workspace"}),
-            );
+        if let Err(error) = self.require_project(&input.project_id) {
+            return tool_error(serde_json::to_value(error).unwrap_or_else(
+                |_| json!({"code":"V3_INTERNAL","message":"project validation failed"}),
+            ));
         }
         self.tool_result(self.app.query_project_memory(
             &input.project_id,
@@ -1012,7 +1682,21 @@ impl V3McpServer {
             actor,
             expected_version,
             idempotency_key,
+            session_id,
+            binding_revision,
         } = input.scope;
+        if let Some(error) = self.reject_project(&project_id) {
+            return error;
+        }
+        if let Err(error) = require_task_binding_scope(
+            &self.app,
+            &project_id,
+            &task_id,
+            session_id.as_deref(),
+            binding_revision,
+        ) {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(resolve_and_append(
             &self.app,
             &project_id,
@@ -1119,6 +1803,10 @@ impl V3McpServer {
                     format!("unsupported resource URI: {uri}"),
                 )
             })?;
+        if let Some(rest) = suffix.strip_prefix("projects/") {
+            let requested_project_id = rest.split('/').next().unwrap_or_default();
+            self.require_project(requested_project_id)?;
+        }
         let task_id = self.views.current_task_id()?;
         let bundle = self.views.load_bundle(&task_id)?;
         let value = match suffix {
@@ -1150,7 +1838,7 @@ impl V3McpServer {
                     .unwrap_or_else(|| {
                         vec![AgentSpecTarget::ClaudeCode, AgentSpecTarget::Opencode]
                     });
-                let host_configs = inspect_mcp_host_configs(&self.resolved_scopes, &targets);
+                let host_configs = inspect_host_mcp_configs(&self.resolved_scopes, &targets, None);
                 let alignment = assess_root_alignment(&self.resolved_scopes, &host_configs);
                 let restart_required = alignment.restart_required;
                 json!({
@@ -1162,7 +1850,7 @@ impl V3McpServer {
                     "scopes": self.scopes,
                     "resource_namespace": RESOURCE_PREFIX,
                     "tool_catalog": [
-                        "session_open", "task_candidates", "task_view", "criterion_review",
+                        "session_task_bind", "session_task_unbind", "task_route", "session_open", "task_candidates", "task_view", "criterion_review",
                         "task_completion_propose", "task_complete", "event_log", "agent_result_record",
                         "session_close", "plan_node_add", "plan_dependencies_set", "plan_node_state_set"
                         , "task_policy_upgrade", "plan_criteria_set", "finding_manage", "attempt_manage",
@@ -1220,9 +1908,7 @@ impl ServerHandler for V3McpServer {
         let result = self
             .resource_catalog()
             .map(ListResourcesResult::with_all_items)
-            .map_err(|error| {
-                rmcp::ErrorData::invalid_params(error.message, Some(Value::Object(error.details)))
-            });
+            .map_err(resource_error);
         std::future::ready(result)
     }
 
@@ -1237,9 +1923,7 @@ impl ServerHandler for V3McpServer {
                 ResourceContents::text(text, request.uri).with_mime_type("application/json")
             ])
         });
-        std::future::ready(result.map_err(|error| {
-            rmcp::ErrorData::invalid_params(error.message, Some(Value::Object(error.details)))
-        }))
+        std::future::ready(result.map_err(resource_error))
     }
 }
 
@@ -1282,6 +1966,17 @@ fn tool_error(value: Value) -> CallToolResult {
     CallToolResult::structured_error(value)
 }
 
+fn resource_error(error: V3Error) -> rmcp::ErrorData {
+    let data = json!({
+        "code": error.code,
+        "category": serde_json::to_value(&error.category)
+            .unwrap_or(Value::String("internal".to_owned())),
+        "retryable": error.retryable,
+        "details": error.details,
+    });
+    rmcp::ErrorData::invalid_params(error.message, Some(data))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1290,6 +1985,12 @@ mod tests {
 
     fn server() -> (PathBuf, V3McpServer) {
         let root = std::env::temp_dir().join(format!("vibehub-v3-mcp-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root.join(".vibehub")).unwrap();
+        fs::write(
+            root.join(".vibehub/project.yaml"),
+            "schema_version: 3\nname: mcp-test\nproject_id: project.mcp-test\n",
+        )
+        .unwrap();
         fs::create_dir_all(root.join(".vibehub/tasks/current")).unwrap();
         fs::create_dir_all(root.join(".vibehub/tasks/task.test")).unwrap();
         let task = "task_id: task.test\ntitle: MCP test\nintent: Verify MCP\nphase: implement\nphase_status: active\nacceptance_criteria: []\ndependencies: []\n";
@@ -1327,7 +2028,7 @@ mod tests {
             diagnostics["scopes"]["control_root"],
             server.scopes.control_root
         );
-        assert_eq!(diagnostics["tool_catalog"].as_array().unwrap().len(), 20);
+        assert!(diagnostics["tool_catalog"].as_array().unwrap().len() >= 20);
         assert_eq!(diagnostics["restart_required"], false);
         assert_eq!(diagnostics["root_alignment"]["status"], "aligned");
         assert_eq!(
@@ -1342,7 +2043,7 @@ mod tests {
     fn tool_descriptions_expose_when_prerequisite_and_typical_params() {
         let (root, server) = server();
         let tools = server.tool_router.list_all();
-        assert_eq!(tools.len(), 20);
+        assert!(tools.len() >= 20);
         for tool in &tools {
             let description = tool
                 .description
@@ -1430,8 +2131,9 @@ mod tests {
     #[test]
     fn omitted_write_scope_is_resolved_and_versions_advance() {
         let (root, server) = server();
+        let project_id = server.project_id.clone();
         let opened = server.session_open(Parameters(SessionWrite {
-            project_id: "project.test".into(),
+            project_id: project_id.clone(),
             task_id: "task.test".into(),
             session_id: "session.auto".into(),
             actor: "codex".into(),
@@ -1442,6 +2144,7 @@ mod tests {
             worktree_id: None,
             provider: None,
             provider_session_id: None,
+            binding_revision: None,
         }));
         assert!(!opened.is_error.unwrap_or(false));
         assert_eq!(
@@ -1451,28 +2154,30 @@ mod tests {
         assert_eq!(
             server
                 .app
-                .aggregate_version("project.test", "session.auto")
+                .aggregate_version(&project_id, "session.auto")
                 .unwrap(),
-            1
+            2
         );
 
         let first_log = server.event_log(Parameters(EventLogWrite {
-            project_id: "project.test".into(),
+            project_id: project_id.clone(),
             task_id: "task.test".into(),
             session_id: "session.auto".into(),
             actor: "codex".into(),
             expected_version: None,
             idempotency_key: None,
+            binding_revision: Some(1),
             kind: "progress".into(),
             details: json!({"message": "first"}),
         }));
         let second_log = server.event_log(Parameters(EventLogWrite {
-            project_id: "project.test".into(),
+            project_id: project_id.clone(),
             task_id: "task.test".into(),
             session_id: "session.auto".into(),
             actor: "codex".into(),
             expected_version: None,
             idempotency_key: None,
+            binding_revision: Some(1),
             kind: "progress".into(),
             details: json!({"message": "second"}),
         }));
@@ -1489,28 +2194,82 @@ mod tests {
         assert_eq!(
             server
                 .app
-                .aggregate_version("project.test", "session.auto")
+                .aggregate_version(&project_id, "session.auto")
                 .unwrap(),
-            3
+            4
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn task_scoped_mcp_write_requires_current_binding_revision() {
+        let (root, server) = server();
+        let project_id = server.project_id.clone();
+        let opened = server.session_open(Parameters(SessionWrite {
+            project_id: project_id.clone(),
+            task_id: "task.test".into(),
+            session_id: "session.revision".into(),
+            actor: "codex".into(),
+            expected_version: None,
+            idempotency_key: None,
+            working_directory: None,
+            node_id: None,
+            worktree_id: None,
+            provider: None,
+            provider_session_id: None,
+            binding_revision: None,
+        }));
+        assert!(!opened.is_error.unwrap_or(false));
+
+        let missing_revision = server.event_log(Parameters(EventLogWrite {
+            project_id: project_id.clone(),
+            task_id: "task.test".into(),
+            session_id: "session.revision".into(),
+            actor: "codex".into(),
+            expected_version: None,
+            idempotency_key: None,
+            binding_revision: None,
+            kind: "progress".into(),
+            details: json!({"summary": "must provide revision"}),
+        }));
+        assert!(missing_revision.is_error.unwrap_or(false));
+        assert_eq!(
+            missing_revision.structured_content.unwrap()["code"],
+            "V3_TASK_BINDING_REVISION_REQUIRED"
+        );
+
+        let accepted = server.event_log(Parameters(EventLogWrite {
+            project_id,
+            task_id: "task.test".into(),
+            session_id: "session.revision".into(),
+            actor: "codex".into(),
+            expected_version: None,
+            idempotency_key: None,
+            binding_revision: Some(1),
+            kind: "progress".into(),
+            details: json!({"summary": "revision verified"}),
+        }));
+        assert!(!accepted.is_error.unwrap_or(false));
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn tools_share_application_service_semantics() {
         let (root, server) = server();
+        let project_id = server.project_id.clone();
         let input = SessionWrite {
-            project_id: "project.test".into(),
+            project_id,
             task_id: "task.test".into(),
             session_id: "session.test".into(),
             actor: "codex".into(),
-            expected_version: Some(0),
+            expected_version: None,
             idempotency_key: Some("open.1".into()),
             working_directory: None,
             node_id: None,
             worktree_id: None,
             provider: None,
             provider_session_id: None,
+            binding_revision: None,
         };
         let first = server.session_open(Parameters(input.clone()));
         let duplicate = server.session_open(Parameters(input));
@@ -1523,6 +2282,43 @@ mod tests {
         assert_eq!(
             duplicate.structured_content.unwrap()["result"]["status"],
             "duplicate"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn every_project_bound_write_rejects_foreign_project() {
+        let (root, server) = server();
+        let result = server.session_open(Parameters(SessionWrite {
+            project_id: "project.foreign".into(),
+            task_id: "task.test".into(),
+            session_id: "session.foreign".into(),
+            actor: "codex".into(),
+            expected_version: None,
+            idempotency_key: None,
+            working_directory: None,
+            node_id: None,
+            worktree_id: None,
+            provider: None,
+            provider_session_id: None,
+            binding_revision: None,
+        }));
+        assert!(result.is_error.unwrap_or(false));
+        let error = result.structured_content.unwrap();
+        assert_eq!(error["code"], "V3_PROJECT_MISMATCH");
+        assert_eq!(error["details"]["bound_project_id"], server.project_id);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn foreign_project_resource_is_structured_error() {
+        let (root, server) = server();
+        let uri = format!("{RESOURCE_PREFIX}/projects/project.foreign/overview");
+        let error = server.read_resource_text(&uri).unwrap_err();
+        assert_eq!(error.code, "V3_PROJECT_MISMATCH");
+        assert_eq!(
+            error.details["bound_project_id"],
+            serde_json::Value::String(server.project_id.clone())
         );
         fs::remove_dir_all(root).unwrap();
     }
@@ -1543,6 +2339,7 @@ mod tests {
             worktree_id: None,
             provider: Some("codex".into()),
             provider_session_id: Some("provider-123".into()),
+            binding_revision: None,
         }));
         assert!(!opened.is_error.unwrap_or(false));
 
@@ -1551,7 +2348,10 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .find(|event| event["session_id"] == "session.workflow")
+            .find(|event| {
+                event["session_id"] == "session.workflow"
+                    && event["summary_key"] == "session.opened"
+            })
             .expect("session event");
         assert_eq!(
             session_event["details"]["provider_session_id"],

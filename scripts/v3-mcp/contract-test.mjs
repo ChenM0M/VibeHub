@@ -21,10 +21,19 @@ const taskYaml = [
   "",
 ].join("\n");
 
-await mkdir(join(root, ".vibehub", "tasks", "current"), { recursive: true });
+await mkdir(join(root, ".vibehub", "tasks"), { recursive: true });
 await mkdir(join(root, ".vibehub", "tasks", taskId), { recursive: true });
-await writeFile(join(root, ".vibehub", "tasks", "current", "task.yaml"), taskYaml);
+await writeFile(join(root, ".vibehub", "project.yaml"), "schema_version: 3\nname: mcp-contract\nproject_id: project.mcp-contract\n");
 await writeFile(join(root, ".vibehub", "tasks", taskId, "task.yaml"), taskYaml);
+await writeFile(join(root, ".vibehub", "tasks", "current"), [
+  "schema_version: 1",
+  "kind: current_task_pointer",
+  `task_id: ${taskId}`,
+  `path: .vibehub/tasks/${taskId}`,
+  "updated_at: 2026-08-14T00:00:00Z",
+  "updated_by: v3-mcp-contract-test",
+  "",
+].join("\n"));
 
 const startedAt = performance.now();
 const child = spawn(binary, ["mcp-stdio", root], { stdio: ["pipe", "pipe", "pipe"] });
@@ -98,7 +107,7 @@ try {
   const tools = await request("tools/list");
   assert(resources.resources.length === 7, "expected seven versioned resources");
   assert(resources.resources.every((resource) => resource.uri.startsWith("vibehub://v3/1.0/")), "resource URI is not versioned");
-  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,attempt_manage,criterion_review,event_log,finding_manage,memory_query,memory_write,orchestration_write,plan_criteria_set,plan_dependencies_set,plan_node_add,plan_node_state_set,session_close,session_open,session_recovery,task_candidates,task_complete,task_completion_propose,task_policy_upgrade,task_view", "unexpected tool catalog");
+  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,attempt_manage,criterion_review,event_log,finding_manage,memory_query,memory_write,orchestration_write,plan_criteria_set,plan_dependencies_set,plan_node_add,plan_node_state_set,session_close,session_open,session_recovery,session_task_bind,session_task_unbind,task_candidates,task_complete,task_completion_propose,task_create,task_policy_upgrade,task_route,task_view", "unexpected tool catalog");
   const planToolNames = ["plan_node_add", "plan_dependencies_set", "plan_node_state_set"];
   for (const name of planToolNames) {
     const schema = tools.tools.find((tool) => tool.name === name)?.inputSchema;
@@ -119,6 +128,14 @@ try {
   const taskCompleteSchema = tools.tools.find((tool) => tool.name === "task_complete")?.inputSchema;
   for (const field of ["project_id", "task_id", "actor", "confirmed_by", "channel"]) {
     assert(taskCompleteSchema?.properties?.[field], `task_complete schema exposes ${field}`);
+  }
+  const sessionTaskBindSchema = tools.tools.find((tool) => tool.name === "session_task_bind")?.inputSchema;
+  for (const field of ["project_id", "task_id", "session_id", "interaction_id", "actor", "source", "expected_binding_revision"]) {
+    assert(sessionTaskBindSchema?.properties?.[field], `session_task_bind schema exposes ${field}`);
+  }
+  const taskRouteSchema = tools.tools.find((tool) => tool.name === "task_route")?.inputSchema;
+  for (const field of ["project_id", "interaction_id", "session_id", "intent", "trigger", "explicit_task_id"]) {
+    assert(taskRouteSchema?.properties?.[field], `task_route schema exposes ${field}`);
   }
 
   const contractRoot = resolve("contracts/v3");
@@ -149,11 +166,36 @@ try {
   assert(candidates.structuredContent.result.some((task) => task.task_id === taskId), "task_candidates did not expose the active task");
   const taskView = await request("tools/call", { name: "task_view", arguments: { task_id: taskId } });
   assert(taskView.structuredContent.result.node_brief.task_id === taskId, "task_view did not return the requested task bundle");
-
+  const routeDecision = await request("tools/call", { name: "task_route", arguments: {
+    project_id: projectId,
+    interaction_id: "interaction.contract",
+    session_id: "session.contract",
+    intent: "Verify the MCP recovery loop",
+    trigger: "explicit_task",
+    explicit_task_id: taskId,
+  } });
+  assert(routeDecision.structuredContent.result.action === "bind" && routeDecision.structuredContent.result.candidate_task_id === taskId, "task_route did not select the explicit task");
+  const bound = await request("tools/call", { name: "session_task_bind", arguments: {
+    project_id: projectId,
+    task_id: taskId,
+    session_id: "session.contract",
+    interaction_id: "interaction.contract",
+    actor: "contract-test",
+    source: "user_confirmed",
+  } });
+  assert(bound.structuredContent.result.status === "appended", "session_task_bind did not append");
+  const bindingRevision = bound.structuredContent.result.event.payload.binding.binding_revision;
+  const taskCreateSchema = tools.tools.find((tool) => tool.name === "task_create")?.inputSchema;
+  assert(taskCreateSchema?.type === "object", "task_create exposes an object input schema");
+  for (const field of ["project_id", "title", "intent", "acceptance_criteria", "workflow_profile", "initial_plan"]) {
+    assert(taskCreateSchema?.properties?.[field], `task_create schema exposes ${field}`);
+  }
   const planScope = {
     project_id: projectId,
     task_id: taskId,
     actor: "contract-test",
+    session_id: "session.contract",
+    binding_revision: bindingRevision,
   };
   const addedA = await request("tools/call", { name: "plan_node_add", arguments: {
     ...planScope,
@@ -226,6 +268,7 @@ try {
     project_id: projectId,
     task_id: taskId,
     session_id: "session.contract",
+    binding_revision: bindingRevision,
     actor: "contract-test",
     idempotency_key: "contract.open.1",
     expected_version: 0,
@@ -284,6 +327,19 @@ try {
   const completedView = await request("tools/call", { name: "task_view", arguments: { task_id: taskId } });
   assert(completedView.structuredContent.result.project_overview.archived_tasks.some((task) => task.task_id === taskId && task.state === "completed"), "task_complete did not close the lifecycle");
   assert(completedView.structuredContent.result.task_timeline.events.filter((event) => event.summary_key === "task.completion_proposed").length === 1, "task_complete did not confirm the proposal the user reviewed");
+
+  const created = await request("tools/call", { name: "task_create", arguments: {
+    project_id: projectId,
+    title: "MCP authored plan",
+    intent: "Create a real plan without a bootstrap node",
+    acceptance_criteria: ["The plan is visible"],
+    workflow_profile: "standard",
+    initial_plan: [{ title: "MCP plan node", goal: "Cover the criterion", criteria: [1], depends_on: [], scope: ["contracts/v3"] }],
+  } });
+  assert(created.structuredContent.result.initial_node_id === null, "task_create returned a bootstrap node id");
+  const createdView = await request("tools/call", { name: "task_view", arguments: { task_id: created.structuredContent.result.task_id } });
+  assert(createdView.structuredContent.result.plan_graph.nodes.length === 1, "task_create did not persist the authored initial plan");
+  assert(createdView.structuredContent.result.plan_graph.nodes[0].parallel_candidate === false, "single authored node was misreported as a parallel execution");
 
   notify("notifications/cancelled", { requestId: "already-completed", reason: "contract probe" });
   child.stdin.end();

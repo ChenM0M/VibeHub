@@ -1,4 +1,7 @@
-use super::{fold_task_lifecycle, V3Error, V3ErrorCategory, V3EventStore};
+use super::{
+    fold_task_lifecycle, new_project_id, project_id, HostMcpSyncResult, V3Error, V3ErrorCategory,
+    V3EventStore,
+};
 use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
@@ -34,6 +37,7 @@ pub struct V3BootstrapResult {
     pub status: String,
     pub archived_legacy_v2: bool,
     pub created_paths: Vec<String>,
+    pub host_mcp: Option<HostMcpSyncResult>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +58,8 @@ pub struct V3RepairCandidate {
 struct ProjectMarker {
     schema_version: u32,
     name: String,
+    #[serde(default)]
+    project_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,8 +144,13 @@ pub fn initialize_v3(project_root: impl AsRef<Path>) -> Result<V3BootstrapResult
             status: "already_initialized".to_owned(),
             archived_legacy_v2: false,
             created_paths: Vec::new(),
+            host_mcp: None,
         }),
-        ProjectLayoutState::Absent => create_v3_root(&project_root),
+        ProjectLayoutState::Absent => {
+            let mut result = create_v3_root(&project_root)?;
+            result.host_mcp = Some(super::sync_project_host_mcp_configs(&project_root, None)?);
+            Ok(result)
+        }
         state => Err(layout_error(
             "V3_INIT_REQUIRES_EMPTY_PROJECT",
             format!("cannot initialize v3 from layout state {state:?}"),
@@ -155,6 +166,7 @@ pub fn migrate_v2_to_v3(project_root: impl AsRef<Path>) -> Result<V3BootstrapRes
             status: "already_migrated".to_owned(),
             archived_legacy_v2: project_root.join(VIBEHUB_DIR).join("legacy-v2").is_dir(),
             created_paths: Vec::new(),
+            host_mcp: None,
         });
     }
     if current.state != ProjectLayoutState::V2 {
@@ -184,10 +196,12 @@ pub fn migrate_v2_to_v3(project_root: impl AsRef<Path>) -> Result<V3BootstrapRes
 
     let mut created_paths = bootstrap.created_paths;
     created_paths.push(".vibehub/legacy-v2".to_owned());
+    let host_mcp = super::sync_project_host_mcp_configs(&project_root, None)?;
     Ok(V3BootstrapResult {
         status: "migrated".to_owned(),
         archived_legacy_v2: true,
         created_paths,
+        host_mcp: Some(host_mcp),
     })
 }
 
@@ -218,6 +232,7 @@ pub fn recover_interrupted_migration(
             status: "recovered_forward".to_owned(),
             archived_legacy_v2: true,
             created_paths: vec![".vibehub/legacy-v2".to_owned()],
+            host_mcp: None,
         });
     }
     if root.exists() {
@@ -231,6 +246,7 @@ pub fn recover_interrupted_migration(
         status: "rolled_back_to_v2".to_owned(),
         archived_legacy_v2: false,
         created_paths: Vec::new(),
+        host_mcp: None,
     })
 }
 
@@ -297,6 +313,7 @@ pub fn repair_v3_layout(
                 .and_then(|value| value.to_str())
                 .unwrap_or("project")
                 .to_owned(),
+            project_id: Some(project_id.clone()),
         })
         .map_err(|error| layout_error("V3_REPAIR_MARKER_FAILED", error.to_string()))?;
         write_new_synced(
@@ -409,6 +426,7 @@ fn create_v3_root(project_root: &Path) -> Result<V3BootstrapResult, V3Error> {
                 .and_then(|value| value.to_str())
                 .unwrap_or("project")
                 .to_owned(),
+            project_id: Some(new_project_id(project_root)),
         };
         let content = serde_yaml::to_string(&marker).map_err(|error| {
             layout_error(
@@ -431,6 +449,7 @@ fn create_v3_root(project_root: &Path) -> Result<V3BootstrapResult, V3Error> {
         status: "initialized".to_owned(),
         archived_legacy_v2: false,
         created_paths,
+        host_mcp: None,
     })
 }
 
@@ -448,16 +467,6 @@ fn validate_repair_task_id(task_id: &str) -> Result<(), V3Error> {
         ));
     }
     Ok(())
-}
-
-fn project_id(project_root: &Path) -> String {
-    let name = project_root
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("project")
-        .to_ascii_lowercase()
-        .replace(|character: char| !character.is_ascii_alphanumeric(), "-");
-    format!("project.{name}")
 }
 
 fn repair_events_path(root: &Path, project_id: &str) -> PathBuf {
@@ -660,11 +669,12 @@ mod tests {
                 workflow_profile: "standard".to_owned(),
                 trigger_context: Default::default(),
                 profile_override: None,
+                initial_plan: Vec::new(),
             },
         )
         .unwrap();
         fs::remove_file(project.join(".vibehub/project.yaml")).unwrap();
-        fs::remove_file(project.join(".vibehub/tasks/current")).unwrap();
+        assert!(!project.join(".vibehub/tasks/current").exists());
 
         assert_eq!(
             inspect_project_layout(&project).unwrap().state,
@@ -722,6 +732,7 @@ mod tests {
                 workflow_profile: "standard".to_owned(),
                 trigger_context: Default::default(),
                 profile_override: None,
+                initial_plan: Vec::new(),
             },
         )
         .unwrap();
@@ -733,7 +744,7 @@ mod tests {
         )
         .unwrap();
         fs::remove_file(project.join(".vibehub/project.yaml")).unwrap();
-        fs::remove_file(project.join(".vibehub/tasks/current")).unwrap();
+        assert!(!project.join(".vibehub/tasks/current").exists());
 
         let candidates = inspect_v3_repair_candidates(&project).unwrap();
         assert_eq!(candidates.len(), 1);

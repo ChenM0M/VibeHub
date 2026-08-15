@@ -53,16 +53,33 @@ pub enum HostConfigStatus {
     InSync,
     Mismatched,
     Invalid,
+    Unsupported,
+    Ambiguous,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostConfigScope {
+    User,
+    Project,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpHostConfigInspection {
+    pub schema_version: String,
     pub consumer: AgentSpecTarget,
+    pub scope: HostConfigScope,
     pub path: String,
     pub status: HostConfigStatus,
     pub reason: String,
     pub server_name: Option<String>,
+    pub binary: Option<String>,
     pub configured_project_root: Option<String>,
+    pub canonical_configured_project_root: Option<String>,
+    pub revision: Option<String>,
+    pub owned_fields: Vec<String>,
+    pub provenance: String,
+    pub repair_action: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -245,17 +262,9 @@ pub fn inspect_mcp_host_configs(
     scopes: &ResolvedProjectScopes,
     targets: &[AgentSpecTarget],
 ) -> Vec<McpHostConfigInspection> {
-    targets
-        .iter()
-        .map(|target| match target {
-            AgentSpecTarget::Codex => inspect_codex(scopes),
-            AgentSpecTarget::ClaudeCode => {
-                inspect_json_host(scopes, *target, ".mcp.json", &["mcpServers"])
-            }
-            AgentSpecTarget::Opencode => {
-                inspect_json_host(scopes, *target, "opencode.json", &["mcp"])
-            }
-        })
+    super::inspect_host_mcp_configs(scopes, targets, None)
+        .into_iter()
+        .filter(|item| item.scope == HostConfigScope::Project)
         .collect()
 }
 
@@ -438,12 +447,24 @@ fn host_from_command(
     let expected = display(control_root);
     if configured_root.as_deref() == Some(expected.as_str()) {
         McpHostConfigInspection {
+            schema_version: "1.0".to_owned(),
             consumer,
+            scope: HostConfigScope::Project,
             path: relative_or_native(control_root, path),
             status: HostConfigStatus::InSync,
             reason: "MCP launch arguments target this V3 control root".to_owned(),
             server_name,
+            binary: None,
             configured_project_root: configured_root,
+            canonical_configured_project_root: None,
+            revision: None,
+            owned_fields: vec![
+                "server_name".to_owned(),
+                "command".to_owned(),
+                "args".to_owned(),
+            ],
+            provenance: "host_config_file".to_owned(),
+            repair_action: None,
         }
     } else {
         mismatched_host(
@@ -509,12 +530,20 @@ fn home_directory() -> Option<PathBuf> {
 
 fn missing_host(consumer: AgentSpecTarget, root: &Path, path: &Path) -> McpHostConfigInspection {
     McpHostConfigInspection {
+        schema_version: "1.0".to_owned(),
         consumer,
+        scope: HostConfigScope::Project,
         path: relative_or_native(root, path),
         status: HostConfigStatus::Missing,
         reason: "project-scoped MCP configuration file is missing".to_owned(),
         server_name: None,
+        binary: None,
         configured_project_root: None,
+        canonical_configured_project_root: None,
+        revision: None,
+        owned_fields: Vec::new(),
+        provenance: "host_config_file".to_owned(),
+        repair_action: Some("run the typed V3 host MCP sync for this trusted project".to_owned()),
     }
 }
 
@@ -525,12 +554,22 @@ fn invalid_host(
     reason: String,
 ) -> McpHostConfigInspection {
     McpHostConfigInspection {
+        schema_version: "1.0".to_owned(),
         consumer,
+        scope: HostConfigScope::Project,
         path: relative_or_native(root, path),
         status: HostConfigStatus::Invalid,
         reason,
         server_name: None,
+        binary: None,
         configured_project_root: None,
+        canonical_configured_project_root: None,
+        revision: None,
+        owned_fields: Vec::new(),
+        provenance: "host_config_file".to_owned(),
+        repair_action: Some(
+            "inspect the host configuration and repair it without guessing ownership".to_owned(),
+        ),
     }
 }
 
@@ -543,12 +582,20 @@ fn mismatched_host(
     reason: &str,
 ) -> McpHostConfigInspection {
     McpHostConfigInspection {
+        schema_version: "1.0".to_owned(),
         consumer,
+        scope: HostConfigScope::Project,
         path: relative_or_native(root, path),
         status: HostConfigStatus::Mismatched,
         reason: reason.to_owned(),
         server_name,
+        binary: None,
         configured_project_root,
+        canonical_configured_project_root: None,
+        revision: None,
+        owned_fields: Vec::new(),
+        provenance: "host_config_file".to_owned(),
+        repair_action: Some("run the typed V3 host MCP sync for this trusted project".to_owned()),
     }
 }
 

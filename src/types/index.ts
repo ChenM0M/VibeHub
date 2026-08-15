@@ -11,6 +11,7 @@ export interface V3BootstrapResult {
     status: string;
     archived_legacy_v2: boolean;
     created_paths: string[];
+    host_mcp: import('../v3/contracts/generated').HostMcpSyncResult | null;
 }
 
 export interface V3RepairCandidate {
