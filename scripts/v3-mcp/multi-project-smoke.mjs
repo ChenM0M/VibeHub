@@ -168,12 +168,45 @@ try {
     actor: "multi-project-smoke",
     node_id: "node." + a.overview.active_tasks[0].task_id + ".initial",
   };
+  const binding = await clientA.request("tools/call", {
+    name: "session_task_bind",
+    arguments: {
+      project_id: session.project_id,
+      task_id: session.task_id,
+      session_id: session.session_id,
+      interaction_id: session.session_id,
+      actor: session.actor,
+      source: "explicit_task_id",
+    },
+  });
+  assert(binding.structuredContent?.result?.status === "appended", "A session bind failed: " + JSON.stringify(binding));
+  const bindingRevision = binding.structuredContent?.result?.event?.payload?.binding?.binding_revision;
+  assert(Number.isInteger(bindingRevision), "A binding revision missing: " + JSON.stringify(binding));
+  const added = await clientA.request("tools/call", {
+    name: "plan_node_add",
+    arguments: {
+      project_id: session.project_id,
+      task_id: session.task_id,
+      actor: session.actor,
+      session_id: session.session_id,
+      binding_revision: bindingRevision,
+      node_id: session.node_id,
+      title: "Initial isolation node",
+      goal: "Verify multi-project MCP isolation",
+      scope: [],
+      dependencies: [],
+      criterion_ids: [],
+    },
+  });
+  assert(added.structuredContent?.result?.status === "appended", "A plan node add failed: " + JSON.stringify(added));
   const activated = await clientA.request("tools/call", {
     name: "plan_node_state_set",
     arguments: {
       project_id: session.project_id,
       task_id: session.task_id,
       actor: session.actor,
+      session_id: session.session_id,
+      binding_revision: bindingRevision,
       node_id: session.node_id,
       state: "active",
     },
@@ -181,9 +214,10 @@ try {
   assert(activated.structuredContent?.result?.status === "appended", "A plan activation failed: " + JSON.stringify(activated));
   for (const [name, arguments_] of [
     ["session_open", session],
-    ["event_log", { ...session, kind: "progress", details: { summary: "A progress" } }],
+    ["event_log", { ...session, binding_revision: bindingRevision, kind: "progress", details: { summary: "A progress" } }],
     ["agent_result_record", {
       ...session,
+      binding_revision: bindingRevision,
       node_id: "node." + session.task_id + ".initial",
       result_id: "result.isolation.a",
       details: {
@@ -194,7 +228,7 @@ try {
         summary: "A result",
       },
     }],
-    ["session_close", session],
+    ["session_close", { ...session, binding_revision: bindingRevision }],
   ]) {
     const result = await clientA.request("tools/call", { name, arguments: arguments_ });
     assert(result.structuredContent?.result?.status === "appended", name + " failed: " + JSON.stringify(result));
