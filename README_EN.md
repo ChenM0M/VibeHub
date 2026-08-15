@@ -2,7 +2,9 @@
 
 [English](README_EN.md) | [简体中文](README.md) | [繁體中文](README_TC.md)
 
-![alt text](image-1.png)
+<p align="center">
+  <img src="assets/readme/vibehub-hero-banner.png" alt="VibeHub multi-page Agent workflow command center" width="100%" />
+</p>
 
 > VibeHub is an all-in-one tool platform built around the Agent workflow experience. It grew
 > out of the pain points of personal Vibe development: the plan, progress, acceptance and
@@ -18,6 +20,30 @@
 ![GitHub Release](https://img.shields.io/github/v/release/ChenM0M/VibeHub)
 
 [Changelog](CHANGELOG.md) · [Releases](https://github.com/ChenM0M/VibeHub/releases)
+
+## Visual tour
+
+The following captures come from the current VibeHub interface and are all 1600×1000 PNGs. Task names, paths and timestamps in the captures are sanitized demo data and are not release guarantees.
+
+### Project workspace
+
+![VibeHub project workspace: project management, branches and tags](assets/readme/project-workspace.png)
+
+### V3 Cockpit: acceptance overview
+
+![VibeHub V3 Cockpit acceptance overview: criteria and Agent results](assets/readme/v3-acceptance.png)
+
+### V3 Cockpit: implementation plan DAG
+
+![VibeHub implementation plan DAG](assets/readme/v3-plan.png)
+
+### V3 Cockpit: event stream
+
+![VibeHub event stream timeline](assets/readme/v3-event-stream.png)
+
+### Agent configuration
+
+![VibeHub Agent configuration: providers, models and profiles](assets/readme/agent-profiles.png)
 
 ## Main feature: the V3 workflow
 

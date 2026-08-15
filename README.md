@@ -2,7 +2,9 @@
 
 [English](README_EN.md) | [简体中文](README.md) | [繁體中文](README_TC.md)
 
-![alt text](image.png)
+<p align="center">
+  <img src="assets/readme/vibehub-hero-banner.png" alt="VibeHub 多页面 Agent 工作流指挥中心" width="100%" />
+</p>
 
 > VibeHub 是一个围绕 Agent 工作流体验打造的 All-in-One 工具平台。它源于个人 Vibe
 > 开发过程中的痛点：Agent 干活的计划、进度、验收与阻塞缺少可见、可追溯的载体。
@@ -16,6 +18,30 @@
 ![GitHub Release](https://img.shields.io/github/v/release/ChenM0M/VibeHub)
 
 [更新日志](CHANGELOG.md) · [Releases](https://github.com/ChenM0M/VibeHub/releases)
+
+## 视觉导览
+
+以下截图来自当前 VibeHub 界面，统一为 1600×1000 PNG。截图中的任务、路径和时间是脱敏演示数据，不代表发布保证。
+
+### 项目工作台
+
+![VibeHub 项目工作台：项目管理、分支和标签](assets/readme/project-workspace.png)
+
+### V3 Cockpit：验收总览
+
+![VibeHub V3 Cockpit 验收总览：验收标准和 Agent 结果](assets/readme/v3-acceptance.png)
+
+### V3 Cockpit：实现计划 DAG
+
+![VibeHub 实现计划 DAG](assets/readme/v3-plan.png)
+
+### V3 Cockpit：事件流
+
+![VibeHub 事件流时间线](assets/readme/v3-event-stream.png)
+
+### Agent 配置
+
+![VibeHub Agent 配置：Provider、模型和 Profile](assets/readme/agent-profiles.png)
 
 ## 主要特色：V3 工作流
 
