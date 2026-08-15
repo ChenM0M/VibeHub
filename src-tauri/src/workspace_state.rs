@@ -1280,12 +1280,12 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn canonical_path_identity_normalizes_alias_for_existing_project() {
         let dir = tempdir();
         let real = dir.join("real-project");
         fs::create_dir_all(&real).unwrap();
         let alias = dir.join("alias-project");
-        #[cfg(unix)]
         std::os::unix::fs::symlink(&real, &alias).unwrap();
         let store = WorkspaceStateStore::new(dir.join("state"));
         let mut document = state(0);
@@ -1295,7 +1295,6 @@ mod tests {
             display_name: "A".to_string(),
             canonical_path: real.display().to_string(),
         }];
-        #[cfg(unix)]
         let result = store
             .save(
                 WorkspaceStateSaveRequest {
