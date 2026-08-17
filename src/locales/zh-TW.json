@@ -1633,7 +1633,8 @@
     },
     "actions": {
       "setDefault": "設為預設",
-      "launchOnce": "僅此次啟動"
+      "launchOnce": "僅此次啟動",
+      "copyLaunchCommand": "複製啟動指令"
     },
     "route": {
       "adapter": "自動轉接",
@@ -1742,6 +1743,7 @@
       "profileDeleted": "Profile 已刪除。",
       "claudeSingleProvider": "Claude Code 原生 settings 只提供一個 Anthropic Provider；請編輯既有 Provider 欄位。",
       "claudeCannotDeleteProvider": "Claude Code 的原生 settings 不支援刪除唯一的 Provider。",
+      "commandCopied": "已複製啟動指令：{{command}}",
       "advancedApplied": "進階 JSON 已載入草稿；儲存仍沿用同一套 Schema、版本、備份和原子寫回門禁。"
     },
     "errors": {

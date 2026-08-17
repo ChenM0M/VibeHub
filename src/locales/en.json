@@ -1636,7 +1636,8 @@
     },
     "actions": {
       "setDefault": "Set as default",
-      "launchOnce": "Launch once"
+      "launchOnce": "Launch once",
+      "copyLaunchCommand": "Copy launch command"
     },
     "route": {
       "adapter": "Automatic adaptation",
@@ -1745,6 +1746,7 @@
       "profileDeleted": "Profile deleted.",
       "claudeSingleProvider": "Claude Code's native settings expose one Anthropic Provider. Edit the existing Provider fields.",
       "claudeCannotDeleteProvider": "Claude Code's native settings do not allow deleting its only Provider.",
+      "commandCopied": "Launch command copied: {{command}}",
       "advancedApplied": "Advanced JSON loaded into the draft. Save still uses the same schema, revision, backup, and atomic-write guards."
     },
     "errors": {

@@ -153,9 +153,12 @@ pub fn discover_runtime_targets() -> Result<Vec<RuntimeTarget>, StorageError> {
     let targets = vec![RuntimeTarget::host(home_directory()?)];
     #[cfg(windows)]
     {
-        for distribution in discover_wsl_distributions()? {
-            let home = wsl_home(&distribution)?;
-            targets.push(RuntimeTarget::wsl(distribution, home));
+        if let Ok(distributions) = discover_wsl_distributions() {
+            for distribution in distributions {
+                if let Ok(home) = wsl_home(&distribution) {
+                    targets.push(RuntimeTarget::wsl(distribution, home));
+                }
+            }
         }
     }
     Ok(targets)

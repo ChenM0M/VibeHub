@@ -2303,7 +2303,7 @@ fn revision_wire(revision: &DocumentRevision) -> ConfigRevisionWire {
 }
 
 fn revision_number(revision: &DocumentRevision) -> u64 {
-    u64::from_str_radix(revision.content_sha256.get(..16).unwrap_or("0"), 16)
+    u64::from_str_radix(revision.content_sha256.get(..12).unwrap_or("0"), 16)
         .unwrap_or(1)
         .max(1)
 }
@@ -2510,6 +2510,29 @@ mod tests {
         assert_eq!(a, b);
         assert_ne!(a, c);
         assert!(a.starts_with("opencode.profile."));
+    }
+
+    #[test]
+    fn revision_number_fits_within_javascript_max_safe_integer() {
+        const JS_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+        let max_revision = DocumentRevision {
+            content_sha256: "f".repeat(64),
+            byte_length: 1024,
+        };
+        let min_revision = DocumentRevision {
+            content_sha256: "0".repeat(64),
+            byte_length: 1024,
+        };
+        let sample_revision = DocumentRevision {
+            content_sha256: "f4a9b2c3d4e5f6071234567890abcdef1234567890abcdef1234567890abcdef"
+                .to_owned(),
+            byte_length: 1024,
+        };
+        assert!(revision_number(&max_revision) <= JS_MAX_SAFE_INTEGER);
+        assert!(revision_number(&max_revision) >= 1);
+        assert_eq!(revision_number(&min_revision), 1);
+        assert!(revision_number(&sample_revision) <= JS_MAX_SAFE_INTEGER);
+        assert_eq!(revision_number(&max_revision), 0xFFFFFFFFFFFF);
     }
 
     #[test]

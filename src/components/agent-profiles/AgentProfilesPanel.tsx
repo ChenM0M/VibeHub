@@ -139,6 +139,26 @@ function statusTone(compatibility: string): string {
     return 'border-destructive/30 bg-destructive/10 text-destructive';
 }
 
+function computeLaunchCommand(profile: AgentProfileDocument): string {
+    if (profile.agent === 'opencode') {
+        return 'opencode';
+    }
+    if (profile.agent === 'claude_code') {
+        if (profile.default_state.is_default || profile.source.scope === 'user') {
+            return 'claude';
+        }
+        return `claude --settings "${profile.source.path.native}"`;
+    }
+    if (profile.agent === 'codex') {
+        if (profile.default_state.is_default || profile.source.scope === 'user') {
+            return 'codex';
+        }
+        const profileName = profile.source.profile_name || profile.display_name;
+        return `codex --profile-v2 "${profileName}"`;
+    }
+    return profile.launch.executable || 'agent';
+}
+
 function defaultProtocol(agent: AgentKind): ProtocolCapability {
     const protocol = agent === 'claude_code' ? 'anthropic_messages' : 'openai_responses';
     return {
@@ -447,6 +467,17 @@ export function AgentProfilesPanel() {
             setNotice({ kind: 'error', text: formatError(error) });
         } finally {
             setBusyAction(null);
+        }
+    };
+
+    const copyLaunchCommand = async () => {
+        if (!profileForEdit) return;
+        const command = computeLaunchCommand(profileForEdit);
+        try {
+            await navigator.clipboard.writeText(command);
+            setNotice({ kind: 'info', text: t('agentProfiles.notices.commandCopied', { command }) });
+        } catch {
+            setNotice({ kind: 'info', text: t('agentProfiles.notices.commandCopied', { command }) });
         }
     };
 
@@ -831,6 +862,7 @@ export function AgentProfilesPanel() {
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 <Button type="button" variant="outline" onClick={activateDraft} disabled={!profile || busyAction !== null || selectedSummary?.is_default}>{busyAction === 'activate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{t('agentProfiles.actions.setDefault')}</Button>
+                                <Button type="button" variant="outline" onClick={copyLaunchCommand} disabled={!profileForEdit || busyAction !== null} title={t('agentProfiles.actions.copyLaunchCommand')} aria-label={t('agentProfiles.actions.copyLaunchCommand')}><Copy className="mr-2 h-4 w-4" />{t('agentProfiles.actions.copyLaunchCommand')}</Button>
                                 <Button type="button" variant="outline" onClick={prepareLaunch} disabled={!profile || busyAction !== null}>{busyAction === 'launch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Terminal className="mr-2 h-4 w-4" />}{t('agentProfiles.actions.launchOnce')}</Button>
                                 <Button type="button" onClick={saveDraft} disabled={!dirty || busyAction !== null}>{busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t('agentProfiles.common.save')}</Button>
                             </div>

@@ -2,6 +2,12 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.2
+
+- 修复 Agent 配置版本号跨 Tauri IPC 传递时的 JavaScript 64 位整数精度截断 Bug：将 SHA-256 哈希提取位数从 16 位十六进制调整为 12 位（48-bit 安全整数），彻底解决保存配置时持续误报 `configuration changed after it was read; reload before continuing` 的冲突拦截问题。
+- 修复 Windows 宿主环境运行时探测因 WSL 不可用时抛出 `wsl.exe` 退出错误导致整个运行环境列表为空的问题，现在在没有 WSL 的 Windows 机器上也能稳定识别原生 Windows 宿主环境。
+- 新增 Agent 配置面板「复制启动指令」功能：支持一键复制当前选中 Profile 的终端命令行启动指令（支持 OpenCode、Claude Code、Codex 及其专属 Profile 参数）。
+
 ## v3.3.1
 
 - 修复 Windows 上 Workspace State 保存时对临时文件二次打开导致的 `Access denied`：写入与 `fsync` 现在使用同一个打开的文件句柄，并保留 Unix 权限元数据。
