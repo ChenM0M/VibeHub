@@ -90,9 +90,13 @@ artifact/hash 都不能冒充当前版本证据。
 
 - `Build and Test` 在 feature、main/dev push 或 PR 上运行前端、contracts、Rust、
   MCP 和 Tauri 构建门槛。
-- `Release` 先 checkout 精确 tag，运行 preflight，再创建一个 draft Release，
-  上传 macOS、Windows、Linux 产物和平台 SHA-256 清单。只有全部 matrix job
-  成功且必需产物校验通过后，最终 job 才能把 draft 发布；随后直接调用可复用的
+- Release 先 checkout 精确 tag，运行 preflight，再创建一个 draft Release，
+  上传 macOS、Windows、Linux 产物和平台 SHA-256 清单。Draft 正文来自
+  `docs/releases/<tag>.md`（由 `scripts/release/notes.mjs` 把截图改成指向该
+  tag 的 raw URL），不得使用 `--generate-notes` 作为唯一说明。每个 tag 必须
+  提供用户可读摘要和至少一张 1600×1000 的 `assets/releases/<tag>/` 界面截图，
+  流程见 [`docs/releases/README.md`](../releases/README.md)。只有全部 matrix
+  job 成功且必需产物校验通过后，最终 job 才能把 draft 发布；随后直接调用可复用的
   Homebrew cask workflow，避免由 `GITHUB_TOKEN` 发布事件无法触发下游 workflow。
   任何平台失败时必须保留 draft，不得发布残缺版本。
 - Apple Developer ID/notarization 与 Windows Authenticode 凭据是可选增强；凭据

@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
+import { Buffer } from "node:buffer";
 
 const root = new URL("../../", import.meta.url);
 const readText = (path) => readFile(new URL(path, root), "utf8");
@@ -67,6 +68,8 @@ const requiredReleaseWorkflowFragments = [
   "uses: ./.github/workflows/homebrew.yml",
   "require_tap_update: true",
   "secrets: inherit",
+  "node scripts/release/notes.mjs",
+  "--notes-file",
 ];
 for (const fragment of requiredReleaseWorkflowFragments) {
   if (!releaseWorkflow.includes(fragment)) {
@@ -85,11 +88,52 @@ for (const fragment of requiredHomebrewWorkflowFragments) {
   }
 }
 
+if (releaseWorkflow.includes("--generate-notes")) {
+  throw new Error("release workflow must use --notes-file instead of --generate-notes");
+}
+
+const pngSize = (bytes) => {
+  if (bytes.length < 24 || bytes.subarray(1, 4).toString("ascii") !== "PNG") {
+    return null;
+  }
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+};
+
 const releaseTag = process.env.RELEASE_TAG?.trim();
 if (releaseTag) {
   const tagVersion = releaseTag.startsWith("v") ? releaseTag.slice(1) : releaseTag;
   if (tagVersion !== expected) {
     throw new Error(`release tag ${releaseTag} does not match configured version ${expected}`);
+  }
+  const tag = releaseTag.startsWith("v") ? releaseTag : `v${releaseTag}`;
+  const notesPath = `docs/releases/${tag}.md`;
+  const notes = await readText(notesPath);
+  const imageRefs = [...notes.matchAll(/assets\/releases\/[^)\s]+/g)].map((match) => match[0]);
+  if (imageRefs.length === 0) {
+    throw new Error(`${notesPath} must include at least one screenshot under assets/releases/`);
+  }
+  for (const relativePath of new Set(imageRefs)) {
+    const bytes = Buffer.from(await readFile(new URL(relativePath, root)));
+    const size = pngSize(bytes);
+    if (!size) {
+      throw new Error(`${relativePath} is not a PNG`);
+    }
+    if (size.width !== 1600 || size.height !== 1000) {
+      throw new Error(`${relativePath} must be 1600x1000, got ${size.width}x${size.height}`);
+    }
+  }
+  const { buildReleaseNotes, rewriteAssetUrls } = await import("./notes.mjs");
+  const rewritten = rewriteAssetUrls("![demo](../../assets/releases/v0.0.0/demo.png)", {
+    repo: "ChenM0M/VibeHub",
+    tag: "v0.0.0",
+  });
+  if (rewritten !== "![demo](https://github.com/ChenM0M/VibeHub/raw/v0.0.0/assets/releases/v0.0.0/demo.png)") {
+    throw new Error("scripts/release/notes.mjs did not rewrite relative screenshot URLs");
+  }
+  await access(new URL("scripts/release/capture-macos.sh", root));
+  const rendered = await buildReleaseNotes(tag);
+  if (!rendered.includes(`https://github.com/ChenM0M/VibeHub/raw/${tag}/`)) {
+    throw new Error("rendered GitHub notes must point screenshot URLs at the release tag");
   }
 }
 

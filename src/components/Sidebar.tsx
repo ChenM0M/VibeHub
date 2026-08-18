@@ -12,6 +12,7 @@ import {
     RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useDevScreenshotCue } from '@/lib/devScreenshotCue';
 import { Button } from './ui/button';
 import { useTranslation } from 'react-i18next';
 import { TagEditDialog } from './TagEditDialog';
@@ -19,6 +20,7 @@ import { Tag } from '@/types';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { useEffect } from 'react';
+import { isReleaseFixture } from '@/lib/releaseFixture';
 
 type PageType = 'home' | 'settings' | 'gateway' | 'agent-profiles' | 'about';
 
@@ -41,6 +43,10 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
     const [appVersion, setAppVersion] = useState<string>('');
 
     useEffect(() => {
+        if (isReleaseFixture()) {
+            setAppVersion('3.3.3');
+            return;
+        }
         getVersion().then(setAppVersion).catch(() => setAppVersion('1.3.0'));
     }, []);
 
@@ -73,6 +79,22 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
         setEditingTag(tag);
         setIsTagDialogOpen(true);
     };
+
+    useDevScreenshotCue((command) => {
+        if (command === 'close') {
+            setIsTagDialogOpen(false);
+            setEditingTag(null);
+            return;
+        }
+        if (command === 'tag') {
+            const tag = tags.find((item) => item.category === 'cli') || tags[0];
+            if (!tag) {
+                openCreateTagDialog();
+                return;
+            }
+            openEditTagDialog(tag);
+        }
+    });
 
     const handleSaveTag = async (tag: Tag) => {
         try {

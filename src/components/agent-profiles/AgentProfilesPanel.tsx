@@ -40,6 +40,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import { useDevScreenshotCue } from '@/lib/devScreenshotCue';
+import {
+    isReleaseFixture,
+    releaseFixtureDiscovery,
+    releaseFixtureProfile,
+    releaseFixtureTarget,
+    releaseFixtureUpstreamModels,
+} from '@/lib/releaseFixture';
 import { tauriApi, V3AgentProfileSaveRequest } from '@/services/tauri';
 import type {
     AgentKind,
@@ -441,6 +449,20 @@ export function AgentProfilesPanel() {
     }, [agent, targetId, selectedProfileId]);
 
     useEffect(() => {
+        if (!isReleaseFixture()) return;
+        setTargets([releaseFixtureTarget]);
+        setTargetId(releaseFixtureTarget.target_id);
+        setDiscovery(releaseFixtureDiscovery);
+        setSelectedProfileId(releaseFixtureProfile.profile_id);
+        setProfile(releaseFixtureProfile);
+        setDraft(releaseFixtureProfile);
+        setLoadingTargets(false);
+        setLoadingProfiles(false);
+        setLoadingProfile(false);
+    }, []);
+
+    useEffect(() => {
+        if (isReleaseFixture()) return;
         let active = true;
         setLoadingTargets(true);
         tauriApi.v3AgentProfileRuntimeTargets()
@@ -456,6 +478,7 @@ export function AgentProfilesPanel() {
     }, []);
 
     useEffect(() => {
+        if (isReleaseFixture()) return;
         const requestId = ++discoveryRequest.current;
         const requestContextSnapshot = requestContextRef.current;
         // A new Agent/runtime context invalidates any read still in flight.
@@ -487,6 +510,7 @@ export function AgentProfilesPanel() {
     );
 
     useEffect(() => {
+        if (isReleaseFixture()) return;
         if (!targetId || !selectedProfileId || !discoveryMatchesContext) return;
         const requestId = ++profileRequest.current;
         const requestContextSnapshot = requestContextRef.current;
@@ -869,6 +893,23 @@ export function AgentProfilesPanel() {
             setNotice({ kind: 'error', text: t('agentProfiles.errors.detectBaseUrlRequired') });
             return;
         }
+        if (isReleaseFixture()) {
+            const existing = new Set(provider.models.map((model) => model.model_id));
+            setModelImport({
+                providerId: provider.provider_id,
+                loading: false,
+                error: null,
+                endpoint: `${provider.base_url.replace(/\/$/, '')}/models`,
+                items: releaseFixtureUpstreamModels.map((model) => ({
+                    model_id: model.model_id,
+                    display_name: model.display_name,
+                    imported: Boolean(model.imported) || existing.has(model.model_id),
+                })),
+                selected: releaseFixtureUpstreamModels.filter((model) => !model.imported && !existing.has(model.model_id)).slice(0, 3).map((model) => model.model_id),
+                filter: '',
+            });
+            return;
+        }
         const requestId = ++modelImportRequest.current;
         setModelImport({
             providerId: provider.provider_id,
@@ -919,6 +960,19 @@ export function AgentProfilesPanel() {
             });
         }
     };
+
+    useDevScreenshotCue((command) => {
+        if (command === 'close') {
+            closeProviderEditor();
+            closeModelEditor();
+            closeModelImport();
+            return;
+        }
+        const provider = profileForEdit?.managed.providers[0];
+        if (!provider) return;
+        if (command === 'provider') openProviderEditor(provider);
+        if (command === 'import') void openModelImport(provider);
+    });
 
     const submitModelImport = () => {
         if (!modelImport) return;

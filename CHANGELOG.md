@@ -4,10 +4,17 @@
 
 ## v3.3.3
 
-- Agent 配置保存时把 API Key 写入本机 Agent 配置：Claude Code 使用 `ANTHROPIC_AUTH_TOKEN`，OpenCode 使用 `options.apiKey`，Codex 使用 `experimental_bearer_token`，填好 Base URL、Key 和模型后即可启动。
+填写 Base URL 和 API Key 就能启动；上游模型可以检测后勾选导入。标签启动会正确解析带引号的命令。发布说明与截图见 [`docs/releases/v3.3.3.md`](docs/releases/v3.3.3.md)。
+
+### Agent 配置
+
+- 保存时把 API Key 写入本机 Agent 配置：Claude Code 使用 `ANTHROPIC_AUTH_TOKEN`，OpenCode 使用 `options.apiKey`，Codex 使用 `experimental_bearer_token`，填好 Base URL、Key 和模型后即可启动。
 - Claude Code 临时启动改为 `--setting-sources "" --settings`，避免用户级 settings 覆盖当前 Profile。
-- Agent 配置新增「检测模型」：按当前 Base URL 和 API Key 列出上游模型，复选后导入草稿。
-- 修复标签启动：可启动分类必须填写可执行文件；粘贴带引号的 `claude --settings "/path"` 会正确拆分命令，纯展示标签不再参与启动。
+- 新增「检测模型」：按当前 Base URL 和 API Key 列出上游模型，复选后导入草稿。
+
+### 标签启动
+
+- 可启动分类必须填写可执行文件；粘贴带引号的 `claude --settings "/path"` 会正确拆分命令，纯展示标签不再参与启动。
 
 ## v3.3.2
 

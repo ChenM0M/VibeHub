@@ -9,27 +9,61 @@ import { About } from '@/pages/About';
 import { UpdateChecker } from '@/components/UpdateChecker';
 import { useAppStore } from '@/stores/appStore';
 import '@/styles/globals.css';
-import './i18n';
+import { isReleaseFixture, releaseFixtureConfig } from '@/lib/releaseFixture';
+import i18n from './i18n';
 
 export type PageType = 'home' | 'settings' | 'gateway' | 'agent-profiles' | 'about';
 
+const PAGE_TYPES: PageType[] = ['home', 'settings', 'gateway', 'agent-profiles', 'about'];
+
+function isPageType(value: string): value is PageType {
+    return PAGE_TYPES.includes(value as PageType);
+}
+
 function pageFromHash(): PageType {
     const value = window.location.hash.replace(/^#/, '');
-    return value === 'settings' || value === 'gateway' || value === 'agent-profiles' || value === 'about'
-        ? value
-        : 'home';
+    return isPageType(value) ? value : 'home';
+}
+
+function initialPage(): PageType {
+    const envPage = import.meta.env.VITE_START_PAGE;
+    if (typeof envPage === 'string' && isPageType(envPage)) {
+        return envPage;
+    }
+    return pageFromHash();
 }
 
 function App() {
     const { initializeApp } = useAppStore();
-    const [currentPage, setCurrentPage] = useState<PageType>(() => pageFromHash());
+    const [currentPage, setCurrentPage] = useState<PageType>(() => initialPage());
     const [homeResetKey, setHomeResetKey] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
     const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
     const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
 
     useEffect(() => {
+        if (isReleaseFixture()) {
+            void i18n.changeLanguage('zh');
+            document.documentElement.classList.remove('dark');
+            useAppStore.setState({
+                config: releaseFixtureConfig,
+                isLoading: false,
+                error: null,
+                effectiveTheme: 'light',
+            });
+            const startPage = initialPage();
+            if (startPage !== 'home' && window.location.hash.replace(/^#/, '') !== startPage) {
+                window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${startPage}`);
+            }
+            const handleHashChange = () => setCurrentPage(pageFromHash());
+            window.addEventListener('hashchange', handleHashChange);
+            return () => window.removeEventListener('hashchange', handleHashChange);
+        }
         initializeApp();
+        const startPage = initialPage();
+        if (startPage !== 'home' && window.location.hash.replace(/^#/, '') !== startPage) {
+            window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${startPage}`);
+        }
         const handleHashChange = () => setCurrentPage(pageFromHash());
         window.addEventListener('hashchange', handleHashChange);
         return () => window.removeEventListener('hashchange', handleHashChange);

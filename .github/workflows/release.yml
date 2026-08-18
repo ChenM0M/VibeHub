@@ -83,15 +83,27 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Create or reuse draft release
         shell: bash
         run: |
           set -euo pipefail
+          NOTES_FILE="$(mktemp)"
+          node scripts/release/notes.mjs "$RELEASE_TAG" > "$NOTES_FILE"
+          if [[ ! -s "$NOTES_FILE" ]]; then
+            echo "Rendered release notes were empty for $RELEASE_TAG" >&2
+            exit 1
+          fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists; assets will be replaced by the build jobs."
+            gh release edit "$RELEASE_TAG" --notes-file "$NOTES_FILE" --title "VibeHub $RELEASE_TAG"
+            echo "Release $RELEASE_TAG already exists; notes updated, assets will be replaced by the build jobs."
             exit 0
           fi
-          args=(release create "$RELEASE_TAG" --verify-tag --draft --generate-notes --title "VibeHub $RELEASE_TAG")
+          args=(release create "$RELEASE_TAG" --verify-tag --draft --notes-file "$NOTES_FILE" --title "VibeHub $RELEASE_TAG")
           if [[ "$RELEASE_TAG" == *-* ]]; then
             args+=(--prerelease)
           fi
