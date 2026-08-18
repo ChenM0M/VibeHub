@@ -2,14 +2,17 @@
 //!
 //! This module is intentionally the only Tauri boundary for Agent Profile
 //! configuration. The renderer sends stable IDs and managed values; it never
-//! sends a path to open or a secret to persist. Real paths are resolved from
-//! observed runtime targets and real profile discovery results inside Rust.
+//! sends a filesystem path to open. OpenCode, Claude Code, and Codex may send
+//! an optional API key that is written only into the selected home-directory
+//! Agent configuration. Real paths are resolved from observed runtime targets
+//! and discovery.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
@@ -17,6 +20,7 @@ use vibehub_core::v3::{
     self, AgentKind, ClaudeCodeProfileView, ClaudeCredentialKind, ClaudeSettingsPatch,
     ClaudeSettingsScope, CodexConfigPatch, CodexCredentialKind, CodexProfileView, CodexProtocol,
     CodexProviderPatch, ConfigFormat, DocumentRevision, NativeConfigPath, OpenCodeConfigPatch,
+    ParsedConfig,
     OpenCodeModelPatch, OpenCodeProfileView, OpenCodeProviderPatch, ProtocolKind,
     ProtocolResolution, RuntimeTarget, RuntimeTargetKind, StorageError, WriteReport,
 };
@@ -226,6 +230,46 @@ pub struct AgentProfileDeleteRequest {
     pub replacement_profile_id: Option<String>,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct AgentProfileListModelsRequest {
+    pub agent: AgentKind,
+    pub runtime_target_id: String,
+    pub profile_id: String,
+    pub provider_id: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub protocol: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+impl std::fmt::Debug for AgentProfileListModelsRequest {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AgentProfileListModelsRequest")
+            .field("agent", &self.agent)
+            .field("runtime_target_id", &self.runtime_target_id)
+            .field("profile_id", &self.profile_id)
+            .field("provider_id", &self.provider_id)
+            .field("base_url", &self.base_url)
+            .field("protocol", &self.protocol)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentProfileListModelsResult {
+    pub endpoint: String,
+    pub models: Vec<UpstreamModelWire>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpstreamModelWire {
+    pub model_id: String,
+    pub display_name: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentProfileDocumentInput {
     pub profile_id: String,
@@ -280,13 +324,32 @@ pub struct ProviderProfileInput {
     pub models: Vec<ModelProfileInput>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct CredentialReferenceInput {
     pub kind: String,
     pub reference: String,
     pub display: String,
     pub secret_state: String,
     pub persisted_in_config: bool,
+    #[serde(default)]
+    pub secret: Option<String>,
+    #[serde(default)]
+    pub clear_secret: bool,
+}
+
+impl std::fmt::Debug for CredentialReferenceInput {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CredentialReferenceInput")
+            .field("kind", &self.kind)
+            .field("reference", &self.reference)
+            .field("display", &self.display)
+            .field("secret_state", &self.secret_state)
+            .field("persisted_in_config", &self.persisted_in_config)
+            .field("secret", &self.secret.as_ref().map(|_| "[redacted]"))
+            .field("clear_secret", &self.clear_secret)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -500,6 +563,13 @@ pub async fn v3_agent_profile_delete(
     request: AgentProfileDeleteRequest,
 ) -> Result<AgentProfileSaveResult, AgentProfileCommandError> {
     run_blocking(move || delete_profile(request)).await
+}
+
+#[tauri::command]
+pub async fn v3_agent_profile_list_upstream_models(
+    request: AgentProfileListModelsRequest,
+) -> Result<AgentProfileListModelsResult, AgentProfileCommandError> {
+    list_upstream_models(request).await
 }
 
 async fn run_blocking<T, F>(operation: F) -> Result<T, AgentProfileCommandError>
@@ -1437,12 +1507,24 @@ fn save_managed(
                 &patch,
             )?))
         }
-        LocatedProfile::Claude(view) => Ok(Some(v3::save_claude_profile(
-            target,
-            &view.source_path,
-            Some(&view.revision),
-            &patch_for_claude(managed)?,
-        )?)),
+        LocatedProfile::Claude(view) => {
+            let mut patch = patch_for_claude(managed)?;
+            if matches!(view.scope, ClaudeSettingsScope::Profile)
+                && (patch.base_url.is_some()
+                    || patch.auth_token.is_some()
+                    || patch.clear_credentials)
+            {
+                patch.strip_credential_helper = true;
+            } else if patch.auth_token.is_some() || patch.clear_credentials {
+                patch.strip_credential_helper = true;
+            }
+            Ok(Some(v3::save_claude_profile(
+                target,
+                &view.source_path,
+                Some(&view.revision),
+                &patch,
+            )?))
+        }
         LocatedProfile::Codex(view) => {
             let mut patch = patch_for_codex(managed)?;
             let active_providers = managed
@@ -1494,8 +1576,13 @@ fn patch_for_opencode(
         providers: BTreeMap::new(),
     };
     for provider in &managed.providers {
-        let environment_references =
-            credential_environment(&provider.credential)?.map(|reference| vec![reference]);
+        let secret = credential_secret(&provider.credential);
+        let clear_api_key = provider.credential.clear_secret && secret.is_none();
+        let environment_references = if secret.is_some() {
+            None
+        } else {
+            credential_environment(&provider.credential)?.map(|reference| vec![reference])
+        };
         let mut models = BTreeMap::new();
         for model in &provider.models {
             if !model.enabled {
@@ -1529,6 +1616,8 @@ fn patch_for_opencode(
                 display_name: Some(provider.display_name.clone()),
                 base_url: non_empty(provider.base_url.clone()),
                 environment_references,
+                api_key: secret,
+                clear_api_key,
                 models,
             },
         );
@@ -1546,6 +1635,8 @@ fn patch_for_claude(
             "disabled" | "off" | "none"
         )
     });
+    let credential = provider.map(|provider| &provider.credential);
+    let auth_token = credential.and_then(|credential| credential_secret(credential));
     Ok(ClaudeSettingsPatch {
         model: managed.default_model_id.clone(),
         base_url: provider.and_then(|provider| non_empty(provider.base_url.clone())),
@@ -1555,11 +1646,15 @@ fn patch_for_claude(
             .map(|provider| provider.base_url.trim().is_empty())
             .unwrap_or(true),
         clear_thinking: selected_thinking(managed).is_none(),
-        credential_environment: provider
-            .map(|provider| credential_environment(&provider.credential))
+        credential_environment: credential
+            .map(|credential| credential_environment(credential))
             .transpose()?
             .flatten(),
-        ..Default::default()
+        auth_token,
+        clear_credentials: credential
+            .map(|credential| credential.clear_secret)
+            .unwrap_or(false),
+        strip_credential_helper: false,
     })
 }
 
@@ -1569,7 +1664,12 @@ fn patch_for_codex(
     let mut providers = BTreeMap::new();
     for provider in &managed.providers {
         let native_protocol = protocol_from_wire(&provider.protocol.native_protocol)?;
-        let environment_key = credential_environment(&provider.credential)?;
+        let secret = credential_secret(&provider.credential);
+        let environment_key = if secret.is_some() || provider.credential.clear_secret {
+            None
+        } else {
+            credential_environment(&provider.credential)?
+        };
         providers.insert(
             provider.provider_id.clone(),
             CodexProviderPatch {
@@ -1584,6 +1684,10 @@ fn patch_for_codex(
                     )),
                 }),
                 environment_key,
+                bearer_token: secret.clone(),
+                clear_environment_key: secret.is_some() || provider.credential.clear_secret,
+                clear_bearer_token: provider.credential.clear_secret && secret.is_none(),
+                requires_openai_auth: secret.is_some().then_some(false),
                 ..Default::default()
             },
         );
@@ -1599,6 +1703,15 @@ fn patch_for_codex(
         providers,
         ..Default::default()
     })
+}
+
+fn credential_secret(credential: &CredentialReferenceInput) -> Option<String> {
+    credential
+        .secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 fn credential_environment(
@@ -1939,7 +2052,7 @@ fn claude_document_parts(
         "executable":view.launch.executable,
         "profile_argument":Value::Null,
         "settings_argument":view.launch.settings_argument,
-        "extra_arguments":[]
+        "extra_arguments":view.launch.arguments.iter().cloned().take(2).collect::<Vec<_>>()
     });
     let preservation = preservation_value(
         true,
@@ -2452,9 +2565,340 @@ fn now() -> String {
     Utc::now().to_rfc3339()
 }
 
+const UPSTREAM_MODEL_LIMIT: usize = 200;
+const UPSTREAM_MODELS_MAX_BYTES: usize = 2_000_000;
+
+async fn list_upstream_models(
+    request: AgentProfileListModelsRequest,
+) -> Result<AgentProfileListModelsResult, AgentProfileCommandError> {
+    let base_url = request.base_url.trim();
+    if base_url.is_empty() {
+        return Err(AgentProfileCommandError::validation(
+            "AGENT_PROFILE_BASE_URL_REQUIRED",
+            "Base URL is required to list upstream models",
+        ));
+    }
+    let provided = request
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let token = match provided {
+        Some(value) => value,
+        None => {
+            let target = resolve_runtime_target(&request.runtime_target_id)?;
+            let profile = locate_profile(&target, &request.agent, &request.profile_id)?;
+            stored_provider_secret(&target, &profile, &request.provider_id)?.ok_or_else(|| {
+                AgentProfileCommandError::validation(
+                    "AGENT_PROFILE_API_KEY_REQUIRED",
+                    "API Key is required to list upstream models",
+                )
+            })?
+        }
+    };
+    let anthropic = uses_anthropic_models_auth(&request.agent, &request.protocol);
+    let (endpoint, models) = fetch_upstream_models(base_url, &token, anthropic).await?;
+    Ok(AgentProfileListModelsResult { endpoint, models })
+}
+
+fn uses_anthropic_models_auth(agent: &AgentKind, protocol: &str) -> bool {
+    protocol == "anthropic_messages"
+        || (matches!(agent, AgentKind::ClaudeCode)
+            && protocol != "openai_responses"
+            && protocol != "openai_chat_completions")
+}
+
+fn models_url_candidates(base_url: &str) -> Result<Vec<String>, AgentProfileCommandError> {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    let parsed = reqwest::Url::parse(trimmed).map_err(|_| {
+        AgentProfileCommandError::validation(
+            "AGENT_PROFILE_BASE_URL_INVALID",
+            "Base URL must be an absolute http(s) URL",
+        )
+    })?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err(AgentProfileCommandError::validation(
+            "AGENT_PROFILE_BASE_URL_INVALID",
+            "Base URL must be an absolute http(s) URL",
+        ));
+    }
+    if trimmed.ends_with("/models") {
+        return Ok(vec![trimmed.to_owned()]);
+    }
+    let mut urls = vec![format!("{trimmed}/models")];
+    if !trimmed.ends_with("/v1") {
+        urls.push(format!("{trimmed}/v1/models"));
+    }
+    Ok(urls)
+}
+
+fn parse_upstream_models(value: &Value) -> Vec<UpstreamModelWire> {
+    let items = value
+        .get("data")
+        .or_else(|| value.get("models"))
+        .unwrap_or(value);
+    let Some(array) = items.as_array() else {
+        return Vec::new();
+    };
+    let mut seen = BTreeSet::new();
+    let mut models = Vec::new();
+    for item in array {
+        let Some((model_id, display_name)) = upstream_model_parts(item) else {
+            continue;
+        };
+        if !seen.insert(model_id.clone()) {
+            continue;
+        }
+        models.push(UpstreamModelWire {
+            model_id,
+            display_name,
+        });
+    }
+    models.sort_by(|left, right| left.model_id.cmp(&right.model_id));
+    models.truncate(UPSTREAM_MODEL_LIMIT);
+    models
+}
+
+fn upstream_model_parts(item: &Value) -> Option<(String, String)> {
+    match item {
+        Value::String(value) => {
+            let model_id = value.trim();
+            if model_id.is_empty() {
+                return None;
+            }
+            Some((model_id.to_owned(), model_id.to_owned()))
+        }
+        Value::Object(object) => {
+            let model_id = object
+                .get("id")
+                .or_else(|| object.get("model"))
+                .or_else(|| object.get("name"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())?;
+            let display_name = object
+                .get("display_name")
+                .or_else(|| object.get("displayName"))
+                .or_else(|| object.get("name"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(model_id);
+            Some((model_id.to_owned(), display_name.to_owned()))
+        }
+        _ => None,
+    }
+}
+
+fn stored_provider_secret(
+    target: &RuntimeTarget,
+    profile: &LocatedProfile,
+    provider_id: &str,
+) -> Result<Option<String>, AgentProfileCommandError> {
+    let document = v3::read_document(target, profile.source_path())?;
+    let parsed = document.parse()?;
+    let secret = match parsed {
+        ParsedConfig::Json(value) => match profile {
+            LocatedProfile::Claude(_) => claude_secret_from_json(&value),
+            LocatedProfile::OpenCode(_) => opencode_secret_from_json(&value, provider_id),
+            LocatedProfile::Codex(_) => None,
+        },
+        ParsedConfig::Toml(value) => match profile {
+            LocatedProfile::Codex(_) => {
+                let json = serde_json::to_value(&value).unwrap_or(Value::Null);
+                codex_secret_from_value(&json, provider_id)
+            }
+            _ => None,
+        },
+    };
+    Ok(secret.and_then(usable_secret))
+}
+
+fn claude_secret_from_json(root: &Value) -> Option<String> {
+    if let Some(secret) = root
+        .get("env")
+        .and_then(Value::as_object)
+        .and_then(|env| {
+            env.get("ANTHROPIC_AUTH_TOKEN")
+                .or_else(|| env.get("ANTHROPIC_API_KEY"))
+        })
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .and_then(usable_secret)
+    {
+        return Some(secret);
+    }
+    for key in ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"] {
+        if let Ok(value) = std::env::var(key) {
+            if let Some(secret) = usable_secret(value) {
+                return Some(secret);
+            }
+        }
+    }
+    None
+}
+
+fn opencode_secret_from_json(root: &Value, provider_id: &str) -> Option<String> {
+    let providers = root
+        .get("provider")
+        .or_else(|| root.get("providers"))?
+        .as_object()?;
+    let provider = providers.get(provider_id)?;
+    if let Some(secret) = provider
+        .get("options")
+        .and_then(|options| options.get("apiKey"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .and_then(usable_secret)
+    {
+        return Some(secret);
+    }
+    let env_names = provider.get("env")?.as_array()?;
+    for name in env_names {
+        let Some(key) = name.as_str() else {
+            continue;
+        };
+        if let Ok(value) = std::env::var(key) {
+            if let Some(secret) = usable_secret(value) {
+                return Some(secret);
+            }
+        }
+    }
+    None
+}
+
+fn codex_secret_from_value(root: &Value, provider_id: &str) -> Option<String> {
+    let provider = root.get("model_providers")?.get(provider_id)?;
+    for key in ["experimental_bearer_token", "api_key", "apiKey"] {
+        if let Some(secret) = provider
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .and_then(usable_secret)
+        {
+            return Some(secret);
+        }
+    }
+    let env_key = provider.get("env_key").and_then(Value::as_str)?;
+    std::env::var(env_key).ok().and_then(usable_secret)
+}
+
+fn usable_secret(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.contains("{env:")
+        || trimmed.starts_with("{file:")
+        || trimmed.starts_with('$')
+    {
+        return None;
+    }
+    Some(trimmed.to_owned())
+}
+
+async fn fetch_upstream_models(
+    base_url: &str,
+    token: &str,
+    anthropic: bool,
+) -> Result<(String, Vec<UpstreamModelWire>), AgentProfileCommandError> {
+    let urls = models_url_candidates(base_url)?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .build()
+        .map_err(|error| {
+            AgentProfileCommandError::internal(
+                "AGENT_PROFILE_HTTP_CLIENT_FAILED",
+                safe_storage_message(&error.to_string()),
+            )
+        })?;
+    let mut last_error: Option<AgentProfileCommandError> = None;
+    let mut empty_endpoint: Option<String> = None;
+    for url in urls {
+        match probe_models_url(&client, &url, token, anthropic).await {
+            Ok(models) if models.is_empty() => {
+                empty_endpoint = Some(url);
+            }
+            Ok(models) => return Ok((url, models)),
+            Err(error) => {
+                if error.code == "AGENT_PROFILE_UPSTREAM_AUTH_FAILED" {
+                    return Err(error);
+                }
+                last_error = Some(error);
+            }
+        }
+    }
+    if let Some(endpoint) = empty_endpoint {
+        return Ok((endpoint, Vec::new()));
+    }
+    Err(last_error.unwrap_or_else(|| {
+        AgentProfileCommandError::validation(
+            "AGENT_PROFILE_UPSTREAM_UNAVAILABLE",
+            "upstream did not return a model list",
+        )
+    }))
+}
+
+async fn probe_models_url(
+    client: &reqwest::Client,
+    url: &str,
+    token: &str,
+    anthropic: bool,
+) -> Result<Vec<UpstreamModelWire>, AgentProfileCommandError> {
+    let mut request = client
+        .get(url)
+        .header("User-Agent", "VibeHub-AgentProfiles")
+        .header("Accept", "application/json")
+        .bearer_auth(token);
+    if anthropic {
+        request = request
+            .header("x-api-key", token)
+            .header("anthropic-version", "2023-06-01");
+    }
+    let response = request.send().await.map_err(|error| {
+        AgentProfileCommandError::internal(
+            "AGENT_PROFILE_UPSTREAM_REQUEST_FAILED",
+            safe_storage_message(&error.to_string()),
+        )
+    })?;
+    let status = response.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Err(AgentProfileCommandError::validation(
+            "AGENT_PROFILE_UPSTREAM_AUTH_FAILED",
+            format!("upstream rejected the API Key ({status})"),
+        ));
+    }
+    if !status.is_success() {
+        return Err(AgentProfileCommandError::validation(
+            "AGENT_PROFILE_UPSTREAM_UNAVAILABLE",
+            format!("upstream model list failed ({status})"),
+        ));
+    }
+    let bytes = response.bytes().await.map_err(|error| {
+        AgentProfileCommandError::internal(
+            "AGENT_PROFILE_UPSTREAM_READ_FAILED",
+            safe_storage_message(&error.to_string()),
+        )
+    })?;
+    if bytes.len() > UPSTREAM_MODELS_MAX_BYTES {
+        return Err(AgentProfileCommandError::validation(
+            "AGENT_PROFILE_UPSTREAM_RESPONSE_TOO_LARGE",
+            "upstream model list exceeded the size limit",
+        ));
+    }
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+        AgentProfileCommandError::validation(
+            "AGENT_PROFILE_UPSTREAM_RESPONSE_INVALID",
+            "upstream did not return a JSON model list",
+        )
+    })?;
+    Ok(parse_upstream_models(&value))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::fs;
     use uuid::Uuid;
 
@@ -2484,6 +2928,8 @@ mod tests {
                 display: "隐藏".to_owned(),
                 secret_state: "configured".to_owned(),
                 persisted_in_config: false,
+                secret: None,
+                clear_secret: false,
             },
             protocol: ProtocolCapabilityInput {
                 native_protocol: "openai_chat_completions".to_owned(),
@@ -2776,7 +3222,12 @@ mod tests {
         assert_eq!(deleted.operation, "delete");
         let beta = locate_profile(&target, &AgentKind::ClaudeCode, &beta_id).unwrap();
         let beta_args = launch_arguments_for(&beta, "temporary").unwrap();
-        assert_eq!(beta_args.first().map(String::as_str), Some("--settings"));
+        assert_eq!(
+            beta_args.first().map(String::as_str),
+            Some("--setting-sources")
+        );
+        assert_eq!(beta_args.get(1).map(String::as_str), Some(""));
+        assert_eq!(beta_args.get(2).map(String::as_str), Some("--settings"));
         assert!(launch_arguments_for(&beta, "default").is_ok());
 
         // Codex uses the native profile-v2 argument and the same default guard
@@ -2805,5 +3256,350 @@ mod tests {
         );
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_writes_opencode_and_codex_literal_keys_without_exposing_them_in_views() {
+        let root = std::env::temp_dir().join(format!(
+            "vibehub-agent-profile-literal-key-{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(opencode_config_dir(&root)).unwrap();
+        fs::create_dir_all(root.join(".codex")).unwrap();
+        fs::write(
+            opencode_config_dir(&root).join("opencode.json"),
+            r#"{"$schema":"https://opencode.ai/config.json","model":"openai/gpt-5","provider":{"openai":{"env":["OPENAI_API_KEY"],"options":{"baseURL":"https://api.openai.com/v1"},"models":{"gpt-5":{"reasoning":true}}}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join(".codex/config.toml"),
+            "model = \"gpt-5\"\nmodel_provider = \"openai\"\nmodel_reasoning_effort = \"high\"\n\n[model_providers.openai]\nname = \"OpenAI\"\nbase_url = \"https://api.openai.com/v1\"\nwire_api = \"responses\"\nenv_key = \"OPENAI_API_KEY\"\n",
+        )
+        .unwrap();
+        let target = RuntimeTarget::host(root.clone());
+
+        let opencode = discover_locations(&AgentKind::Opencode, &target)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let mut opencode_input: AgentProfileDocumentInput =
+            serde_json::from_value(profile_document(&target, &opencode).unwrap()).unwrap();
+        opencode_input.managed.providers[0].credential.kind = "unknown".to_owned();
+        opencode_input.managed.providers[0].credential.reference =
+            "credential:configured".to_owned();
+        opencode_input.managed.providers[0].credential.secret =
+            Some("opencode-command-secret".to_owned());
+        let opencode_path = opencode.source_path().to_path_buf();
+        let saved = save_on_target(
+            target.clone(),
+            AgentProfileSaveRequest {
+                agent: AgentKind::Opencode,
+                runtime_target_id: target.target_id.clone(),
+                profile_id: opencode_input.profile_id.clone(),
+                expected_revision: opencode_input.revision.revision,
+                profile: opencode_input,
+            },
+        )
+        .unwrap();
+        let opencode_raw = fs::read_to_string(&opencode_path).unwrap();
+        assert!(
+            opencode_raw.contains("\"apiKey\": \"opencode-command-secret\"")
+                || opencode_raw.contains("\"apiKey\":\"opencode-command-secret\"")
+        );
+        assert!(!opencode_raw.contains("OPENAI_API_KEY"));
+        assert!(!saved
+            .profile
+            .to_string()
+            .contains("opencode-command-secret"));
+
+        let codex = discover_locations(&AgentKind::Codex, &target)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let mut codex_input: AgentProfileDocumentInput =
+            serde_json::from_value(profile_document(&target, &codex).unwrap()).unwrap();
+        codex_input.managed.providers[0].credential.kind = "unknown".to_owned();
+        codex_input.managed.providers[0].credential.reference = "credential:configured".to_owned();
+        codex_input.managed.providers[0].credential.secret =
+            Some("codex-command-secret".to_owned());
+        let codex_path = codex.source_path().to_path_buf();
+        let saved = save_on_target(
+            target.clone(),
+            AgentProfileSaveRequest {
+                agent: AgentKind::Codex,
+                runtime_target_id: target.target_id.clone(),
+                profile_id: codex_input.profile_id.clone(),
+                expected_revision: codex_input.revision.revision,
+                profile: codex_input,
+            },
+        )
+        .unwrap();
+        let codex_raw = fs::read_to_string(&codex_path).unwrap();
+        assert!(codex_raw.contains("experimental_bearer_token = \"codex-command-secret\""));
+        assert!(!codex_raw.contains("env_key"));
+        assert!(!saved.profile.to_string().contains("codex-command-secret"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn models_url_candidates_cover_openai_and_anthropic_bases() {
+        assert_eq!(
+            models_url_candidates("https://api.openai.com/v1").unwrap(),
+            vec!["https://api.openai.com/v1/models".to_owned()]
+        );
+        assert_eq!(
+            models_url_candidates("https://api.anthropic.com").unwrap(),
+            vec![
+                "https://api.anthropic.com/models".to_owned(),
+                "https://api.anthropic.com/v1/models".to_owned()
+            ]
+        );
+        assert_eq!(
+            models_url_candidates("https://gateway.example/v1/models").unwrap(),
+            vec!["https://gateway.example/v1/models".to_owned()]
+        );
+        assert_eq!(
+            models_url_candidates("not-a-url").unwrap_err().code,
+            "AGENT_PROFILE_BASE_URL_INVALID"
+        );
+    }
+
+    #[test]
+    fn parse_upstream_models_reads_openai_and_anthropic_payloads() {
+        let openai = parse_upstream_models(&json!({
+            "object": "list",
+            "data": [
+                {"id": "gpt-4o", "object": "model"},
+                {"id": "o3", "object": "model"},
+                {"id": "gpt-4o", "object": "model"}
+            ]
+        }));
+        assert_eq!(
+            openai,
+            vec![
+                UpstreamModelWire {
+                    model_id: "gpt-4o".to_owned(),
+                    display_name: "gpt-4o".to_owned(),
+                },
+                UpstreamModelWire {
+                    model_id: "o3".to_owned(),
+                    display_name: "o3".to_owned(),
+                },
+            ]
+        );
+
+        let anthropic = parse_upstream_models(&json!({
+            "data": [{
+                "type": "model",
+                "id": "claude-sonnet-4-20250514",
+                "display_name": "Claude Sonnet 4"
+            }]
+        }));
+        assert_eq!(
+            anthropic,
+            vec![UpstreamModelWire {
+                model_id: "claude-sonnet-4-20250514".to_owned(),
+                display_name: "Claude Sonnet 4".to_owned(),
+            }]
+        );
+
+        let names = parse_upstream_models(&json!({
+            "models": ["alpha", "beta"]
+        }));
+        assert_eq!(names.len(), 2);
+        assert_eq!(names[0].model_id, "alpha");
+
+        let mut many = Vec::new();
+        for index in 0..(UPSTREAM_MODEL_LIMIT + 25) {
+            many.push(json!({ "id": format!("model-{index:03}") }));
+        }
+        assert_eq!(
+            parse_upstream_models(&json!({ "data": many })).len(),
+            UPSTREAM_MODEL_LIMIT
+        );
+    }
+
+    #[test]
+    fn usable_secret_rejects_placeholders_and_debug_redacts_api_key() {
+        assert_eq!(
+            usable_secret("sk-live".to_owned()).as_deref(),
+            Some("sk-live")
+        );
+        assert_eq!(usable_secret("{env:OPENAI_API_KEY}".to_owned()), None);
+        assert_eq!(usable_secret("{file:secret}".to_owned()), None);
+        assert_eq!(usable_secret("$OPENAI_API_KEY".to_owned()), None);
+        assert_eq!(usable_secret("   ".to_owned()), None);
+
+        let request = AgentProfileListModelsRequest {
+            agent: AgentKind::Opencode,
+            runtime_target_id: "host".to_owned(),
+            profile_id: "profile".to_owned(),
+            provider_id: "openai".to_owned(),
+            base_url: "https://api.openai.com/v1".to_owned(),
+            protocol: "openai_chat_completions".to_owned(),
+            api_key: Some("sk-secret-value".to_owned()),
+        };
+        let debug = format!("{request:?}");
+        assert!(debug.contains("[redacted]"));
+        assert!(!debug.contains("sk-secret-value"));
+    }
+
+    #[test]
+    fn stored_provider_secret_reads_literal_keys_from_native_configs() {
+        let root = std::env::temp_dir().join(format!(
+            "vibehub-agent-profile-list-secret-{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(opencode_config_dir(&root)).unwrap();
+        fs::create_dir_all(root.join(".claude")).unwrap();
+        fs::create_dir_all(root.join(".codex")).unwrap();
+        fs::write(
+            opencode_config_dir(&root).join("opencode.json"),
+            r#"{"$schema":"https://opencode.ai/config.json","model":"openai/gpt-5","provider":{"openai":{"options":{"baseURL":"https://api.openai.com/v1","apiKey":"opencode-list-secret"},"models":{"gpt-5":{"reasoning":true}}}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join(".claude/settings.json"),
+            r#"{"model":"claude-sonnet","env":{"ANTHROPIC_AUTH_TOKEN":"claude-list-secret","ANTHROPIC_BASE_URL":"https://api.anthropic.com"},"permissions":{"allow":[]}}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join(".codex/config.toml"),
+            "model = \"gpt-5\"\nmodel_provider = \"openai\"\n\n[model_providers.openai]\nname = \"OpenAI\"\nbase_url = \"https://api.openai.com/v1\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"codex-list-secret\"\n",
+        )
+        .unwrap();
+        let target = RuntimeTarget::host(root.clone());
+
+        let opencode = discover_locations(&AgentKind::Opencode, &target)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(
+            stored_provider_secret(&target, &opencode, "openai")
+                .unwrap()
+                .as_deref(),
+            Some("opencode-list-secret")
+        );
+
+        let claude = discover_locations(&AgentKind::ClaudeCode, &target)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(
+            stored_provider_secret(&target, &claude, "anthropic")
+                .unwrap()
+                .as_deref(),
+            Some("claude-list-secret")
+        );
+
+        let codex = discover_locations(&AgentKind::Codex, &target)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(
+            stored_provider_secret(&target, &codex, "openai")
+                .unwrap()
+                .as_deref(),
+            Some("codex-list-secret")
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_upstream_models_uses_request_key_and_v1_fallback() {
+        let missing = list_upstream_models(AgentProfileListModelsRequest {
+            agent: AgentKind::Opencode,
+            runtime_target_id: "unused".to_owned(),
+            profile_id: "unused".to_owned(),
+            provider_id: "openai".to_owned(),
+            base_url: String::new(),
+            protocol: String::new(),
+            api_key: Some("sk-test".to_owned()),
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(missing.code, "AGENT_PROFILE_BASE_URL_REQUIRED");
+
+        let invalid = list_upstream_models(AgentProfileListModelsRequest {
+            agent: AgentKind::Opencode,
+            runtime_target_id: "unused".to_owned(),
+            profile_id: "unused".to_owned(),
+            provider_id: "openai".to_owned(),
+            base_url: "not-a-url".to_owned(),
+            protocol: String::new(),
+            api_key: Some("sk-test".to_owned()),
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(invalid.code, "AGENT_PROFILE_BASE_URL_INVALID");
+
+        let app = axum::Router::new()
+            .route(
+                "/models",
+                axum::routing::get(|| async { axum::http::StatusCode::NOT_FOUND }),
+            )
+            .route(
+                "/v1/models",
+                axum::routing::get(|| async {
+                    axum::Json(json!({
+                        "data": [
+                            {"id": "gpt-4o"},
+                            {"id": "o3", "name": "O3"}
+                        ]
+                    }))
+                }),
+            );
+        let base = spawn_local_app(app).await;
+        let listed = list_upstream_models(AgentProfileListModelsRequest {
+            agent: AgentKind::Opencode,
+            runtime_target_id: "unused".to_owned(),
+            profile_id: "unused".to_owned(),
+            provider_id: "openai".to_owned(),
+            base_url: base.clone(),
+            protocol: "openai_chat_completions".to_owned(),
+            api_key: Some("sk-test".to_owned()),
+        })
+        .await
+        .unwrap();
+        assert_eq!(listed.endpoint, format!("{base}/v1/models"));
+        assert_eq!(listed.models.len(), 2);
+        assert_eq!(listed.models[0].model_id, "gpt-4o");
+        assert_eq!(listed.models[1].display_name, "O3");
+
+        let denied = axum::Router::new().route(
+            "/v1/models",
+            axum::routing::get(|| async { axum::http::StatusCode::UNAUTHORIZED }),
+        );
+        let denied_base = spawn_local_app(denied).await;
+        let auth_error = list_upstream_models(AgentProfileListModelsRequest {
+            agent: AgentKind::ClaudeCode,
+            runtime_target_id: "unused".to_owned(),
+            profile_id: "unused".to_owned(),
+            provider_id: "anthropic".to_owned(),
+            base_url: format!("{denied_base}/v1"),
+            protocol: "anthropic_messages".to_owned(),
+            api_key: Some("sk-bad".to_owned()),
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(auth_error.code, "AGENT_PROFILE_UPSTREAM_AUTH_FAILED");
+        assert!(!format!("{auth_error:?}").contains("sk-bad"));
+    }
+
+    async fn spawn_local_app(app: axum::Router) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        format!("http://{addr}")
     }
 }

@@ -116,6 +116,7 @@ fn main() {
             agent_profiles::v3_agent_profile_clone,
             agent_profiles::v3_agent_profile_rename,
             agent_profiles::v3_agent_profile_delete,
+            agent_profiles::v3_agent_profile_list_upstream_models,
             commands::vibehub_read_local_agent_usage,
             commands::vibehub_open_vibehub_file,
             commands::vibehub_reveal_project_file,

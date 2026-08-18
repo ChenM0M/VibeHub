@@ -92,6 +92,21 @@ export interface V3AgentProfileDeleteRequest extends V3AgentProfileReadRequest {
     replacement_profile_id?: string;
 }
 
+export interface V3AgentProfileListModelsRequest extends V3AgentProfileReadRequest {
+    provider_id: string;
+    base_url: string;
+    protocol?: string;
+    api_key?: string;
+}
+
+export interface V3AgentProfileListModelsResult {
+    endpoint: string;
+    models: Array<{
+        model_id: string;
+        display_name: string;
+    }>;
+}
+
 export interface V3SessionTaskBindRequest {
     project_id: string;
     task_id: string;
@@ -391,6 +406,10 @@ export const tauriApi = {
 
     v3AgentProfileDelete: async (request: V3AgentProfileDeleteRequest): Promise<AgentProfileSaveResult> => {
         return await invoke('v3_agent_profile_delete', { request });
+    },
+
+    v3AgentProfileListUpstreamModels: async (request: V3AgentProfileListModelsRequest): Promise<V3AgentProfileListModelsResult> => {
+        return await invoke('v3_agent_profile_list_upstream_models', { request });
     },
 
     vibehubReadLocalAgentUsage: async (projectPath: string, taskId: string | null = null): Promise<LocalAgentUsageOverview> => {

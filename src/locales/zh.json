@@ -1587,6 +1587,7 @@
     "navLabel": "Agent 配置",
     "subtitle": "管理 Provider、模型、思考档位与默认项。协议适配和凭据读取由后台处理。",
     "securityNote": "只保存凭据引用，不读取 Secret",
+    "securityNoteClaude": "API Key 只写入本机 Agent 配置",
     "selectAgent": "选择 Agent",
     "runtimeTarget": "运行环境",
     "selectRuntimeTarget": "选择 Agent 运行环境",
@@ -1649,7 +1650,8 @@
       "notConfigured": "未配置凭据引用",
       "none": "不使用凭据",
       "environment": "环境变量引用",
-      "agentManaged": "由 Agent 自己管理"
+      "agentManaged": "由 Agent 自己管理",
+      "configured": "已配置"
     },
     "providers": {
       "title": "Provider 与模型",
@@ -1663,6 +1665,15 @@
     "models": {
       "count": "{{count}} 个模型",
       "add": "新增模型",
+      "detect": "检测模型",
+      "detectNamed": "检测 {{name}} 的上游模型",
+      "detecting": "正在检测上游模型…",
+      "filter": "筛选模型",
+      "selectUnimported": "全选未导入",
+      "clearSelection": "取消选择",
+      "importCount": "导入 {{count}} 个",
+      "alreadyImported": "已导入",
+      "noneFound": "上游没有返回可导入的模型。",
       "edit": "编辑模型",
       "editNamed": "编辑 {{name}}",
       "delete": "删除模型",
@@ -1670,7 +1681,7 @@
       "disabled": "已停用",
       "currentDefault": "当前默认",
       "noThinkingOptions": "未声明思考档位",
-      "empty": "这个 Provider 还没有模型。点击“新增模型”用表单添加。"
+      "empty": "这个 Provider 还没有模型。可以检测上游模型，或点击“新增模型”手动添加。"
     },
     "advanced": {
       "sectionLabel": "高级兜底配置",
@@ -1690,6 +1701,9 @@
       "displayName": "显示名称",
       "credentialKind": "凭据引用类型",
       "credentialReference": "凭据引用",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "留空则保留已有 Key",
+      "clearApiKey": "清除 API Key",
       "displayText": "界面显示",
       "nativeProtocol": "原生协议",
       "upstreamProtocol": "上游协议",
@@ -1726,13 +1740,18 @@
         "createTitle": "新增 Provider",
         "editTitle": "编辑 Provider",
         "description": "填写 Provider 基础信息和凭据引用。不会读取或保存 API Key 原文。",
-        "protocolNote": "协议只描述连接能力，不会把 Secret 写进配置。Claude Code 的原生 Provider 和协议由适配器固定维护。"
+        "descriptionClaude": "填写 Base URL 和 API Key。",
+        "protocolNote": "协议只描述连接能力。"
       },
       "model": {
         "createTitle": "新增模型",
         "editTitle": "编辑模型",
         "description": "模型 ID、显示名称、启用状态、思考档位和 variants 都可以在这里修改。",
         "capabilityNote": "Claude Code 和 Codex 的原生模型能力较窄；界面会保留统一编辑体验，适配器只写回它们真正支持的字段。"
+      },
+      "modelImport": {
+        "title": "导入上游模型",
+        "description": "使用当前 Base URL 和 API Key 列出可用模型，勾选后写入草稿。"
       }
     },
     "notices": {
@@ -1748,7 +1767,8 @@
       "claudeSingleProvider": "Claude Code 原生 settings 只提供一个 Anthropic Provider；请编辑现有 Provider 的字段。",
       "claudeCannotDeleteProvider": "Claude Code 的原生 settings 不支持删除唯一 Provider。",
       "commandCopied": "已复制启动指令：{{command}}",
-      "advancedApplied": "高级 JSON 已载入草稿；保存仍复用同一套 Schema、版本、备份和原子写回门禁。"
+      "advancedApplied": "高级 JSON 已载入草稿；保存仍复用同一套 Schema、版本、备份和原子写回门禁。",
+      "modelsImported": "已将 {{count}} 个模型加入草稿。"
     },
     "errors": {
       "desktopRuntimeRequired": "当前页面没有连接 VibeHub 桌面运行时，请在应用窗口中读取本机配置。",
@@ -1764,6 +1784,11 @@
       "credentialReferenceInvalid": "环境变量引用格式不正确，例如 OPENAI_API_KEY。",
       "modelFieldsRequired": "Model ID 和显示名称都不能为空。",
       "modelExists": "这个 Model ID 在当前 Provider 下已经存在。",
+      "detectBaseUrlRequired": "请先填写 Base URL。",
+      "detectApiKeyRequired": "请先填写 API Key 或保存已有配置。",
+      "detectAuthFailed": "上游拒绝了当前 API Key。",
+      "detectUnavailable": "无法从上游列出模型。",
+      "detectInvalidResponse": "上游没有返回可解析的模型列表。",
       "advancedIdentityImmutable": "Profile ID 或运行环境不能在高级编辑器中修改。",
       "advancedProvidersMissing": "高级配置缺少 managed.providers。"
     }

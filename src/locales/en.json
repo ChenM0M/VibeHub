@@ -1590,6 +1590,7 @@
     "navLabel": "Agent Profiles",
     "subtitle": "Manage providers, models, reasoning levels, and defaults. Protocol adaptation and credential access run in the background.",
     "securityNote": "Stores credential references only; never reads secrets",
+    "securityNoteClaude": "API keys are written only to local Agent settings",
     "selectAgent": "Select an Agent",
     "runtimeTarget": "Runtime target",
     "selectRuntimeTarget": "Select an Agent runtime target",
@@ -1652,7 +1653,8 @@
       "notConfigured": "No credential reference",
       "none": "No credentials",
       "environment": "Environment variable reference",
-      "agentManaged": "Managed by the Agent"
+      "agentManaged": "Managed by the Agent",
+      "configured": "Configured"
     },
     "providers": {
       "title": "Providers and models",
@@ -1666,6 +1668,15 @@
     "models": {
       "count": "{{count}} models",
       "add": "Add model",
+      "detect": "Detect models",
+      "detectNamed": "Detect upstream models for {{name}}",
+      "detecting": "Detecting upstream models…",
+      "filter": "Filter models",
+      "selectUnimported": "Select unimported",
+      "clearSelection": "Clear selection",
+      "importCount": "Import {{count}}",
+      "alreadyImported": "Imported",
+      "noneFound": "The upstream did not return any models to import.",
       "edit": "Edit model",
       "editNamed": "Edit {{name}}",
       "delete": "Delete model",
@@ -1673,7 +1684,7 @@
       "disabled": "Disabled",
       "currentDefault": "Current default",
       "noThinkingOptions": "No reasoning levels declared",
-      "empty": "This Provider has no models. Select “Add model” to create one with the form."
+      "empty": "This Provider has no models. Detect upstream models, or select “Add model” to create one with the form."
     },
     "advanced": {
       "sectionLabel": "Advanced fallback configuration",
@@ -1693,6 +1704,9 @@
       "displayName": "Display name",
       "credentialKind": "Credential reference type",
       "credentialReference": "Credential reference",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "Leave blank to keep the current key",
+      "clearApiKey": "Clear API Key",
       "displayText": "Display text",
       "nativeProtocol": "Native protocol",
       "upstreamProtocol": "Upstream protocol",
@@ -1729,13 +1743,18 @@
         "createTitle": "Add Provider",
         "editTitle": "Edit Provider",
         "description": "Enter the Provider details and credential reference. The API key value is never read or stored here.",
-        "protocolNote": "Protocols describe connection capability only and never write a secret into the configuration. The adapter owns Claude Code's native Provider and protocol."
+        "descriptionClaude": "Enter the Base URL and API Key.",
+        "protocolNote": "Protocols describe connection capability only."
       },
       "model": {
         "createTitle": "Add model",
         "editTitle": "Edit model",
         "description": "Edit the model ID, display name, enabled state, reasoning levels, and variants.",
         "capabilityNote": "Claude Code and Codex expose narrower native model controls. The UI keeps one editing experience while each adapter writes only supported fields."
+      },
+      "modelImport": {
+        "title": "Import upstream models",
+        "description": "List models from the current Base URL and API Key, then add the selected ones to the draft."
       }
     },
     "notices": {
@@ -1751,7 +1770,8 @@
       "claudeSingleProvider": "Claude Code's native settings expose one Anthropic Provider. Edit the existing Provider fields.",
       "claudeCannotDeleteProvider": "Claude Code's native settings do not allow deleting its only Provider.",
       "commandCopied": "Launch command copied: {{command}}",
-      "advancedApplied": "Advanced JSON loaded into the draft. Save still uses the same schema, revision, backup, and atomic-write guards."
+      "advancedApplied": "Advanced JSON loaded into the draft. Save still uses the same schema, revision, backup, and atomic-write guards.",
+      "modelsImported": "Added {{count}} models to the draft."
     },
     "errors": {
       "desktopRuntimeRequired": "This page is not connected to the VibeHub desktop runtime. Open it in the app to read local configuration.",
@@ -1767,6 +1787,11 @@
       "credentialReferenceInvalid": "Use a valid environment variable reference, such as OPENAI_API_KEY.",
       "modelFieldsRequired": "Model ID and display name are required.",
       "modelExists": "That Model ID already exists under this Provider.",
+      "detectBaseUrlRequired": "Enter a Base URL first.",
+      "detectApiKeyRequired": "Enter an API Key or save the current configuration first.",
+      "detectAuthFailed": "The upstream rejected the current API Key.",
+      "detectUnavailable": "Could not list models from the upstream.",
+      "detectInvalidResponse": "The upstream did not return a parseable model list.",
       "advancedIdentityImmutable": "Profile ID and runtime target cannot be changed in the advanced editor.",
       "advancedProvidersMissing": "The advanced configuration is missing managed.providers."
     }

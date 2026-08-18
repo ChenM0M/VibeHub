@@ -17,6 +17,7 @@ import {
     Plus,
     RefreshCw,
     Save,
+    ScanSearch,
     Server,
     Settings2,
     Sparkles,
@@ -26,6 +27,7 @@ import {
 import { ClaudeBrandIcon, CodexBrandIcon, OpenCodeBrandIcon } from '@/components/AgentBrandIcons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -67,6 +69,16 @@ type ProfileDialogKind = 'create' | 'clone' | 'rename' | 'delete';
 type EntityDelete = { kind: 'provider' | 'model'; providerId: string; modelId?: string; label: string };
 type ProviderEditor = { mode: 'create' | 'edit'; providerId?: string };
 type ModelEditor = { mode: 'create' | 'edit'; providerId: string; modelId?: string };
+type ModelImportItem = { model_id: string; display_name: string; imported: boolean };
+type ModelImportState = {
+    providerId: string;
+    loading: boolean;
+    error: string | null;
+    endpoint: string | null;
+    items: ModelImportItem[];
+    selected: string[];
+    filter: string;
+};
 
 type ProviderForm = {
     provider_id: string;
@@ -75,6 +87,8 @@ type ProviderForm = {
     credential_kind: CredentialReference['kind'];
     credential_reference: string;
     credential_display: string;
+    api_key: string;
+    clear_api_key: boolean;
     protocol: ProtocolCapability;
 };
 
@@ -93,6 +107,28 @@ function cloneProfile(profile: AgentProfileDocument): AgentProfileDocument {
     return JSON.parse(JSON.stringify(profile)) as AgentProfileDocument;
 }
 
+function attachCredentialWrite(
+    profile: AgentProfileDocument,
+    secrets: Record<string, string>,
+    clears: Record<string, boolean>,
+): AgentProfileDocument {
+    const next = cloneProfile(profile);
+    next.managed.providers = next.managed.providers.map((provider) => {
+        const secret = secrets[provider.provider_id];
+        const clear = clears[provider.provider_id];
+        if (!secret && !clear) return provider;
+        return {
+            ...provider,
+            credential: {
+                ...provider.credential,
+                ...(secret ? { secret } : {}),
+                ...(clear ? { clear_secret: true } : {}),
+            } as CredentialReference,
+        };
+    });
+    return next;
+}
+
 function errorText(error: unknown, desktopRuntimeRequired: string): string {
     if (typeof error === 'string') {
         return error.includes("reading 'invoke'") ? desktopRuntimeRequired : error;
@@ -103,6 +139,79 @@ function errorText(error: unknown, desktopRuntimeRequired: string): string {
         return text.includes("reading 'invoke'") ? desktopRuntimeRequired : text;
     }
     return String(error);
+}
+
+function detectErrorText(error: unknown, desktopRuntimeRequired: string, translate: (key: string) => string): string {
+    const mapped: Record<string, string> = {
+        AGENT_PROFILE_API_KEY_REQUIRED: 'agentProfiles.errors.detectApiKeyRequired',
+        AGENT_PROFILE_BASE_URL_REQUIRED: 'agentProfiles.errors.detectBaseUrlRequired',
+        AGENT_PROFILE_BASE_URL_INVALID: 'agentProfiles.errors.baseUrlInvalid',
+        AGENT_PROFILE_UPSTREAM_AUTH_FAILED: 'agentProfiles.errors.detectAuthFailed',
+        AGENT_PROFILE_UPSTREAM_UNAVAILABLE: 'agentProfiles.errors.detectUnavailable',
+        AGENT_PROFILE_UPSTREAM_RESPONSE_INVALID: 'agentProfiles.errors.detectInvalidResponse',
+        AGENT_PROFILE_UPSTREAM_RESPONSE_TOO_LARGE: 'agentProfiles.errors.detectUnavailable',
+    };
+    const code = detectErrorCode(error);
+    if (code && mapped[code]) return translate(mapped[code]);
+    return errorText(error, desktopRuntimeRequired);
+}
+
+function detectErrorCode(error: unknown): string | undefined {
+    if (typeof error === 'string') {
+        const match = error.match(/^(AGENT_PROFILE_[A-Z0-9_]+):/);
+        return match?.[1];
+    }
+    if (!error || typeof error !== 'object') return undefined;
+    const candidate = error as { code?: string; details?: { code?: string } };
+    return candidate.code || candidate.details?.code;
+}
+
+function listModelsProtocol(agent: AgentKind, provider: ProviderProfile): string {
+    for (const protocol of [provider.protocol.upstream_protocol, provider.protocol.native_protocol]) {
+        if (protocol && protocol !== 'unknown') return protocol;
+    }
+    return agent === 'claude_code' ? 'anthropic_messages' : 'openai_responses';
+}
+
+function modelFromUpstream(agent: AgentKind, modelId: string, displayName: string): ModelProfile {
+    const defaults = emptyModelForm(agent);
+    return {
+        model_id: modelId,
+        display_name: displayName || modelId,
+        enabled: true,
+        thinking: {
+            supports_reasoning: defaults.supports_reasoning,
+            supports_effort: defaults.supports_effort,
+            selected: defaults.options[0] || null,
+            options: [...defaults.options],
+            custom_allowed: defaults.custom_allowed,
+        },
+    };
+}
+
+function importUpstreamModelsIntoDraft(
+    profile: AgentProfileDocument,
+    providerId: string,
+    models: Array<{ model_id: string; display_name: string }>,
+): AgentProfileDocument {
+    const next = cloneProfile(profile);
+    const provider = next.managed.providers.find((item) => item.provider_id === providerId);
+    if (!provider) return profile;
+    const existing = new Set(provider.models.map((model) => model.model_id));
+    const added: ModelProfile[] = [];
+    for (const model of models) {
+        const modelId = model.model_id.trim();
+        if (!modelId || existing.has(modelId)) continue;
+        existing.add(modelId);
+        added.push(modelFromUpstream(next.agent, modelId, model.display_name.trim() || modelId));
+    }
+    if (added.length === 0) return profile;
+    provider.models.push(...added);
+    if (!next.managed.default_model_id && added[0]) {
+        next.managed.default_provider_id = providerId;
+        next.managed.default_model_id = next.agent === 'opencode' ? profileModelKey(providerId, added[0].model_id) : added[0].model_id;
+    }
+    return next;
 }
 
 function agentLabel(agent: AgentKind): string {
@@ -147,7 +256,7 @@ function computeLaunchCommand(profile: AgentProfileDocument): string {
         if (profile.default_state.is_default || profile.source.scope === 'user') {
             return 'claude';
         }
-        return `claude --settings "${profile.source.path.native}"`;
+        return `claude --setting-sources "" --settings "${profile.source.path.native}"`;
     }
     if (profile.agent === 'codex') {
         if (profile.default_state.is_default || profile.source.scope === 'user') {
@@ -180,6 +289,8 @@ function providerFormFrom(provider: ProviderProfile): ProviderForm {
         credential_kind: provider.credential.kind,
         credential_reference: provider.credential.kind === 'none' ? '' : provider.credential.reference,
         credential_display: provider.credential.display,
+        api_key: '',
+        clear_api_key: false,
         protocol: { ...provider.protocol },
     };
 }
@@ -193,6 +304,8 @@ function emptyProviderForm(agent: AgentKind, profile: AgentProfileDocument, notC
         credential_kind: 'none',
         credential_reference: '',
         credential_display: notConfigured,
+        api_key: '',
+        clear_api_key: false,
         protocol: { ...protocol },
     };
 }
@@ -297,13 +410,21 @@ export function AgentProfilesPanel() {
     const [modelForm, setModelForm] = useState<ModelForm | null>(null);
     const [variantInput, setVariantInput] = useState('');
     const [modelError, setModelError] = useState<string | null>(null);
+    const [modelImport, setModelImport] = useState<ModelImportState | null>(null);
     const discoveryRequest = useRef(0);
     const profileRequest = useRef(0);
+    const modelImportRequest = useRef(0);
+    const pendingSecrets = useRef<Record<string, string>>({});
+    const pendingClears = useRef<Record<string, boolean>>({});
+    const [hasPendingCredentialWrite, setHasPendingCredentialWrite] = useState(false);
     const requestContext = JSON.stringify([agent, targetId]);
     const requestContextRef = useRef(requestContext);
     requestContextRef.current = requestContext;
 
-    const dirty = useMemo(() => Boolean(profile && draft && JSON.stringify(profile) !== JSON.stringify(draft)), [profile, draft]);
+    const dirty = useMemo(
+        () => Boolean((profile && draft && JSON.stringify(profile) !== JSON.stringify(draft)) || hasPendingCredentialWrite),
+        [profile, draft, hasPendingCredentialWrite],
+    );
     const selectedSummary = discovery?.profiles.find((item) => item.profile_id === selectedProfileId) || null;
     const selectedTarget = targets.find((target) => target.target_id === targetId) || null;
     const profileForEdit = draft || profile;
@@ -312,6 +433,12 @@ export function AgentProfilesPanel() {
         : selectedSummary?.compatibility === 'partial'
             ? t('agentProfiles.compatibility.partial')
             : t('agentProfiles.compatibility.readOnly');
+
+    useEffect(() => {
+        pendingSecrets.current = {};
+        pendingClears.current = {};
+        setHasPendingCredentialWrite(false);
+    }, [agent, targetId, selectedProfileId]);
 
     useEffect(() => {
         let active = true;
@@ -413,9 +540,12 @@ export function AgentProfilesPanel() {
                 runtime_target_id: targetId,
                 profile_id: draft.profile_id,
                 expected_revision: profile.revision.revision,
-                profile: draft,
+                profile: attachCredentialWrite(draft, pendingSecrets.current, pendingClears.current),
             };
             const result = await tauriApi.v3AgentProfileSave(request);
+            pendingSecrets.current = {};
+            pendingClears.current = {};
+            setHasPendingCredentialWrite(false);
             setProfile(result.profile);
             setDraft(cloneProfile(result.profile));
             setLastSave(result);
@@ -596,14 +726,48 @@ export function AgentProfilesPanel() {
             setProviderError(t('agentProfiles.errors.providerExists'));
             return;
         }
-        const credential: CredentialReference = {
-            kind: providerForm.credential_kind,
-            reference: providerForm.credential_kind === 'none' ? 'none' : providerForm.credential_reference.trim(),
-            display: providerForm.credential_display.trim() || (providerForm.credential_kind === 'none' ? t('agentProfiles.common.notConfigured') : providerForm.credential_reference.trim()),
-            secret_state: providerForm.credential_kind === 'none' ? 'missing' : 'configured',
-            persisted_in_config: false,
-        };
-        if (credential.kind === 'env' && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(credential.reference)) {
+        const trimmedKey = providerForm.api_key.trim();
+        if (providerForm.clear_api_key) {
+            delete pendingSecrets.current[providerId];
+            pendingClears.current[providerId] = true;
+            setHasPendingCredentialWrite(true);
+        } else if (trimmedKey) {
+            pendingSecrets.current[providerId] = trimmedKey;
+            delete pendingClears.current[providerId];
+            setHasPendingCredentialWrite(true);
+        }
+        const credential: CredentialReference = agent === 'claude_code'
+            ? {
+                kind: 'env',
+                reference: 'ANTHROPIC_AUTH_TOKEN',
+                display: providerForm.clear_api_key
+                    ? t('agentProfiles.common.notConfigured')
+                    : (trimmedKey
+                        ? t('agentProfiles.credentials.configured')
+                        : (providerForm.credential_display.trim() || t('agentProfiles.common.notConfigured'))),
+                secret_state: providerForm.clear_api_key
+                    ? 'missing'
+                    : ((trimmedKey || providerForm.credential_display.trim()) ? 'configured' : 'missing'),
+                persisted_in_config: false,
+            }
+            : (providerForm.clear_api_key || trimmedKey)
+                ? {
+                    kind: 'unknown',
+                    reference: 'credential:configured',
+                    display: providerForm.clear_api_key
+                        ? t('agentProfiles.common.notConfigured')
+                        : t('agentProfiles.credentials.configured'),
+                    secret_state: providerForm.clear_api_key ? 'missing' : 'configured',
+                    persisted_in_config: false,
+                }
+                : {
+                    kind: providerForm.credential_kind,
+                    reference: providerForm.credential_kind === 'none' ? 'none' : providerForm.credential_reference.trim(),
+                    display: providerForm.credential_display.trim() || (providerForm.credential_kind === 'none' ? t('agentProfiles.common.notConfigured') : providerForm.credential_reference.trim()),
+                    secret_state: providerForm.credential_kind === 'none' ? 'missing' : 'configured',
+                    persisted_in_config: false,
+                };
+        if (agent !== 'claude_code' && credential.kind === 'env' && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(credential.reference)) {
             setProviderError(t('agentProfiles.errors.credentialReferenceInvalid'));
             return;
         }
@@ -695,6 +859,80 @@ export function AgentProfilesPanel() {
         closeModelEditor();
     };
 
+    const closeModelImport = () => {
+        modelImportRequest.current += 1;
+        setModelImport(null);
+    };
+
+    const openModelImport = async (provider: ProviderProfile) => {
+        if (!provider.base_url.trim()) {
+            setNotice({ kind: 'error', text: t('agentProfiles.errors.detectBaseUrlRequired') });
+            return;
+        }
+        const requestId = ++modelImportRequest.current;
+        setModelImport({
+            providerId: provider.provider_id,
+            loading: true,
+            error: null,
+            endpoint: null,
+            items: [],
+            selected: [],
+            filter: '',
+        });
+        try {
+            const pendingKey = pendingSecrets.current[provider.provider_id]?.trim();
+            const result = await tauriApi.v3AgentProfileListUpstreamModels({
+                agent,
+                runtime_target_id: targetId,
+                profile_id: selectedProfileId,
+                provider_id: provider.provider_id,
+                base_url: provider.base_url,
+                protocol: listModelsProtocol(agent, provider),
+                ...(pendingKey ? { api_key: pendingKey } : {}),
+            });
+            if (requestId !== modelImportRequest.current) return;
+            const existing = new Set(provider.models.map((model) => model.model_id));
+            const items = result.models.map((model) => ({
+                model_id: model.model_id,
+                display_name: model.display_name || model.model_id,
+                imported: existing.has(model.model_id),
+            }));
+            setModelImport({
+                providerId: provider.provider_id,
+                loading: false,
+                error: null,
+                endpoint: result.endpoint,
+                items,
+                selected: [],
+                filter: '',
+            });
+        } catch (error) {
+            if (requestId !== modelImportRequest.current) return;
+            setModelImport({
+                providerId: provider.provider_id,
+                loading: false,
+                error: detectErrorText(error, t('agentProfiles.errors.desktopRuntimeRequired'), (key) => t(key)),
+                endpoint: null,
+                items: [],
+                selected: [],
+                filter: '',
+            });
+        }
+    };
+
+    const submitModelImport = () => {
+        if (!modelImport) return;
+        const selected = new Set(modelImport.selected);
+        const imported = modelImport.items.filter((item) => selected.has(item.model_id) && !item.imported);
+        if (imported.length === 0) {
+            closeModelImport();
+            return;
+        }
+        setDraft((current) => current ? importUpstreamModelsIntoDraft(current, modelImport.providerId, imported) : current);
+        setNotice({ kind: 'success', text: t('agentProfiles.notices.modelsImported', { count: imported.length }) });
+        closeModelImport();
+    };
+
     const openEntityDelete = (entity: EntityDelete) => setEntityDelete(entity);
 
     const submitEntityDelete = () => {
@@ -772,7 +1010,7 @@ export function AgentProfilesPanel() {
                     <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{t('agentProfiles.subtitle')}</p>
                 </div>
                 <div className="flex items-center gap-2 pb-1 text-[11px] text-muted-foreground">
-                    <KeyRound className="h-3.5 w-3.5" />{t('agentProfiles.securityNote')}
+                    <KeyRound className="h-3.5 w-3.5" />{t('agentProfiles.securityNoteClaude')}
                 </div>
             </header>
 
@@ -884,7 +1122,7 @@ export function AgentProfilesPanel() {
                                             <div className="min-w-0"><div className="flex items-center gap-2"><Cloud className="h-4 w-4 text-primary" /><div className="truncate font-medium">{provider.display_name}</div><span className="font-mono text-[11px] text-muted-foreground">{provider.provider_id}</span></div><div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"><KeyRound className="h-3.5 w-3.5" />{provider.credential.display}</div></div>
                                             <div className="flex shrink-0 items-center gap-1"><Button type="button" variant="ghost" size="sm" onClick={() => openProviderEditor(provider)}><Pencil className="mr-1.5 h-3.5 w-3.5" />{t('agentProfiles.providers.edit')}</Button><Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => openEntityDelete({ kind: 'provider', providerId: provider.provider_id, label: provider.display_name })} disabled={agent === 'claude_code'} title={t('agentProfiles.providers.delete')} aria-label={t('agentProfiles.providers.deleteNamed', { name: provider.display_name })}><Trash2 className="h-3.5 w-3.5" /></Button></div>
                                         </div>
-                                        <div className="mt-4 flex flex-wrap items-center gap-3"><span className="text-xs text-muted-foreground">Base URL</span><span className="min-w-0 truncate font-mono text-xs">{provider.base_url || t('agentProfiles.common.notConfigured')}</span><Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={() => openModelEditor(provider)}><Plus className="mr-1.5 h-3.5 w-3.5" />{t('agentProfiles.models.add')}</Button></div>
+                                        <div className="mt-4 flex flex-wrap items-center gap-3"><span className="text-xs text-muted-foreground">Base URL</span><span className="min-w-0 truncate font-mono text-xs">{provider.base_url || t('agentProfiles.common.notConfigured')}</span><div className="ml-auto flex flex-wrap items-center gap-1"><Button type="button" variant="ghost" size="sm" onClick={() => openModelImport(provider)} disabled={!provider.base_url.trim() || busyAction !== null || modelImport?.loading === true} title={t('agentProfiles.models.detectNamed', { name: provider.display_name })} aria-label={t('agentProfiles.models.detectNamed', { name: provider.display_name })}><ScanSearch className="mr-1.5 h-3.5 w-3.5" />{t('agentProfiles.models.detect')}</Button><Button type="button" variant="ghost" size="sm" onClick={() => openModelEditor(provider)}><Plus className="mr-1.5 h-3.5 w-3.5" />{t('agentProfiles.models.add')}</Button></div></div>
                                         {provider.models.length > 0 ? <div className="mt-4 space-y-2 border-l border-border/40 pl-3 sm:pl-4">{provider.models.map((model) => {
                                             const isDefault = modelIsDefault(profileForEdit, provider.provider_id, model.model_id);
                                             return (
@@ -954,18 +1192,21 @@ export function AgentProfilesPanel() {
 
             <Dialog open={providerEditor !== null} onOpenChange={(open) => !open && closeProviderEditor()}>
                 <DialogContent className={cn('max-w-2xl', interactionGroupClass)}>
-                    <DialogHeader><DialogTitle>{t(providerEditor?.mode === 'create' ? 'agentProfiles.dialogs.provider.createTitle' : 'agentProfiles.dialogs.provider.editTitle')}</DialogTitle><DialogDescription>{t('agentProfiles.dialogs.provider.description')}</DialogDescription></DialogHeader>
+                    <DialogHeader><DialogTitle>{t(providerEditor?.mode === 'create' ? 'agentProfiles.dialogs.provider.createTitle' : 'agentProfiles.dialogs.provider.editTitle')}</DialogTitle><DialogDescription>{t('agentProfiles.dialogs.provider.descriptionClaude')}</DialogDescription></DialogHeader>
                     {providerForm && (
                         <div className="grid gap-4 md:grid-cols-2">
                             <div><Label htmlFor="provider-id">Provider ID</Label><Input id="provider-id" value={providerForm.provider_id} onChange={(event) => setProviderForm({ ...providerForm, provider_id: event.target.value })} className="mt-1.5" readOnly={providerEditor?.mode === 'edit'} /></div>
                             <div><Label htmlFor="provider-name">{t('agentProfiles.forms.displayName')}</Label><Input id="provider-name" value={providerForm.display_name} onChange={(event) => setProviderForm({ ...providerForm, display_name: event.target.value })} className="mt-1.5" /></div>
                             <div className="md:col-span-2"><Label htmlFor="provider-base-url">Base URL</Label><Input id="provider-base-url" value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} placeholder="https://api.example.com/v1" className="mt-1.5 font-mono" /></div>
-                            <div><Label htmlFor="provider-credential-kind">{t('agentProfiles.forms.credentialKind')}</Label><select id="provider-credential-kind" value={providerForm.credential_kind} onChange={(event) => setProviderForm({ ...providerForm, credential_kind: event.target.value as CredentialReference['kind'] })} className={cn(fieldClass, 'mt-1.5')}><option value="none">{t('agentProfiles.credentials.none')}</option><option value="env">{t('agentProfiles.credentials.environment')}</option><option value="unknown">{t('agentProfiles.credentials.agentManaged')}</option></select></div>
-                            <div><Label htmlFor="provider-credential-reference">{t('agentProfiles.forms.credentialReference')}</Label><Input id="provider-credential-reference" value={providerForm.credential_reference} onChange={(event) => setProviderForm({ ...providerForm, credential_reference: event.target.value })} disabled={providerForm.credential_kind !== 'env'} placeholder="OPENAI_API_KEY" className="mt-1.5 font-mono" /></div>
-                            <div className="md:col-span-2"><Label htmlFor="provider-credential-display">{t('agentProfiles.forms.displayText')}</Label><Input id="provider-credential-display" value={providerForm.credential_display} onChange={(event) => setProviderForm({ ...providerForm, credential_display: event.target.value })} className="mt-1.5" /></div>
-                            <div><Label htmlFor="provider-native-protocol">{t('agentProfiles.forms.nativeProtocol')}</Label><select id="provider-native-protocol" value={providerForm.protocol.native_protocol} onChange={(event) => setProviderForm({ ...providerForm, protocol: { ...providerForm.protocol, native_protocol: event.target.value as ProtocolCapability['native_protocol'] } })} className={cn(fieldClass, 'mt-1.5')}><option value="openai_responses">OpenAI Responses</option><option value="openai_chat_completions">OpenAI Chat Completions</option><option value="anthropic_messages">Anthropic Messages</option><option value="unknown">{t('agentProfiles.common.unknown')}</option></select></div>
-                            <div><Label htmlFor="provider-upstream-protocol">{t('agentProfiles.forms.upstreamProtocol')}</Label><select id="provider-upstream-protocol" value={providerForm.protocol.upstream_protocol} onChange={(event) => setProviderForm({ ...providerForm, protocol: { ...providerForm.protocol, upstream_protocol: event.target.value as ProtocolCapability['upstream_protocol'] } })} className={cn(fieldClass, 'mt-1.5')}><option value="openai_responses">OpenAI Responses</option><option value="openai_chat_completions">OpenAI Chat Completions</option><option value="anthropic_messages">Anthropic Messages</option><option value="unknown">{t('agentProfiles.common.unknown')}</option></select></div>
-                            <p className="text-xs leading-5 text-muted-foreground md:col-span-2">{t('agentProfiles.dialogs.provider.protocolNote')}</p>
+                            <div className="md:col-span-2"><Label htmlFor="provider-api-key">{t('agentProfiles.forms.apiKey')}</Label><Input id="provider-api-key" type="password" autoComplete="off" value={providerForm.api_key} onChange={(event) => setProviderForm({ ...providerForm, api_key: event.target.value, clear_api_key: false })} placeholder={t('agentProfiles.forms.apiKeyPlaceholder')} className="mt-1.5 font-mono" /></div>
+                            <label className="flex items-center gap-2 text-sm md:col-span-2"><Switch checked={providerForm.clear_api_key} onCheckedChange={(checked) => setProviderForm({ ...providerForm, clear_api_key: checked, api_key: checked ? '' : providerForm.api_key })} />{t('agentProfiles.forms.clearApiKey')}</label>
+                            {agent !== 'claude_code' && (
+                                <>
+                                    <div><Label htmlFor="provider-native-protocol">{t('agentProfiles.forms.nativeProtocol')}</Label><select id="provider-native-protocol" value={providerForm.protocol.native_protocol} onChange={(event) => setProviderForm({ ...providerForm, protocol: { ...providerForm.protocol, native_protocol: event.target.value as ProtocolCapability['native_protocol'] } })} className={cn(fieldClass, 'mt-1.5')}><option value="openai_responses">OpenAI Responses</option><option value="openai_chat_completions">OpenAI Chat Completions</option><option value="anthropic_messages">Anthropic Messages</option><option value="unknown">{t('agentProfiles.common.unknown')}</option></select></div>
+                                    <div><Label htmlFor="provider-upstream-protocol">{t('agentProfiles.forms.upstreamProtocol')}</Label><select id="provider-upstream-protocol" value={providerForm.protocol.upstream_protocol} onChange={(event) => setProviderForm({ ...providerForm, protocol: { ...providerForm.protocol, upstream_protocol: event.target.value as ProtocolCapability['upstream_protocol'] } })} className={cn(fieldClass, 'mt-1.5')}><option value="openai_responses">OpenAI Responses</option><option value="openai_chat_completions">OpenAI Chat Completions</option><option value="anthropic_messages">Anthropic Messages</option><option value="unknown">{t('agentProfiles.common.unknown')}</option></select></div>
+                                    <p className="text-xs leading-5 text-muted-foreground md:col-span-2">{t('agentProfiles.dialogs.provider.protocolNote')}</p>
+                                </>
+                            )}
                         </div>
                     )}
                     {providerError && <div className="flex items-start gap-2 text-sm text-destructive" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{providerError}</div>}
@@ -1003,6 +1244,72 @@ export function AgentProfilesPanel() {
                     )}
                     {modelError && <div className="flex items-start gap-2 text-sm text-destructive" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{modelError}</div>}
                     <DialogFooter><Button type="button" variant="outline" onClick={closeModelEditor}>{t('agentProfiles.common.cancel')}</Button><Button type="button" onClick={submitModelEditor}>{t('agentProfiles.common.applyToDraft')}</Button></DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={modelImport !== null} onOpenChange={(open) => !open && closeModelImport()}>
+                <DialogContent className={cn('max-w-xl', interactionGroupClass)}>
+                    <DialogHeader>
+                        <DialogTitle>{t('agentProfiles.dialogs.modelImport.title')}</DialogTitle>
+                        <DialogDescription>{t('agentProfiles.dialogs.modelImport.description')}</DialogDescription>
+                    </DialogHeader>
+                    {modelImport && (
+                        <div className="space-y-3">
+                            {modelImport.loading ? (
+                                <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t('agentProfiles.models.detecting')}</div>
+                            ) : (
+                                <>
+                                    {modelImport.endpoint && <p className="truncate font-mono text-[11px] text-muted-foreground">{modelImport.endpoint}</p>}
+                                    {modelImport.items.length > 0 && (
+                                        <>
+                                            <Input value={modelImport.filter} onChange={(event) => setModelImport({ ...modelImport, filter: event.target.value })} placeholder={t('agentProfiles.models.filter')} aria-label={t('agentProfiles.models.filter')} />
+                                            <div className="flex flex-wrap gap-2">
+                                                <Button type="button" variant="outline" size="sm" onClick={() => {
+                                                    const visible = modelImport.items.filter((item) => {
+                                                        const query = modelImport.filter.trim().toLowerCase();
+                                                        if (!query) return !item.imported;
+                                                        return !item.imported && `${item.model_id} ${item.display_name}`.toLowerCase().includes(query);
+                                                    }).map((item) => item.model_id);
+                                                    setModelImport({ ...modelImport, selected: Array.from(new Set([...modelImport.selected, ...visible])) });
+                                                }}>{t('agentProfiles.models.selectUnimported')}</Button>
+                                                <Button type="button" variant="ghost" size="sm" onClick={() => setModelImport({ ...modelImport, selected: [] })}>{t('agentProfiles.models.clearSelection')}</Button>
+                                            </div>
+                                            <div className="max-h-72 space-y-1 overflow-y-auto pr-1" role="list">
+                                                {modelImport.items.filter((item) => {
+                                                    const query = modelImport.filter.trim().toLowerCase();
+                                                    return !query || `${item.model_id} ${item.display_name}`.toLowerCase().includes(query);
+                                                }).map((item, index) => {
+                                                    const checked = modelImport.selected.includes(item.model_id);
+                                                    return (
+                                                        <label key={item.model_id} role="listitem" htmlFor={`upstream-model-${index}`} className={cn('flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted/50', item.imported && 'cursor-default opacity-60')}>
+                                                            <Checkbox id={`upstream-model-${index}`} checked={checked || item.imported} disabled={item.imported} onCheckedChange={(value) => {
+                                                                if (item.imported) return;
+                                                                const selected = new Set(modelImport.selected);
+                                                                if (value === true) selected.add(item.model_id);
+                                                                else selected.delete(item.model_id);
+                                                                setModelImport({ ...modelImport, selected: Array.from(selected) });
+                                                            }} />
+                                                            <span className="min-w-0 flex-1">
+                                                                <span className="block truncate">{item.display_name}</span>
+                                                                <span className="block truncate font-mono text-[11px] text-muted-foreground">{item.model_id}</span>
+                                                            </span>
+                                                            {item.imported && <Badge variant="outline" className="shrink-0 text-[10px]">{t('agentProfiles.models.alreadyImported')}</Badge>}
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    )}
+                                    {!modelImport.error && modelImport.items.length === 0 && <p className="py-4 text-sm text-muted-foreground">{t('agentProfiles.models.noneFound')}</p>}
+                                </>
+                            )}
+                            {modelImport.error && <div className="flex items-start gap-2 text-sm text-destructive" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{modelImport.error}</div>}
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={closeModelImport}>{t('agentProfiles.common.cancel')}</Button>
+                        <Button type="button" onClick={submitModelImport} disabled={!modelImport || modelImport.loading || modelImport.selected.filter((id) => modelImport.items.some((item) => item.model_id === id && !item.imported)).length === 0}>{t('agentProfiles.models.importCount', { count: modelImport?.selected.filter((id) => modelImport.items.some((item) => item.model_id === id && !item.imported)).length || 0 })}</Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </section>

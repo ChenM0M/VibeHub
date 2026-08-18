@@ -16,6 +16,9 @@ const CLAUDE_PROFILE_INDEX_FILE: &str = "index.json";
 const CLAUDE_PROFILE_EXTENSION: &str = ".settings.json";
 const CLAUDE_PROFILE_INDEX_SCHEMA_VERSION: u32 = 1;
 const CLAUDE_EXECUTABLE: &str = "claude";
+const CLAUDE_SETTING_SOURCES_FLAG: &str = "--setting-sources";
+const CLAUDE_ISOLATED_SETTING_SOURCES: &str = "";
+const CLAUDE_SETTINGS_FLAG: &str = "--settings";
 
 const MANAGED_SETTINGS_FIELDS: &[&str] =
     &["model", "alwaysThinkingEnabled", "env.ANTHROPIC_BASE_URL"];
@@ -29,6 +32,7 @@ const PRESERVED_SETTINGS_FIELDS: &[&str] = &[
     "enabledPlugins",
     "includeCoAuthoredBy",
 ];
+
 const SENSITIVE_ENV_NAMES: &[&str] = &[
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
@@ -37,6 +41,9 @@ const SENSITIVE_ENV_NAMES: &[&str] = &[
     "GEMINI_API_KEY",
     "DEEPSEEK_API_KEY",
 ];
+const CLAUDE_AUTH_ENV_NAMES: &[&str] = &["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"];
+const COMPETING_ANTHROPIC_BASE_URL_ENV: &[&str] =
+    &["ANTHROPIC_API_BASE_URL", "CLAUDE_AGENT_API_BASE_URL"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -115,7 +122,7 @@ pub struct ClaudeCodeProfileView {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ClaudeSettingsPatch {
     pub model: Option<String>,
     pub base_url: Option<String>,
@@ -123,11 +130,38 @@ pub struct ClaudeSettingsPatch {
     pub clear_model: bool,
     pub clear_base_url: bool,
     pub clear_thinking: bool,
-    /// This is metadata about an externally supplied environment variable. A
-    /// secret value is never written to settings.json. The adapter only
-    /// accepts references which are already represented by the settings file;
-    /// launching with a new reference is owned by the runtime/secret layer.
+    /// Environment variable *name* metadata. Optional `auth_token` is the only
+    /// secret payload; it is written into the Claude settings file the user is
+    /// editing (home Profile), never into the VibeHub project tree, and is
+    /// omitted from Debug/JSON logs.
     pub credential_environment: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub auth_token: Option<String>,
+    #[serde(default)]
+    pub clear_credentials: bool,
+    #[serde(default)]
+    pub strip_credential_helper: bool,
+}
+
+impl std::fmt::Debug for ClaudeSettingsPatch {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ClaudeSettingsPatch")
+            .field("model", &self.model)
+            .field("base_url", &self.base_url)
+            .field("thinking_enabled", &self.thinking_enabled)
+            .field("clear_model", &self.clear_model)
+            .field("clear_base_url", &self.clear_base_url)
+            .field("clear_thinking", &self.clear_thinking)
+            .field("credential_environment", &self.credential_environment)
+            .field(
+                "auth_token",
+                &self.auth_token.as_ref().map(|_| "[redacted]"),
+            )
+            .field("clear_credentials", &self.clear_credentials)
+            .field("strip_credential_helper", &self.strip_credential_helper)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -204,7 +238,9 @@ pub fn claude_code_launch_args(path: impl AsRef<Path>) -> Result<Vec<String>, St
         ));
     }
     Ok(vec![
-        "--settings".to_owned(),
+        CLAUDE_SETTING_SOURCES_FLAG.to_owned(),
+        CLAUDE_ISOLATED_SETTING_SOURCES.to_owned(),
+        CLAUDE_SETTINGS_FLAG.to_owned(),
         path.to_string_lossy().into_owned(),
     ])
 }
@@ -212,7 +248,7 @@ pub fn claude_code_launch_args(path: impl AsRef<Path>) -> Result<Vec<String>, St
 pub fn claude_code_launch_spec(path: impl AsRef<Path>) -> Result<ClaudeLaunchSpec, StorageError> {
     Ok(ClaudeLaunchSpec {
         executable: CLAUDE_EXECUTABLE.to_owned(),
-        settings_argument: "--settings".to_owned(),
+        settings_argument: CLAUDE_SETTINGS_FLAG.to_owned(),
         arguments: claude_code_launch_args(path)?,
     })
 }
@@ -322,14 +358,7 @@ pub fn create_claude_profile(
     let template = template.map(Path::to_path_buf);
     let source = match template {
         Some(path) => read_document(target, path)?.raw,
-        None => {
-            let user_path = claude_user_settings_path(target);
-            if user_path.is_file() {
-                read_document(target, user_path)?.raw
-            } else {
-                br#"{}"#.to_vec()
-            }
-        }
+        None => br#"{}"#.to_vec(),
     };
     let destination = claude_profile_path(target, profile_name)?;
     ensure_claude_profile_directory(target)?;
@@ -655,27 +684,49 @@ fn apply_settings_patch_bytes(
     } else if patch.clear_thinking {
         root.remove("alwaysThinkingEnabled");
     }
-    if patch.base_url.is_some() || patch.clear_base_url {
-        let mut env = match root.remove("env") {
-            Some(Value::Object(env)) => env,
-            Some(other) => {
-                return Err(StorageError::new(
-                    "CLAUDE_SETTINGS_ENV_INVALID",
-                    format!("env must be an object, found {other}"),
-                ))
-            }
-            None => Map::new(),
-        };
-        if let Some(base_url) = patch.base_url.as_deref() {
-            validate_non_empty("base_url", base_url)?;
-            env.insert(
-                "ANTHROPIC_BASE_URL".to_owned(),
-                Value::String(base_url.to_owned()),
-            );
-        } else if patch.clear_base_url {
-            env.remove("ANTHROPIC_BASE_URL");
+    let env_touched = patch.base_url.is_some()
+        || patch.clear_base_url
+        || patch.auth_token.is_some()
+        || patch.clear_credentials;
+    let mut env = if env_touched {
+        take_env_object(&mut root)?
+    } else {
+        Map::new()
+    };
+    if let Some(base_url) = patch.base_url.as_deref() {
+        validate_non_empty("base_url", base_url)?;
+        env.insert(
+            "ANTHROPIC_BASE_URL".to_owned(),
+            Value::String(normalize_claude_anthropic_base_url(base_url)),
+        );
+        for name in COMPETING_ANTHROPIC_BASE_URL_ENV {
+            env.remove(*name);
         }
-        root.insert("env".to_owned(), Value::Object(env));
+    } else if patch.clear_base_url {
+        env.remove("ANTHROPIC_BASE_URL");
+    }
+    if let Some(token) = patch.auth_token.as_deref() {
+        validate_non_empty("auth_token", token)?;
+        env.insert(
+            "ANTHROPIC_AUTH_TOKEN".to_owned(),
+            Value::String(token.to_owned()),
+        );
+        env.remove("ANTHROPIC_API_KEY");
+    }
+    if patch.clear_credentials {
+        for name in CLAUDE_AUTH_ENV_NAMES {
+            env.remove(*name);
+        }
+    }
+    if patch.strip_credential_helper {
+        root.remove("apiKeyHelper");
+    }
+    if env_touched {
+        if env.is_empty() {
+            root.remove("env");
+        } else {
+            root.insert("env".to_owned(), Value::Object(env));
+        }
     }
     serde_json::to_vec_pretty(&Value::Object(root))
         .map(|mut bytes| {
@@ -696,16 +747,21 @@ fn managed_patch_from_document(
         )
     })?;
     let env = object.get("env").and_then(Value::as_object);
+    let base_url = env
+        .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let auth_token = env.and_then(literal_claude_auth_token);
+    let helper_present = object.get("apiKeyHelper").is_some();
     Ok(ClaudeSettingsPatch {
         model: object
             .get("model")
             .and_then(Value::as_str)
             .map(str::to_owned),
-        base_url: env
-            .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
-            .and_then(Value::as_str)
-            .map(str::to_owned),
+        base_url: base_url.clone(),
         thinking_enabled: object.get("alwaysThinkingEnabled").and_then(Value::as_bool),
+        auth_token: auth_token.clone(),
+        strip_credential_helper: !helper_present && (base_url.is_some() || auth_token.is_some()),
         ..Default::default()
     })
 }
@@ -1014,6 +1070,43 @@ fn safe_component(value: &str) -> String {
     }
 }
 
+fn normalize_claude_anthropic_base_url(url: &str) -> String {
+    let mut value = url.trim().trim_end_matches('/').to_owned();
+    if value
+        .to_ascii_lowercase()
+        .rsplit_once('/')
+        .is_some_and(|(_, last)| last == "v1")
+    {
+        value.truncate(value.len() - 3);
+        value = value.trim_end_matches('/').to_owned();
+    }
+    value
+}
+
+fn take_env_object(root: &mut Map<String, Value>) -> Result<Map<String, Value>, StorageError> {
+    match root.remove("env") {
+        Some(Value::Object(env)) => Ok(env),
+        Some(other) => Err(StorageError::new(
+            "CLAUDE_SETTINGS_ENV_INVALID",
+            format!("env must be an object, found {other}"),
+        )),
+        None => Ok(Map::new()),
+    }
+}
+
+fn literal_claude_auth_token(env: &Map<String, Value>) -> Option<String> {
+    CLAUDE_AUTH_ENV_NAMES.iter().find_map(|name| {
+        env.get(*name).and_then(Value::as_str).and_then(|value| {
+            let value = value.trim();
+            if value.is_empty() || looks_like_reference(value) {
+                None
+            } else {
+                Some(value.to_owned())
+            }
+        })
+    })
+}
+
 fn validate_non_empty(field: &str, value: &str) -> Result<(), StorageError> {
     if value.trim().is_empty() {
         return Err(StorageError::new(
@@ -1237,15 +1330,22 @@ mod tests {
             serde_json::from_slice(&fs::read(root.join(".claude/settings.json")).unwrap()).unwrap();
         assert_eq!(value["model"], "deepseek-chat");
         assert_eq!(value["alwaysThinkingEnabled"], true);
-        assert_eq!(value["env"]["ANTHROPIC_BASE_URL"], "https://api.invalid/v1");
+        assert_eq!(value["env"]["ANTHROPIC_BASE_URL"], "https://api.invalid");
         assert_eq!(value["permissions"]["allow"][0], "Read");
         assert_eq!(value["hooks"]["Stop"], serde_json::json!([]));
         assert_eq!(value["mcpServers"]["local"]["command"], "server");
         assert_eq!(value["sandbox"]["enabled"], true);
         assert_eq!(value["unknown"]["keep"], true);
         let args = claude_code_launch_args(&operation.profile.source_path).unwrap();
-        assert_eq!(args[0], "--settings");
-        assert_eq!(args[1], operation.profile.source_path.to_string_lossy());
+        assert_eq!(
+            args,
+            vec![
+                "--setting-sources".to_owned(),
+                String::new(),
+                "--settings".to_owned(),
+                operation.profile.source_path.to_string_lossy().into_owned(),
+            ]
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1334,5 +1434,144 @@ mod tests {
             "CLAUDE_SETTINGS_PATH_NOT_ABSOLUTE"
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn create_profile_starts_empty_instead_of_copying_user_settings() {
+        let (target, root) = temp_target();
+        fs::create_dir_all(root.join(".claude")).unwrap();
+        fs::write(
+            root.join(".claude/settings.json"),
+            br#"{
+  "model": "claude-sonnet",
+  "apiKeyHelper": "/tmp/helper.sh",
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:3456",
+    "ANTHROPIC_API_BASE_URL": "http://127.0.0.1:3456"
+  }
+}"#,
+        )
+        .unwrap();
+        let created = create_claude_profile(&target, "stepfun", None).unwrap();
+        let raw = fs::read_to_string(&created.profile.source_path).unwrap();
+        let value: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value, Value::Object(Map::new()));
+        assert!(!raw.contains("apiKeyHelper"));
+        assert!(!raw.contains("127.0.0.1"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_writes_auth_token_strips_helper_and_hides_secret_from_views() {
+        let (target, root) = temp_target();
+        fs::create_dir_all(root.join(".claude/vibehub-profiles")).unwrap();
+        let path = root.join(".claude/vibehub-profiles/stepfun.settings.json");
+        fs::write(
+            &path,
+            br#"{
+  "model": "old",
+  "apiKeyHelper": "/tmp/helper.sh",
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:3456",
+    "ANTHROPIC_API_BASE_URL": "http://127.0.0.1:3456"
+  }
+}"#,
+        )
+        .unwrap();
+        let document = read_document(&target, &path).unwrap();
+        save_claude_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &ClaudeSettingsPatch {
+                model: Some("water18".to_owned()),
+                base_url: Some("https://api.stepfun.com/v1".to_owned()),
+                auth_token: Some("stepfun-secret-value".to_owned()),
+                strip_credential_helper: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["model"], "water18");
+        assert_eq!(
+            value["env"]["ANTHROPIC_BASE_URL"],
+            "https://api.stepfun.com"
+        );
+        assert_eq!(value["env"]["ANTHROPIC_AUTH_TOKEN"], "stepfun-secret-value");
+        assert!(value["env"].get("ANTHROPIC_API_KEY").is_none());
+        assert!(value.get("apiKeyHelper").is_none());
+        assert!(value["env"].get("ANTHROPIC_API_BASE_URL").is_none());
+        let view = read_claude_profile(&target, &path).unwrap();
+        assert!(!serde_json::to_string(&view)
+            .unwrap()
+            .contains("stepfun-secret-value"));
+        assert_eq!(view.credential.kind, ClaudeCredentialKind::ConfigLiteral);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn activate_copies_profile_credentials_and_strips_user_helper() {
+        let (target, root) = temp_target();
+        fs::create_dir_all(root.join(".claude/vibehub-profiles")).unwrap();
+        fs::write(
+            root.join(".claude/vibehub-profiles/stepfun.settings.json"),
+            br#"{
+  "model": "water18",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.stepfun.com/v1",
+    "ANTHROPIC_AUTH_TOKEN": "stepfun-secret-value",
+    "ANTHROPIC_API_KEY": "stepfun-secret-value"
+  }
+}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join(".claude/settings.json"),
+            br#"{
+  "model": "claude-sonnet",
+  "apiKeyHelper": "/tmp/helper.sh",
+  "permissions": { "allow": ["Read"] },
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:3456",
+    "ANTHROPIC_API_BASE_URL": "http://127.0.0.1:3456"
+  }
+}"#,
+        )
+        .unwrap();
+        activate_claude_profile(
+            &target,
+            root.join(".claude/vibehub-profiles/stepfun.settings.json"),
+        )
+        .unwrap();
+        let value: Value =
+            serde_json::from_slice(&fs::read(root.join(".claude/settings.json")).unwrap()).unwrap();
+        assert_eq!(value["model"], "water18");
+        assert_eq!(
+            value["env"]["ANTHROPIC_BASE_URL"],
+            "https://api.stepfun.com"
+        );
+        assert_eq!(value["env"]["ANTHROPIC_AUTH_TOKEN"], "stepfun-secret-value");
+        assert!(value["env"].get("ANTHROPIC_API_KEY").is_none());
+        assert!(value.get("apiKeyHelper").is_none());
+        assert!(value["env"].get("ANTHROPIC_API_BASE_URL").is_none());
+        assert_eq!(value["permissions"]["allow"][0], "Read");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn normalize_claude_base_url_strips_messages_v1_suffix() {
+        assert_eq!(
+            normalize_claude_anthropic_base_url("https://api.stepfun.com/v1/"),
+            "https://api.stepfun.com"
+        );
+        assert_eq!(
+            normalize_claude_anthropic_base_url("https://api.stepfun.com/step_plan"),
+            "https://api.stepfun.com/step_plan"
+        );
+        assert_eq!(
+            normalize_claude_anthropic_base_url("https://api.anthropic.com"),
+            "https://api.anthropic.com"
+        );
     }
 }

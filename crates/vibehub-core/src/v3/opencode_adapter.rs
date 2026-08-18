@@ -61,12 +61,32 @@ pub struct OpenCodeProfileView {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct OpenCodeProviderPatch {
     pub display_name: Option<String>,
     pub base_url: Option<String>,
     pub environment_references: Option<Vec<String>>,
+    /// Written to `options.apiKey` so OpenCode can authenticate without a
+    /// shell environment variable. Omitted from Debug/JSON logs.
+    #[serde(default, skip_serializing)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub clear_api_key: bool,
     pub models: BTreeMap<String, OpenCodeModelPatch>,
+}
+
+impl std::fmt::Debug for OpenCodeProviderPatch {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("OpenCodeProviderPatch")
+            .field("display_name", &self.display_name)
+            .field("base_url", &self.base_url)
+            .field("environment_references", &self.environment_references)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[redacted]"))
+            .field("clear_api_key", &self.clear_api_key)
+            .field("models", &self.models)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -276,7 +296,7 @@ fn provider_view(
 fn credential_reference(
     provider: &Map<String, Value>,
     options: Option<&Map<String, Value>>,
-    warnings: &mut Vec<String>,
+    _warnings: &mut Vec<String>,
 ) -> OpenCodeCredentialReference {
     let environment_references = provider
         .get("env")
@@ -297,7 +317,6 @@ fn credential_reference(
         .and_then(|options| options.get("apiKey"))
         .is_some_and(Value::is_string)
     {
-        warnings.push("OPENCODE_LITERAL_API_KEY_PRESENT".to_owned());
         return OpenCodeCredentialReference {
             kind: OpenCodeCredentialKind::ConfigLiteral,
             references: Vec::new(),
@@ -491,15 +510,31 @@ impl JsoncEditor {
                     &mut replacements,
                 )?;
             }
+            if let Some(api_key) = &provider_patch.api_key {
+                self.set_path(
+                    &[provider_key, provider_id, "options", "apiKey"],
+                    api_key.clone().into(),
+                    &mut replacements,
+                )?;
+                self.remove_member(&[provider_key, provider_id], "env", &mut replacements)?;
+            } else if provider_patch.clear_api_key {
+                self.remove_member(
+                    &[provider_key, provider_id, "options"],
+                    "apiKey",
+                    &mut replacements,
+                )?;
+            }
             if let Some(environment_references) = &provider_patch.environment_references {
-                let env = Value::Array(
-                    environment_references
-                        .iter()
-                        .cloned()
-                        .map(Value::String)
-                        .collect(),
-                );
-                self.set_path(&[provider_key, provider_id, "env"], env, &mut replacements)?;
+                if provider_patch.api_key.is_none() {
+                    let env = Value::Array(
+                        environment_references
+                            .iter()
+                            .cloned()
+                            .map(Value::String)
+                            .collect(),
+                    );
+                    self.set_path(&[provider_key, provider_id, "env"], env, &mut replacements)?;
+                }
             }
             for (model_id, model_patch) in &provider_patch.models {
                 self.ensure_object_path(
@@ -1212,6 +1247,7 @@ mod tests {
                 base_url: Some("https://api.deepseek.com/v1".to_owned()),
                 environment_references: Some(vec!["DEEPSEEK_API_KEY".to_owned()]),
                 models,
+                ..Default::default()
             },
         );
         save_opencode_profile(
@@ -1278,6 +1314,82 @@ mod tests {
         let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
         assert!(raw.contains("preserve this comment"));
         assert!(raw.contains("permissions"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_writes_api_key_removes_env_hides_secret_and_redacts_debug() {
+        let (target, root) = temp_target();
+        let path = root.join("opencode.jsonc");
+        fs::write(
+            &path,
+            br#"{
+  "provider": {
+    "stepfun": {
+      "name": "StepFun",
+      "env": ["OPENAI_API_KEY"],
+      "options": { "baseURL": "https://api.stepfun.com/v1" },
+      "models": { "water18": { "name": "water18" } }
+    }
+  }
+}"#,
+        )
+        .unwrap();
+        let document = read_document(&target, &path).unwrap();
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "stepfun".to_owned(),
+            OpenCodeProviderPatch {
+                api_key: Some("opencode-secret-value".to_owned()),
+                ..Default::default()
+            },
+        );
+        let patch = OpenCodeConfigPatch {
+            providers,
+            ..Default::default()
+        };
+        let debug = format!("{patch:?}");
+        assert!(debug.contains("[redacted]"));
+        assert!(!debug.contains("opencode-secret-value"));
+        save_opencode_profile(&target, &path, Some(&document.revision), &patch).unwrap();
+        let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(raw.contains("\"apiKey\": \"opencode-secret-value\""));
+        assert!(!raw.contains("OPENAI_API_KEY"));
+        assert!(raw.contains("https://api.stepfun.com/v1"));
+        let view = read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(
+            view.providers[0].credential.kind,
+            OpenCodeCredentialKind::ConfigLiteral
+        );
+        assert!(!serde_json::to_string(&view)
+            .unwrap()
+            .contains("opencode-secret-value"));
+        assert!(!view
+            .warnings
+            .contains(&"OPENCODE_LITERAL_API_KEY_PRESENT".to_owned()));
+
+        let document = read_document(&target, &path).unwrap();
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "stepfun".to_owned(),
+            OpenCodeProviderPatch {
+                clear_api_key: true,
+                ..Default::default()
+            },
+        );
+        save_opencode_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &OpenCodeConfigPatch {
+                providers,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let cleared = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(!cleared.contains("opencode-secret-value"));
+        assert!(!cleared.contains("apiKey"));
         fs::remove_dir_all(root).unwrap();
     }
 }

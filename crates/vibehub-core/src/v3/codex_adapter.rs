@@ -28,6 +28,7 @@ const PROVIDER_MANAGED_KEYS: &[&str] = &[
     "wire_api",
     "requires_openai_auth",
     "env_key",
+    "experimental_bearer_token",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,15 +121,41 @@ pub struct CodexProfileView {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct CodexProviderPatch {
     pub display_name: Option<String>,
     pub base_url: Option<String>,
     pub wire_api: Option<String>,
     pub requires_openai_auth: Option<bool>,
     pub environment_key: Option<String>,
+    /// Written to `experimental_bearer_token` so Codex can authenticate
+    /// without a shell environment variable. Omitted from Debug/JSON logs.
+    #[serde(default, skip_serializing)]
+    pub bearer_token: Option<String>,
     pub clear_base_url: bool,
     pub clear_environment_key: bool,
+    #[serde(default)]
+    pub clear_bearer_token: bool,
+}
+
+impl std::fmt::Debug for CodexProviderPatch {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CodexProviderPatch")
+            .field("display_name", &self.display_name)
+            .field("base_url", &self.base_url)
+            .field("wire_api", &self.wire_api)
+            .field("requires_openai_auth", &self.requires_openai_auth)
+            .field("environment_key", &self.environment_key)
+            .field(
+                "bearer_token",
+                &self.bearer_token.as_ref().map(|_| "[redacted]"),
+            )
+            .field("clear_base_url", &self.clear_base_url)
+            .field("clear_environment_key", &self.clear_environment_key)
+            .field("clear_bearer_token", &self.clear_bearer_token)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -671,6 +698,16 @@ fn managed_patch_from_root(root: &toml::value::Table) -> Result<CodexConfigPatch
             let table = provider.as_table().ok_or_else(|| {
                 StorageError::new("CODEX_PROVIDER_INVALID", "provider must be a TOML table")
             })?;
+            let bearer_token = table
+                .get("experimental_bearer_token")
+                .and_then(toml::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_owned);
+            let environment_key = table
+                .get("env_key")
+                .and_then(toml::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_owned);
             providers.insert(
                 provider_id.to_owned(),
                 CodexProviderPatch {
@@ -689,10 +726,14 @@ fn managed_patch_from_root(root: &toml::value::Table) -> Result<CodexConfigPatch
                     requires_openai_auth: table
                         .get("requires_openai_auth")
                         .and_then(toml::Value::as_bool),
-                    environment_key: table
-                        .get("env_key")
-                        .and_then(toml::Value::as_str)
-                        .map(str::to_owned),
+                    environment_key: if bearer_token.is_some() {
+                        None
+                    } else {
+                        environment_key.clone()
+                    },
+                    bearer_token: bearer_token.clone(),
+                    clear_environment_key: bearer_token.is_some(),
+                    clear_bearer_token: bearer_token.is_none() && environment_key.is_some(),
                     ..Default::default()
                 },
             );
@@ -793,10 +834,27 @@ fn apply_toml_patch(raw: &[u8], patch: &CodexConfigPatch) -> Result<Vec<u8>, Sto
         if let Some(required) = provider_patch.requires_openai_auth {
             editor.set_section(&section, "requires_openai_auth", required.to_string())?;
         }
-        if let Some(environment_key) = provider_patch.environment_key.as_deref() {
-            editor.set_section(&section, "env_key", toml_string(environment_key))?;
-        } else if provider_patch.clear_environment_key {
+        if let Some(bearer_token) = provider_patch.bearer_token.as_deref() {
+            validate_non_empty("experimental_bearer_token", bearer_token)?;
+            editor.set_section(
+                &section,
+                "experimental_bearer_token",
+                toml_string(bearer_token),
+            )?;
             editor.remove_section(&section, "env_key");
+            editor.remove_section(&section, "api_key");
+            editor.remove_section(&section, "apiKey");
+        } else if provider_patch.clear_bearer_token {
+            editor.remove_section(&section, "experimental_bearer_token");
+            editor.remove_section(&section, "api_key");
+            editor.remove_section(&section, "apiKey");
+        }
+        if provider_patch.bearer_token.is_none() {
+            if let Some(environment_key) = provider_patch.environment_key.as_deref() {
+                editor.set_section(&section, "env_key", toml_string(environment_key))?;
+            } else if provider_patch.clear_environment_key {
+                editor.remove_section(&section, "env_key");
+            }
         }
     }
     let output = editor.finish();
@@ -1645,6 +1703,97 @@ trust_level = "trusted"
             codex_profile_path(&target, "../escape").unwrap_err().code,
             "CODEX_PROFILE_NAME_INVALID"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_writes_bearer_token_removes_env_key_hides_secret_and_projects_on_activate() {
+        let (target, root) = temp_target();
+        fs::create_dir_all(root.join(".codex")).unwrap();
+        let path = root.join(".codex/stepfun.config.toml");
+        fs::write(
+            &path,
+            r#"model = "water18"
+model_provider = "stepfun"
+
+[model_providers.stepfun]
+name = "StepFun"
+base_url = "https://api.stepfun.com/v1"
+wire_api = "responses"
+env_key = "OPENAI_API_KEY"
+"#,
+        )
+        .unwrap();
+        let document = read_document(&target, &path).unwrap();
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "stepfun".to_owned(),
+            CodexProviderPatch {
+                bearer_token: Some("codex-secret-value".to_owned()),
+                requires_openai_auth: Some(false),
+                clear_environment_key: true,
+                ..Default::default()
+            },
+        );
+        let patch = CodexConfigPatch {
+            providers,
+            ..Default::default()
+        };
+        let debug = format!("{patch:?}");
+        assert!(debug.contains("[redacted]"));
+        assert!(!debug.contains("codex-secret-value"));
+        save_codex_profile(&target, &path, Some(&document.revision), &patch).unwrap();
+        let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(raw.contains("experimental_bearer_token = \"codex-secret-value\""));
+        assert!(!raw.contains("env_key"));
+        let view = read_codex_profile(&target, &path).unwrap();
+        assert_eq!(
+            view.providers[0].credential.kind,
+            CodexCredentialKind::ConfigLiteral
+        );
+        assert!(!serde_json::to_string(&view)
+            .unwrap()
+            .contains("codex-secret-value"));
+
+        let base = root.join(".codex/config.toml");
+        fs::write(
+            &base,
+            "model = \"old\"\nmodel_provider = \"openai\"\n\n[model_providers.openai]\nenv_key = \"OPENAI_API_KEY\"\n",
+        )
+        .unwrap();
+        activate_codex_profile(&target, &path).unwrap();
+        let projected = String::from_utf8(fs::read(&base).unwrap()).unwrap();
+        let parsed: toml::Value = toml::from_str(&projected).unwrap();
+        let stepfun = parsed["model_providers"]["stepfun"].as_table().unwrap();
+        assert_eq!(
+            stepfun["experimental_bearer_token"].as_str(),
+            Some("codex-secret-value")
+        );
+        assert!(stepfun.get("env_key").is_none());
+        assert_eq!(parsed["model"].as_str(), Some("water18"));
+
+        let document = read_document(&target, &path).unwrap();
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "stepfun".to_owned(),
+            CodexProviderPatch {
+                clear_bearer_token: true,
+                ..Default::default()
+            },
+        );
+        save_codex_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &CodexConfigPatch {
+                providers,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let cleared = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(!cleared.contains("codex-secret-value"));
+        assert!(!cleared.contains("experimental_bearer_token"));
         fs::remove_dir_all(root).unwrap();
     }
 }
