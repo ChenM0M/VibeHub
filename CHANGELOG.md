@@ -2,6 +2,13 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.3
+
+- Agent 配置保存时把 API Key 写入本机 Agent 配置：Claude Code 使用 `ANTHROPIC_AUTH_TOKEN`，OpenCode 使用 `options.apiKey`，Codex 使用 `experimental_bearer_token`，填好 Base URL、Key 和模型后即可启动。
+- Claude Code 临时启动改为 `--setting-sources "" --settings`，避免用户级 settings 覆盖当前 Profile。
+- Agent 配置新增「检测模型」：按当前 Base URL 和 API Key 列出上游模型，复选后导入草稿。
+- 修复标签启动：可启动分类必须填写可执行文件；粘贴带引号的 `claude --settings "/path"` 会正确拆分命令，纯展示标签不再参与启动。
+
 ## v3.3.2
 
 - 修复 Agent 配置版本号跨 Tauri IPC 传递时的 JavaScript 64 位整数精度截断 Bug：将 SHA-256 哈希提取位数从 16 位十六进制调整为 12 位（48-bit 安全整数），彻底解决保存配置时持续误报 `configuration changed after it was read; reload before continuing` 的冲突拦截问题。

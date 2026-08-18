@@ -4969,7 +4969,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibehub"
-version = "3.3.2"
+version = "3.3.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5000,7 +5000,7 @@ dependencies = [
 
 [[package]]
 name = "vibehub-cli"
-version = "3.3.2"
+version = "3.3.3"
 dependencies = [
  "anyhow",
  "rmcp",
@@ -5014,7 +5014,7 @@ dependencies = [
 
 [[package]]
 name = "vibehub-core"
-version = "3.3.2"
+version = "3.3.3"
 dependencies = [
  "anyhow",
  "chrono",
