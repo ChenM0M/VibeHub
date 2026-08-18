@@ -693,6 +693,10 @@
       "arguments": "參數",
       "envVars": "環境變數",
       "addEnv": "新增變數"
+    },
+    "errors": {
+      "nameRequired": "請填寫標籤名稱",
+      "executableRequired": "可啟動分類需要填寫可執行檔"
     }
   },
   "gateway": {

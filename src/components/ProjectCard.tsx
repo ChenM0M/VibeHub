@@ -37,6 +37,7 @@ import { ProjectEditDialog } from './ProjectEditDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslation } from 'react-i18next';
 import { getTechStackById } from '@/lib/techStackData';
+import { isTagLaunchable } from '@/lib/tagLaunch';
 
 interface ProjectCardProps {
     project: Project;
@@ -105,18 +106,13 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragL
     const typeInfo = getProjectTypeInfo(project.project_type);
     const originalProject = config?.projects.find(p => p.id === project.id) || project;
 
-    // Tags that have a launchable config (executable is set)
-    const launchableTags = (config?.tags || []).filter(
-        tag => tag.config?.executable
-    );
+    const launchableTags = (config?.tags || []).filter(isTagLaunchable);
 
     const handleQuickLaunchTag = async (tag: typeof launchableTags[number]) => {
-        if (tag.config) {
-            try {
-                await launchCustom(project.id, tag.config, tag.category);
-            } catch (error) {
-                console.error('Quick launch failed:', error);
-            }
+        try {
+            await launchCustom(project.id, tag.config!, tag.category);
+        } catch (error) {
+            console.error('Quick launch failed:', error);
         }
     };
 
@@ -131,7 +127,7 @@ export function ProjectCard({ project, onLaunch, onCustomLaunch, onSelect, dragL
 
     const hasLaunchableTags = project.tags.some(tagId => {
         const tag = config?.tags.find(t => t.id === tagId);
-        return tag?.config && (tag.config.executable || tag.config.args || tag.config.env);
+        return tag ? isTagLaunchable(tag) : false;
     });
 
     const handleLaunchClick = async (e: React.MouseEvent) => {

@@ -17,6 +17,7 @@
     "v3:cockpit-refresh:check": "node scripts/v3-cockpit/background-refresh.mjs",
     "v3:plan-node-brief:check": "node scripts/v3-cockpit/plan-node-brief.mjs",
     "v3:tabs:check": "node scripts/v3-tabs/check.mjs",
+    "v3:tags:check": "node scripts/v3-tags/check.mjs",
     "release:check": "node scripts/release/preflight.mjs",
         "preview": "vite preview",
         "tauri": "tauri",

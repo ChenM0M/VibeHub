@@ -37,6 +37,7 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
     const [expandedTags, setExpandedTags] = useState<boolean>(true);
     const [isMac] = useState(() => /\bMacintosh\b|\bMac OS X\b/.test(navigator.userAgent));
     const [editingTag, setEditingTag] = useState<Tag | null>(null);
+    const [isTagDialogOpen, setIsTagDialogOpen] = useState(false);
     const [appVersion, setAppVersion] = useState<string>('');
 
     useEffect(() => {
@@ -63,12 +64,22 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
         </button>
     );
 
+    const openCreateTagDialog = () => {
+        setEditingTag(null);
+        setIsTagDialogOpen(true);
+    };
+
+    const openEditTagDialog = (tag: Tag) => {
+        setEditingTag(tag);
+        setIsTagDialogOpen(true);
+    };
+
     const handleSaveTag = async (tag: Tag) => {
         try {
-            await invoke('update_tag', { tag });
+            await invoke(editingTag ? 'update_tag' : 'add_tag', { tag });
             await refreshConfig();
         } catch (error) {
-            console.error('Failed to update tag:', error);
+            console.error('Failed to save tag:', error);
         }
     };
 
@@ -179,10 +190,17 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
                             {expandedTags ? <ChevronDown className="mr-1 h-3 w-3" /> : <ChevronRight className="mr-1 h-3 w-3" />}
                             {t('common.tags')}
                         </div>
-                        <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={(e) => {
-                            e.stopPropagation();
-                            onNavigate('settings');
-                        }}>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-4 w-4 ml-auto"
+                            title={t('tag.createTitle')}
+                            aria-label={t('tag.createTitle')}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openCreateTagDialog();
+                            }}
+                        >
                             <Plus className="h-3 w-3" />
                         </Button>
                     </div>
@@ -196,7 +214,7 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
                                     <div
                                         key={tag.id}
                                         className="flex items-center px-2 py-1.5 text-sm rounded-md hover:bg-accent/50 cursor-pointer transition-colors"
-                                        onClick={() => setEditingTag(tag)}
+                                        onClick={() => openEditTagDialog(tag)}
                                     >
                                         <div className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: tag.color, boxShadow: `0 0 8px ${tag.color}50` }} />
                                         <span className="truncate">{tag.name}</span>
@@ -230,8 +248,11 @@ export function Sidebar({ className, onNavigate, currentPage, onCheckUpdate, isC
 
             <TagEditDialog
                 tag={editingTag || undefined}
-                open={!!editingTag}
-                onOpenChange={(open) => !open && setEditingTag(null)}
+                open={isTagDialogOpen}
+                onOpenChange={(open) => {
+                    setIsTagDialogOpen(open);
+                    if (!open) setEditingTag(null);
+                }}
                 onSave={handleSaveTag}
             />
         </div>

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tag, TagCategory, TagConfig } from '@/types';
 import { useTranslation } from 'react-i18next';
+import { isLaunchableCategory, normalizeLaunchInput } from '@/lib/tagLaunch';
 
 interface TagEditDialogProps {
     open: boolean;
@@ -23,6 +24,8 @@ const detectClientPlatform = (): ClientPlatform => {
     if (userAgent.includes('linux')) return 'linux';
     return 'unknown';
 };
+
+const quoteForDisplay = (value: string) => (/\s/.test(value) ? `"${value}"` : value);
 
 const getTerminalOptions = (platform: ClientPlatform) => {
     if (platform === 'windows') {
@@ -52,6 +55,9 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
     const [color, setColor] = useState('#2EAADC');
     const [category, setCategory] = useState<TagCategory>('custom');
     const [config, setConfig] = useState<TagConfig>({});
+    const [executableInput, setExecutableInput] = useState('');
+    const [argsInput, setArgsInput] = useState('');
+    const [error, setError] = useState<string | null>(null);
     const [envVars, setEnvVars] = useState<{ key: string; value: string }[]>([]);
     const platform = detectClientPlatform();
     const terminalOptions = getTerminalOptions(platform);
@@ -60,11 +66,14 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
         : '';
 
     useEffect(() => {
+        setError(null);
         if (tag) {
             setName(tag.name);
             setColor(tag.color);
             setCategory(tag.category);
             setConfig(tag.config || {});
+            setExecutableInput(tag.config?.executable || '');
+            setArgsInput((tag.config?.args || []).map(quoteForDisplay).join(' '));
 
             if (tag.config?.env) {
                 setEnvVars(Object.entries(tag.config.env).map(([key, value]) => ({ key, value })));
@@ -76,11 +85,26 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
             setColor('#2EAADC');
             setCategory('custom');
             setConfig({});
+            setExecutableInput('');
+            setArgsInput('');
             setEnvVars([]);
         }
     }, [tag, open]);
 
+    const launchable = isLaunchableCategory(category);
+    const normalizedLaunch = normalizeLaunchInput(executableInput, argsInput);
+
     const handleSave = () => {
+        const trimmedName = name.trim();
+        if (!trimmedName) {
+            setError(t('tag.errors.nameRequired'));
+            return;
+        }
+        if (launchable && !normalizedLaunch.executable) {
+            setError(t('tag.errors.executableRequired'));
+            return;
+        }
+
         const newConfig: TagConfig = { ...config };
 
         // Process env vars
@@ -93,17 +117,23 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
             delete newConfig.env;
         }
 
-        // Clean up empty fields
-        if (!newConfig.executable) delete newConfig.executable;
-        if (newConfig.args) {
-            newConfig.args = newConfig.args.map(arg => arg.trim()).filter(Boolean);
-            if (newConfig.args.length === 0) delete newConfig.args;
+        if (launchable) {
+            newConfig.executable = normalizedLaunch.executable;
+            if (normalizedLaunch.args.length > 0) {
+                newConfig.args = normalizedLaunch.args;
+            } else {
+                delete newConfig.args;
+            }
+        } else {
+            delete newConfig.executable;
+            delete newConfig.args;
         }
         if (!newConfig.terminal) delete newConfig.terminal;
 
+        setError(null);
         onSave({
             id: tag?.id || crypto.randomUUID(),
-            name,
+            name: trimmedName,
             color,
             category,
             config: Object.keys(newConfig).length > 0 ? newConfig : undefined,
@@ -188,8 +218,8 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <label className="text-right text-sm font-medium">{t('tag.config.executable')}</label>
                                     <Input
-                                        value={config.executable || ''}
-                                        onChange={(e) => setConfig({ ...config, executable: e.target.value })}
+                                        value={executableInput}
+                                        onChange={(e) => setExecutableInput(e.target.value)}
                                         className="col-span-3"
                                         placeholder={category === 'cli' ? 'e.g. opencode, claude, amp' : 'e.g. code, npm, python'}
                                     />
@@ -197,10 +227,10 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <label className="text-right text-sm font-medium">{t('tag.config.arguments')}</label>
                                     <Input
-                                        value={config.args?.join(' ') || ''}
-                                        onChange={(e) => setConfig({ ...config, args: e.target.value.split(' ').filter(Boolean) })}
+                                        value={argsInput}
+                                        onChange={(e) => setArgsInput(e.target.value)}
                                         className="col-span-3"
-                                        placeholder="Space separated args"
+                                        placeholder={'--settings "/path/to/settings.json"'}
                                     />
                                 </div>
                             </>
@@ -243,6 +273,12 @@ export function TagEditDialog({ open, onOpenChange, tag, onSave }: TagEditDialog
                             </div>
                         )}
                     </div>
+
+                    {error && (
+                        <div role="alert" className="text-sm text-destructive break-words">
+                            {error}
+                        </div>
+                    )}
 
                     <div className="flex justify-end gap-3">
                         <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>

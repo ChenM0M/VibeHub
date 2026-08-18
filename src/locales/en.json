@@ -693,6 +693,10 @@
       "arguments": "Arguments",
       "envVars": "Environment Variables",
       "addEnv": "Add Variable"
+    },
+    "errors": {
+      "nameRequired": "Please enter a tag name",
+      "executableRequired": "This category needs an executable"
     }
   },
   "gateway": {

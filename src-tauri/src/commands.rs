@@ -1248,6 +1248,9 @@ pub async fn delete_project(project_id: String, state: State<'_, AppState>) -> R
 pub async fn add_tag(tag: Tag, state: State<'_, AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut config = storage.load_config().map_err(|e| e.to_string())?;
+    if config.tags.iter().any(|t| t.id == tag.id) {
+        return Err(format!("Tag '{}' already exists", tag.id));
+    }
     config.tags.push(tag);
     storage.save_config(&config).map_err(|e| e.to_string())
 }
@@ -1257,9 +1260,10 @@ pub async fn update_tag(tag: Tag, state: State<'_, AppState>) -> Result<(), Stri
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut config = storage.load_config().map_err(|e| e.to_string())?;
 
-    if let Some(idx) = config.tags.iter().position(|t| t.id == tag.id) {
-        config.tags[idx] = tag;
-    }
+    let Some(idx) = config.tags.iter().position(|t| t.id == tag.id) else {
+        return Err(format!("Tag '{}' not found", tag.id));
+    };
+    config.tags[idx] = tag;
 
     storage.save_config(&config).map_err(|e| e.to_string())
 }
@@ -1348,11 +1352,18 @@ pub async fn launch_tool(project_id: String, state: State<'_, AppState>) -> Resu
         .find(|p| p.id == project_id)
         .ok_or("Project not found")?;
 
-    // Collect all tag configs
+    // Only tags that actually name an executable can start a process; keeping
+    // label-only tags here would turn a misconfiguration into an opaque
+    // "failed to launch" instead of "nothing is configured".
     let mut tag_configs = Vec::new();
     for tag_id in &project.tags {
         if let Some(tag) = config.tags.iter().find(|t| &t.id == tag_id) {
-            if let Some(conf) = &tag.config {
+            let has_executable = tag
+                .config
+                .as_ref()
+                .and_then(|conf| conf.executable.as_deref())
+                .is_some_and(|executable| !executable.trim().is_empty());
+            if let (true, Some(conf)) = (has_executable, &tag.config) {
                 tag_configs.push((conf.clone(), tag.category.clone()));
             }
         }

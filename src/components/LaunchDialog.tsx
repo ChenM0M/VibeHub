@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { isTagLaunchable, tokenizeCommandLine } from '@/lib/tagLaunch';
 
 interface LaunchDialogProps {
     isOpen: boolean;
@@ -42,15 +43,17 @@ export function LaunchDialog({ isOpen, onClose, project, isCustomLaunch = false 
             setLaunchError(null);
             // 自定义启动模式或无标签项目都显示所有全局标签，普通模式只显示项目关联的标签
             const shouldShowAllTags = isCustomLaunch || project.tags.length === 0;
-            const tagsToShow = shouldShowAllTags
+            const tagsToShow = (shouldShowAllTags
                 ? (config?.tags || [])
-                : (config?.tags.filter(t => project.tags.includes(t.id)) || []);
-            setAvailableTags(tagsToShow);
+                : (config?.tags.filter(t => project.tags.includes(t.id)) || [])
+            ).filter(isTagLaunchable);
+            setAvailableTags(tagsToShow.map(tag => ({
+                id: tag.id,
+                name: tag.name,
+            })));
 
-            // 自定义启动模式或无标签项目默认不选中任何标签，普通模式选中所有项目标签
             setSelectedTagIds(shouldShowAllTags ? [] : tagsToShow.map(t => t.id));
 
-            // 只有当全局标签列表也为空时，才自动显示自定义配置表单
             if (tagsToShow.length === 0) {
                 setShowCustomForm(true);
 
@@ -78,33 +81,21 @@ export function LaunchDialog({ isOpen, onClose, project, isCustomLaunch = false 
         try {
             if (showCustomForm) {
                 // Launch with custom config
+                const tokens = tokenizeCommandLine(
+                    [customConfig.executable || '', argsString].filter(Boolean).join(' ')
+                );
                 const configToLaunch = {
                     ...customConfig,
-                    args: argsString.split(' ').filter(a => a.length > 0)
+                    executable: tokens[0] || '',
+                    args: tokens.slice(1),
                 };
                 await launchCustom(project.id, configToLaunch);
             } else {
-            // Launch with selected tags
-            // We need a backend command that accepts specific tag IDs to launch
-            // Currently launchTool launches ALL tags.
-            // We should probably update launchTool to accept a list of tag IDs?
-            // Or just launch all for now if the backend doesn't support filtering.
-            // User said "click which tag to use... can also multi-select".
-            // So we need to filter.
-            // Since we can't easily change backend signature without breaking things, 
-            // let's use launchCustom for each selected tag? No, that's sequential.
-            // We need to update launch_tool in backend to accept optional tag_ids.
-            // For now, let's assume launchTool launches all, but we want to filter.
-            // If we can't change backend easily right now (we can, we are the dev), let's update backend.
-            // But wait, I can just iterate and call launchCustom for each selected tag's config!
-
-                const selectedTags = config?.tags.filter(t => selectedTagIds.includes(t.id));
-                if (selectedTags) {
-                    for (const tag of selectedTags) {
-                        if (tag.config) {
-                            await launchCustom(project.id, tag.config, tag.category);
-                        }
-                    }
+                const selectedTags = (config?.tags || [])
+                    .filter(t => selectedTagIds.includes(t.id))
+                    .filter(isTagLaunchable);
+                for (const tag of selectedTags) {
+                    await launchCustom(project.id, tag.config!, tag.category);
                 }
             }
             onClose();

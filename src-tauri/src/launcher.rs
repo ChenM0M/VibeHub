@@ -130,23 +130,32 @@ impl Launcher {
 
     pub fn launch(project: &Project, configs: &[(TagConfig, TagCategory)]) -> Result<()> {
         let mut success = false;
+        let mut missing_executable = 0usize;
 
         for (config, category) in configs {
-            if let Some(executable) = &config.executable {
-                #[cfg(target_os = "windows")]
-                if Self::launch_windows(executable, config, category, &project.path)? {
-                    success = true;
-                }
+            let Some(executable) = config
+                .executable
+                .as_deref()
+                .map(str::trim)
+                .filter(|executable| !executable.is_empty())
+            else {
+                missing_executable += 1;
+                continue;
+            };
 
-                #[cfg(target_os = "macos")]
-                if Self::launch_macos(executable, config, category, &project.path)? {
-                    success = true;
-                }
+            #[cfg(target_os = "windows")]
+            if Self::launch_windows(executable, config, category, &project.path)? {
+                success = true;
+            }
 
-                #[cfg(target_os = "linux")]
-                if Self::launch_linux(executable, config, category, &project.path)? {
-                    success = true;
-                }
+            #[cfg(target_os = "macos")]
+            if Self::launch_macos(executable, config, category, &project.path)? {
+                success = true;
+            }
+
+            #[cfg(target_os = "linux")]
+            if Self::launch_linux(executable, config, category, &project.path)? {
+                success = true;
             }
         }
 
@@ -154,6 +163,11 @@ impl Launcher {
             Ok(())
         } else if configs.is_empty() {
             Err(anyhow!("No launch configuration found for the selected tags. Please configure the tags or use custom launch."))
+        } else if missing_executable == configs.len() {
+            Err(anyhow!(
+                "None of the {} selected launch configurations has an executable. Set an executable on the tag before launching it.",
+                missing_executable
+            ))
         } else {
             Err(anyhow!("Failed to launch any tools"))
         }
@@ -568,6 +582,67 @@ impl Launcher {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::models::{ProjectMetadata, ProjectType};
+
+    fn project() -> Project {
+        Project {
+            id: "project-1".to_owned(),
+            name: "Demo".to_owned(),
+            description: None,
+            path: std::env::temp_dir().to_string_lossy().into_owned(),
+            project_type: ProjectType::Node,
+            tags: Vec::new(),
+            last_opened: None,
+            starred: false,
+            icon: None,
+            cover_image: None,
+            theme_color: None,
+            tech_stack: Vec::new(),
+            metadata: ProjectMetadata {
+                git_branch: None,
+                git_has_changes: false,
+                dependencies_installed: false,
+                language_version: None,
+            },
+        }
+    }
+
+    fn config(executable: Option<&str>) -> TagConfig {
+        TagConfig {
+            executable: executable.map(str::to_owned),
+            args: None,
+            env: None,
+            terminal: None,
+        }
+    }
+
+    #[test]
+    fn tags_without_an_executable_report_the_missing_executable() {
+        let error = Launcher::launch(
+            &project(),
+            &[
+                (config(None), TagCategory::Cli),
+                (config(Some("   ")), TagCategory::Cli),
+            ],
+        )
+        .expect_err("a tag without an executable cannot launch");
+
+        let message = error.to_string();
+        assert!(message.contains("has an executable"), "{message}");
+        assert!(!message.contains("Failed to launch any tools"), "{message}");
+    }
+
+    #[test]
+    fn an_empty_selection_reports_that_nothing_is_configured() {
+        let error = Launcher::launch(&project(), &[])
+            .expect_err("an empty selection cannot launch anything");
+        assert!(
+            error.to_string().contains("No launch configuration found"),
+            "{error}"
+        );
+    }
+
     #[test]
     fn agent_runtime_kind_is_a_closed_set() {
         assert!(matches!("host", "host" | "wsl"));
