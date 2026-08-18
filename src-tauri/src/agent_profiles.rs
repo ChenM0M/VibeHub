@@ -12,16 +12,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Duration;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use vibehub_core::v3::{
     self, AgentKind, ClaudeCodeProfileView, ClaudeCredentialKind, ClaudeSettingsPatch,
     ClaudeSettingsScope, CodexConfigPatch, CodexCredentialKind, CodexProfileView, CodexProtocol,
     CodexProviderPatch, ConfigFormat, DocumentRevision, NativeConfigPath, OpenCodeConfigPatch,
-    ParsedConfig,
-    OpenCodeModelPatch, OpenCodeProfileView, OpenCodeProviderPatch, ProtocolKind,
+    OpenCodeModelPatch, OpenCodeProfileView, OpenCodeProviderPatch, ParsedConfig, ProtocolKind,
     ProtocolResolution, RuntimeTarget, RuntimeTargetKind, StorageError, WriteReport,
 };
 
