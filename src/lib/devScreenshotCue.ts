@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { viteEnv } from '@/lib/viteEnv';
 
 const CUE_URL = 'http://127.0.0.1:18765/screenshot-command';
 
@@ -7,7 +8,7 @@ export function useDevScreenshotCue(handler: (command: string) => void) {
     handlerRef.current = handler;
 
     useEffect(() => {
-        if (!import.meta.env.DEV) {
+        if (!viteEnv.DEV) {
             return undefined;
         }
         let cancelled = false;

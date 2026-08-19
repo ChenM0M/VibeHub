@@ -4,9 +4,10 @@ import type {
     AgentProfileDocument,
     RuntimeTarget,
 } from '@/v3/contracts/generated';
+import { viteEnv } from '@/lib/viteEnv';
 
 export function isReleaseFixture(): boolean {
-    return import.meta.env.DEV && new URLSearchParams(window.location.search).get('fixture') === 'release';
+    return Boolean(viteEnv.DEV) && new URLSearchParams(window.location.search).get('fixture') === 'release';
 }
 
 const demoPath = (native: string) => ({

@@ -10,6 +10,7 @@ import { UpdateChecker } from '@/components/UpdateChecker';
 import { useAppStore } from '@/stores/appStore';
 import '@/styles/globals.css';
 import { isReleaseFixture, releaseFixtureConfig } from '@/lib/releaseFixture';
+import { viteEnv } from '@/lib/viteEnv';
 import i18n from './i18n';
 
 export type PageType = 'home' | 'settings' | 'gateway' | 'agent-profiles' | 'about';
@@ -26,7 +27,7 @@ function pageFromHash(): PageType {
 }
 
 function initialPage(): PageType {
-    const envPage = import.meta.env.VITE_START_PAGE;
+    const envPage = viteEnv.VITE_START_PAGE;
     if (typeof envPage === 'string' && isPageType(envPage)) {
         return envPage;
     }
