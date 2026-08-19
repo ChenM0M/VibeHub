@@ -107,7 +107,7 @@ try {
   const tools = await request("tools/list");
   assert(resources.resources.length === 7, "expected seven versioned resources");
   assert(resources.resources.every((resource) => resource.uri.startsWith("vibehub://v3/1.0/")), "resource URI is not versioned");
-  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,attempt_manage,criterion_review,event_log,finding_manage,memory_query,memory_write,orchestration_write,plan_criteria_set,plan_dependencies_set,plan_node_add,plan_node_state_set,session_close,session_open,session_recovery,session_task_bind,session_task_unbind,task_candidates,task_complete,task_completion_propose,task_create,task_policy_upgrade,task_route,task_view", "unexpected tool catalog");
+  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,attempt_manage,criterion_review,event_log,finding_manage,memory_query,memory_write,orchestration_write,plan_criteria_set,plan_dependencies_set,plan_node_add,plan_node_state_set,session_close,session_open,session_recovery,session_task_bind,session_task_unbind,task_candidates,task_complete,task_completion_propose,task_create,task_policy_upgrade,task_route,task_view,v3_next_action", "unexpected tool catalog");
   const planToolNames = ["plan_node_add", "plan_dependencies_set", "plan_node_state_set"];
   for (const name of planToolNames) {
     const schema = tools.tools.find((tool) => tool.name === name)?.inputSchema;

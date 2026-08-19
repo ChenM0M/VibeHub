@@ -4123,6 +4123,7 @@ mod tests {
                 trigger_context: Default::default(),
                 profile_override: None,
                 initial_plan: Vec::new(),
+                preflight: false,
             },
         )
         .unwrap();
@@ -5115,6 +5116,7 @@ mod tests {
                     criteria: vec![1],
                     role: None,
                 }],
+                preflight: false,
             },
         )
         .unwrap();
@@ -5212,6 +5214,7 @@ mod tests {
                     criteria: vec![1],
                     role: None,
                 }],
+                preflight: false,
             },
         )
         .unwrap();
@@ -5666,6 +5669,7 @@ mod tests {
                     criteria: vec![1],
                     role: None,
                 }],
+                preflight: false,
             },
         )
         .unwrap();

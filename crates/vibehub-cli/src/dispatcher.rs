@@ -107,6 +107,8 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
 === Adapter Management ===
   sync-adapters          Sync adapter files: vibehub sync-adapters <project> [tools...] [--dry-run]
   adapter-status         Show adapter file status: vibehub adapter-status <project>
+  mcp-install            Wire VibeHub MCP into each harness: vibehub mcp-install <project> [tools...] [--dry-run] [--global]
+  mcp-status             Show MCP wiring status per harness: vibehub mcp-status <project>
 
 === Maintenance ===
   migrate                Migrate state schema: vibehub migrate <project> [--dry-run]
@@ -122,6 +124,7 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   v3 <project> repair-candidates
   v3 <project> repair <task_id>
   v3 <project> task-create <request_json_path|--stdin|->
+  v3 <project> task-preflight <request_json_path|--stdin|->
   v3 <project> quarantine-task <task_id>
   v3 <project> agent-specs-status
   v3 <project> agent-specs-sync [--force-managed-region]
@@ -211,6 +214,11 @@ fn is_action(action: &str) -> bool {
             | "schema_check"
             | "migrate"
             | "locale"
+            | "mcp-install"
+            | "mcp_install"
+            | "install-mcp"
+            | "mcp-status"
+            | "mcp_status"
     )
 }
 
@@ -287,6 +295,20 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
                 tools,
                 dry_run,
             ));
+        }
+        "mcp-install" | "mcp_install" | "install-mcp" => {
+            let dry_run = args.iter().any(|a| a == "--dry-run");
+            let global = args.iter().any(|a| a == "--global");
+            let tools = parse_agent_tools(&args[1..]);
+            print_json(vibehub::agent_adapter::install_mcp_config(
+                project_path,
+                tools,
+                dry_run,
+                global,
+            ))
+        }
+        "mcp-status" | "mcp_status" => {
+            print_json(vibehub::agent_adapter::mcp_status(project_path))
         }
         "review" => {
             let locale = args.get(1).cloned();
@@ -455,7 +477,9 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
             }
         }
         _ => {
-            eprintln!("Unknown VibeHub action '{action}'");
+            eprintln!(
+                "Unknown VibeHub action '{action}'.\nNext step: `vibehub help` for the command list, or `vibehub next-action <project>` for the recommended action."
+            );
             std::process::exit(2);
         }
     }
@@ -511,6 +535,25 @@ fn run_v3_action(project_root: &str, args: &[String]) {
                     eprintln!("Invalid task create JSON '{}': {error}", label);
                     std::process::exit(2);
                 });
+            print_v3_json(vibehub_core::v3::create_v3_task(project_root, request));
+            return;
+        }
+        "task-preflight" => {
+            let Some(json_path) = args.get(1) else {
+                v3_usage_error(
+                    command,
+                    "missing task request JSON path (use --stdin or - to read from stdin)",
+                );
+            };
+            let (content, label) = read_v3_command_content(json_path, "task preflight request");
+            let mut request =
+                serde_json::from_str::<V3TaskCreateRequest>(&content).unwrap_or_else(|error| {
+                    eprintln!("Invalid task create JSON '{}': {error}", label);
+                    std::process::exit(2);
+                });
+            // Preflight never writes: it reports the deterministic task id and whether an
+            // equivalent task already exists, so probing cannot leave an invalid duplicate.
+            request.preflight = true;
             print_v3_json(vibehub_core::v3::create_v3_task(project_root, request));
             return;
         }
@@ -1130,7 +1173,7 @@ fn is_confirmation_flag(arg: &str) -> bool {
 fn parse_agent_tools(args: &[String]) -> Option<Vec<vibehub::agent_adapter::AgentTool>> {
     let tools = args
         .iter()
-        .filter(|arg| arg.as_str() != "--dry-run")
+        .filter(|arg| !arg.starts_with("--"))
         .map(|arg| match arg.as_str() {
             "amp" | "amp-code" | "amp_code" => Some(vibehub::agent_adapter::AgentTool::AmpCode),
             "codex" => Some(vibehub::agent_adapter::AgentTool::Codex),

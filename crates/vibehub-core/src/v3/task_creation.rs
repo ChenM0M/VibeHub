@@ -49,6 +49,11 @@ pub struct V3TaskCreateRequest {
     /// When present, this confirmed plan replaces the administrative bootstrap node.
     #[serde(default)]
     pub initial_plan: Vec<V3TaskCreateInitialPlanNode>,
+    /// When true, compute the deterministic task id and report whether an equivalent
+    /// task already exists, WITHOUT writing task.yaml or appending lifecycle events.
+    /// Agents should preflight before committing a create to avoid probe-generated junk.
+    #[serde(default)]
+    pub preflight: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +67,18 @@ pub struct V3TaskCreateResult {
     pub lifecycle_version: u64,
     #[serde(default)]
     pub initial_plan_node_ids: Vec<String>,
+    /// True when this result came from a preflight (no writes, no events).
+    #[serde(default)]
+    pub preflight: bool,
+    /// For preflight: true if an equivalent task does not already exist (a create would write).
+    #[serde(default)]
+    pub would_create: bool,
+    /// For preflight: the existing task_id when an equivalent task is already present.
+    #[serde(default)]
+    pub existing_task_id: Option<String>,
+    /// For preflight: a short state summary of the existing task, e.g. "plan/active".
+    #[serde(default)]
+    pub existing_state: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +130,32 @@ pub fn create_v3_task(
     let task_dir = tasks_root.join(&task_id);
     let initial_plan = request.initial_plan.clone();
     let plan_node_ids = initial_plan_node_ids(&task_id, &initial_plan)?;
+
+    // Preflight: report what a create would do without writing files or events.
+    // This lets an agent confirm an equivalent task does not already exist before
+    // committing, so probing never leaves an invalid duplicate behind.
+    if request.preflight {
+        let (would_create, existing_task_id, existing_state) =
+            match read_existing_task_state(&task_dir) {
+                Some((existing_id, state)) => (false, Some(existing_id), Some(state)),
+                None => (true, None, None),
+            };
+        return Ok(V3TaskCreateResult {
+            status: "preflight".to_owned(),
+            task_id: task_id.clone(),
+            task_path: format!(".vibehub/tasks/{task_id}/task.yaml"),
+            current_pointer_path: ".vibehub/tasks/current".to_owned(),
+            current_pointer_updated: false,
+            initial_node_id: None,
+            lifecycle_version: 0,
+            initial_plan_node_ids: plan_node_ids,
+            preflight: true,
+            would_create,
+            existing_task_id,
+            existing_state,
+        });
+    }
+
     let policy = resolve_policy(
         &request.title,
         &request.intent,
@@ -223,6 +266,14 @@ pub fn create_v3_task(
         initial_node_id: None,
         lifecycle_version,
         initial_plan_node_ids: plan_node_ids,
+        preflight: false,
+        would_create: created,
+        existing_task_id: if created { None } else { Some(task_id.clone()) },
+        existing_state: if created {
+            None
+        } else {
+            read_existing_task_state(&task_dir).map(|(_, state)| state)
+        },
     })
 }
 
@@ -363,6 +414,7 @@ fn validate_request(request: V3TaskCreateRequest) -> Result<V3TaskCreateRequest,
         trigger_context: request.trigger_context,
         profile_override: request.profile_override,
         initial_plan,
+        preflight: request.preflight,
     })
 }
 
@@ -598,6 +650,12 @@ fn ensure_safe_tasks_root(tasks_root: &Path) -> Result<(), V3Error> {
     Ok(())
 }
 
+fn read_existing_task_state(task_dir: &Path) -> Option<(String, String)> {
+    let yaml = fs::read_to_string(task_dir.join("task.yaml")).ok()?;
+    let document: TaskDocument = serde_yaml::from_str(&yaml).ok()?;
+    Some((document.task_id, format!("{}/{}", document.phase, document.phase_status)))
+}
+
 fn write_new_atomic(path: &Path, content: &[u8]) -> Result<(), V3Error> {
     let parent = path
         .parent()
@@ -649,6 +707,7 @@ mod tests {
             trigger_context: Default::default(),
             profile_override: None,
             initial_plan: Vec::new(),
+            preflight: false,
         }
     }
 
@@ -777,6 +836,41 @@ mod tests {
         fs::remove_dir_all(project).unwrap();
     }
 
+    #[test]
+    fn preflight_reports_existing_task_without_writing_or_emitting_events() {
+        let project = temp_project();
+        initialize_v3(&project).unwrap();
+        let created = create_v3_task(&project, request()).unwrap();
+
+        // An equivalent request preflights to "already present" and writes nothing.
+        let mut probe = request();
+        probe.preflight = true;
+        let preflight = create_v3_task(&project, probe).unwrap();
+        assert_eq!(preflight.status, "preflight");
+        assert!(preflight.preflight);
+        assert!(!preflight.would_create);
+        assert_eq!(preflight.existing_task_id.as_deref(), Some(created.task_id.as_str()));
+        assert!(preflight.existing_state.is_some());
+
+        // A different request preflights to "would create".
+        let mut fresh = request();
+        fresh.preflight = true;
+        fresh.title = "A clearly different task".to_owned();
+        let fresh_preflight = create_v3_task(&project, fresh).unwrap();
+        assert_eq!(fresh_preflight.status, "preflight");
+        assert!(fresh_preflight.would_create);
+        assert!(fresh_preflight.existing_task_id.is_none());
+
+        // Preflight must not append any lifecycle events.
+        let repository = V3ViewRepository::open(&project).unwrap();
+        let events = V3EventStore::open(&project)
+            .unwrap()
+            .load_project(&repository.project_id())
+            .unwrap();
+        assert_eq!(events.len(), 2);
+        fs::remove_dir_all(project).unwrap();
+    }
+
     fn request_with_initial_plan() -> V3TaskCreateRequest {
         V3TaskCreateRequest {
             title: "Ship a planned task".to_owned(),
@@ -818,6 +912,7 @@ mod tests {
                     role: Some("execution".to_owned()),
                 },
             ],
+            preflight: false,
         }
     }
 

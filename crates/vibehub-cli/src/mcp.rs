@@ -182,6 +182,17 @@ struct TaskViewRead {
     node_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct NextActionRead {
+    project_id: String,
+    #[serde(default)]
+    task_id: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    actor: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 struct TaskCreateTriggerContext {
     #[serde(default)]
@@ -238,6 +249,10 @@ struct TaskCreateWrite {
     profile_override: Option<TaskCreateProfileOverride>,
     #[serde(default)]
     initial_plan: Vec<TaskCreatePlanNode>,
+    /// When true, return what a create would do (deterministic task_id + whether an
+    /// equivalent task already exists) WITHOUT writing files or appending events.
+    #[serde(default)]
+    preflight: bool,
 }
 
 fn default_task_workflow_profile() -> String {
@@ -265,6 +280,7 @@ impl From<TaskCreateWrite> for V3TaskCreateRequest {
                 reason: value.reason,
                 user_confirmed: value.user_confirmed,
             }),
+            preflight: input.preflight,
             initial_plan: input
                 .initial_plan
                 .into_iter()
@@ -862,7 +878,7 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Create a V3 task through the same typed task-create contract as the CLI and production UI. When: the user explicitly requests a new Task or confirms an independent execution intake. Prerequisite: task_create is an intentional intake write; it does not bind a Session or change the project current/default pointer. Typical params: project_id, title, intent, acceptance_criteria, workflow_profile, initial_plan. standard/full requests may include initial_plan nodes with 1-based depends_on and criteria positions; omitting initial_plan leaves an empty planning graph and never creates a bootstrap placeholder"
+        description = "Create a V3 task through the same typed task-create contract as the CLI and production UI. When: the user explicitly requests a new Task or confirms an independent execution intake. Prerequisite: task_create is an intentional intake write; it does not bind a Session or change the project current/default pointer. Typical params: project_id, title, intent, acceptance_criteria, workflow_profile, initial_plan. standard/full requests may include initial_plan nodes with 1-based depends_on and criteria positions; omitting initial_plan leaves an empty planning graph and never creates a bootstrap placeholder. Set preflight=true to check whether an equivalent task already exists (same title+intent+criteria) WITHOUT writing, so probing never leaves an invalid duplicate."
     )]
     fn task_create(&self, Parameters(input): Parameters<TaskCreateWrite>) -> CallToolResult {
         if let Some(error) = self.reject_project(&input.project_id) {
@@ -882,6 +898,40 @@ impl V3McpServer {
             self.views
                 .load_bundle_for_node(&input.task_id, input.node_id.as_deref()),
         )
+    }
+
+    #[tool(
+        description = "Return the single deterministic next V3 action for a task, derived from the authoritative node brief (open blockers, completion gate, criteria). When: unsure what to do next, or at the start of work. Prerequisite: project_id (task_id defaults to the current task). Typical params: project_id, task_id. This is read-only and never writes state; run the tool it returns in next_action.tool with next_action.params."
+    )]
+    fn v3_next_action(&self, Parameters(input): Parameters<NextActionRead>) -> CallToolResult {
+        if let Some(error) = self.reject_project(&input.project_id) {
+            return error;
+        }
+        let task_id = match input.task_id.clone() {
+            Some(task_id) => task_id,
+            None => match self.views.current_task_id() {
+                Ok(task_id) => task_id,
+                Err(error) => return self.tool_result::<Value>(Err(error)),
+            },
+        };
+        match self.views.load_bundle(&task_id) {
+            Ok(bundle) => {
+                let value = match serde_json::to_value(&bundle) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        return self.tool_result::<Value>(Err(V3Error::new(
+                            "V3_SERIALIZE_FAILED",
+                            vibehub_core::v3::V3ErrorCategory::Internal,
+                            false,
+                            error.to_string(),
+                        )));
+                    }
+                };
+                let decision = compute_next_action(&task_id, &value);
+                self.tool_result(Ok::<Value, V3Error>(decision))
+            }
+            Err(error) => self.tool_result::<Value>(Err(error)),
+        }
     }
 
     #[tool(
@@ -1850,7 +1900,7 @@ impl V3McpServer {
                     "scopes": self.scopes,
                     "resource_namespace": RESOURCE_PREFIX,
                     "tool_catalog": [
-                        "session_task_bind", "session_task_unbind", "task_route", "session_open", "task_candidates", "task_view", "criterion_review",
+                        "session_task_bind", "session_task_unbind", "task_route", "session_open", "task_candidates", "task_view", "v3_next_action", "criterion_review",
                         "task_completion_propose", "task_complete", "event_log", "agent_result_record",
                         "session_close", "plan_node_add", "plan_dependencies_set", "plan_node_state_set"
                         , "task_policy_upgrade", "plan_criteria_set", "finding_manage", "attempt_manage",
@@ -1893,7 +1943,12 @@ impl ServerHandler for V3McpServer {
         info.server_info = Implementation::new("vibehub-v3", env!("CARGO_PKG_VERSION"))
             .with_title("VibeHub V3 MCP");
         info.instructions = Some(
-            "First call task_candidates, then task_view; echo node_brief.workflow_profile and node_brief.execution_policy before acting. Lightweight uses the minimal session/result/risk-if-any flow without a plan graph. When planning_required is true (standard/full), create or refine the plan before file changes, activate the target node, then call session_open. Record progress at each milestone and risks immediately; run real validation before criterion_review; complete the node, record agent_result with the required detail fields, then session_close. Call task_completion_propose only when all gates are green, and task_complete only after explicit current-user confirmation. Accepted criteria are not passed. expected_version and idempotency_key may be omitted and are resolved by the server; explicitly provided values are checked strictly."
+            "VibeHub V3 — follow these steps in order:\n\
+             1) Call task_candidates(project_id) and pick a task_id (do not invent one).\n\
+             2) Call task_view(task_id); read and obey node_brief.workflow_profile and node_brief.execution_policy.\n\
+             3) Whenever unsure what to do next, call v3_next_action(project_id, task_id) and run the tool it returns in next_action.tool with next_action.params.\n\
+             Lightweight: session_open → do the work → event_log(progress) at milestones → agent_result_record → session_close.\n\
+             Standard/full (planning_required): plan_node_add → plan_node_state_set(active) → session_open, then drive by v3_next_action; run real validation before criterion_review; only call task_completion_propose when every gate is green, and task_complete only after the user explicitly confirms. Accepted criteria are not yet passed. expected_version and idempotency_key may be omitted; the server resolves them."
                 .to_owned(),
         );
         info
@@ -1956,6 +2011,223 @@ pub fn run_stdio(project_root: &str) {
             }
         }
     });
+}
+
+fn infer_tool_from_text(text: &str) -> Option<&'static str> {
+    const TOOLS: [&str; 12] = [
+        "attempt_manage",
+        "finding_manage",
+        "session_task_bind",
+        "plan_node_add",
+        "plan_node_state_set",
+        "session_open",
+        "event_log",
+        "criterion_review",
+        "agent_result_record",
+        "session_close",
+        "task_completion_propose",
+        "task_complete",
+    ];
+    TOOLS
+        .iter()
+        .filter_map(|tool| text.find(tool).map(|pos| (pos, *tool)))
+        .min_by_key(|(pos, _)| *pos)
+        .map(|(_, tool)| tool)
+}
+
+fn first_non_terminal_node(bundle: &Value) -> Option<Value> {
+    let nodes = bundle
+        .pointer("/plan_graph/nodes")
+        .and_then(|value| value.as_array())?;
+    let terminal = |state: Option<&str>| {
+        matches!(
+            state,
+            Some("completed") | Some("waived") | Some("superseded") | Some("cancelled")
+        )
+    };
+    nodes
+        .iter()
+        .find(|node| !terminal(node.get("state").and_then(|value| value.as_str())))
+        .cloned()
+}
+
+fn gate_next_tool(
+    gate: &str,
+    node_brief: &Value,
+    bundle: &Value,
+) -> (Option<&'static str>, Value) {
+    match gate {
+        "criteria_green" => {
+            let criterion = node_brief
+                .get("criteria")
+                .and_then(|value| value.as_array())
+                .and_then(|criteria| {
+                    criteria.iter().find(|criterion| {
+                        criterion.get("required").and_then(|v| v.as_bool()).unwrap_or(true)
+                            && criterion.get("status").and_then(|v| v.as_str()) != Some("passed")
+                    })
+                });
+            let criterion_id = criterion
+                .and_then(|criterion| criterion.get("criterion_id"))
+                .cloned()
+                .unwrap_or(Value::Null);
+            (
+                Some("criterion_review"),
+                json!({"criterion_id": criterion_id, "outcome": "passed|failed|blocked"}),
+            )
+        }
+        "plan_terminal" => match first_non_terminal_node(bundle) {
+            Some(node) => {
+                let node_id = node.get("node_id").cloned().unwrap_or(Value::Null);
+                let state = node.get("state").and_then(|v| v.as_str()).unwrap_or("planned");
+                if state == "active" {
+                    (
+                        Some("plan_node_state_set"),
+                        json!({"node_id": node_id, "state": "completed", "note": "only after the node's work and validation are done"}),
+                    )
+                } else {
+                    (
+                        Some("plan_node_state_set"),
+                        json!({"node_id": node_id, "state": "active"}),
+                    )
+                }
+            }
+            None => (None, json!({})),
+        },
+        "sessions_settled" => (Some("session_close"), json!({})),
+        "results_terminal" | "required_records" => (
+            Some("agent_result_record"),
+            json!({"kind": "execution", "request_source": "user_request", "status": "succeeded|failed"}),
+        ),
+        _ => (None, json!({})),
+    }
+}
+
+fn compute_next_action(task_id: &str, bundle: &Value) -> Value {
+    let node_brief = bundle.get("node_brief").cloned().unwrap_or(Value::Null);
+    let workflow_profile = node_brief
+        .get("workflow_profile")
+        .and_then(|value| value.as_str())
+        .unwrap_or("standard")
+        .to_owned();
+    let node_state = node_brief
+        .get("state")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown")
+        .to_owned();
+    let node_id = node_brief
+        .get("node_id")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned);
+    let project_id = node_brief
+        .get("project_id")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned);
+
+    // 1) Open blockers (findings) take precedence over everything else.
+    if let Some(blocker) = node_brief
+        .get("blocker_details")
+        .and_then(|value| value.as_array())
+        .and_then(|arr| arr.first())
+    {
+        let repair = blocker
+            .get("repair_actions")
+            .and_then(|value| value.as_array())
+            .and_then(|arr| arr.first())
+            .cloned()
+            .unwrap_or(Value::Null);
+        let copy_text = repair
+            .get("copy_text")
+            .and_then(|value| value.as_str())
+            .map(str::to_owned);
+        let tool = copy_text.as_deref().and_then(infer_tool_from_text);
+        return json!({
+            "schema_version": "1.0",
+            "task_id": task_id,
+            "node_id": node_id,
+            "project_id": project_id,
+            "workflow_profile": workflow_profile,
+            "node_state": node_state,
+            "status": "blocked",
+            "kind": "repair_blocker",
+            "reason": blocker.get("reason_code"),
+            "next_action": {
+                "tool": tool,
+                "params": repair.get("target").map(|target| json!({"node_id": target})).unwrap_or(json!({})),
+                "copy_text": copy_text,
+            },
+            "blocker": {
+                "id": blocker.get("blocker_id"),
+                "node_id": blocker.get("node_id"),
+            },
+        });
+    }
+
+    // 2) Drive the ordered completion gate; the first non-passed item is the next thing to do.
+    let gate = node_brief.get("completion_gate");
+    let all_passed = gate
+        .and_then(|g| g.get("all_passed"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    if !all_passed {
+        if let Some(item) = gate
+            .and_then(|g| g.get("items"))
+            .and_then(|value| value.as_array())
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|item| item.get("passed") != Some(&Value::Bool(true)))
+            })
+        {
+            let gate_name = item.get("gate").and_then(|v| v.as_str()).unwrap_or("");
+            let (tool, params) = gate_next_tool(gate_name, &node_brief, bundle);
+            let repair_actions = item
+                .get("repair_actions")
+                .and_then(|value| value.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|value| value.as_str().map(str::to_owned))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            return json!({
+                "schema_version": "1.0",
+                "task_id": task_id,
+                "node_id": node_id,
+                "project_id": project_id,
+                "workflow_profile": workflow_profile,
+                "node_state": node_state,
+                "status": "in_progress",
+                "kind": "gate",
+                "gate": gate_name,
+                "reason": item.get("reason_code"),
+                "observed_state": item.get("observed_state"),
+                "next_action": {
+                    "tool": tool,
+                    "params": params,
+                    "repair_actions": repair_actions,
+                },
+            });
+        }
+    }
+
+    // 3) Every gate is green — propose completion (still needs explicit user confirmation).
+    json!({
+        "schema_version": "1.0",
+        "task_id": task_id,
+        "node_id": node_id,
+        "project_id": project_id,
+        "workflow_profile": workflow_profile,
+        "node_state": node_state,
+        "status": "ready",
+        "kind": "complete",
+        "reason": "all completion gates passed",
+        "next_action": {
+            "tool": "task_completion_propose",
+            "params": json!({"project_id": project_id, "task_id": task_id}),
+            "copy_text": "All gates green; call task_completion_propose, then ask the user to confirm before task_complete.",
+        },
+    })
 }
 
 fn tool_success(value: Value) -> CallToolResult {
@@ -2096,9 +2368,22 @@ mod tests {
         }
 
         let instructions = server.get_info().instructions.unwrap();
-        assert_in_order(&instructions, &["task_candidates", "task_view"]);
-        assert!(instructions.contains("echo"));
-        assert!(instructions.contains("plan before file changes"));
+        assert_in_order(
+            &instructions,
+            &["task_candidates", "task_view", "v3_next_action"],
+        );
+        assert!(
+            instructions.contains("plan_node_add"),
+            "recipe must mention the standard/full planning step"
+        );
+        assert!(
+            instructions.contains("task_completion_propose"),
+            "recipe must mention the completion gate"
+        );
+        assert!(
+            instructions.contains("explicitly confirms"),
+            "recipe must require explicit user confirmation before task_complete"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -670,6 +670,7 @@ mod tests {
                 trigger_context: Default::default(),
                 profile_override: None,
                 initial_plan: Vec::new(),
+                preflight: false,
             },
         )
         .unwrap();
@@ -733,6 +734,7 @@ mod tests {
                 trigger_context: Default::default(),
                 profile_override: None,
                 initial_plan: Vec::new(),
+                preflight: false,
             },
         )
         .unwrap();
