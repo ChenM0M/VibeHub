@@ -18,7 +18,7 @@ $startParameters = @{
     FilePath = $env:VIBEHUB_AGENT_EXECUTABLE
     WorkingDirectory = $env:VIBEHUB_AGENT_WORKING_DIRECTORY
     PassThru = $true
-    WindowStyle = 'Normal'
+    WindowStyle = 'Hidden'
 }
 if ($arguments.Count -gt 0) {
     $startParameters.ArgumentList = [string[]]$arguments
@@ -648,6 +648,15 @@ mod tests {
         assert!(matches!("host", "host" | "wsl"));
         assert!(matches!("wsl", "host" | "wsl"));
         assert!(!matches!("shell", "host" | "wsl"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_agent_launch_runs_hidden_without_a_visible_console() {
+        // Agent CLIs must launch silently in the background on Windows; a
+        // visible console window is a regression.
+        assert!(WINDOWS_AGENT_LAUNCH_SCRIPT.contains("WindowStyle = 'Hidden'"));
+        assert!(!WINDOWS_AGENT_LAUNCH_SCRIPT.contains("WindowStyle = 'Normal'"));
     }
 
     #[test]

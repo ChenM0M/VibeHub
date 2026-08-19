@@ -109,11 +109,22 @@ pub struct OpenCodeConfigPatch {
 
 pub fn opencode_config_paths(target: &RuntimeTarget) -> Vec<PathBuf> {
     let home = target.home_path.as_path();
-    let root = match target.platform {
-        RuntimePlatform::Windows => home.join("AppData").join("Roaming").join("opencode"),
-        RuntimePlatform::Macos | RuntimePlatform::Linux => home.join(".config").join("opencode"),
+    // opencode follows the XDG convention on every platform, including
+    // Windows, where it stores configuration under `~/.config/opencode`
+    // rather than `%APPDATA%\\opencode`. Prefer the XDG location first and
+    // keep the legacy Roaming path as a backward-compatible fallback for
+    // users whose config was written by an older VibeHub build.
+    let roots: Vec<PathBuf> = match target.platform {
+        RuntimePlatform::Windows => vec![
+            home.join(".config").join("opencode"),
+            home.join("AppData").join("Roaming").join("opencode"),
+        ],
+        RuntimePlatform::Macos | RuntimePlatform::Linux => vec![home.join(".config").join("opencode")],
     };
-    vec![root.join("opencode.jsonc"), root.join("opencode.json")]
+    roots
+        .into_iter()
+        .flat_map(|root| [root.join("opencode.jsonc"), root.join("opencode.json")])
+        .collect()
 }
 
 pub fn discover_opencode_profiles(
@@ -1065,7 +1076,9 @@ impl<'a> JsoncSpanParser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::v3::agent_profile_storage::RuntimeTarget;
+    use crate::v3::agent_profile_storage::{
+        NativeConfigPath, RuntimePlatform, RuntimeTarget, RuntimeTargetKind, RuntimeTargetSource,
+    };
     use std::env;
     use std::fs;
     use uuid::Uuid;
@@ -1391,5 +1404,58 @@ mod tests {
         assert!(!cleared.contains("opencode-secret-value"));
         assert!(!cleared.contains("apiKey"));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    fn windows_target(home: PathBuf) -> RuntimeTarget {
+        let home_native = home.to_string_lossy().into_owned();
+        RuntimeTarget {
+            target_id: "runtime.windows.host".to_owned(),
+            kind: RuntimeTargetKind::Host,
+            platform: RuntimePlatform::Windows,
+            distribution: None,
+            display_name: "Windows host".to_owned(),
+            home_path: NativeConfigPath::from_path(&home, RuntimePlatform::Windows),
+            source: RuntimeTargetSource::Observed,
+            capability_manifest_revision: None,
+        }
+    }
+
+    #[test]
+    fn windows_config_paths_prefer_xdg_over_roaming() {
+        // opencode follows the XDG convention on Windows too, storing its
+        // config under `~/.config/opencode` rather than `%APPDATA%\\opencode`.
+        let home = env::temp_dir().join(format!("vibehub-opencode-win-{}", Uuid::new_v4()));
+        fs::create_dir_all(&home).unwrap();
+        let target = windows_target(home.clone());
+
+        let paths = opencode_config_paths(&target);
+
+        let xdg_jsonc = home.join(".config").join("opencode").join("opencode.jsonc");
+        let xdg_json = home.join(".config").join("opencode").join("opencode.json");
+        let roaming_jsonc = home
+            .join("AppData")
+            .join("Roaming")
+            .join("opencode")
+            .join("opencode.jsonc");
+        let roaming_json = home
+            .join("AppData")
+            .join("Roaming")
+            .join("opencode")
+            .join("opencode.json");
+
+        assert_eq!(
+            paths,
+            vec![
+                xdg_jsonc.clone(),
+                xdg_json,
+                roaming_jsonc,
+                roaming_json
+            ]
+        );
+        // XDG location must win over the legacy Roaming location so detection
+        // no longer reports an empty environment for real Windows installs.
+        assert_eq!(paths[0], xdg_jsonc);
+
+        fs::remove_dir_all(&home).unwrap();
     }
 }
