@@ -21,7 +21,15 @@ const ROOT_MANAGED_KEYS: &[&str] = &[
     "model_provider",
     "model_reasoning_effort",
     "model_reasoning_summary",
+    "model_catalog_json",
 ];
+
+/// OpenAI Codex reserved (built-in) provider ids. These ship with Codex and are
+/// backed by OpenAI's own model catalog; a third-party provider id that is not
+/// in this set is treated as custom and must NOT keep an OpenAI-scoped catalog,
+/// otherwise the picker shows unrelated OpenAI models and the selected model
+/// resolves to "Custom".
+const OPENAI_NATIVE_PROVIDER_IDS: &[&str] = &["openai", "ollama", "lmstudio"];
 const PROVIDER_MANAGED_KEYS: &[&str] = &[
     "name",
     "base_url",
@@ -164,10 +172,15 @@ pub struct CodexConfigPatch {
     pub model_provider: Option<String>,
     pub reasoning_effort: Option<String>,
     pub reasoning_summary: Option<String>,
+    /// `model_catalog_json` drives the Codex model picker list and the display
+    /// name of the selected model. It is managed so activation keeps the catalog
+    /// consistent with the active provider (cleared for third-party providers).
+    pub model_catalog_json: Option<String>,
     pub clear_model: bool,
     pub clear_model_provider: bool,
     pub clear_reasoning_effort: bool,
     pub clear_reasoning_summary: bool,
+    pub clear_model_catalog_json: bool,
     pub deleted_providers: Vec<String>,
     pub providers: BTreeMap<String, CodexProviderPatch>,
 }
@@ -342,6 +355,56 @@ pub fn import_codex_profile(
     })
 }
 
+/// Build a minimal profile template from the base config: only the managed
+/// model selection (`model`, `model_provider`, `model_reasoning_effort`,
+/// `model_reasoning_summary`, `model_catalog_json`) plus the definition of the
+/// currently selected provider under `model_providers.<id>`. Everything else
+/// (marketplaces, plugins, projects, MCP servers, other providers) is dropped so
+/// a cloned profile stays self-contained and provider-consistent.
+fn minimal_profile_template(target: &RuntimeTarget) -> Result<Option<Vec<u8>>, StorageError> {
+    let base_path = codex_base_config_path(target);
+    if !base_path.is_file() {
+        return Ok(None);
+    }
+    let document = read_document(target, &base_path)?;
+    let root = parse_toml_root(&document)?;
+    if has_legacy_profiles(&root) {
+        return Err(StorageError::new(
+            "CODEX_LEGACY_PROFILES_UNSUPPORTED",
+            "legacy [profiles.*] configuration is read-only and cannot be migrated or generated",
+        ));
+    }
+
+    let mut minimal = toml::map::Map::new();
+    for key in ROOT_MANAGED_KEYS {
+        if let Some(value) = root.get(*key) {
+            minimal.insert((*key).to_string(), value.clone());
+        }
+    }
+    if let Some(provider_id) = root
+        .get("model_provider")
+        .and_then(toml::Value::as_str)
+    {
+        if let Some(provider) = root
+            .get("model_providers")
+            .and_then(toml::Value::as_table)
+            .and_then(|providers| providers.get(provider_id))
+        {
+            let mut providers = toml::map::Map::new();
+            providers.insert(provider_id.to_string(), provider.clone());
+            minimal.insert(
+                "model_providers".to_string(),
+                toml::Value::Table(providers),
+            );
+        }
+    }
+
+    let rendered = toml::to_string_pretty(&toml::Value::Table(minimal)).map_err(|error| {
+        StorageError::new("CODEX_PROFILE_TEMPLATE_SERIALIZE_FAILED", error.to_string())
+    })?;
+    Ok(Some(rendered.into_bytes()))
+}
+
 pub fn create_codex_profile(
     target: &RuntimeTarget,
     profile_name: &str,
@@ -349,8 +412,14 @@ pub fn create_codex_profile(
 ) -> Result<CodexProfileOperation, StorageError> {
     let source = match template {
         Some(path) => read_document(target, path)?.raw,
+        // No template: build a MINIMAL profile from the base config instead of
+        // cloning it whole. Copying the entire base pulled in unrelated cockpit
+        // marketplaces, plugins, projects and MCP servers, bloating the profile
+        // and mixing provider-specific state (e.g. an OpenAI catalog pinned to a
+        // third-party provider). Only the managed selection and the active
+        // provider definition are carried over.
         None if codex_base_config_path(target).is_file() => {
-            read_document(target, codex_base_config_path(target))?.raw
+            minimal_profile_template(target)?.unwrap_or_else(|| b"# Created by VibeHub\n".to_vec())
         }
         None => b"# Created by VibeHub\n".to_vec(),
     };
@@ -468,6 +537,31 @@ pub fn clear_codex_default_profile(target: &RuntimeTarget) -> Result<WriteReport
     write_profile_index(target, &index, index_revision.as_ref())
 }
 
+/// True when `provider_id` is one of Codex's built-in providers, which are
+/// backed by OpenAI's own model catalog. Third-party ids (e.g. a reseller or a
+/// self-hosted endpoint) must not keep an OpenAI-scoped `model_catalog_json`,
+/// or the picker shows unrelated OpenAI models and the selected model renders
+/// as "Custom".
+fn is_openai_native_provider(provider_id: &str) -> bool {
+    OPENAI_NATIVE_PROVIDER_IDS
+        .iter()
+        .any(|native| native.eq_ignore_ascii_case(provider_id))
+}
+
+/// Build the catalog-reconciliation patch applied on top of the managed
+/// projection. For a third-party provider the OpenAI-scoped catalog is cleared
+/// so the picker no longer lists unrelated models; for a native provider the
+/// catalog is left untouched (it is not a managed projection key here).
+fn catalog_reconciliation_patch(provider_id: Option<&str>) -> CodexConfigPatch {
+    let clear = provider_id
+        .map(|id| !is_openai_native_provider(id))
+        .unwrap_or(false);
+    CodexConfigPatch {
+        clear_model_catalog_json: clear,
+        ..Default::default()
+    }
+}
+
 pub fn activate_codex_profile(
     target: &RuntimeTarget,
     profile_path: impl AsRef<Path>,
@@ -500,6 +594,20 @@ pub fn activate_codex_profile(
         Some(document) => write_document(target, &base_path, Some(&document.revision), &edited)?,
         None => write_new_document(target, &base_path, &edited)?,
     };
+
+    // Reconcile the model catalog with the activated provider. A third-party
+    // provider must not keep an OpenAI-scoped catalog, so clear it; this is a
+    // second, additive write keyed on the just-written base revision. Re-read
+    // so base_write reflects the final file state and rollback stays consistent.
+    let catalog_patch = catalog_reconciliation_patch(profile.model_provider.as_deref());
+    let base_write = if catalog_patch.clear_model_catalog_json {
+        let current = read_document(target, &base_path)?;
+        let reconciled = apply_toml_patch(&current.raw, &catalog_patch)?;
+        write_document(target, &base_path, Some(&current.revision), &reconciled)?
+    } else {
+        base_write
+    };
+
     index.default_profile_id = Some(profile.profile_id.clone());
     index.profiles.insert(
         profile.profile_id.clone(),
@@ -580,6 +688,9 @@ fn read_codex_profile_with_index(
         })
         .cloned()
         .collect();
+    if let Some(warning) = provider_consistency_warning(&root) {
+        warnings.push(warning);
+    }
     let is_native_default = scope == CodexSettingsScope::User;
     let is_vibehub_default = index.default_profile_id.as_deref() == Some(profile_id.as_str());
     let (is_default, selected_by) = if is_vibehub_default {
@@ -759,6 +870,10 @@ fn managed_patch_from_root(root: &toml::value::Table) -> Result<CodexConfigPatch
             .get("model_reasoning_summary")
             .and_then(toml::Value::as_str)
             .map(str::to_owned),
+        model_catalog_json: root
+            .get("model_catalog_json")
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned),
         providers,
         ..Default::default()
     })
@@ -806,6 +921,12 @@ fn apply_toml_patch(raw: &[u8], patch: &CodexConfigPatch) -> Result<Vec<u8>, Sto
         editor.set_root("model_reasoning_summary", toml_string(summary))?;
     } else if patch.clear_reasoning_summary {
         editor.remove_root("model_reasoning_summary");
+    }
+    if let Some(catalog) = patch.model_catalog_json.as_deref() {
+        validate_non_empty("model_catalog_json", catalog)?;
+        editor.set_root("model_catalog_json", toml_string(catalog))?;
+    } else if patch.clear_model_catalog_json {
+        editor.remove_root("model_catalog_json");
     }
     for (provider_id, provider_patch) in &patch.providers {
         validate_provider_id(provider_id)?;
@@ -1177,6 +1298,25 @@ fn validate_environment_key(key: &str) -> Result<(), StorageError> {
         Err(StorageError::new(
             "CODEX_ENVIRONMENT_KEY_INVALID",
             "credential reference must be an environment variable name",
+        ))
+    }
+}
+
+/// Confirm that a selected `model_provider` has a matching definition under
+/// `model_providers`. Returns a warning string (never blocks the write) when the
+/// provider is set but not defined, so activation/rendering never surfaces an
+/// orphaned endpoint reference.
+fn provider_consistency_warning(root: &toml::value::Table) -> Option<String> {
+    let provider_id = root.get("model_provider").and_then(toml::Value::as_str)?;
+    let defined = root
+        .get("model_providers")
+        .and_then(toml::Value::as_table)
+        .is_some_and(|providers| providers.contains_key(provider_id));
+    if defined {
+        None
+    } else {
+        Some(format!(
+            "model_provider = \"{provider_id}\" has no matching [model_providers.{provider_id}] definition"
         ))
     }
 }
@@ -1794,6 +1934,142 @@ env_key = "OPENAI_API_KEY"
         let cleared = String::from_utf8(fs::read(&path).unwrap()).unwrap();
         assert!(!cleared.contains("codex-secret-value"));
         assert!(!cleared.contains("experimental_bearer_token"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn patch_sets_and_clears_model_catalog_json() {
+        let (target, root) = temp_target();
+        let path = root.join("config.toml");
+        fs::write(&path, "model = \"old\"\nmodel_catalog_json = \"openai.json\"\n").unwrap();
+
+        let document = read_document(&target, &path).unwrap();
+        save_codex_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &CodexConfigPatch {
+                model_catalog_json: Some("custom.json".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let set = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(set.contains("model_catalog_json = \"custom.json\""));
+        assert!(!set.contains("openai.json"));
+
+        let document = read_document(&target, &path).unwrap();
+        save_codex_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &CodexConfigPatch {
+                clear_model_catalog_json: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let cleared = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(!cleared.contains("model_catalog_json"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn activation_clears_catalog_for_third_party_provider_and_keeps_native() {
+        let (target, root) = temp_target();
+        fs::create_dir_all(root.join(".codex")).unwrap();
+        let base = root.join(".codex/config.toml");
+        // OpenAI-scoped catalog left over from a prior OpenAI selection.
+        fs::write(
+            &base,
+            "model = \"gpt-5.6-sol\"\nmodel_provider = \"openai\"\nmodel_catalog_json = \"cockpit-local-access-model-catalog.json\"\n\n[model_providers.openai]\nname = \"OpenAI\"\n",
+        )
+        .unwrap();
+        let third_party = root.join(".codex/stepfun.config.toml");
+        fs::write(
+            &third_party,
+            "model = \"step-3.7-flash\"\nmodel_provider = \"stepfun\"\n\n[model_providers.stepfun]\nname = \"StepFun\"\nbase_url = \"https://api.stepfun.com/v1\"\nwire_api = \"responses\"\n",
+        )
+        .unwrap();
+        activate_codex_profile(&target, &third_party).unwrap();
+        let projected: toml::Value =
+            toml::from_str(&String::from_utf8(fs::read(&base).unwrap()).unwrap()).unwrap();
+        assert_eq!(projected["model"].as_str(), Some("step-3.7-flash"));
+        assert_eq!(projected["model_provider"].as_str(), Some("stepfun"));
+        // The OpenAI catalog must be gone so the picker stops listing GPT models.
+        assert!(projected.get("model_catalog_json").is_none());
+
+        // A native provider activation must NOT clear the catalog; it projects
+        // the catalog the profile itself carries, proving native projection works.
+        let native = root.join(".codex/openai.config.toml");
+        fs::write(
+            &native,
+            "model = \"gpt-5.5\"\nmodel_provider = \"openai\"\nmodel_catalog_json = \"native-openai.json\"\n\n[model_providers.openai]\nname = \"OpenAI\"\n",
+        )
+        .unwrap();
+        activate_codex_profile(&target, &native).unwrap();
+        let projected: toml::Value =
+            toml::from_str(&String::from_utf8(fs::read(&base).unwrap()).unwrap()).unwrap();
+        assert_eq!(
+            projected["model_catalog_json"].as_str(),
+            Some("native-openai.json")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn create_profile_without_template_is_minimal_and_provider_consistent() {
+        let (target, root) = temp_target();
+        fs::create_dir_all(root.join(".codex")).unwrap();
+        let base = root.join(".codex/config.toml");
+        // Base carries a lot of cockpit clutter plus a native OpenAI provider.
+        fs::write(
+            &base,
+            "model = \"gpt-5.6-sol\"\nmodel_provider = \"openai\"\nmodel_catalog_json = \"cockpit.json\"\nmodel_reasoning_effort = \"high\"\n\n[marketplaces.openai-bundled]\nsource_type = \"local\"\n\n[plugins.\"browser@openai-bundled\"]\nenabled = true\n\n[projects.\"/tmp/project\"]\ntrust_level = \"trusted\"\n\n[mcp_servers.node_repl]\ncommand = \"/bin/true\"\n\n[model_providers.openai]\nname = \"OpenAI\"\nbase_url = \"https://api.openai.com/v1\"\nwire_api = \"responses\"\n",
+        )
+        .unwrap();
+        let operation = create_codex_profile(&target, "minimal", None).unwrap();
+        let raw = String::from_utf8(fs::read(&operation.profile.source_path).unwrap()).unwrap();
+        let parsed: toml::Value = toml::from_str(&raw).unwrap();
+
+        // Managed selection is carried over.
+        assert_eq!(parsed["model"].as_str(), Some("gpt-5.6-sol"));
+        assert_eq!(parsed["model_provider"].as_str(), Some("openai"));
+        assert_eq!(
+            parsed["model_catalog_json"].as_str(),
+            Some("cockpit.json")
+        );
+        assert_eq!(
+            parsed["model_reasoning_effort"].as_str(),
+            Some("high")
+        );
+        // The selected provider definition is kept.
+        assert!(parsed["model_providers"]["openai"]["base_url"]
+            .as_str()
+            .is_some());
+        // Cockpit clutter is dropped.
+        assert!(parsed.get("marketplaces").is_none());
+        assert!(parsed.get("plugins").is_none());
+        assert!(parsed.get("projects").is_none());
+        assert!(parsed.get("mcp_servers").is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn activation_rejects_model_provider_without_definition_via_warning() {
+        let (target, root) = temp_target();
+        fs::create_dir_all(root.join(".codex")).unwrap();
+        let base = root.join(".codex/config.toml");
+        fs::write(
+            &base,
+            "model = \"x\"\nmodel_provider = \"ghost\"\n\n[model_providers.other]\nname = \"Other\"\n",
+        )
+        .unwrap();
+        let view = read_codex_profile(&target, &base).unwrap();
+        assert!(view
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("ghost") && warning.contains("no matching")));
         fs::remove_dir_all(root).unwrap();
     }
 }
