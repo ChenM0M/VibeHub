@@ -1,10 +1,12 @@
 use crate::vibehub::util::{canonical_project_root, normalize_path};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value as JsonValue};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
+use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const CONFIG_PATH: &str = ".vibehub/adapters/config.yaml";
 const REGISTRY_PATH: &str = ".vibehub/skills.registry.yaml";
@@ -360,6 +362,298 @@ pub fn sync_agent_adapters(
     })
 }
 
+// --- MCP transport wiring ---------------------------------------------------
+//
+// The MCP connection itself is per-harness and per-project: Claude Code reads
+// `.mcp.json`, Codex reads `~/.codex/config.toml`, OpenCode reads `opencode.json`.
+// Until now sync-adapters only wrote instruction/constraint files, never the
+// transport block, so every harness was wired by hand to a repo-local debug
+// binary. The installer below writes that block for each enabled harness using a
+// STABLE command that is portable across machines and project paths.
+
+/// A resolved, stable command argv for launching the VibeHub MCP server.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct McpCommand {
+    /// Executable to launch (absolute path or a bare name resolved via PATH).
+    pub program: String,
+    /// Arguments after the program: always `["mcp-stdio", <project>]`.
+    pub args: Vec<String>,
+    /// How the program was resolved, for diagnostics.
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct McpInstallTargetResult {
+    pub tool: String,
+    pub path: String,
+    pub scope: String,
+    /// created | updated | unchanged | would_write | would_create | skipped | conflict
+    pub action: String,
+    pub command: McpCommand,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct McpInstallResult {
+    pub project_root: String,
+    pub command: McpCommand,
+    pub dry_run: bool,
+    pub write_global: bool,
+    pub targets: Vec<McpInstallTargetResult>,
+    pub warnings: Vec<String>,
+    pub summary: String,
+}
+
+/// Resolve a stable, portable command for the VibeHub MCP server.
+///
+/// Priority: `VIBEHUB_MCP_COMMAND` env > `vibehub` on PATH > the running binary
+/// (`current_exe`) > the `~/.vibehub/bin/vibehub` convention. The project root is
+/// always passed as the final argument, so one command serves every project.
+pub fn resolve_mcp_command(project_root: &Path) -> McpCommand {
+    let args = vec!["mcp-stdio".to_string(), normalize_path(project_root)];
+    if let Ok(raw) = env::var("VIBEHUB_MCP_COMMAND") {
+        let program = raw.trim().to_string();
+        if !program.is_empty() {
+            return McpCommand {
+                program,
+                args,
+                source: "env:VIBEHUB_MCP_COMMAND".to_string(),
+            };
+        }
+    }
+    if let Some(path) = find_on_path("vibehub") {
+        return McpCommand {
+            program: path.to_string_lossy().into_owned(),
+            args,
+            source: "PATH".to_string(),
+        };
+    }
+    if let Ok(exe) = env::current_exe() {
+        return McpCommand {
+            program: exe.to_string_lossy().into_owned(),
+            args,
+            source: "current_exe".to_string(),
+        };
+    }
+    let fallback = home_dir()
+        .map(|home| home.join(".vibehub/bin/vibehub"))
+        .unwrap_or_else(|| PathBuf::from("vibehub"));
+    McpCommand {
+        program: fallback.to_string_lossy().into_owned(),
+        args,
+        source: "convention:~/.vibehub/bin/vibehub".to_string(),
+    }
+}
+
+/// Install the VibeHub MCP transport block by delegating to the authoritative,
+/// project-scoped host-config writer.
+///
+/// There is exactly one writer for MCP transport state — the `host_mcp_config`
+/// module used by `init`, `migrate`, the agent-spec sync, and the settings
+/// panel. This CLI surface is a thin wrapper over it so configs stay consistent
+/// everywhere: it writes project `.mcp.json` / `opencode.json` / `.codex/config.toml`
+/// with the binary the authoritative writer selects (project-local build in a
+/// checkout, the running binary when installed) and never scatters a
+/// project-bound entry into a
+/// user-global file by default.
+///
+/// `migrate_global` additionally removes a project-bound VibeHub server from the
+/// user-global Codex config (`~/.codex/config.toml`); it never writes one there.
+/// Harness selection is owned by the project's agent-spec config, so the legacy
+/// `tools` filter is ignored here.
+pub fn install_mcp_config(
+    project_path: impl AsRef<Path>,
+    tools: Option<Vec<AgentTool>>,
+    dry_run: bool,
+    migrate_global: bool,
+) -> Result<McpInstallResult> {
+    let project_root = canonical_project_root(project_path.as_ref())?;
+    if tools.is_some() {
+        eprintln!(
+            "note: per-harness tool selection is owned by the project agent-spec config; \
+             wiring all supported hosts (codex, claude_code, opencode)."
+        );
+    }
+    let command = resolve_mcp_command(&project_root);
+    // Delegate binary selection entirely to the authoritative writer: it prefers
+    // the project-local build (`target/debug`) inside a checkout and falls back to
+    // the running binary when installed. Forcing a PATH-resolved command here
+    // would regress a dev checkout onto a stale installed app, so no override.
+
+    let sync = if dry_run {
+        // The authoritative writer has no dry-run mode, so a dry run is a
+        // read-only inspection that projects what would change without writing.
+        let inspections =
+            crate::v3::host_mcp_config::inspect_host_mcp_configs_for_project(&project_root)?;
+        let mut result = crate::v3::host_mcp_config::empty_host_mcp_sync_result();
+        result.inspections = inspections;
+        result
+    } else if migrate_global {
+        crate::v3::host_mcp_config::sync_host_mcp_configs_with_options(&project_root, None, true)?
+    } else {
+        crate::v3::host_mcp_config::sync_project_host_mcp_configs(&project_root, None)?
+    };
+
+    Ok(map_sync_to_install_result(
+        &project_root,
+        &command,
+        dry_run,
+        migrate_global,
+        sync,
+    ))
+}
+
+/// Read-only view of every VibeHub MCP host entry, from the same authoritative
+/// inspector the settings panel uses, so CLI status and the panel never diverge.
+pub fn mcp_status(project_path: impl AsRef<Path>) -> Result<JsonValue> {
+    let project_root = canonical_project_root(project_path.as_ref())?;
+    let command = resolve_mcp_command(&project_root);
+    let hosts = crate::v3::host_mcp_config::inspect_host_mcp_configs_for_project(&project_root)?;
+    Ok(json!({
+        "project_root": normalize_path(&project_root),
+        "command": command,
+        "hosts": hosts,
+    }))
+}
+
+fn map_sync_to_install_result(
+    project_root: &Path,
+    command: &McpCommand,
+    dry_run: bool,
+    migrate_global: bool,
+    sync: crate::v3::host_mcp_config::HostMcpSyncResult,
+) -> McpInstallResult {
+    let targets: Vec<McpInstallTargetResult> = sync
+        .inspections
+        .iter()
+        .filter(|inspection| inspection.scope == crate::v3::HostConfigScope::Project)
+        .map(|inspection| {
+            let blocking = sync.blocking_paths.iter().any(|path| path == &inspection.path);
+            let written = sync.written_paths.iter().any(|path| path == &inspection.path);
+            let action = if blocking {
+                "conflict".to_string()
+            } else if dry_run {
+                dry_run_action(&inspection.status).to_string()
+            } else if written {
+                "updated".to_string()
+            } else {
+                "unchanged".to_string()
+            };
+            McpInstallTargetResult {
+                tool: consumer_id(&inspection.consumer),
+                path: inspection.path.clone(),
+                scope: "project".to_string(),
+                action,
+                command: command.clone(),
+                note: inspection
+                    .configured_project_root
+                    .as_ref()
+                    .map(|root| format!("configured project root: {root}")),
+            }
+        })
+        .collect();
+
+    let mut warnings: Vec<String> = sync
+        .inspections
+        .iter()
+        .filter(|inspection| inspection.scope == crate::v3::HostConfigScope::Project)
+        .filter_map(|inspection| match inspection.status {
+            crate::v3::HostConfigStatus::Mismatched
+            | crate::v3::HostConfigStatus::Invalid
+            | crate::v3::HostConfigStatus::Ambiguous
+            | crate::v3::HostConfigStatus::Unsupported => {
+                Some(format!("{}: {}", inspection.path, inspection.reason))
+            }
+            _ => None,
+        })
+        .collect();
+    if migrate_global {
+        let migration = &sync.global_migration;
+        warnings.push(format!(
+            "global codex migration: path={} backup={}",
+            migration.path.as_deref().unwrap_or("-"),
+            migration.backup_path.as_deref().unwrap_or("-"),
+        ));
+    }
+
+    let wrote = targets
+        .iter()
+        .filter(|target| matches!(target.action.as_str(), "updated" | "created"))
+        .count();
+    let summary = if dry_run {
+        format!(
+            "MCP install dry run: {} target(s) would change, {} already in sync. No files were written. Command source: {}.",
+            targets.iter().filter(|target| target.action.starts_with("would_")).count(),
+            targets.iter().filter(|target| target.action == "unchanged").count(),
+            command.source
+        )
+    } else {
+        let migration_note = if migrate_global {
+            format!(" Global migration path={} backup={}.",
+                sync.global_migration.path.as_deref().unwrap_or("-"),
+                sync.global_migration.backup_path.as_deref().unwrap_or("-"))
+        } else {
+            String::new()
+        };
+        format!(
+            "MCP install complete via the authoritative host-config writer: {} written, {} unchanged, {} conflicts. Command source: {}.{}",
+            wrote,
+            targets.iter().filter(|target| target.action == "unchanged").count(),
+            targets.iter().filter(|target| target.action == "conflict").count(),
+            command.source,
+            migration_note
+        )
+    };
+
+    McpInstallResult {
+        project_root: normalize_path(project_root),
+        command: command.clone(),
+        dry_run,
+        write_global: migrate_global,
+        targets,
+        warnings,
+        summary,
+    }
+}
+
+fn consumer_id(consumer: &crate::v3::AgentSpecTarget) -> String {
+    match consumer {
+        crate::v3::AgentSpecTarget::Codex => "codex",
+        crate::v3::AgentSpecTarget::ClaudeCode => "claude_code",
+        crate::v3::AgentSpecTarget::Opencode => "opencode",
+    }
+    .to_string()
+}
+
+fn dry_run_action(status: &crate::v3::HostConfigStatus) -> &'static str {
+    match status {
+        crate::v3::HostConfigStatus::Missing => "would_create",
+        crate::v3::HostConfigStatus::InSync => "unchanged",
+        crate::v3::HostConfigStatus::Mismatched => "would_write",
+        crate::v3::HostConfigStatus::Invalid
+        | crate::v3::HostConfigStatus::Unsupported
+        | crate::v3::HostConfigStatus::Ambiguous => "conflict",
+    }
+}
+
+fn find_on_path(program: &str) -> Option<PathBuf> {
+    let path = env::var_os("PATH")?;
+    for dir in env::split_paths(&path) {
+        let candidate = dir.join(program);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
 fn command_specs(
     project_root: Option<&Path>,
     config: &AgentAdapterConfig,
@@ -573,7 +867,7 @@ fn rendered_targets(
         targets.push(RenderedTarget {
             tool: AgentTool::Opencode.id().to_string(),
             path: "opencode.json".to_string(),
-            content: build_opencode_config(),
+            content: build_opencode_config(project_root, &tools, registry),
             description: "OpenCode project config loading the shared VibeHub protocol".to_string(),
             managed_region: false,
         });
@@ -1003,13 +1297,30 @@ fn build_claude_settings() -> String {
     .to_string()
 }
 
-fn build_opencode_config() -> String {
-    r#"{
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": [".vibehub/adapters/protocol.md"]
-}
-"#
-    .to_string()
+fn build_opencode_config(
+    project_root: &Path,
+    tools: &BTreeSet<AgentTool>,
+    registry: Option<&RegistrySnapshot>,
+) -> String {
+    // The VibeHub MCP server is the single source of truth for OpenCode tool access.
+    // Emit a stable, portable command so the connection survives a move to another
+    // machine or project path and does not depend on a repo-local debug build.
+    let command = resolve_mcp_command(project_root);
+    let project = normalize_path(project_root);
+    let mcp = json!({
+        "vibehub": {
+            "type": "local",
+            "command": [command.program, "mcp-stdio", project],
+            "enabled": true
+        }
+    });
+    let _ = (tools, registry);
+    serde_json::to_string_pretty(&json!({
+        "$schema": "https://opencode.ai/config.json",
+        "instructions": [".vibehub/adapters/protocol.md"],
+        "mcp": mcp
+    }))
+    .expect("opencode config must serialize")
 }
 
 fn build_command_index(

@@ -1178,6 +1178,24 @@ impl V3McpServer {
             details,
             binding_revision,
         } = input;
+        // `details` is a schemars `true` (untyped) parameter, so MCP harnesses commonly
+        // serialize the object argument as a JSON string. Normalize it back to a Value
+        // before core validation, which expects an object with string fields (kind, ...).
+        // The CLI path already passes a parsed object, so this only touches the string case.
+        let details = match details {
+            Value::String(encoded) => match serde_json::from_str::<Value>(&encoded) {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    return self.tool_result::<Value>(Err(V3Error::new(
+                        "V3_AGENT_RESULT_INVALID",
+                        V3ErrorCategory::Validation,
+                        false,
+                        format!("agent result details is not valid JSON: {error}"),
+                    )));
+                }
+            },
+            other => other,
+        };
         if let Some(error) = self.reject_project(&project_id) {
             return error;
         }
@@ -2643,6 +2661,91 @@ mod tests {
             "provider-123"
         );
         assert_eq!(session_event["details"]["provider"], "codex");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn agent_result_record_normalizes_string_details() {
+        // MCP harnesses serialize the untyped `details` (schema `true`) as a JSON string.
+        // The handler must parse it back to an object before core validation.
+        let (root, server) = server();
+        let project_id = server.project_id.clone();
+
+        let opened = server.session_open(Parameters(SessionWrite {
+            project_id: project_id.clone(),
+            task_id: "task.test".into(),
+            session_id: "session.result".into(),
+            actor: "codex".into(),
+            expected_version: Some(0),
+            idempotency_key: Some("open.result.1".into()),
+            working_directory: None,
+            node_id: None,
+            worktree_id: None,
+            provider: None,
+            provider_session_id: None,
+            binding_revision: None,
+        }));
+        assert!(!opened.is_error.unwrap_or(false));
+
+        server.session_task_bind(Parameters(SessionTaskBindWrite {
+            project_id: project_id.clone(),
+            task_id: "task.test".into(),
+            session_id: "session.result".into(),
+            interaction_id: "interaction.result".into(),
+            actor: "codex".into(),
+            expected_version: Some(0),
+            idempotency_key: Some("bind.result.1".into()),
+            source: "user_confirmed".into(),
+            expected_binding_revision: None,
+            agent_id: None,
+            host: None,
+            provider_session_id: None,
+        }));
+
+        let details = json!({
+            "kind": "execution",
+            "request_source": "user_request",
+            "instruction": "verify string normalization",
+            "status": "succeeded",
+            "summary": "normalized from a JSON string",
+        });
+        // Pass details as a JSON string — the shape a harness sends for an untyped Value.
+        // session_open advanced the aggregate to v1, bind to v2, so the first result is v2.
+        let recorded = server.agent_result_record(Parameters(AgentResultWrite {
+            project_id,
+            task_id: "task.test".into(),
+            session_id: "session.result".into(),
+            actor: "codex".into(),
+            expected_version: Some(2),
+            idempotency_key: Some("result.1".into()),
+            result_id: "result.test".into(),
+            node_id: None,
+            details: Value::String(serde_json::to_string(&details).unwrap()),
+            binding_revision: Some(1),
+        }));
+        assert!(
+            !recorded.is_error.unwrap_or(false),
+            "string details must normalize and record, got {:?}",
+            recorded.structured_content
+        );
+        // An already-parsed object must pass through untouched; aggregate is now at v3.
+        let recorded_obj = server.agent_result_record(Parameters(AgentResultWrite {
+            project_id: server.project_id.clone(),
+            task_id: "task.test".into(),
+            session_id: "session.result".into(),
+            actor: "codex".into(),
+            expected_version: Some(3),
+            idempotency_key: Some("result.2".into()),
+            result_id: "result.test.2".into(),
+            node_id: None,
+            details: details.clone(),
+            binding_revision: Some(1),
+        }));
+        assert!(
+            !recorded_obj.is_error.unwrap_or(false),
+            "object details must record as-is, got {:?}",
+            recorded_obj.structured_content
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

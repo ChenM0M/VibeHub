@@ -107,7 +107,7 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
 === Adapter Management ===
   sync-adapters          Sync adapter files: vibehub sync-adapters <project> [tools...] [--dry-run]
   adapter-status         Show adapter file status: vibehub adapter-status <project>
-  mcp-install            Wire VibeHub MCP into each harness: vibehub mcp-install <project> [tools...] [--dry-run] [--global]
+  mcp-install            Wire VibeHub MCP (project-scoped): vibehub mcp-install <project> [--dry-run] [--migrate-global]
   mcp-status             Show MCP wiring status per harness: vibehub mcp-status <project>
 
 === Maintenance ===
@@ -298,13 +298,13 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
         }
         "mcp-install" | "mcp_install" | "install-mcp" => {
             let dry_run = args.iter().any(|a| a == "--dry-run");
-            let global = args.iter().any(|a| a == "--global");
+            let migrate_global = args.iter().any(|a| a == "--migrate-global" || a == "--global");
             let tools = parse_agent_tools(&args[1..]);
             print_json(vibehub::agent_adapter::install_mcp_config(
                 project_path,
                 tools,
                 dry_run,
-                global,
+                migrate_global,
             ))
         }
         "mcp-status" | "mcp_status" => {
