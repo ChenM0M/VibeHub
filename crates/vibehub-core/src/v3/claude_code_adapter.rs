@@ -114,6 +114,7 @@ pub struct ClaudeCodeProfileView {
     pub base_url: Option<String>,
     pub credential: ClaudeCredentialReference,
     pub thinking: ClaudeThinkingProfile,
+    pub advanced: ClaudeAdvancedInput,
     pub default_state: ClaudeDefaultState,
     pub launch: ClaudeLaunchSpec,
     pub managed_fields: Vec<String>,
@@ -122,11 +123,49 @@ pub struct ClaudeCodeProfileView {
     pub warnings: Vec<String>,
 }
 
+/// Optional Claude Code advanced overrides, resolved from the managed Profile
+/// before projection. When a field is `None`, `patch_for_claude` falls back to
+/// the managed default model so subagents and background tasks do not drift to
+/// native-only model IDs that a third-party endpoint does not serve.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ClaudeAdvancedInput {
+    pub subagent_model: Option<String>,
+    pub small_fast_model: Option<String>,
+    /// Maps to env `ANTHROPIC_DEFAULT_SONNET_MODEL`. Null/absent falls back to
+    /// the default model so the `sonnet` tier resolves on a third-party endpoint.
+    pub sonnet_model: Option<String>,
+    /// Maps to env `ANTHROPIC_DEFAULT_OPUS_MODEL`. Null/absent falls back to the
+    /// default model.
+    pub opus_model: Option<String>,
+    /// Maps to env `ANTHROPIC_DEFAULT_HAIKU_MODEL`. Null/absent falls back to the
+    /// default model (same tier as `small_fast_model`).
+    pub haiku_model: Option<String>,
+    /// Maps to env `ANTHROPIC_DEFAULT_FABLE_MODEL`. Null/absent falls back to the
+    /// default model.
+    pub fable_model: Option<String>,
+    pub disable_prompt_caching: Option<bool>,
+}
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ClaudeSettingsPatch {
     pub model: Option<String>,
     pub base_url: Option<String>,
     pub thinking_enabled: Option<bool>,
+    /// Resolved subagent model; maps to env `CLAUDE_CODE_SUBAGENT_MODEL`.
+    pub subagent_model: Option<String>,
+    /// Resolved small/fast model; maps to env `ANTHROPIC_DEFAULT_HAIKU_MODEL`.
+    pub small_fast_model: Option<String>,
+    /// Resolved `sonnet` tier model; maps to env `ANTHROPIC_DEFAULT_SONNET_MODEL`.
+    pub sonnet_model: Option<String>,
+    /// Resolved `opus` tier model; maps to env `ANTHROPIC_DEFAULT_OPUS_MODEL`.
+    pub opus_model: Option<String>,
+    /// Resolved `haiku` tier model; maps to env `ANTHROPIC_DEFAULT_HAIKU_MODEL`.
+    pub haiku_model: Option<String>,
+    /// Resolved `fable` tier model; maps to env `ANTHROPIC_DEFAULT_FABLE_MODEL`.
+    pub fable_model: Option<String>,
+    /// When `Some(true)`, sets env `DISABLE_PROMPT_CACHING=1` for endpoints that
+    /// do not support prompt caching.
+    pub disable_prompt_caching: Option<bool>,
     pub clear_model: bool,
     pub clear_base_url: bool,
     pub clear_thinking: bool,
@@ -150,6 +189,13 @@ impl std::fmt::Debug for ClaudeSettingsPatch {
             .field("model", &self.model)
             .field("base_url", &self.base_url)
             .field("thinking_enabled", &self.thinking_enabled)
+            .field("subagent_model", &self.subagent_model)
+            .field("small_fast_model", &self.small_fast_model)
+            .field("sonnet_model", &self.sonnet_model)
+            .field("opus_model", &self.opus_model)
+            .field("haiku_model", &self.haiku_model)
+            .field("fable_model", &self.fable_model)
+            .field("disable_prompt_caching", &self.disable_prompt_caching)
             .field("clear_model", &self.clear_model)
             .field("clear_base_url", &self.clear_base_url)
             .field("clear_thinking", &self.clear_thinking)
@@ -561,10 +607,48 @@ fn read_claude_profile_with_index(
         .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
         .and_then(Value::as_str)
         .map(str::to_owned);
+    let subagent_model = env
+        .and_then(|env| env.get("CLAUDE_CODE_SUBAGENT_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let small_fast_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let sonnet_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let opus_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let haiku_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let fable_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_FABLE_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let disable_prompt_caching = env
+        .and_then(|env| env.get("DISABLE_PROMPT_CACHING"))
+        .and_then(Value::as_str)
+        .map(|value| value == "1");
     let (credential, mut warnings) = credential_reference(object, env);
     if document.format == ConfigFormat::Jsonc {
         warnings.push("CLAUDE_JSONC_SAVE_REWRITES_FORMAT_UNSUPPORTED".to_owned());
     }
+    warnings.extend(endpoint_model_warnings(
+        base_url.as_deref(),
+        model.as_deref(),
+        subagent_model.as_deref(),
+        small_fast_model.as_deref(),
+        sonnet_model.as_deref(),
+        opus_model.as_deref(),
+        haiku_model.as_deref(),
+        fable_model.as_deref(),
+    ));
     let unknown_fields = object
         .keys()
         .filter(|key| {
@@ -604,6 +688,15 @@ fn read_claude_profile_with_index(
                 .map(|enabled| if enabled { "enabled" } else { "disabled" }.to_owned()),
             options: vec!["enabled".to_owned(), "disabled".to_owned()],
         },
+        advanced: ClaudeAdvancedInput {
+            subagent_model,
+            small_fast_model,
+            sonnet_model,
+            opus_model,
+            haiku_model,
+            fable_model,
+            disable_prompt_caching,
+        },
         default_state: ClaudeDefaultState {
             is_default,
             selected_by,
@@ -618,6 +711,68 @@ fn read_claude_profile_with_index(
         unknown_fields,
         warnings,
     })
+}
+
+/// Diagnose a Claude Code profile that targets a third-party endpoint. The
+/// official `api.anthropic.com` serves every native `claude-*` model ID, but a
+/// non-Anthropic endpoint typically does not — so a main model or advanced tier
+/// left on a native ID, or advanced fields left entirely unset, silently breaks
+/// sub-agents, background tasks and the small/fast tier. Pure and offline: it
+/// only inspects the already-parsed profile fields and never touches the
+/// network. Emits at most one code per concern.
+fn endpoint_model_warnings(
+    base_url: Option<&str>,
+    model: Option<&str>,
+    subagent_model: Option<&str>,
+    small_fast_model: Option<&str>,
+    sonnet_model: Option<&str>,
+    opus_model: Option<&str>,
+    haiku_model: Option<&str>,
+    fable_model: Option<&str>,
+) -> Vec<String> {
+    let Some(base_url) = base_url.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Vec::new();
+    };
+    if is_anthropic_endpoint(base_url) {
+        return Vec::new();
+    }
+    let advanced = [
+        subagent_model,
+        small_fast_model,
+        sonnet_model,
+        opus_model,
+        haiku_model,
+        fable_model,
+    ];
+    let mut warnings = Vec::new();
+    if model.map(is_native_claude_model).unwrap_or(false) {
+        warnings.push("CLAUDE_NATIVE_MODEL_ON_THIRD_PARTY_ENDPOINT".to_owned());
+    }
+    let has_native_tier = advanced
+        .iter()
+        .any(|value| value.map(is_native_claude_model).unwrap_or(false));
+    if has_native_tier {
+        warnings.push("CLAUDE_THIRD_PARTY_ENDPOINT_NATIVE_TIER".to_owned());
+    } else if advanced.iter().all(|value| value.is_none()) {
+        // Every advanced field is unset: sub-agents and the small/fast tier fall
+        // back to the main model. This is the intended third-party behavior, but
+        // surface it so the user knows the fallback is active rather than absent.
+        warnings.push("CLAUDE_THIRD_PARTY_ENDPOINT_ADVANCED_UNSET".to_owned());
+    }
+    warnings
+}
+
+/// An endpoint under the `anthropic.com` domain serves native `claude-*` IDs, so
+/// it needs no third-party compatibility diagnostic.
+fn is_anthropic_endpoint(base_url: &str) -> bool {
+    base_url.to_ascii_lowercase().contains("anthropic.com")
+}
+
+/// A model ID owned by Anthropic's official API, e.g. `claude-sonnet-5`. A
+/// third-party endpoint usually cannot serve these, so referencing one is a
+/// compatibility risk worth surfacing.
+fn is_native_claude_model(model: &str) -> bool {
+    model.trim().to_ascii_lowercase().starts_with("claude-")
 }
 
 fn settings_value(document: &ConfigDocument) -> Result<Value, StorageError> {
@@ -687,7 +842,14 @@ fn apply_settings_patch_bytes(
     let env_touched = patch.base_url.is_some()
         || patch.clear_base_url
         || patch.auth_token.is_some()
-        || patch.clear_credentials;
+        || patch.clear_credentials
+        || patch.subagent_model.is_some()
+        || patch.small_fast_model.is_some()
+        || patch.sonnet_model.is_some()
+        || patch.opus_model.is_some()
+        || patch.haiku_model.is_some()
+        || patch.fable_model.is_some()
+        || patch.disable_prompt_caching.is_some();
     let mut env = if env_touched {
         take_env_object(&mut root)?
     } else {
@@ -717,6 +879,49 @@ fn apply_settings_patch_bytes(
         for name in CLAUDE_AUTH_ENV_NAMES {
             env.remove(*name);
         }
+    }
+    if let Some(subagent_model) = patch.subagent_model.as_deref() {
+        env.insert(
+            "CLAUDE_CODE_SUBAGENT_MODEL".to_owned(),
+            Value::String(subagent_model.to_owned()),
+        );
+    }
+    if let Some(small_fast_model) = patch.small_fast_model.as_deref() {
+        env.insert(
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(),
+            Value::String(small_fast_model.to_owned()),
+        );
+    }
+    if let Some(sonnet_model) = patch.sonnet_model.as_deref() {
+        validate_non_empty("sonnet_model", sonnet_model)?;
+        env.insert(
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_owned(),
+            Value::String(sonnet_model.to_owned()),
+        );
+    }
+    if let Some(opus_model) = patch.opus_model.as_deref() {
+        validate_non_empty("opus_model", opus_model)?;
+        env.insert(
+            "ANTHROPIC_DEFAULT_OPUS_MODEL".to_owned(),
+            Value::String(opus_model.to_owned()),
+        );
+    }
+    if let Some(haiku_model) = patch.haiku_model.as_deref() {
+        validate_non_empty("haiku_model", haiku_model)?;
+        env.insert(
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(),
+            Value::String(haiku_model.to_owned()),
+        );
+    }
+    if let Some(fable_model) = patch.fable_model.as_deref() {
+        validate_non_empty("fable_model", fable_model)?;
+        env.insert(
+            "ANTHROPIC_DEFAULT_FABLE_MODEL".to_owned(),
+            Value::String(fable_model.to_owned()),
+        );
+    }
+    if matches!(patch.disable_prompt_caching, Some(true)) {
+        env.insert("DISABLE_PROMPT_CACHING".to_owned(), Value::String("1".to_owned()));
     }
     if patch.strip_credential_helper {
         root.remove("apiKeyHelper");
@@ -752,6 +957,37 @@ fn managed_patch_from_document(
         .and_then(Value::as_str)
         .map(str::to_owned);
     let auth_token = env.and_then(literal_claude_auth_token);
+    let subagent_model = env
+        .and_then(|env| env.get("CLAUDE_CODE_SUBAGENT_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let small_fast_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let sonnet_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let opus_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let haiku_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    // `haiku_model` is canonical for ANTHROPIC_DEFAULT_HAIKU_MODEL; `small_fast_model`
+    // mirrors it so read-back consumers see one unambiguous value.
+    let small_fast_model = haiku_model.clone();
+    let fable_model = env
+        .and_then(|env| env.get("ANTHROPIC_DEFAULT_FABLE_MODEL"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let disable_prompt_caching = env
+        .and_then(|env| env.get("DISABLE_PROMPT_CACHING"))
+        .and_then(Value::as_str)
+        .map(|value| value == "1");
     let helper_present = object.get("apiKeyHelper").is_some();
     Ok(ClaudeSettingsPatch {
         model: object
@@ -761,6 +997,13 @@ fn managed_patch_from_document(
         base_url: base_url.clone(),
         thinking_enabled: object.get("alwaysThinkingEnabled").and_then(Value::as_bool),
         auth_token: auth_token.clone(),
+        subagent_model,
+        small_fast_model,
+        sonnet_model,
+        opus_model,
+        haiku_model,
+        fable_model,
+        disable_prompt_caching,
         strip_credential_helper: !helper_present && (base_url.is_some() || auth_token.is_some()),
         ..Default::default()
     })
@@ -1573,5 +1816,227 @@ mod tests {
             normalize_claude_anthropic_base_url("https://api.anthropic.com"),
             "https://api.anthropic.com"
         );
+    }
+
+    #[test]
+    fn advanced_projection_writes_subagent_small_and_caching_env() {
+        let (target, root) = temp_target();
+        let path = root.join(".claude/vibehub-profiles/advanced.settings.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, br#"{ "model": "water18" }"#).unwrap();
+        let document = read_document(&target, &path).unwrap();
+        save_claude_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &ClaudeSettingsPatch {
+                subagent_model: Some("water18".to_owned()),
+                small_fast_model: Some("water18-mini".to_owned()),
+                sonnet_model: Some("water18-sonnet".to_owned()),
+                opus_model: Some("water18-opus".to_owned()),
+                haiku_model: Some("water18-haiku".to_owned()),
+                fable_model: Some("water18-fable".to_owned()),
+                disable_prompt_caching: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "water18");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "water18-haiku");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "water18-sonnet");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "water18-opus");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"], "water18-fable");
+        assert_eq!(value["env"]["DISABLE_PROMPT_CACHING"], "1");
+        let view = read_claude_profile(&target, &path).unwrap();
+        assert_eq!(view.advanced.subagent_model.as_deref(), Some("water18"));
+        // small_fast_model mirrors the canonical haiku tier after write-back.
+        assert_eq!(view.advanced.small_fast_model.as_deref(), Some("water18-haiku"));
+        assert_eq!(view.advanced.sonnet_model.as_deref(), Some("water18-sonnet"));
+        assert_eq!(view.advanced.opus_model.as_deref(), Some("water18-opus"));
+        assert_eq!(view.advanced.haiku_model.as_deref(), Some("water18-haiku"));
+        assert_eq!(view.advanced.fable_model.as_deref(), Some("water18-fable"));
+        assert_eq!(view.advanced.disable_prompt_caching, Some(true));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn advanced_alias_env_round_trips_through_patch_projection() {
+        let (target, root) = temp_target();
+        let path = root.join(".claude/vibehub-profiles/alias.settings.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, br#"{ "model": "water18" }"#).unwrap();
+        let document = read_document(&target, &path).unwrap();
+        save_claude_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &ClaudeSettingsPatch {
+                subagent_model: Some("water18".to_owned()),
+                sonnet_model: Some("water18-sonnet".to_owned()),
+                opus_model: Some("water18-opus".to_owned()),
+                haiku_model: Some("water18-haiku".to_owned()),
+                fable_model: Some("water18-fable".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "water18");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "water18-sonnet");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "water18-opus");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "water18-haiku");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"], "water18-fable");
+        let view = read_claude_profile(&target, &path).unwrap();
+        assert_eq!(view.advanced.sonnet_model.as_deref(), Some("water18-sonnet"));
+        assert_eq!(view.advanced.opus_model.as_deref(), Some("water18-opus"));
+        assert_eq!(view.advanced.haiku_model.as_deref(), Some("water18-haiku"));
+        assert_eq!(view.advanced.fable_model.as_deref(), Some("water18-fable"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn third_party_endpoint_native_model_and_unset_advanced_are_diagnosed() {
+        let (target, root) = temp_target();
+        let path = root.join(".claude/vibehub-profiles/native-proxy.settings.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // A third-party endpoint still carrying a native `claude-*` main model and
+        // no advanced overrides: sub-agents would drift to an unresolvable ID.
+        fs::write(
+            &path,
+            br#"{ "model": "claude-sonnet-5", "env": { "ANTHROPIC_BASE_URL": "https://proxy.invalid/v1", "ANTHROPIC_AUTH_TOKEN": "${ANTHROPIC_AUTH_TOKEN}" } }"#,
+        )
+        .unwrap();
+        let view = read_claude_profile(&target, &path).unwrap();
+        assert!(
+            view.warnings
+                .contains(&"CLAUDE_NATIVE_MODEL_ON_THIRD_PARTY_ENDPOINT".to_owned()),
+            "native main model on a third-party endpoint must be diagnosed: {:?}",
+            view.warnings
+        );
+        assert!(
+            view.warnings
+                .contains(&"CLAUDE_THIRD_PARTY_ENDPOINT_ADVANCED_UNSET".to_owned()),
+            "unset advanced fields on a third-party endpoint must surface the fallback: {:?}",
+            view.warnings
+        );
+
+        // A third-party native tier must be diagnosed, and once any advanced field
+        // is set the unset warning must not fire.
+        let advanced = root.join(".claude/vibehub-profiles/native-tier.settings.json");
+        fs::write(
+            &advanced,
+            br#"{ "model": "water18", "env": { "ANTHROPIC_BASE_URL": "https://proxy.invalid/v1", "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-5", "ANTHROPIC_AUTH_TOKEN": "${ANTHROPIC_AUTH_TOKEN}" } }"#,
+        )
+        .unwrap();
+        let view = read_claude_profile(&target, &advanced).unwrap();
+        assert!(view
+            .warnings
+            .contains(&"CLAUDE_THIRD_PARTY_ENDPOINT_NATIVE_TIER".to_owned()));
+        assert!(!view
+            .warnings
+            .contains(&"CLAUDE_THIRD_PARTY_ENDPOINT_ADVANCED_UNSET".to_owned()));
+
+        // The official Anthropic endpoint serves native IDs: no diagnostic at all.
+        let official = root.join(".claude/settings.json");
+        fs::write(
+            &official,
+            br#"{ "model": "claude-sonnet-5", "env": { "ANTHROPIC_BASE_URL": "https://api.anthropic.com", "ANTHROPIC_AUTH_TOKEN": "${ANTHROPIC_AUTH_TOKEN}" } }"#,
+        )
+        .unwrap();
+        let view = read_claude_profile(&target, &official).unwrap();
+        assert!(!view
+            .warnings
+            .iter()
+            .any(|code| code.starts_with("CLAUDE_") && code != "CLAUDE_JSONC_SAVE_REWRITES_FORMAT_UNSUPPORTED"),
+            "official endpoint must not trigger third-party diagnostics: {:?}",
+            view.warnings
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn activation_projection_carries_advanced_env() {
+        let (target, root) = temp_target();
+        fs::create_dir_all(root.join(".claude/vibehub-profiles")).unwrap();
+        fs::write(
+            root.join(".claude/vibehub-profiles/advanced.settings.json"),
+            br#"{
+  "model": "water18",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.stepfun.com",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "water18",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "water18-mini",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "water18-sonnet",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "water18-opus",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "water18-fable",
+    "DISABLE_PROMPT_CACHING": "1"
+  }
+}"#,
+        )
+        .unwrap();
+        fs::write(root.join(".claude/settings.json"), br#"{ "model": "old" }"#).unwrap();
+        activate_claude_profile(
+            &target,
+            root.join(".claude/vibehub-profiles/advanced.settings.json"),
+        )
+        .unwrap();
+        let value: Value =
+            serde_json::from_slice(&fs::read(root.join(".claude/settings.json")).unwrap()).unwrap();
+        assert_eq!(value["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "water18");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "water18-mini");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "water18-sonnet");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "water18-opus");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"], "water18-fable");
+        assert_eq!(value["env"]["DISABLE_PROMPT_CACHING"], "1");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_preserves_settings_fields_while_writing_managed_env() {
+        // Fail-closed: writing the managed env block must never clobber preserved
+        // settings fields (permissions, hooks, mcpServers, sandbox) or unknown
+        // fields outside the managed surface. This is the write-path guarantee.
+        let (target, root) = temp_target();
+        let path = root.join(".claude/vibehub-profiles/preserved.settings.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            br#"{
+  "model": "water18",
+  "permissions": { "allow": ["Bash(*)"] },
+  "hooks": { "Stop": [{"command": "vibehub"}] },
+  "mcpServers": { "vibehub": { "command": "vibehub" } },
+  "sandbox": { "enabled": true },
+  "customUnknownField": { "keep": "me" }
+}"#,
+        )
+        .unwrap();
+        let document = read_document(&target, &path).unwrap();
+        save_claude_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &ClaudeSettingsPatch {
+                subagent_model: Some("water18-agent".to_owned()),
+                sonnet_model: Some("water18-sonnet".to_owned()),
+                disable_prompt_caching: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        // Managed env is written.
+        assert_eq!(value["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "water18-agent");
+        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "water18-sonnet");
+        assert_eq!(value["env"]["DISABLE_PROMPT_CACHING"], "1");
+        // Preserved and unknown fields are untouched.
+        assert_eq!(value["permissions"]["allow"][0], "Bash(*)");
+        assert_eq!(value["hooks"]["Stop"][0]["command"], "vibehub");
+        assert_eq!(value["mcpServers"]["vibehub"]["command"], "vibehub");
+        assert_eq!(value["sandbox"]["enabled"], true);
+        assert_eq!(value["customUnknownField"]["keep"], "me");
+        assert_eq!(value["model"], "water18");
+        fs::remove_dir_all(root).unwrap();
     }
 }

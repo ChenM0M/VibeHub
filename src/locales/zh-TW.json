@@ -1608,6 +1608,8 @@
       "default": "預設",
       "defaultProfile": "預設 Profile",
       "delete": "刪除",
+      "enabled": "已啟用",
+      "disabled": "已停用",
       "notConfigured": "尚未設定",
       "notSelected": "尚未選擇",
       "refresh": "重新整理",
@@ -1791,6 +1793,26 @@
       "detectInvalidResponse": "上游沒有回傳可解析的模型列表。",
       "advancedIdentityImmutable": "Profile ID 或執行環境不能在進階編輯器中修改。",
       "advancedProvidersMissing": "進階設定缺少 managed.providers。"
+    },
+    "claudeCompatibility": {
+      "sectionLabel": "Claude Code 相容設定",
+      "title": "子 Agent 與小模型相容",
+      "description": "用於解決第三方端點未提供 Claude Code 原生模型時，子 Agent 與背景小模型呼叫報錯的問題。留空表示自動沿用目前主模型。",
+      "autoOption": "自動（沿用主模型）",
+      "subagentModel": "子 Agent 模型",
+      "subagentModelHint": "映射到環境變數 CLAUDE_CODE_SUBAGENT_MODEL。留空時投影為目前預設模型，避免子 Agent 回退到原生模型 ID。",
+      "smallFastModel": "小/快速模型",
+      "smallFastModelHint": "映射到環境變數 ANTHROPIC_DEFAULT_HAIKU_MODEL，用於背景任務與 haiku 檔位。留空時投影為目前預設模型。",
+      "aliasGroupLabel": "模型別名（tier 覆寫）",
+      "aliasGroupHint": "將 Claude Code 的 sonnet/opus/haiku/fable 檔位導向端點實際提供的模型；留空則投影為目前主模型。",
+      "sonnetModel": "Sonnet 檔位模型",
+      "opusModel": "Opus 檔位模型",
+      "haikuModel": "Haiku 檔位模型",
+      "fableModel": "Fable 檔位模型",
+      "haikuModelHint": "映射到環境變數 ANTHROPIC_DEFAULT_HAIKU_MODEL，優先權高於上方的小/快模型。留空時投影為目前預設模型。",
+      "disablePromptCaching": "停用 Prompt Caching",
+      "disablePromptCachingHint": "映射到環境變數 DISABLE_PROMPT_CACHING=1。僅在你確定上游端點不支援 prompt caching 時開啟。",
+      "currentMainModel": "目前主模型：{{model}}"
     }
   },
   "update": {

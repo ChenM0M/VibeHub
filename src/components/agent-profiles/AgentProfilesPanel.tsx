@@ -406,6 +406,7 @@ export function AgentProfilesPanel() {
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [advancedText, setAdvancedText] = useState('');
     const [advancedError, setAdvancedError] = useState<string | null>(null);
+    const [compatOpen, setCompatOpen] = useState(false);
     const [profileDialog, setProfileDialog] = useState<ProfileDialogKind | null>(null);
     const [profileDialogName, setProfileDialogName] = useState('');
     const [replacementProfileId, setReplacementProfileId] = useState('');
@@ -1209,6 +1210,102 @@ export function AgentProfilesPanel() {
                                 ))}
                             </div>
                         </section>
+
+                        {agent === 'claude_code' && (
+                            <section className="mt-5 rounded-lg bg-background/45 p-1" aria-label={t('agentProfiles.claudeCompatibility.sectionLabel')}>
+                                {(() => {
+                                    const advanced = profileForEdit.managed.claude_advanced;
+                                    const mainModel = (() => {
+                                        const id = profileForEdit.managed.default_model_id;
+                                        if (!id) return null;
+                                        const slash = id.lastIndexOf('/');
+                                        return slash >= 0 ? id.slice(slash + 1) : id;
+                                    })();
+                                    const candidateModels = Array.from(new Set(profileForEdit.managed.providers.flatMap((provider) => provider.models.filter((model) => model.enabled).map((model) => model.model_id))));
+                                    const subagentModel = advanced?.subagent_model ?? '';
+                                    const smallModel = advanced?.small_fast_model ?? '';
+                                    const caching = advanced?.disable_prompt_caching;
+                                    const updateAdvanced = (patch: Partial<NonNullable<AgentProfileDocument['managed']['claude_advanced']>>) => {
+                                        setDraft((current) => {
+                                            if (!current) return current;
+                                            const next = cloneProfile(current);
+                                            next.managed.claude_advanced = { ...(next.managed.claude_advanced || {}), ...patch };
+                                            return next;
+                                        });
+                                    };
+                                    return (
+                                        <>
+                                            <button type="button" onClick={() => setCompatOpen((current) => !current)} className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-3 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={compatOpen}><span className="flex items-center gap-2"><Settings2 className="h-4 w-4 text-primary" /><span><span className="block text-sm font-medium">{t('agentProfiles.claudeCompatibility.title')}</span><span className="mt-0.5 block text-xs text-muted-foreground">{t('agentProfiles.claudeCompatibility.description')}</span></span></span><ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', compatOpen && 'rotate-180')} /></button>
+                                            {compatOpen && (
+                                                <div className="grid gap-4 pb-4 pt-2 text-xs md:grid-cols-2">
+                                                    {mainModel && <div className="md:col-span-2 text-[11px] text-muted-foreground">{t('agentProfiles.claudeCompatibility.currentMainModel', { model: mainModel })}</div>}
+                                                    <div>
+                                                        <Label htmlFor="claude-subagent-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.subagentModel')}</Label>
+                                                        <select id="claude-subagent-model" aria-label={t('agentProfiles.claudeCompatibility.subagentModel')} value={subagentModel} onChange={(event) => updateAdvanced({ subagent_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
+                                                            <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
+                                                            {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                        </select>
+                                                        <p className="mt-1.5 leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.subagentModelHint')}</p>
+                                                    </div>
+                                                    <div>
+                                                        <Label htmlFor="claude-small-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.smallFastModel')}</Label>
+                                                        <select id="claude-small-model" aria-label={t('agentProfiles.claudeCompatibility.smallFastModel')} value={smallModel} onChange={(event) => updateAdvanced({ small_fast_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
+                                                            <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
+                                                            {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                        </select>
+                                                        <p className="mt-1.5 leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.smallFastModelHint')}</p>
+                                                    </div>
+                                                    <div className="md:col-span-2 rounded-md border border-border/40 px-3 py-3">
+                                                        <div className="mb-2 text-[11px] font-medium text-muted-foreground">{t('agentProfiles.claudeCompatibility.aliasGroupLabel')}</div>
+                                                        <div className="grid gap-4 md:grid-cols-2">
+                                                            <div>
+                                                                <Label htmlFor="claude-sonnet-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.sonnetModel')}</Label>
+                                                                <select id="claude-sonnet-model" aria-label={t('agentProfiles.claudeCompatibility.sonnetModel')} value={advanced?.sonnet_model ?? ''} onChange={(event) => updateAdvanced({ sonnet_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
+                                                                    <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
+                                                                    {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                                </select>
+                                                            </div>
+                                                            <div>
+                                                                <Label htmlFor="claude-opus-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.opusModel')}</Label>
+                                                                <select id="claude-opus-model" aria-label={t('agentProfiles.claudeCompatibility.opusModel')} value={advanced?.opus_model ?? ''} onChange={(event) => updateAdvanced({ opus_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
+                                                                    <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
+                                                                    {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                                </select>
+                                                            </div>
+                                                            <div>
+                                                                <Label htmlFor="claude-haiku-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.haikuModel')}</Label>
+                                                                <select id="claude-haiku-model" aria-label={t('agentProfiles.claudeCompatibility.haikuModel')} value={advanced?.haiku_model ?? ''} onChange={(event) => updateAdvanced({ haiku_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
+                                                                    <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
+                                                                    {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                                </select>
+                                                                <p className="mt-1.5 leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.haikuModelHint')}</p>
+                                                            </div>
+                                                            <div>
+                                                                <Label htmlFor="claude-fable-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.fableModel')}</Label>
+                                                                <select id="claude-fable-model" aria-label={t('agentProfiles.claudeCompatibility.fableModel')} value={advanced?.fable_model ?? ''} onChange={(event) => updateAdvanced({ fable_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
+                                                                    <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
+                                                                    {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.aliasGroupHint')}</p>
+                                                    </div>
+                                                    <div className="md:col-span-2">
+                                                        <Label htmlFor="claude-disable-caching" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.disablePromptCaching')}</Label>
+                                                        <select id="claude-disable-caching" aria-label={t('agentProfiles.claudeCompatibility.disablePromptCaching')} value={caching === true ? 'on' : caching === false ? 'off' : 'unset'} onChange={(event) => updateAdvanced({ disable_prompt_caching: event.target.value === 'unset' ? null : event.target.value === 'on' })} className={fieldClass}>
+                                                            <option value="unset">{t('agentProfiles.common.notSelected')}</option>
+                                                            <option value="on">{t('agentProfiles.common.enabled')}</option>
+                                                            <option value="off">{t('agentProfiles.common.disabled')}</option>
+                                                        </select>
+                                                        <p className="mt-1.5 leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.disablePromptCachingHint')}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
+                            </section>
+                        )}
 
                         <section className="mt-5 rounded-lg bg-background/45 p-1" aria-label={t('agentProfiles.advanced.sectionLabel')}>
                             <button type="button" onClick={toggleAdvanced} className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-3 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={advancedOpen}><span className="flex items-center gap-2"><FileCode2 className="h-4 w-4 text-primary" /><span><span className="block text-sm font-medium">{t('agentProfiles.advanced.title')}</span><span className="mt-0.5 block text-xs text-muted-foreground">{t('agentProfiles.advanced.description')}</span></span></span><ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', advancedOpen && 'rotate-180')} /></button>

@@ -305,12 +305,36 @@ pub struct AgentProfileRevision {
     pub observed_at: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ClaudeAdvancedInput {
+    #[serde(default)]
+    pub subagent_model: Option<String>,
+    #[serde(default)]
+    pub small_fast_model: Option<String>,
+    /// Maps to env `ANTHROPIC_DEFAULT_SONNET_MODEL`. Null/absent falls back to the default model.
+    #[serde(default)]
+    pub sonnet_model: Option<String>,
+    /// Maps to env `ANTHROPIC_DEFAULT_OPUS_MODEL`. Null/absent falls back to the default model.
+    #[serde(default)]
+    pub opus_model: Option<String>,
+    /// Explicit alias for the `ANTHROPIC_DEFAULT_HAIKU_MODEL` tier; wins over `small_fast_model`.
+    #[serde(default)]
+    pub haiku_model: Option<String>,
+    /// Maps to env `ANTHROPIC_DEFAULT_FABLE_MODEL`. Null/absent falls back to the default model.
+    #[serde(default)]
+    pub fable_model: Option<String>,
+    #[serde(default)]
+    pub disable_prompt_caching: Option<bool>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ManagedProfileInput {
     pub providers: Vec<ProviderProfileInput>,
     pub default_provider_id: Option<String>,
     pub default_model_id: Option<String>,
     pub small_model_id: Option<String>,
+    #[serde(default)]
+    pub claude_advanced: Option<ClaudeAdvancedInput>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1636,10 +1660,33 @@ fn patch_for_claude(
     });
     let credential = provider.map(|provider| &provider.credential);
     let auth_token = credential.and_then(|credential| credential_secret(credential));
+    let main_model = managed.default_model_id.clone();
+    // Compatibility projection: when a Claude Code Profile targets a third-party
+    // endpoint, subagents and background tasks must not fall back to native-only
+    // model IDs (for example `claude-sonnet-5`) that the endpoint does not serve.
+    // Advanced overrides win; otherwise the managed default model is projected so
+    // built-in subagents such as statusline-setup resolve to a reachable model.
+    let advanced = managed.claude_advanced.clone().unwrap_or_default();
+    let resolve = |value: Option<String>| value.filter(|value| !value.trim().is_empty()).or_else(|| main_model.clone());
+    let subagent_model = resolve(advanced.subagent_model.clone());
+    // `small_fast_model` is the generic fallback for the haiku tier; an explicit
+    // `haiku_model` alias wins so the two never diverge.
+    let haiku_model = resolve(advanced.haiku_model.clone().or(advanced.small_fast_model.clone()));
+    let sonnet_model = resolve(advanced.sonnet_model.clone());
+    let opus_model = resolve(advanced.opus_model.clone());
+    let fable_model = resolve(advanced.fable_model.clone());
+    let small_fast_model = haiku_model.clone();
     Ok(ClaudeSettingsPatch {
-        model: managed.default_model_id.clone(),
+        model: main_model,
         base_url: provider.and_then(|provider| non_empty(provider.base_url.clone())),
         thinking_enabled,
+        subagent_model,
+        small_fast_model,
+        sonnet_model,
+        opus_model,
+        haiku_model,
+        fable_model,
+        disable_prompt_caching: advanced.disable_prompt_caching,
         clear_model: managed.default_model_id.is_none(),
         clear_base_url: provider
             .map(|provider| provider.base_url.trim().is_empty())
@@ -2015,7 +2062,16 @@ fn claude_document_parts(
         "providers":[provider],
         "default_provider_id":"anthropic",
         "default_model_id":view.model,
-        "small_model_id":Value::Null
+        "small_model_id":Value::Null,
+        "claude_advanced":{
+            "subagent_model":view.advanced.subagent_model,
+            "small_fast_model":view.advanced.small_fast_model,
+            "sonnet_model":view.advanced.sonnet_model,
+            "opus_model":view.advanced.opus_model,
+            "haiku_model":view.advanced.haiku_model,
+            "fable_model":view.advanced.fable_model,
+            "disable_prompt_caching":view.advanced.disable_prompt_caching
+        }
     });
     let protocol = protocol_value(protocol_resolution(
         ProtocolKind::AnthropicMessages,
@@ -3422,6 +3478,47 @@ mod tests {
     }
 
     #[test]
+    fn unknown_upstream_model_list_falls_back_to_empty_without_panicking() {
+        // An endpoint returning an unexpected shape — an object with neither a
+        // `data` nor `models` array, a non-array container, or a bare scalar —
+        // must fail closed to an empty list instead of panicking or inventing
+        // ids.
+        let cases = [
+            json!({ "object": "list", "unexpected": true }),
+            json!({ "data": "not-an-array" }),
+            json!(null),
+            json!("scalar"),
+            json!([1, 2, 3]),
+        ];
+        for case in cases {
+            assert!(
+                parse_upstream_models(&case).is_empty(),
+                "unknown model-list shape must yield an empty list: {case:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_upstream_model_list_keeps_only_well_formed_unique_ids() {
+        // Bare strings are valid ids; object entries need a non-empty id/model/
+        // name; malformed entries are skipped; duplicates are deduplicated and the
+        // list is sorted and capped. Mixed payloads must never panic.
+        let models = parse_upstream_models(&json!({
+            "data": [
+                "zeta",
+                {"id": ""},
+                {"model": "alpha"},
+                {"name": "alpha"},
+                "zeta",
+                42,
+                null
+            ]
+        }));
+        let ids: Vec<&str> = models.iter().map(|m| m.model_id.as_str()).collect();
+        assert_eq!(ids, vec!["alpha", "zeta"]);
+    }
+
+    #[test]
     fn usable_secret_rejects_placeholders_and_debug_redacts_api_key() {
         assert_eq!(
             usable_secret("sk-live".to_owned()).as_deref(),
@@ -3600,5 +3697,139 @@ mod tests {
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         format!("http://{addr}")
+    }
+
+    #[test]
+    fn claude_patch_falls_back_to_main_model_without_advanced() {
+        // No claude_advanced: subagent and small/fast models must resolve to the
+        // managed default model so built-in subagents (e.g. statusline-setup) and
+        // background tasks do not drift to native-only model IDs on third-party
+        // endpoints.
+        let managed = ManagedProfileInput {
+            providers: vec![ProviderProfileInput {
+                provider_id: "anthropic".to_owned(),
+                display_name: "Anthropic".to_owned(),
+                base_url: "https://api.example.com".to_owned(),
+                credential: CredentialReferenceInput {
+                    kind: "env".to_owned(),
+                    reference: "ANTHROPIC_AUTH_TOKEN".to_owned(),
+                    display: "env".to_owned(),
+                    secret_state: "missing".to_owned(),
+                    persisted_in_config: false,
+                    secret: None,
+                    clear_secret: false,
+                },
+                protocol: ProtocolCapabilityInput {
+                    native_protocol: "anthropic_messages".to_owned(),
+                    upstream_protocol: "anthropic_messages".to_owned(),
+                    route: "direct".to_owned(),
+                    compatibility: "supported".to_owned(),
+                    adapter_id: None,
+                    adapter_version: None,
+                    limitations: Vec::new(),
+                },
+                models: vec![ModelProfileInput {
+                    model_id: "water18".to_owned(),
+                    display_name: "Water 18".to_owned(),
+                    enabled: true,
+                    thinking: ThinkingProfileInput {
+                        supports_reasoning: false,
+                        supports_effort: false,
+                        selected: None,
+                        options: Vec::new(),
+                        custom_allowed: false,
+                    },
+                }],
+            }],
+            default_provider_id: Some("anthropic".to_owned()),
+            default_model_id: Some("water18".to_owned()),
+            small_model_id: None,
+            claude_advanced: None,
+        };
+        let patch = patch_for_claude(&managed).unwrap();
+        assert_eq!(patch.model.as_deref(), Some("water18"));
+        assert_eq!(patch.subagent_model.as_deref(), Some("water18"));
+        assert_eq!(patch.small_fast_model.as_deref(), Some("water18"));
+        assert_eq!(patch.disable_prompt_caching, None);
+    }
+
+    #[test]
+    fn claude_patch_prefers_advanced_overrides() {
+        let mut managed = ManagedProfileInput {
+            providers: vec![ProviderProfileInput {
+                provider_id: "anthropic".to_owned(),
+                display_name: "Anthropic".to_owned(),
+                base_url: "https://api.example.com".to_owned(),
+                credential: CredentialReferenceInput {
+                    kind: "env".to_owned(),
+                    reference: "ANTHROPIC_AUTH_TOKEN".to_owned(),
+                    display: "env".to_owned(),
+                    secret_state: "missing".to_owned(),
+                    persisted_in_config: false,
+                    secret: None,
+                    clear_secret: false,
+                },
+                protocol: ProtocolCapabilityInput {
+                    native_protocol: "anthropic_messages".to_owned(),
+                    upstream_protocol: "anthropic_messages".to_owned(),
+                    route: "direct".to_owned(),
+                    compatibility: "supported".to_owned(),
+                    adapter_id: None,
+                    adapter_version: None,
+                    limitations: Vec::new(),
+                },
+                models: vec![ModelProfileInput {
+                    model_id: "water18".to_owned(),
+                    display_name: "Water 18".to_owned(),
+                    enabled: true,
+                    thinking: ThinkingProfileInput {
+                        supports_reasoning: false,
+                        supports_effort: false,
+                        selected: None,
+                        options: Vec::new(),
+                        custom_allowed: false,
+                    },
+                }],
+            }],
+            default_provider_id: Some("anthropic".to_owned()),
+            default_model_id: Some("water18".to_owned()),
+            small_model_id: None,
+            claude_advanced: Some(ClaudeAdvancedInput {
+                subagent_model: Some("water18-sub".to_owned()),
+                small_fast_model: Some("water18-mini".to_owned()),
+                disable_prompt_caching: Some(true),
+                ..Default::default()
+            }),
+        };
+        let patch = patch_for_claude(&managed).unwrap();
+        assert_eq!(patch.model.as_deref(), Some("water18"));
+        assert_eq!(patch.subagent_model.as_deref(), Some("water18-sub"));
+        assert_eq!(patch.small_fast_model.as_deref(), Some("water18-mini"));
+        assert_eq!(patch.sonnet_model.as_deref(), Some("water18"));
+        assert_eq!(patch.opus_model.as_deref(), Some("water18"));
+        assert_eq!(patch.haiku_model.as_deref(), Some("water18-mini"));
+        assert_eq!(patch.fable_model.as_deref(), Some("water18"));
+        assert_eq!(patch.disable_prompt_caching, Some(true));
+        // Blank advanced override falls back to the main model.
+        managed.claude_advanced = Some(ClaudeAdvancedInput {
+            subagent_model: Some("   ".to_owned()),
+            small_fast_model: None,
+            haiku_model: None,
+            disable_prompt_caching: None,
+            ..Default::default()
+        });
+        let patch = patch_for_claude(&managed).unwrap();
+        assert_eq!(patch.subagent_model.as_deref(), Some("water18"));
+        assert_eq!(patch.small_fast_model.as_deref(), Some("water18"));
+        assert_eq!(patch.haiku_model.as_deref(), Some("water18"));
+        // Explicit haiku alias wins over small_fast_model and stays unified.
+        managed.claude_advanced = Some(ClaudeAdvancedInput {
+            small_fast_model: Some("water18-mini".to_owned()),
+            haiku_model: Some("water18-haiku".to_owned()),
+            ..Default::default()
+        });
+        let patch = patch_for_claude(&managed).unwrap();
+        assert_eq!(patch.haiku_model.as_deref(), Some("water18-haiku"));
+        assert_eq!(patch.small_fast_model.as_deref(), Some("water18-haiku"));
     }
 }

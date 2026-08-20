@@ -1611,6 +1611,8 @@
       "default": "Default",
       "defaultProfile": "Default Profile",
       "delete": "Delete",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
       "notConfigured": "Not configured",
       "notSelected": "Not selected",
       "refresh": "Refresh",
@@ -1794,6 +1796,26 @@
       "detectInvalidResponse": "The upstream did not return a parseable model list.",
       "advancedIdentityImmutable": "Profile ID and runtime target cannot be changed in the advanced editor.",
       "advancedProvidersMissing": "The advanced configuration is missing managed.providers."
+    },
+    "claudeCompatibility": {
+      "sectionLabel": "Claude Code compatibility",
+      "title": "Sub-agent and small-model compatibility",
+      "description": "Fixes errors when third-party endpoints do not serve Claude Code native models and sub-agents or background tasks fall back to them. Leave blank to follow the current main model.",
+      "autoOption": "Auto (follow main model)",
+      "subagentModel": "Sub-agent model",
+      "subagentModelHint": "Maps to env CLAUDE_CODE_SUBAGENT_MODEL. Leave blank to project the current default model so sub-agents never fall back to a native-only model ID.",
+      "smallFastModel": "Small / fast model",
+      "smallFastModelHint": "Maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL for background tasks and the haiku tier. Leave blank to project the current default model.",
+      "aliasGroupLabel": "Model aliases (tier overrides)",
+      "aliasGroupHint": "Point the Claude Code sonnet/opus/haiku/fable tiers at models the endpoint actually serves; leave blank to project the current main model.",
+      "sonnetModel": "Sonnet tier model",
+      "opusModel": "Opus tier model",
+      "haikuModel": "Haiku tier model",
+      "fableModel": "Fable tier model",
+      "haikuModelHint": "Maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL and takes precedence over the small/fast model above. Leave blank to project the current default model.",
+      "disablePromptCaching": "Disable prompt caching",
+      "disablePromptCachingHint": "Maps to env DISABLE_PROMPT_CACHING=1. Enable only when you are sure the upstream endpoint does not support prompt caching.",
+      "currentMainModel": "Current main model: {{model}}"
     }
   },
   "update": {

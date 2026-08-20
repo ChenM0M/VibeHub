@@ -224,6 +224,7 @@ export interface ManagedProfileFields {
   default_provider_id: string | null;
   default_model_id: string | null;
   small_model_id: string | null;
+  claude_advanced?: ClaudeAdvancedSettings;
 }
 export interface ProviderProfile {
   provider_id: string;
@@ -252,6 +253,39 @@ export interface ThinkingProfile {
   selected: string | null;
   options: string[];
   custom_allowed: boolean;
+}
+/**
+ * Claude Code only. Optional overrides for subagent, tier-alias, and small/fast model projection. When a field is null/absent, VibeHub projects the managed default model so subagents and background tasks do not fall back to native-only model IDs.
+ */
+export interface ClaudeAdvancedSettings {
+  /**
+   * Maps to env CLAUDE_CODE_SUBAGENT_MODEL. Null/absent falls back to the default model.
+   */
+  subagent_model?: string | null;
+  /**
+   * Generic small/fast model; maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL unless haiku_model is set. Null/absent falls back to the default model.
+   */
+  small_fast_model?: string | null;
+  /**
+   * Maps to env ANTHROPIC_DEFAULT_SONNET_MODEL. Null/absent falls back to the default model.
+   */
+  sonnet_model?: string | null;
+  /**
+   * Maps to env ANTHROPIC_DEFAULT_OPUS_MODEL. Null/absent falls back to the default model.
+   */
+  opus_model?: string | null;
+  /**
+   * Maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL. Wins over small_fast_model. Null/absent falls back to the default model.
+   */
+  haiku_model?: string | null;
+  /**
+   * Maps to env ANTHROPIC_DEFAULT_FABLE_MODEL. Null/absent falls back to the default model.
+   */
+  fable_model?: string | null;
+  /**
+   * When true, sets env DISABLE_PROMPT_CACHING=1 for endpoints that do not support prompt caching.
+   */
+  disable_prompt_caching?: boolean | null;
 }
 export interface DefaultState {
   is_default: boolean;

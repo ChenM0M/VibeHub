@@ -25,6 +25,36 @@ const OLD_END: &str = "<!-- VIBEHUB:AGENT-INTEGRATION:END -->";
 const MAX_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_STATE_BYTES: u64 = 256 * 1024;
 
+// Three-end configuration capability and fallback contract.
+//
+// VibeHub manages three Agent kinds — `claude_code`, `opencode`, `codex` — and
+// each exposes a different configuration surface. Only Claude Code resolves
+// model selection through environment variables that a third-party endpoint may
+// not serve, so the sub-agent / small-fast / alias fallback lives there.
+//
+// | Agent       | Model config surface                                  | Third-party endpoint risk                     |
+// | ----------- | ----------------------------------------------------- | ---------------------------------------------- |
+// | claude_code | `env` vars: `ANTHROPIC_BASE_URL`, model aliases, etc. | High — native `claude-*` IDs may be unresolvable |
+// | opencode    | Provider `models[]` + `default_model` in opencode.json | Low — model IDs are user-supplied per provider |
+// | codex       | `model_provider` + `model` in config.toml             | Low — model is a user-supplied string          |
+//
+// Fallback rule (claude_code): when an advanced override (sub-agent, small-fast
+// or a model alias) is unset, `patch_for_claude` resolves it to the managed
+// default model so sub-agents and background tasks never drift onto a native
+// `claude-*` ID that a third-party endpoint cannot serve.
+//
+// Third-party endpoint diagnostic codes are emitted by
+// `claude_code_adapter::read_claude_profile_with_index` into
+// `ClaudeCodeProfileView.warnings` (surfaced via
+// `agent_profiles::profile_warnings` as `result.warnings`). They diagnose a
+// non-`anthropic.com` endpoint that still references native IDs:
+//   CLAUDE_NATIVE_MODEL_ON_THIRD_PARTY_ENDPOINT   — main `model` is a native `claude-*` ID
+//   CLAUDE_THIRD_PARTY_ENDPOINT_NATIVE_TIER       — an advanced alias is a native `claude-*` ID
+//   CLAUDE_THIRD_PARTY_ENDPOINT_ADVANCED_UNSET    — every advanced field is unset (fallback active)
+// The official `api.anthropic.com` endpoint serves every native ID and emits
+// none of these. See `docs/v3/three-end-config-comparison.md`.
+
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentSpecArtifactStatus {
