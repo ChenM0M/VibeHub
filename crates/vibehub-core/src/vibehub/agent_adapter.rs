@@ -453,9 +453,9 @@ pub fn resolve_mcp_command(project_root: &Path) -> McpCommand {
 /// module used by `init`, `migrate`, the agent-spec sync, and the settings
 /// panel. This CLI surface is a thin wrapper over it so configs stay consistent
 /// everywhere: it writes project `.mcp.json` / `opencode.json` / `.codex/config.toml`
-/// with the binary the authoritative writer selects (project-local build in a
-/// checkout, the running binary when installed) and never scatters a
-/// project-bound entry into a
+/// with the binary the authoritative writer selects (a stable, installed
+/// `vibehub` on PATH for portability, falling back to a project-local build in
+/// a checkout) and never scatters a project-bound entry into a
 /// user-global file by default.
 ///
 /// `migrate_global` additionally removes a project-bound VibeHub server from the
@@ -476,10 +476,12 @@ pub fn install_mcp_config(
         );
     }
     let command = resolve_mcp_command(&project_root);
-    // Delegate binary selection entirely to the authoritative writer: it prefers
-    // the project-local build (`target/debug`) inside a checkout and falls back to
-    // the running binary when installed. Forcing a PATH-resolved command here
-    // would regress a dev checkout onto a stale installed app, so no override.
+    // `command` (display) and the written transport config now resolve the same
+    // way: the authoritative writer prefers a stable, installed `vibehub` on
+    // PATH for portability (acceptance c01/c02) and only falls back to a
+    // repo-local `target/debug` build when no install is present. A checkout
+    // dev who must test the current source build sets `VIBEHUB_MCP_BINARY`,
+    // resolved before the PATH lookup, so no override is passed here.
 
     let sync = if dry_run {
         // The authoritative writer has no dry-run mode, so a dry run is a

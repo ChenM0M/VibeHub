@@ -429,10 +429,40 @@ fn trusted_project_root(path: &Path) -> Result<PathBuf, V3Error> {
     Ok(root)
 }
 
+/// Locate a stable, installed `vibehub` on `PATH` so written MCP transport
+/// configs point at a portable launch command (acceptance c01/c02) instead of
+/// a repo-local `target/debug` build that only exists inside one checkout and
+/// vanishes after `cargo clean`, on another machine, or under a different
+/// clone path. Returns an absolute path, satisfying the writer's absolute-path
+/// invariant. A checkout dev who must test the current source build sets
+/// `VIBEHUB_MCP_BINARY` instead, which is resolved before this lookup.
+fn find_vibehub_on_path() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join("vibehub");
+        if candidate.is_file() {
+            // Return the PATH entry as-is (no canonicalize) so the written
+            // command matches what `mcp status` displays and what Codex already
+            // records (`/opt/homebrew/bin/vibehub`), keeping the three harnesses
+            // consistent. The writer's absolute-path check rejects any relative
+            // PATH entry.
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 fn resolve_binary(root: &Path, override_path: Option<&Path>) -> Result<PathBuf, V3Error> {
     let candidate = override_path
         .map(Path::to_path_buf)
         .or_else(|| std::env::var_os("VIBEHUB_MCP_BINARY").map(PathBuf::from))
+        // Prefer a stable, installed `vibehub` on PATH. Acceptance criteria
+        // c01/c02 require the written transport config to point at a portable
+        // launch command, not a repo-local `target/debug` absolute path that
+        // breaks without a build, on another machine, or under a different
+        // clone path. `VIBEHUB_MCP_BINARY` above keeps the checkout dev able to
+        // force the current-source build when they need to test it.
+        .or_else(find_vibehub_on_path)
         .or_else(|| {
             [
                 root.join("target/debug/vibehub"),
@@ -446,8 +476,7 @@ fn resolve_binary(root: &Path, override_path: Option<&Path>) -> Result<PathBuf, 
         // A temporary fixture is not itself a VibeHub checkout, so it cannot
         // contain the project-local binary. During a running CLI this resolves
         // to that CLI; during unit tests it is the absolute test executable.
-        // Both are explicit absolute launch targets and preserve the source
-        // checkout preference above whenever a project-local binary exists.
+        // Both are explicit absolute launch targets.
         .or_else(|| std::env::current_exe().ok())
         .ok_or_else(|| validation("V3_HOST_MCP_BINARY_UNKNOWN", "MCP binary path is unknown"))?;
     if !candidate.is_absolute() {
