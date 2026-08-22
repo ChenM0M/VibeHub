@@ -138,12 +138,16 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   v3 <project> task-completion-propose <project_id> <task_id> <actor> <expected_version> <idempotency_key>
   v3 <project> task-complete <project_id> <task_id> <actor> <confirmed_by> <cli|desktop_ui> <idempotency_key> --confirmed-by-user
   v3 <project> rebuild <project_id>
+  v3 <project> projection-status <project_id>
   v3 <project> view-bundle <task_id>
   v3 <project> task-lifecycle <project_id> <task_id>
   v3 <project> task-candidates
+  v3 <project> task-list [--include-archived]
   v3 <project> task-route <request_json_path|--stdin|->
   v3 <project> task-view <task_id>
   v3 <project> task-view <task_id> [node_id]
+  v3 <project> task-commits <task_id>
+  v3 <project> commit-tasks <commit_hash>
   v3 <project> policy-upgrade <project_id> <task_id> <actor> <expected_version> <idempotency_key> <target_profile> <reason>
   v3 <project> session-gap <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> <reason>
   v3 <project> session-recover <project_id> <task_id> <session_id> <actor> <expected_version> <idempotency_key> <evidence_refs_json>
@@ -800,12 +804,17 @@ fn run_v3_action(project_root: &str, args: &[String]) {
             };
             print_v3_json(app.rebuild(project_id));
         }
+        "projection-status" => {
+            let Some(project_id) = args.get(1) else {
+                v3_usage_error(command, "missing project_id");
+            };
+            print_v3_json(app.projection_status(project_id));
+        }
         "view-bundle" => {
             let Some(task_id) = args.get(1) else {
                 v3_usage_error(command, "missing task_id");
             };
-            let repository =
-                V3ViewRepository::open(project_root).unwrap_or_else(|error| print_v3_error(error));
+            let repository = open_synced_v3_view_repository(&app, project_root);
             print_v3_json(repository.load_bundle(task_id));
         }
         "task-lifecycle" => {
@@ -818,9 +827,13 @@ fn run_v3_action(project_root: &str, args: &[String]) {
             print_v3_json(app.task_lifecycle(project_id, task_id));
         }
         "task-candidates" => {
-            let repository =
-                V3ViewRepository::open(project_root).unwrap_or_else(|error| print_v3_error(error));
+            let repository = open_synced_v3_view_repository(&app, project_root);
             print_v3_json(repository.task_candidates());
+        }
+        "task-list" => {
+            let include_archived = args.iter().any(|arg| arg == "--include-archived");
+            let repository = open_synced_v3_view_repository(&app, project_root);
+            print_v3_json(repository.task_list(include_archived));
         }
         "task-route" => {
             let Some(json_path) = args.get(1) else {
@@ -829,6 +842,7 @@ fn run_v3_action(project_root: &str, args: &[String]) {
                     "missing route request JSON path (use --stdin or - to read from stdin)",
                 );
             };
+            let repository = open_synced_v3_view_repository(&app, project_root);
             let (content, label) = read_v3_command_content(json_path, "task route request");
             let mut request =
                 serde_json::from_str::<RouteRequest>(&content).unwrap_or_else(|error| {
@@ -836,8 +850,6 @@ fn run_v3_action(project_root: &str, args: &[String]) {
                     std::process::exit(2);
                 });
             if request.candidates.is_empty() {
-                let repository = V3ViewRepository::open(project_root)
-                    .unwrap_or_else(|error| print_v3_error(error));
                 request.candidates = serde_json::from_value::<Vec<TaskRouteCandidate>>(
                     repository
                         .task_candidates()
@@ -860,11 +872,24 @@ fn run_v3_action(project_root: &str, args: &[String]) {
             let Some(task_id) = args.get(1) else {
                 v3_usage_error(command, "missing task_id");
             };
-            let repository =
-                V3ViewRepository::open(project_root).unwrap_or_else(|error| print_v3_error(error));
+            let repository = open_synced_v3_view_repository(&app, project_root);
             print_v3_json(
                 repository.load_bundle_for_node(task_id, args.get(2).map(String::as_str)),
             );
+        }
+        "task-commits" => {
+            let Some(task_id) = args.get(1) else {
+                v3_usage_error(command, "missing task_id");
+            };
+            let repository = open_synced_v3_view_repository(&app, project_root);
+            print_v3_json(repository.task_commits(task_id));
+        }
+        "commit-tasks" => {
+            let Some(commit_hash) = args.get(1) else {
+                v3_usage_error(command, "missing commit_hash");
+            };
+            let repository = open_synced_v3_view_repository(&app, project_root);
+            print_v3_json(repository.commit_tasks(commit_hash));
         }
         "policy-upgrade" => {
             let (project_id, task_id, actor, version, key) =
@@ -1081,6 +1106,20 @@ fn parse_v3_task_write_scope<'a>(
 fn v3_usage_error(command: &str, message: &str) -> ! {
     eprintln!("Invalid V3 {command} request: {message}");
     std::process::exit(2);
+}
+
+/// All CLI read-model views share the same freshness gate as MCP. A view must
+/// never silently continue with a projection that is behind the event log.
+fn open_synced_v3_view_repository(
+    app: &V3ApplicationService,
+    project_root: &str,
+) -> V3ViewRepository {
+    let repository =
+        V3ViewRepository::open(project_root).unwrap_or_else(|error| print_v3_error(error));
+    let project_id = repository.project_id();
+    app.sync_projection_if_stale(&project_id)
+        .unwrap_or_else(|error| print_v3_error(error));
+    repository
 }
 
 fn print_v3_json<T: serde::Serialize>(result: Result<T, vibehub_core::v3::V3Error>) {

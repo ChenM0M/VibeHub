@@ -107,11 +107,11 @@ pub(crate) fn apply_command(
             && event.worktree_id.as_ref().map(|id| id.0.as_str())
                 == Some(command.worktree_id.as_str())
     }) {
-        return store.append(command_draft(command));
+        return store.append_with_rebuild(command_draft(command));
     }
     let projection = fold_task(&command.task_id, &events);
     validate_transition(projection.worktrees.get(&command.worktree_id), &command)?;
-    store.append(command_draft(command))
+    store.append_with_rebuild(command_draft(command))
 }
 
 pub fn fold_task(task_id: &str, events: &[V3EventEnvelope]) -> OrchestrationProjection {

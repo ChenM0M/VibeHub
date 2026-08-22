@@ -88,6 +88,7 @@ export interface NodeBrief {
   files: NativePath[];
   validation_commands: string[];
   state: "planned" | "ready" | "active" | "blocked" | "review" | "completed" | "cancelled" | "superseded";
+  task_state?: "planned" | "active" | "blocked" | "review" | "completed" | "cancelled" | "closed_with_exceptions";
   next_intent: string;
   blocker_details?: BlockerDetails;
   execution?: {

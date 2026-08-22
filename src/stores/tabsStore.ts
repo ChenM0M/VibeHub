@@ -48,6 +48,12 @@ let mutationGeneration = 0;
 let saveRequestId = 0;
 let saveQueue: Promise<void> = Promise.resolve();
 let queuedRevision = 0;
+const MAX_PERSIST_RETRY_DEPTH = 3;
+
+interface PersistOperation {
+    operation: string;
+    retryDepth: number;
+}
 
 function projectsKey(projects: Project[]): string {
     return projects.map((project) => `${project.id}\u0000${project.path}`).join('\u0001');
@@ -55,6 +61,36 @@ function projectsKey(projects: Project[]): string {
 
 function defaultContext(): WorkspaceProjectUiContext {
     return { ...DEFAULT_UI_CONTEXT };
+}
+
+function errorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    const structured = error as { message?: unknown };
+    return typeof structured?.message === 'string' ? structured.message : String(error);
+}
+
+function conflictCurrentRevision(error: unknown, fallback: number): number {
+    const match = errorMessage(error).match(/\bcurrent\s+(\d+)\b/i);
+    if (!match) return fallback;
+    const revision = Number(match[1]);
+    return Number.isSafeInteger(revision) ? revision : fallback;
+}
+
+function revisionConflictDiagnostic(
+    error: unknown,
+    operation: PersistOperation,
+    tabs: string[],
+    activeTabId: string | null,
+    currentRevision: number,
+): WorkspaceStateDiagnostic {
+    const projectId = activeTabId ?? tabs[0] ?? 'workspace';
+    return {
+        code: 'workspace_state.revision_conflict_exhausted',
+        severity: 'error',
+        project_id: activeTabId ?? tabs[0] ?? null,
+        message: `工作区保存冲突已停止。下一步：点击“重试”使用当前 revision 再保存，或点击“打开项目列表”放弃本次操作。project=${projectId}; operation=${operation.operation}; current_revision=${currentRevision}; retry_depth=${operation.retryDepth}/${MAX_PERSIST_RETRY_DEPTH}。原始错误：${errorMessage(error)}`,
+        recovery_action: '使用当前 revision 重试保存，或打开项目列表放弃本次操作。',
+    };
 }
 
 function errorDiagnostic(error: unknown): WorkspaceStateDiagnostic {
@@ -110,10 +146,13 @@ function buildState(
     };
 }
 
-function enqueuePersist(reason: string): void {
+function enqueuePersist(
+    reason: string,
+    operation: PersistOperation = { operation: reason, retryDepth: 0 },
+): Promise<void> {
     const requestId = ++saveRequestId;
     const snapshot = useTabsStore.getState();
-    if (!snapshot.hydrated || currentProjects.size === 0) return;
+    if (!snapshot.hydrated || currentProjects.size === 0) return Promise.resolve();
 
     const tabs = [...snapshot.tabs];
     const activeTabId = snapshot.activeTabId;
@@ -125,10 +164,15 @@ function enqueuePersist(reason: string): void {
                 state,
             });
             if (requestId >= saveRequestId || useTabsStore.getState().persistedRevision < result.state.revision) {
-                queuedRevision = result.state.revision;
                 const currentDiagnostics = useTabsStore.getState().diagnostics;
+                // Keep queuedRevision and persistedRevision in lockstep so a later save never
+                // carries a stale expected_revision that would spuriously conflict. Bumping only
+                // inside this gate (was unconditional before) removes the divergence where the
+                // frontend thought it was at revision N while disk had already moved to N+k.
+                const nextRevision = result.state.revision;
+                queuedRevision = nextRevision;
                 useTabsStore.setState({
-                    persistedRevision: result.state.revision,
+                    persistedRevision: nextRevision,
                     diagnostics: result.diagnostics?.length
                         ? result.diagnostics
                         : reason === 'recovery' || hasActionableWorkspaceWarning(currentDiagnostics)
@@ -137,18 +181,45 @@ function enqueuePersist(reason: string): void {
                 });
             }
         } catch (error) {
-            if (String(error).includes('WORKSPACE_STATE_REVISION_CONFLICT')) {
-                try {
-                    const latest = await tauriApi.loadWorkspaceState();
-                    queuedRevision = latest.state?.revision ?? queuedRevision;
-                    if (requestId >= saveRequestId) {
-                        useTabsStore.setState({ persistedRevision: queuedRevision, diagnostics: latest.diagnostics ?? [] });
-                        enqueuePersist('retry-after-revision-conflict');
+            // `error` is the Tauri-deserialized WorkspaceStateCommandError object, not a
+            // string. Keep the retry depth on this logical operation so the queued replay
+            // cannot reset a global counter before the next attempt starts.
+            if (errorMessage(error).includes('WORKSPACE_STATE_REVISION_CONFLICT')) {
+                const nextRetryDepth = operation.retryDepth + 1;
+                if (nextRetryDepth <= MAX_PERSIST_RETRY_DEPTH) {
+                    try {
+                        const latest = await tauriApi.loadWorkspaceState();
+                        const refreshedRevision = latest.state?.revision
+                            ?? conflictCurrentRevision(error, queuedRevision);
+                        queuedRevision = refreshedRevision;
+                        if (requestId >= saveRequestId) {
+                            useTabsStore.setState({ persistedRevision: refreshedRevision, diagnostics: latest.diagnostics ?? [] });
+                            enqueuePersist('retry-after-revision-conflict', {
+                                operation: operation.operation,
+                                retryDepth: nextRetryDepth,
+                            });
+                        }
+                        return;
+                    } catch {
+                        // Loading also failed: fall through and surface the original error.
                     }
-                    return;
-                } catch {
-                    // The original persistence error below remains visible to the user.
                 }
+
+                const currentRevision = conflictCurrentRevision(error, queuedRevision);
+                queuedRevision = currentRevision;
+                if (requestId >= saveRequestId) {
+                    useTabsStore.setState({
+                        persistedRevision: currentRevision,
+                        diagnostics: [revisionConflictDiagnostic(
+                            error,
+                            { ...operation, retryDepth: Math.min(operation.retryDepth, MAX_PERSIST_RETRY_DEPTH) },
+                            tabs,
+                            activeTabId,
+                            currentRevision,
+                        )],
+                    });
+                }
+                return;
             }
             if (requestId >= saveRequestId) {
                 useTabsStore.setState({ diagnostics: [errorDiagnostic(error)] });
@@ -156,6 +227,7 @@ function enqueuePersist(reason: string): void {
         }
     });
     saveQueue = task.catch(() => undefined);
+    return saveQueue;
 }
 
 function mutate(next: Partial<TabsState>): void {
@@ -293,6 +365,15 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     },
 
     retryHydrate: async () => {
+        if (get().diagnostics.some((diagnostic) => diagnostic.code === 'workspace_state.revision_conflict_exhausted')) {
+            set({ hydrating: true });
+            try {
+                await enqueuePersist('manual-retry');
+            } finally {
+                set({ hydrating: false });
+            }
+            return;
+        }
         hydrationKey = null;
         await get().hydrate([...currentProjects.values()]);
     },

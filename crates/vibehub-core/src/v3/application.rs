@@ -58,6 +58,28 @@ impl V3ApplicationService {
         })
     }
 
+    /// Get the current git HEAD SHA, if available.
+    ///
+    /// Returns None if git is not available or the project root is not a
+    /// git repository.
+    pub(crate) fn git_head_sha(&self) -> Option<String> {
+        let root = self.store.project_root();
+        let output = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let sha = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if sha.is_empty() {
+            None
+        } else {
+            Some(sha)
+        }
+    }
+
     pub fn session_open(
         &self,
         project_id: &str,
@@ -193,6 +215,10 @@ impl V3ApplicationService {
         {
             payload["provider_session_id"] = Value::String(provider_session_id);
         }
+        // Record the git HEAD at session open for commit-to-Task traceability
+        if let Some(git_head) = self.git_head_sha() {
+            payload["git_head_sha"] = Value::String(git_head);
+        }
         let facts_after_binding = self.session_facts(project_id, session_id)?;
         if facts_after_binding.open || facts_after_binding.closed || facts_after_binding.gapped {
             if let Some(existing) = self
@@ -313,7 +339,7 @@ impl V3ApplicationService {
             target_task_revision: Some(target_task_revision),
             bound_at: Some(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)),
         };
-        self.store.append(EventDraft {
+        self.store.append_with_rebuild(EventDraft {
             event_type: "session.task_bound".to_owned(),
             aggregate_id: session_id.to_owned(),
             expected_version,
@@ -384,7 +410,7 @@ impl V3ApplicationService {
             target_task_revision: None,
             bound_at: None,
         };
-        self.store.append(EventDraft {
+        self.store.append_with_rebuild(EventDraft {
             event_type: "session.task_unbound".to_owned(),
             aggregate_id: session_id.to_owned(),
             expected_version,
@@ -539,6 +565,11 @@ impl V3ApplicationService {
                 "session_close requires a real succeeded/failed agent result",
             ));
         }
+        // Record the git HEAD at session close for commit-to-Task traceability
+        let mut close_payload = json!({});
+        if let Some(git_head) = self.git_head_sha() {
+            close_payload["git_head_sha"] = Value::String(git_head);
+        }
         self.append_session_event(
             "session.closed",
             project_id,
@@ -547,7 +578,7 @@ impl V3ApplicationService {
             actor,
             expected_version,
             idempotency_key,
-            json!({}),
+            close_payload,
         )
     }
 
@@ -616,10 +647,34 @@ impl V3ApplicationService {
     }
 
     pub fn rebuild(&self, project_id: &str) -> Result<V3Projection, V3Error> {
-        let events = self.store.load_project(project_id)?;
-        let projection = projection::fold(project_id, &events);
-        projection::write_atomic(&self.store.projection_path(project_id), &projection)?;
-        Ok(projection)
+        self.store.rebuild_projection(project_id)
+    }
+
+    /// Check projection staleness and rebuild if stale.
+    ///
+    /// Returns Ok(true) if a rebuild was performed, Ok(false) if the projection
+    /// was already fresh. Errors from the staleness check or rebuild are
+    /// propagated.
+    pub fn sync_projection_if_stale(&self, project_id: &str) -> Result<bool, V3Error> {
+        match self.store.projection_is_stale(project_id) {
+            Ok(false) => Ok(false),
+            Ok(true) => self
+                .rebuild(project_id)
+                .map(|_| true)
+                .map_err(|error| {
+                    if error.code == "V3_PROJECTION_REBUILD_FAILED" {
+                        error
+                    } else {
+                        projection_sync_error(project_id, error)
+                    }
+                }),
+            Err(error) => Err(projection_sync_error(project_id, error)),
+        }
+    }
+
+    /// Return projection staleness status as JSON.
+    pub fn projection_status(&self, project_id: &str) -> Result<Value, V3Error> {
+        self.store.projection_status(project_id)
     }
 
     pub fn aggregate_version(&self, project_id: &str, aggregate_id: &str) -> Result<u64, V3Error> {
@@ -1352,7 +1407,7 @@ impl V3ApplicationService {
             } else {
                 expected_version
             };
-        self.store.append(EventDraft {
+        self.store.append_with_rebuild(EventDraft {
             event_type: event_type.to_owned(),
             aggregate_id: session_id.to_owned(),
             expected_version: effective_expected_version,
@@ -1396,6 +1451,29 @@ impl V3ApplicationService {
             None,
         )
     }
+}
+
+fn projection_sync_error(project_id: &str, cause: V3Error) -> V3Error {
+    V3Error::new(
+        "V3_PROJECTION_SYNC_FAILED",
+        super::domain::V3ErrorCategory::Internal,
+        true,
+        "projection synchronization failed; callers must not continue using the old projection",
+    )
+    .with_detail("project_id", project_id)
+    .with_detail("projection_state", "rebuild_failed")
+    .with_detail("cause_code", cause.code)
+    .with_detail(
+        "cause_category",
+        serde_json::to_value(cause.category)
+            .unwrap_or(Value::String("internal".to_owned())),
+    )
+    .with_detail("cause_message", cause.message)
+    .with_detail("cause_details", cause.details)
+    .with_detail(
+        "repair_action",
+        "fix the projection path or permissions, then retry projection_rebuild or reopen MCP",
+    )
 }
 
 fn validate_agent_result_value(
@@ -1567,6 +1645,42 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(second.sessions["session.main"].state, "closed");
         assert_eq!(second.sessions["session.main"].progress_entries, 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn projection_sync_failure_is_structured_and_blocks_old_projection() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-sync-failure-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".vibehub")).unwrap();
+        let app = V3ApplicationService::open(&root).unwrap();
+        app.session_open(
+            "project.test",
+            "task.test",
+            "session.main",
+            "codex",
+            0,
+            "open.sync-failure",
+        )
+        .unwrap();
+
+        let projection_path = app.store.projection_path("project.test");
+        fs::remove_file(&projection_path).unwrap();
+        fs::create_dir(&projection_path).unwrap();
+
+        let error = app
+            .sync_projection_if_stale("project.test")
+            .unwrap_err();
+        assert_eq!(error.code, "V3_PROJECTION_SYNC_FAILED");
+        assert_eq!(error.details["project_id"], "project.test");
+        assert_eq!(error.details["projection_state"], "rebuild_failed");
+        assert_eq!(error.details["cause_code"], "V3_PROJECTION_READ_FAILED");
+        assert!(error.details["repair_action"].as_str().is_some());
+
+        let status = app.projection_status("project.test").unwrap();
+        assert_eq!(status["state"], "rebuild_failed");
+        assert_eq!(status["stale"], true);
+        assert!(status["error"].is_object());
+
         fs::remove_dir_all(root).unwrap();
     }
 

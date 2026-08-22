@@ -1815,7 +1815,16 @@
       "haikuModelHint": "Maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL and takes precedence over the small/fast model above. Leave blank to project the current default model.",
       "disablePromptCaching": "Disable prompt caching",
       "disablePromptCachingHint": "Maps to env DISABLE_PROMPT_CACHING=1. Enable only when you are sure the upstream endpoint does not support prompt caching.",
-      "currentMainModel": "Current main model: {{model}}"
+      "currentMainModel": "Current main model: {{model}}",
+      "capabilityLabel": "Capability declaration",
+      "capabilityDeclared": "declared",
+      "capabilityUnavailable": "unavailable",
+      "capabilitySourceUnavailable": "no adapter declaration",
+      "capabilityFieldsLabel": "Supported fields",
+      "customOptionsLabel": "Custom model options",
+      "customOptionsUnavailable": "Unavailable; automatic fallback remains available.",
+      "fallbackPriority": "Fallback priority",
+      "unknownOption": "unknown configured value"
     }
   },
   "update": {

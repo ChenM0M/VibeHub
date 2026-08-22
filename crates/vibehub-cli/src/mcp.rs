@@ -183,6 +183,30 @@ struct TaskViewRead {
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskListRead {
+    project_id: String,
+    #[serde(default)]
+    include_archived: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct ProjectIdRead {
+    project_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskCommitsRead {
+    project_id: String,
+    task_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct CommitTasksRead {
+    project_id: String,
+    commit_hash: String,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 struct NextActionRead {
     project_id: String,
     #[serde(default)]
@@ -610,12 +634,19 @@ impl V3McpServer {
         let scopes = resolved_scopes.inspection();
         let views = V3ViewRepository::open(&project_root)?;
         let project_id = views.project_id();
+        let app = V3ApplicationService::open(&project_root)?;
+
+        // Auto-sync before exposing any resources or tools. A failed rebuild
+        // is a structured startup error; serving views backed by the old
+        // projection would make the control plane report a false state.
+        app.sync_projection_if_stale(&project_id)?;
+
         // Validate that a current V3 task exists at startup, but resolve it again
         // for every resource request so a long-lived MCP process cannot advertise
         // or read a stale task after the current pointer changes.
         let _ = views.current_task_id()?;
         Ok(Self {
-            app: V3ApplicationService::open(&project_root)?,
+            app,
             views,
             project_id,
             project_root,
@@ -652,6 +683,12 @@ impl V3McpServer {
         self.require_project(project_id)
             .err()
             .map(|error| self.tool_result::<Value>(Err(error)))
+    }
+
+    fn ensure_projection_ready(&self) -> Result<(), V3Error> {
+        self.app
+            .sync_projection_if_stale(&self.project_id)
+            .map(|_| ())
     }
 
     #[tool(
@@ -752,6 +789,9 @@ impl V3McpServer {
     fn task_route(&self, Parameters(input): Parameters<TaskRouteRead>) -> CallToolResult {
         if let Some(error) = self.reject_project(&input.project_id) {
             return error;
+        }
+        if let Err(error) = self.ensure_projection_ready() {
+            return self.tool_result::<Value>(Err(error));
         }
         let trigger = match parse_route_trigger(&input.trigger) {
             Ok(trigger) => trigger,
@@ -865,13 +905,16 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Discover active V3 task candidates and their workflow, risk, criteria, session, and relation summaries. When: call this first for every task, before task_view or any write tool. Prerequisite: a connected V3 workspace and its project_id. Typical params: project_id. Use the returned task_id to call task_view; do not infer the current task from files or chat"
+        description = "Discover active V3 task candidates and their workflow, risk, criteria, session, and relation summaries. When: call this first for every task, before task_view or any write tool. Prerequisite: a connected V3 workspace and its project_id; projection synchronization must succeed. Typical params: project_id. Use the returned task_id to call task_view; do not infer the current task from files or chat"
     )]
     fn task_candidates(&self, Parameters(input): Parameters<TaskCandidatesRead>) -> CallToolResult {
         if let Err(error) = self.require_project(&input.project_id) {
             return tool_error(serde_json::to_value(error).unwrap_or_else(
                 |_| json!({"code":"V3_INTERNAL","message":"project validation failed"}),
             ));
+        }
+        if let Err(error) = self.ensure_projection_ready() {
+            return self.tool_result::<Value>(Err(error));
         }
         let result = self.views.task_candidates();
         self.tool_result(result)
@@ -891,13 +934,80 @@ impl V3McpServer {
     }
 
     #[tool(
-        description = "Read a complete V3 view bundle for a specified task candidate. When: immediately after task_candidates and before planning, opening a session, or editing files. Prerequisite: a task_id returned by task_candidates. Typical params: task_id. Read and echo node_brief.workflow_profile plus node_brief.execution_policy (planning_required, milestone_policy, review_required, required_records), then obey them"
+        description = "Read a complete V3 view bundle for a specified task candidate. When: immediately after task_candidates and before planning, opening a session, or editing files. Prerequisite: a task_id returned by task_candidates and a synchronized projection; rebuild failures are returned as structured errors. Typical params: task_id. Read and echo node_brief.workflow_profile plus node_brief.execution_policy (planning_required, milestone_policy, review_required, required_records), then obey them"
     )]
     fn task_view(&self, Parameters(input): Parameters<TaskViewRead>) -> CallToolResult {
+        if let Err(error) = self.ensure_projection_ready() {
+            return self.tool_result::<Value>(Err(error));
+        }
         self.tool_result(
             self.views
                 .load_bundle_for_node(&input.task_id, input.node_id.as_deref()),
         )
+    }
+
+    #[tool(
+        description = "List all V3 tasks including archived ones. When: browsing active or archived Task history and its terminal/criterion/node summaries. Prerequisite: project_id and a synchronized projection; rebuild failures are returned as structured errors. Returns active tasks by default; set include_archived=true to also include completed/cancelled/closed_with_exceptions tasks. Typical params: project_id, include_archived."
+    )]
+    fn task_list(&self, Parameters(input): Parameters<TaskListRead>) -> CallToolResult {
+        if let Err(error) = self.require_project(&input.project_id) {
+            return tool_error(serde_json::to_value(error).unwrap_or_else(
+                |_| json!({"code":"V3_INTERNAL","message":"project validation failed"}),
+            ));
+        }
+        if let Err(error) = self.ensure_projection_ready() {
+            return self.tool_result::<Value>(Err(error));
+        }
+        let include_archived = input.include_archived.unwrap_or(false);
+        self.tool_result(self.views.task_list(include_archived))
+    }
+
+    #[tool(
+        description = "Rebuild the V3 projection from the event log. When: projection_status reports stale or a supported repair explicitly requests a rebuild. A failure is returned as stable structured V3_PROJECTION_REBUILD_FAILED and no caller may continue with the old projection. Prerequisite: project_id. Typical params: project_id."
+    )]
+    fn projection_rebuild(&self, Parameters(input): Parameters<ProjectIdRead>) -> CallToolResult {
+        if let Some(error) = self.reject_project(&input.project_id) {
+            return error;
+        }
+        self.tool_result(self.app.rebuild(&self.project_id))
+    }
+
+    #[tool(
+        description = "Return projection staleness status. When: checking whether event and projection counts are aligned before relying on a read model. Prerequisite: project_id. Returns stale plus event count comparison and state synced/stale/rebuilding/rebuild_failed. Typical params: project_id."
+    )]
+    fn projection_status(&self, Parameters(input): Parameters<ProjectIdRead>) -> CallToolResult {
+        if let Some(error) = self.reject_project(&input.project_id) {
+            return error;
+        }
+        self.tool_result(self.app.projection_status(&self.project_id))
+    }
+
+    #[tool(
+        description = "Return Task to Session Git traceability. When: auditing which recorded session open/close HEADs belong to one Task. Prerequisite: project_id, task_id. Missing historical HEADs are returned as missing/partial evidence and are never treated as a binding. Typical params: project_id, task_id."
+    )]
+    fn task_commits(&self, Parameters(input): Parameters<TaskCommitsRead>) -> CallToolResult {
+        if let Err(error) = self.require_project(&input.project_id) {
+            return tool_error(serde_json::to_value(error).unwrap_or_else(
+                |_| json!({"code":"V3_INTERNAL","message":"project validation failed"}),
+            ));
+        }
+        if let Err(error) = self.ensure_projection_ready() {
+            return self.tool_result::<Value>(Err(error));
+        }
+        self.tool_result(self.views.task_commits(&input.task_id))
+    }
+
+    #[tool(
+        description = "Find Tasks associated with a Git commit hash. When: auditing the reverse commit-to-Task link for a full or short hash. Prerequisite: project_id and a 4-64 character hexadecimal commit_hash. Unknown valid hashes return an empty tasks array; ambiguous short hashes return a structured validation error. Typical params: project_id, commit_hash."
+    )]
+    fn commit_tasks(&self, Parameters(input): Parameters<CommitTasksRead>) -> CallToolResult {
+        if let Some(error) = self.reject_project(&input.project_id) {
+            return error;
+        }
+        if let Err(error) = self.ensure_projection_ready() {
+            return self.tool_result::<Value>(Err(error));
+        }
+        self.tool_result(self.views.commit_tasks(&input.commit_hash))
     }
 
     #[tool(
@@ -1875,6 +1985,7 @@ impl V3McpServer {
             let requested_project_id = rest.split('/').next().unwrap_or_default();
             self.require_project(requested_project_id)?;
         }
+        self.ensure_projection_ready()?;
         let task_id = self.views.current_task_id()?;
         let bundle = self.views.load_bundle(&task_id)?;
         let value = match suffix {

@@ -66,7 +66,9 @@
     },
     "research_summary": { "type": "array", "items": { "type": "string" } }, "criteria": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/CriterionSummary" } },
     "files": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/NativePath" } }, "validation_commands": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-    "state": { "enum": ["planned", "ready", "active", "blocked", "review", "completed", "cancelled", "superseded"] }, "next_intent": { "type": "string" },
+    "state": { "enum": ["planned", "ready", "active", "blocked", "review", "completed", "cancelled", "superseded"] },
+    "task_state": { "enum": ["planned", "active", "blocked", "review", "completed", "cancelled", "closed_with_exceptions"] },
+    "next_intent": { "type": "string" },
     "blocker_details": { "$ref": "common.schema.json#/$defs/BlockerDetails" },
     "execution": {
       "type": ["object", "null"],

@@ -20,8 +20,17 @@ const CLAUDE_SETTING_SOURCES_FLAG: &str = "--setting-sources";
 const CLAUDE_ISOLATED_SETTING_SOURCES: &str = "";
 const CLAUDE_SETTINGS_FLAG: &str = "--settings";
 
-const MANAGED_SETTINGS_FIELDS: &[&str] =
-    &["model", "alwaysThinkingEnabled", "env.ANTHROPIC_BASE_URL"];
+const MANAGED_SETTINGS_FIELDS: &[&str] = &[
+    "model",
+    "alwaysThinkingEnabled",
+    "env.ANTHROPIC_BASE_URL",
+    "env.CLAUDE_CODE_SUBAGENT_MODEL",
+    "env.ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "env.ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "env.ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "env.ANTHROPIC_DEFAULT_FABLE_MODEL",
+    "env.DISABLE_PROMPT_CACHING",
+];
 const PRESERVED_SETTINGS_FIELDS: &[&str] = &[
     "permissions",
     "hooks",
@@ -600,7 +609,8 @@ fn read_claude_profile_with_index(
     let model = object
         .get("model")
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     let thinking_enabled = object.get("alwaysThinkingEnabled").and_then(Value::as_bool);
     let env = object.get("env").and_then(Value::as_object);
     let base_url = env
@@ -610,27 +620,30 @@ fn read_claude_profile_with_index(
     let subagent_model = env
         .and_then(|env| env.get("CLAUDE_CODE_SUBAGENT_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
-    let small_fast_model = env
-        .and_then(|env| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
-        .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     let sonnet_model = env
         .and_then(|env| env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     let opus_model = env
         .and_then(|env| env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     let haiku_model = env
         .and_then(|env| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     let fable_model = env
         .and_then(|env| env.get("ANTHROPIC_DEFAULT_FABLE_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
+    // Keep the legacy small/fast projection aligned with the canonical haiku tier.
+    let small_fast_model = haiku_model.clone();
     let disable_prompt_caching = env
         .and_then(|env| env.get("DISABLE_PROMPT_CACHING"))
         .and_then(Value::as_str)
@@ -773,6 +786,18 @@ fn is_anthropic_endpoint(base_url: &str) -> bool {
 /// compatibility risk worth surfacing.
 fn is_native_claude_model(model: &str) -> bool {
     model.trim().to_ascii_lowercase().starts_with("claude-")
+}
+
+/// The profile contract stores automatic fallback as an absent/null value. The
+/// UI uses `__auto__` only as a controlled-select sentinel; never let that
+/// sentinel, whitespace, or an empty legacy env value cross the adapter boundary.
+fn normalize_claude_model_value(value: String) -> Option<String> {
+    let value = value.trim().to_owned();
+    if value.is_empty() || value == "__auto__" {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn settings_value(document: &ConfigDocument) -> Result<Value, StorageError> {
@@ -960,30 +985,31 @@ fn managed_patch_from_document(
     let subagent_model = env
         .and_then(|env| env.get("CLAUDE_CODE_SUBAGENT_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
-    let small_fast_model = env
-        .and_then(|env| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
-        .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     let sonnet_model = env
         .and_then(|env| env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     let opus_model = env
         .and_then(|env| env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     let haiku_model = env
         .and_then(|env| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     // `haiku_model` is canonical for ANTHROPIC_DEFAULT_HAIKU_MODEL; `small_fast_model`
     // mirrors it so read-back consumers see one unambiguous value.
     let small_fast_model = haiku_model.clone();
     let fable_model = env
         .and_then(|env| env.get("ANTHROPIC_DEFAULT_FABLE_MODEL"))
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .and_then(normalize_claude_model_value);
     let disable_prompt_caching = env
         .and_then(|env| env.get("DISABLE_PROMPT_CACHING"))
         .and_then(Value::as_str)
@@ -993,7 +1019,8 @@ fn managed_patch_from_document(
         model: object
             .get("model")
             .and_then(Value::as_str)
-            .map(str::to_owned),
+            .map(str::to_owned)
+            .and_then(normalize_claude_model_value),
         base_url: base_url.clone(),
         thinking_enabled: object.get("alwaysThinkingEnabled").and_then(Value::as_bool),
         auth_token: auth_token.clone(),
@@ -1816,6 +1843,37 @@ mod tests {
             normalize_claude_anthropic_base_url("https://api.anthropic.com"),
             "https://api.anthropic.com"
         );
+    }
+
+    #[test]
+    fn empty_and_auto_model_values_are_normalized_to_the_contract_fallback() {
+        let (target, root) = temp_target();
+        let path = root.join(".claude/vibehub-profiles/legacy-auto.settings.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            br#"{
+  "model": " water18 ",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "  ",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "__auto__",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": " water18-opus ",
+    "ANTHROPIC_BASE_URL": "https://proxy.invalid/v1"
+  }
+}"#,
+        )
+        .unwrap();
+        let view = read_claude_profile(&target, &path).unwrap();
+        assert_eq!(view.model.as_deref(), Some("water18"));
+        assert_eq!(view.advanced.subagent_model, None);
+        assert_eq!(view.advanced.small_fast_model, None);
+        assert_eq!(view.advanced.sonnet_model, None);
+        assert_eq!(view.advanced.opus_model.as_deref(), Some("water18-opus"));
+        assert!(!view
+            .warnings
+            .contains(&"CLAUDE_THIRD_PARTY_ENDPOINT_NATIVE_TIER".to_owned()));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

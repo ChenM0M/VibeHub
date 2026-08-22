@@ -172,6 +172,130 @@ pub fn plan_node_state_covers_criteria(state: &str) -> bool {
     !matches!(state, "cancelled" | "superseded")
 }
 
+/// The task-level state consumed by every task-facing view.
+///
+/// Criterion states (`accepted`, `passed`, `failed`, `blocked`) and raw
+/// lifecycle states such as `completion_pending` remain separately available
+/// as facts.  This enum is the one user-facing task conclusion, so a plan
+/// node's state cannot accidentally turn a review or an incomplete historical
+/// session into `completed`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskTruthState {
+    Planned,
+    Active,
+    Blocked,
+    Review,
+    Completed,
+    Cancelled,
+    ClosedWithExceptions,
+}
+
+impl TaskTruthState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Planned => "planned",
+            Self::Active => "active",
+            Self::Blocked => "blocked",
+            Self::Review => "review",
+            Self::Completed => "completed",
+            Self::Cancelled => "cancelled",
+            Self::ClosedWithExceptions => "closed_with_exceptions",
+        }
+    }
+
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            Self::Completed | Self::Cancelled | Self::ClosedWithExceptions
+        )
+    }
+}
+
+/// Resolve the canonical task conclusion from lifecycle facts.
+///
+/// The ordering is intentional and tested: an incomplete Session or a stale
+/// projection can demote a historical `completed` claim to `blocked`; an
+/// explicit exception closure remains visibly distinct; pending confirmation
+/// is `review`; only a valid confirmation with no newer blocking fact is
+/// `completed`.  No historical event is rewritten by this projection helper.
+pub fn task_truth_state(
+    lifecycle: &TaskLifecycleProjection,
+    fallback_state: Option<&str>,
+    workflow_blocked: bool,
+    projection_stale: bool,
+) -> TaskTruthState {
+    let raw_state = if lifecycle.event_ids.is_empty() {
+        fallback_state.unwrap_or(lifecycle.state.as_str())
+    } else {
+        lifecycle.state.as_str()
+    };
+    let plan_blocked = lifecycle
+        .effective_nodes()
+        .any(|(_, node)| matches!(node.state.as_str(), "blocked" | "failed"));
+    let criterion_blocked = lifecycle.criteria.values().any(|criterion| {
+        matches!(criterion.state, CriterionState::Failed | CriterionState::Blocked)
+    });
+    let session_blocked = lifecycle
+        .sessions
+        .values()
+        .any(|session| matches!(session.state.as_str(), "gapped" | "unknown"));
+    let inferred_blocked = workflow_blocked
+        || plan_blocked
+        || criterion_blocked
+        || session_blocked
+        || lifecycle.has_open_findings();
+
+    // `closed_with_exceptions` is an explicit terminal conclusion and must not
+    // be silently relabeled as all-green completion, even when its blockers
+    // remain visible in the diagnostic payload.
+    if raw_state == "closed_with_exceptions" {
+        return TaskTruthState::ClosedWithExceptions;
+    }
+    if raw_state == "completed" && (inferred_blocked || projection_stale) {
+        return TaskTruthState::Blocked;
+    }
+    if lifecycle.event_ids.is_empty() && fallback_state.is_some() && raw_state == "completed" {
+        // A legacy task file is evidence that somebody wrote a historical
+        // phase value, not a V3 completion confirmation. Keep it visible for
+        // review until a typed completion event supplies the missing proof.
+        return TaskTruthState::Review;
+    }
+    if inferred_blocked {
+        return TaskTruthState::Blocked;
+    }
+    match raw_state {
+        "completed" => TaskTruthState::Completed,
+        "cancelled" => TaskTruthState::Cancelled,
+        "completion_pending" => TaskTruthState::Review,
+        "review" => TaskTruthState::Review,
+        _ if lifecycle.effective_nodes().next().is_some()
+            && lifecycle
+                .effective_nodes()
+                .all(|(_, node)| is_terminal_plan_node_state(node.state.as_str())) =>
+        {
+            // A terminal plan without a typed completion confirmation is
+            // reviewable evidence, not a completed Task conclusion.
+            TaskTruthState::Review
+        }
+        "planned" => TaskTruthState::Planned,
+        "active" => TaskTruthState::Active,
+        _ if lifecycle
+            .effective_nodes()
+            .any(|(_, node)| node.state == "active") =>
+        {
+            TaskTruthState::Active
+        }
+        _ if lifecycle
+            .effective_nodes()
+            .any(|(_, node)| node.state == "ready") =>
+        {
+            TaskTruthState::Planned
+        }
+        _ => TaskTruthState::Active,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FindingProjection {
     pub finding_id: String,
@@ -502,7 +626,7 @@ pub(crate) fn apply_command_with_required_criteria(
             && event.event_type == command.event_type
             && event.task_id.0 == command.task_id
     }) {
-        return store.append(command_draft(command));
+        return store.append_with_rebuild(command_draft(command));
     }
     let projection = fold_task(&command.task_id, &events);
     if command.event_type == "task.completion_proposed"
@@ -515,7 +639,7 @@ pub(crate) fn apply_command_with_required_criteria(
         command.payload["digest"] = Value::String(projection.completion_digest());
     }
     validate_command(&projection, &command, required_criterion_ids)?;
-    store.append(command_draft(command))
+    store.append_with_rebuild(command_draft(command))
 }
 
 fn command_draft(command: LifecycleCommand) -> EventDraft {
@@ -1772,4 +1896,55 @@ fn stale_or_invalid_evidence_is_not_completion_evidence() {
     assert!(!valid_evidence_ref("stale:old-build"));
     assert!(!valid_evidence_ref("invalid:missing-artifact-hash"));
     assert!(!valid_evidence_ref("unavailable:windows-host"));
+}
+
+#[test]
+fn task_truth_state_has_one_terminal_priority() {
+    let mut lifecycle = TaskLifecycleProjection::empty("task.truth");
+    lifecycle.state = "completed".to_owned();
+    assert_eq!(
+        task_truth_state(&lifecycle, None, false, false),
+        TaskTruthState::Completed
+    );
+    assert_eq!(
+        task_truth_state(&lifecycle, None, true, false),
+        TaskTruthState::Blocked
+    );
+    assert_eq!(
+        task_truth_state(&lifecycle, None, false, true),
+        TaskTruthState::Blocked
+    );
+
+    lifecycle.state = "completion_pending".to_owned();
+    assert_eq!(
+        task_truth_state(&lifecycle, None, false, false),
+        TaskTruthState::Review
+    );
+    lifecycle.state = "closed_with_exceptions".to_owned();
+    assert_eq!(
+        task_truth_state(&lifecycle, None, true, true),
+        TaskTruthState::ClosedWithExceptions
+    );
+}
+
+#[test]
+fn task_truth_state_does_not_hide_failed_criteria_or_plan_nodes() {
+    let mut lifecycle = TaskLifecycleProjection::empty("task.truth");
+    lifecycle.state = "active".to_owned();
+    lifecycle.criteria.insert(
+        "criterion.truth".to_owned(),
+        CriterionProjection {
+            criterion_id: "criterion.truth".to_owned(),
+            title: "Truth".to_owned(),
+            required: true,
+            state: CriterionState::Failed,
+            evidence_refs: vec!["evidence.truth".to_owned()],
+            reviewer: Some("reviewer".to_owned()),
+            version: 1,
+        },
+    );
+    assert_eq!(
+        task_truth_state(&lifecycle, None, false, false),
+        TaskTruthState::Blocked
+    );
 }

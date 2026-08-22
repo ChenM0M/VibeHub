@@ -25,6 +25,10 @@ pub struct V3Projection {
     #[serde(default)]
     pub project_memory: Option<MemoryProjection>,
     pub unknown_event_types: Vec<String>,
+    #[serde(default)]
+    pub total_event_count: u64,
+    #[serde(default)]
+    pub last_event_timestamp: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -70,6 +74,10 @@ pub fn session_has_milestone_evidence(session: &SessionProjection) -> bool {
 }
 
 pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
+    let total_event_count = events.len() as u64;
+    let last_event_timestamp = events
+        .last()
+        .map(|event| event.recorded_at.clone());
     let mut projection = V3Projection {
         schema_version: "1.0".to_owned(),
         model_version: "v3-core-2".to_owned(),
@@ -82,6 +90,8 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
         worktrees: BTreeMap::new(),
         project_memory: None,
         unknown_event_types: Vec::new(),
+        total_event_count,
+        last_event_timestamp,
     };
     let mut lifecycle_task_ids = BTreeSet::new();
     let mut orchestration_task_ids = BTreeSet::new();

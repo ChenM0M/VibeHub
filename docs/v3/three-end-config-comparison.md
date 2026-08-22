@@ -28,6 +28,12 @@
   优先，写回时 `small_fast_model` 镜像 `haiku_model` 的规范值。
 - 官方 `api.anthropic.com` 端点提供全部原生 ID，回落对其无副作用。
 
+Profile 的 `schema_capability` metadata 会同时声明 Claude capability 的来源、支持字段
+和回落优先级，并给出 `custom_model_options` 的来源、候选值与 `allow_custom`。前端只把
+`__auto__` 当作界面 sentinel；契约 payload 仍使用 null。若旧 Profile 没有这两个 metadata
+或候选能力为 unavailable，UI 会显示不可用原因并保留自动回落；已有未知模型 ID 会被
+保留为可见选项，不会被强制改成空值。
+
 未在“高级配置”区填写任何项 = 采用回落；填写了某项 = 使用该项（空字符串视为未配置，同样回落）。
 
 ## 3. 第三方端点诊断

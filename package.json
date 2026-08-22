@@ -18,6 +18,7 @@
     "v3:plan-node-brief:check": "node scripts/v3-cockpit/plan-node-brief.mjs",
     "v3:tabs:check": "node scripts/v3-tabs/check.mjs",
     "v3:tags:check": "node scripts/v3-tags/check.mjs",
+    "v3:agent-profiles:check": "node scripts/v3-agent-profiles/check.mjs",
         "release:check": "node scripts/release/preflight.mjs",
         "release:notes": "node scripts/release/notes.mjs",
         "preview": "vite preview",

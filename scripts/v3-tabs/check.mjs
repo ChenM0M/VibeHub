@@ -231,15 +231,145 @@ const entry = `
   assert.equal(useTabsStore.getState().activeTabId, "persist-a", "a restart restores the active project identity");
   assert.equal(useTabsStore.getState().getProjectUiContext("persist-a").current_view, "plan-graph", "a restart restores project-scoped UI context");
 
-  // 9) Persistence failures surface a diagnostic but never roll back the local
+  const workspaceStateForTest = (revision) => ({
+    schema_version: 3,
+    kind: "workspace_state",
+    revision,
+    open_projects: [],
+    active_project_id: null,
+    updated_at: new Date().toISOString(),
+    updated_by: "test",
+    provenance: { source: "user", writer: "test", reason: "test" },
+  });
+  const revisionConflict = (expected, current) => ({
+    code: "WORKSPACE_STATE_REVISION_CONFLICT",
+    message: "WORKSPACE_STATE_REVISION_CONFLICT: expected " + expected + ", current " + current,
+    recovery_action: "retry",
+  });
+  const preparePersistenceScenario = async (revision) => {
+    tauriApi.loadWorkspaceState = async () => ({
+      status: "present",
+      state: workspaceStateForTest(revision),
+      diagnostics: [],
+      recommended_action: null,
+    });
+    useTabsStore.setState({ tabs: [], activeTabId: null, hydrated: false, hydrating: false, persistedRevision: 0, diagnostics: [] });
+    await useTabsStore.getState().retryHydrate();
+    assert.equal(useTabsStore.getState().persistedRevision, revision, "the fake transport establishes the current workspace revision");
+  };
+
+  // 9) A successful save has no conflict refresh and advances the persisted revision once.
+  await preparePersistenceScenario(20);
+  const successfulSaveCalls = [];
+  tauriApi.saveWorkspaceState = async ({ state }) => {
+    successfulSaveCalls.push(state);
+    return { state: { ...state, revision: state.revision + 1 }, previous_revision: state.revision, backup_path: null, diagnostics: [] };
+  };
+  useTabsStore.getState().openTab("persist-a");
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(successfulSaveCalls.length, 1, "a successful logical write is sent once");
+  assert.equal(successfulSaveCalls[0].revision, 20, "a successful write uses the current revision precondition");
+  assert.equal(useTabsStore.getState().persistedRevision, 21, "a successful write advances the revision exactly once");
+  assert.deepEqual(useTabsStore.getState().diagnostics, [], "a successful write does not leave an error diagnostic");
+
+  // 9b) One conflict refreshes the latest revision and replays the same logical operation once.
+  await preparePersistenceScenario(30);
+  const replaySaveCalls = [];
+  let replayLoadCalls = 0;
+  tauriApi.saveWorkspaceState = async ({ state }) => {
+    replaySaveCalls.push(state);
+    if (replaySaveCalls.length === 1) throw revisionConflict(state.revision, 31);
+    return { state: { ...state, revision: state.revision + 1 }, previous_revision: state.revision, backup_path: null, diagnostics: [] };
+  };
+  tauriApi.loadWorkspaceState = async () => {
+    replayLoadCalls += 1;
+    return { status: "present", state: workspaceStateForTest(31), diagnostics: [], recommended_action: null };
+  };
+  useTabsStore.getState().openTab("persist-a");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(replaySaveCalls.length, 2, "one revision conflict schedules exactly one replay");
+  assert.equal(replayLoadCalls, 1, "a replay refreshes the workspace revision before saving");
+  assert.deepEqual(replaySaveCalls.map((state) => state.revision), [30, 31], "the replay uses the refreshed revision");
+  assert.equal(useTabsStore.getState().persistedRevision, 32, "the replayed save advances the refreshed revision");
+  assert.deepEqual(useTabsStore.getState().diagnostics, [], "a successful replay clears the conflict state");
+
+  // 9c) A newer user mutation cancels the stale conflict operation; the queued write
+  // uses the latest local tabs and the refreshed revision instead of restoring old state.
+  await preparePersistenceScenario(40);
+  const concurrentSaveCalls = [];
+  let resolveConcurrentLoad;
+  let concurrentLoadStarted;
+  const concurrentLoadStartedPromise = new Promise((resolve) => { concurrentLoadStarted = resolve; });
+  tauriApi.saveWorkspaceState = async ({ state }) => {
+    concurrentSaveCalls.push(state);
+    if (concurrentSaveCalls.length === 1) throw revisionConflict(state.revision, 41);
+    return { state: { ...state, revision: state.revision + 1 }, previous_revision: state.revision, backup_path: null, diagnostics: [] };
+  };
+  tauriApi.loadWorkspaceState = async () => {
+    concurrentLoadStarted();
+    return await new Promise((resolve) => { resolveConcurrentLoad = resolve; });
+  };
+  useTabsStore.getState().openTab("persist-a");
+  await concurrentLoadStartedPromise;
+  useTabsStore.getState().openTab("persist-b");
+  resolveConcurrentLoad({ status: "present", state: workspaceStateForTest(41), diagnostics: [], recommended_action: null });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(concurrentSaveCalls.length, 2, "the superseded conflict does not enqueue an extra stale replay");
+  assert.deepEqual(concurrentSaveCalls[1].open_projects.map((project) => project.project_id), ["persist-a", "persist-b"], "the newer user tabs win over the stale conflict snapshot");
+  assert.equal(concurrentSaveCalls[1].revision, 41, "the newer user write uses the refreshed revision");
+  assert.deepEqual(useTabsStore.getState().tabs, ["persist-a", "persist-b"], "a newer mutation remains local after conflict recovery");
+  assert.equal(useTabsStore.getState().diagnostics.length, 0, "a canceled stale operation cannot surface an error for the newer mutation");
+
+  // 9d) Continuous conflicts are bounded by the logical operation depth and expose
+  // project, operation, current revision, and a visible recovery/abandonment action.
+  await preparePersistenceScenario(50);
+  const continuousSaveCalls = [];
+  let continuousLoadCalls = 0;
+  tauriApi.saveWorkspaceState = async ({ state }) => {
+    continuousSaveCalls.push(state);
+    throw revisionConflict(state.revision, 50 + continuousSaveCalls.length);
+  };
+  tauriApi.loadWorkspaceState = async () => {
+    continuousLoadCalls += 1;
+    return { status: "present", state: workspaceStateForTest(50 + continuousLoadCalls), diagnostics: [], recommended_action: null };
+  };
+  useTabsStore.getState().openTab("persist-a");
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const exhaustedDiagnostic = useTabsStore.getState().diagnostics[0];
+  assert.equal(continuousSaveCalls.length, 4, "continuous conflicts stop after three replays plus the initial write");
+  assert.equal(continuousLoadCalls, 3, "the capped operation refreshes only before each allowed replay");
+  assert.equal(exhaustedDiagnostic?.code, "workspace_state.revision_conflict_exhausted", "the capped conflict is a structured error");
+  assert.match(exhaustedDiagnostic?.message ?? "", /project=persist-a/);
+  assert.match(exhaustedDiagnostic?.message ?? "", /operation=open/);
+  assert.match(exhaustedDiagnostic?.message ?? "", /current_revision=54/);
+  assert.match(exhaustedDiagnostic?.message ?? "", /下一步：点击“重试”/);
+  assert.equal(useTabsStore.getState().persistedRevision, 54, "the terminal diagnostic records the current remote revision without claiming a successful write");
+  assert.deepEqual(useTabsStore.getState().tabs, ["persist-a"], "the terminal conflict keeps the user tab mutation");
+
+  // 9e) The visible retry path retries the local mutation against the refreshed
+  // revision instead of rehydrating over it.
+  let manualRetryState;
+  tauriApi.saveWorkspaceState = async ({ state }) => {
+    manualRetryState = state;
+    return { state: { ...state, revision: state.revision + 1 }, previous_revision: state.revision, backup_path: null, diagnostics: [] };
+  };
+  await useTabsStore.getState().retryHydrate();
+  assert.equal(manualRetryState.revision, 54, "manual retry uses the revision reported by the terminal conflict");
+  assert.deepEqual(manualRetryState.open_projects.map((project) => project.project_id), ["persist-a"], "manual retry preserves the local tabs instead of replacing them from disk");
+  assert.deepEqual(useTabsStore.getState().tabs, ["persist-a"], "manual retry does not lose the local tab state");
+  assert.equal(useTabsStore.getState().hydrating, false, "manual retry releases the UI retry lock after the save settles");
+  assert.deepEqual(useTabsStore.getState().diagnostics, [], "a successful manual retry clears the terminal error");
+
+  // 10) Persistence failures surface a diagnostic but never roll back the local
   // tab mutation; retrying restore remains available through the store action.
+  useTabsStore.setState({ tabs: ["persist-b"], activeTabId: "persist-b", hydrated: true, hydrating: false, persistedRevision: 55, diagnostics: [] });
   tauriApi.saveWorkspaceState = async () => { throw new Error("WORKSPACE_STATE_DISK_FULL"); };
   useTabsStore.getState().openTab("persist-a");
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(useTabsStore.getState().tabs, ["persist-b", "persist-a"], "a failed save must not roll back the local tab mutation");
   assert.equal(useTabsStore.getState().diagnostics[0]?.code, "workspace_state.persistence_failed", "save failures remain visible as structured diagnostics");
 
-  // 10) Recovery keeps valid order, clears an invalid active project, restores
+  // 11) Recovery keeps valid order, clears an invalid active project, restores
   // project context, and reports identity changes instead of guessing by name.
   tauriApi.saveWorkspaceState = async ({ state }) => {
     saveCalls.push(state);

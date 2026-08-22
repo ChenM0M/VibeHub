@@ -34,6 +34,9 @@ const schemaNames = [
   "node-brief.schema.json",
   "worktree-orchestration-view.schema.json",
   "usage-overview.schema.json",
+  "task-list-view.schema.json",
+  "task-commits-view.schema.json",
+  "commit-tasks-view.schema.json",
 ];
 const requiredScenarios = [
   "FX-EMPTY", "FX-HAPPY", "FX-NO-DOCS", "FX-PARALLEL", "FX-REWORK", "FX-STALE",
@@ -489,6 +492,9 @@ assert(!agentSpecValidator({
 }), "agent spec sync result requires blocking paths");
 
 const agentProfileValidator = ajv.getSchema(schemas.get("agent-profile.schema.json").$id);
+const agentProfileSchemaCapabilityValidator = ajv.compile({
+  $ref: `${schemas.get("agent-profile.schema.json").$id}#/$defs/SchemaCapability`,
+});
 const agentProfileTimestamp = "2026-08-09T00:00:00.000Z";
 const agentProfilePath = (native, platform = "macos") => ({
   platform,
@@ -622,6 +628,30 @@ const agentProfileReadResult = {
   schema_capability: agentProfileDocument.schema_capability,
 };
 assert(agentProfileValidator(agentProfileReadResult), "agent profile read result validates: " + ajv.errorsText(agentProfileValidator.errors));
+assert(agentProfileSchemaCapabilityValidator({
+  schema_id: "claude-code.settings",
+  schema_version: "1.0",
+  compatibility: "partial",
+  supported_fields: ["model", "env.CLAUDE_CODE_SUBAGENT_MODEL"],
+  unsupported_fields: [],
+  unknown_fields: [],
+  capability_declaration: {
+    status: "declared",
+    source: "claude-code.settings.adapter",
+    version: "1.0",
+    supported_fields: ["model", "env.CLAUDE_CODE_SUBAGENT_MODEL"],
+    fallback_priority: ["explicit_override", "managed.default_model_id", "unavailable"],
+    message: null,
+  },
+  custom_model_options: {
+    status: "available",
+    source: "managed.providers[].models",
+    values: ["water18", "water18-mini"],
+    allow_custom: true,
+    fallback_priority: ["explicit_override", "managed.default_model_id", "unavailable"],
+    message: null,
+  },
+}), "Claude capability declaration and custom model options validate");
 assert(agentProfileValidator({
   kind: "agent_profile_command",
   command: "save",

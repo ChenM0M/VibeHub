@@ -212,6 +212,32 @@
         "rollback_available": { "type": "boolean" }
       }
     },
+    "CapabilityDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source", "version", "supported_fields", "fallback_priority", "message"],
+      "properties": {
+        "status": { "enum": ["declared", "unavailable"] },
+        "source": { "type": "string", "minLength": 1 },
+        "version": { "type": ["string", "null"], "minLength": 1 },
+        "supported_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "fallback_priority": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "message": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "CustomModelOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source", "values", "allow_custom", "fallback_priority", "message"],
+      "properties": {
+        "status": { "enum": ["available", "unavailable"] },
+        "source": { "type": "string", "minLength": 1 },
+        "values": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "allow_custom": { "type": "boolean" },
+        "fallback_priority": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "message": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
     "SchemaCapability": {
       "type": "object",
       "additionalProperties": false,
@@ -222,7 +248,9 @@
         "compatibility": { "enum": ["supported", "partial", "unknown", "unsupported"] },
         "supported_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "unsupported_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "unknown_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+        "unknown_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "capability_declaration": { "$ref": "#/$defs/CapabilityDeclaration" },
+        "custom_model_options": { "$ref": "#/$defs/CustomModelOptions" }
       }
     },
     "LaunchSpec": {

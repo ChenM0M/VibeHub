@@ -328,6 +328,30 @@ export interface SchemaCapability {
   supported_fields: string[];
   unsupported_fields: string[];
   unknown_fields: string[];
+  capability_declaration?: CapabilityDeclaration;
+  custom_model_options?: CustomModelOptions;
+}
+export interface CapabilityDeclaration {
+  status: "declared" | "unavailable";
+  source: string;
+  version: string | null;
+  supported_fields: string[];
+  /**
+   * @minItems 1
+   */
+  fallback_priority: string[];
+  message: string | null;
+}
+export interface CustomModelOptions {
+  status: "available" | "unavailable";
+  source: string;
+  values: string[];
+  allow_custom: boolean;
+  /**
+   * @minItems 1
+   */
+  fallback_priority: string[];
+  message: string | null;
 }
 export interface LaunchSpec {
   executable: string;

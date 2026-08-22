@@ -1812,7 +1812,16 @@
       "haikuModelHint": "映射到环境变量 ANTHROPIC_DEFAULT_HAIKU_MODEL，优先级高于上面的小/快模型。留空时投影为当前默认模型。",
       "disablePromptCaching": "禁用 Prompt Caching",
       "disablePromptCachingHint": "映射到环境变量 DISABLE_PROMPT_CACHING=1。仅当你确定上游端点不支持 prompt caching 时开启。",
-      "currentMainModel": "当前主模型：{{model}}"
+      "currentMainModel": "当前主模型：{{model}}",
+      "capabilityLabel": "能力声明",
+      "capabilityDeclared": "已声明",
+      "capabilityUnavailable": "不可用",
+      "capabilitySourceUnavailable": "没有适配器声明",
+      "capabilityFieldsLabel": "支持字段",
+      "customOptionsLabel": "自定义模型选项",
+      "customOptionsUnavailable": "不可用；仍可使用自动回落。",
+      "fallbackPriority": "回落优先级",
+      "unknownOption": "未知的已配置值"
     }
   },
   "update": {

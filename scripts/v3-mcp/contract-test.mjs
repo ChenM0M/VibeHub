@@ -107,7 +107,7 @@ try {
   const tools = await request("tools/list");
   assert(resources.resources.length === 7, "expected seven versioned resources");
   assert(resources.resources.every((resource) => resource.uri.startsWith("vibehub://v3/1.0/")), "resource URI is not versioned");
-  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,attempt_manage,criterion_review,event_log,finding_manage,memory_query,memory_write,orchestration_write,plan_criteria_set,plan_dependencies_set,plan_node_add,plan_node_state_set,session_close,session_open,session_recovery,session_task_bind,session_task_unbind,task_candidates,task_complete,task_completion_propose,task_create,task_policy_upgrade,task_route,task_view,v3_next_action", "unexpected tool catalog");
+  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,attempt_manage,commit_tasks,criterion_review,event_log,finding_manage,memory_query,memory_write,orchestration_write,plan_criteria_set,plan_dependencies_set,plan_node_add,plan_node_state_set,projection_rebuild,projection_status,session_close,session_open,session_recovery,session_task_bind,session_task_unbind,task_candidates,task_commits,task_complete,task_completion_propose,task_create,task_list,task_policy_upgrade,task_route,task_view,v3_next_action", "unexpected tool catalog");
   const planToolNames = ["plan_node_add", "plan_dependencies_set", "plan_node_state_set"];
   for (const name of planToolNames) {
     const schema = tools.tools.find((tool) => tool.name === name)?.inputSchema;
@@ -166,6 +166,28 @@ try {
   assert(candidates.structuredContent.result.some((task) => task.task_id === taskId), "task_candidates did not expose the active task");
   const taskView = await request("tools/call", { name: "task_view", arguments: { task_id: taskId } });
   assert(taskView.structuredContent.result.node_brief.task_id === taskId, "task_view did not return the requested task bundle");
+
+  // New projection/archival tools
+  const taskList = await request("tools/call", { name: "task_list", arguments: { project_id: projectId } });
+  assert(Array.isArray(taskList.structuredContent.result.tasks), "task_list did not return tasks array");
+  assert(ajv.validate("task-list-view.schema.json", taskList.structuredContent.result), `task_list failed schema validation: ${JSON.stringify(ajv.errors)}`);
+  const taskListArchived = await request("tools/call", { name: "task_list", arguments: { project_id: projectId, include_archived: true } });
+  assert(Array.isArray(taskListArchived.structuredContent.result.tasks), "task_list(include_archived) did not return tasks array");
+  assert(ajv.validate("task-list-view.schema.json", taskListArchived.structuredContent.result), `task_list(include_archived) failed schema validation: ${JSON.stringify(ajv.errors)}`);
+
+  const projStatus = await request("tools/call", { name: "projection_status", arguments: { project_id: projectId } });
+  assert(typeof projStatus.structuredContent.result.stale === "boolean", "projection_status did not return stale boolean");
+
+  const taskCommits = await request("tools/call", { name: "task_commits", arguments: { project_id: projectId, task_id: taskId } });
+  assert(taskCommits.structuredContent.result.task_id === taskId, "task_commits did not return the requested task");
+  assert(ajv.validate("task-commits-view.schema.json", taskCommits.structuredContent.result), `task_commits failed schema validation: ${JSON.stringify(ajv.errors)}`);
+
+  const commitTasks = await request("tools/call", { name: "commit_tasks", arguments: { project_id: projectId, commit_hash: "deadbeef" } });
+  assert(commitTasks.structuredContent.result.match === "none" && commitTasks.structuredContent.result.tasks.length === 0, "commit_tasks unknown hash behavior was not explicit");
+  assert(ajv.validate("commit-tasks-view.schema.json", commitTasks.structuredContent.result), `commit_tasks failed schema validation: ${JSON.stringify(ajv.errors)}`);
+
+  const projRebuild = await request("tools/call", { name: "projection_rebuild", arguments: { project_id: projectId } });
+  assert(projRebuild.structuredContent.result.project_id === projectId, "projection_rebuild did not return rebuilt projection");
   const routeDecision = await request("tools/call", { name: "task_route", arguments: {
     project_id: projectId,
     interaction_id: "interaction.contract",

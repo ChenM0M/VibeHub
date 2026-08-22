@@ -25,6 +25,9 @@ const schemas = [
   ["node-brief.schema.json", "NodeBrief"],
   ["worktree-orchestration-view.schema.json", "WorktreeOrchestrationView"],
   ["usage-overview.schema.json", "UsageOverview"],
+  ["task-list-view.schema.json", "TaskListView"],
+  ["task-commits-view.schema.json", "TaskCommitsView"],
+  ["commit-tasks-view.schema.json", "CommitTasksView"],
 ];
 
 const exportedDefinitions = new Map([
@@ -51,7 +54,7 @@ const exportedDefinitions = new Map([
     "AgentProfileSaveResult", "AgentProfileDiagnosticsResult", "AgentProfileDocument", "RuntimeTarget", "NativePath",
     "ConfigSource", "ConfigRevision", "CredentialReference", "ThinkingProfile", "ModelProfile",
     "ProviderProfile", "ManagedProfileFields", "DefaultState", "DefaultProjection",
-    "PreservationSummary", "ProtocolCapability", "SchemaCapability", "LaunchSpec",
+    "PreservationSummary", "ProtocolCapability", "SchemaCapability", "CapabilityDeclaration", "CustomModelOptions", "LaunchSpec",
   ]],
   ["workspace-state.schema.json", [
     "WorkspaceStateContract", "WorkspaceState", "WorkspaceProjectIdentity", "WorkspaceProjectUiContext",

@@ -1660,22 +1660,35 @@ fn patch_for_claude(
     });
     let credential = provider.map(|provider| &provider.credential);
     let auth_token = credential.and_then(|credential| credential_secret(credential));
-    let main_model = managed.default_model_id.clone();
+    let main_model = managed
+        .default_model_id
+        .clone()
+        .and_then(normalize_claude_model_option);
     // Compatibility projection: when a Claude Code Profile targets a third-party
     // endpoint, subagents and background tasks must not fall back to native-only
     // model IDs (for example `claude-sonnet-5`) that the endpoint does not serve.
     // Advanced overrides win; otherwise the managed default model is projected so
     // built-in subagents such as statusline-setup resolve to a reachable model.
     let advanced = managed.claude_advanced.clone().unwrap_or_default();
-    let resolve = |value: Option<String>| value.filter(|value| !value.trim().is_empty()).or_else(|| main_model.clone());
+    let resolve = |value: Option<String>| {
+        value
+            .and_then(normalize_claude_model_option)
+            .or_else(|| main_model.clone())
+    };
     let subagent_model = resolve(advanced.subagent_model.clone());
     // `small_fast_model` is the generic fallback for the haiku tier; an explicit
     // `haiku_model` alias wins so the two never diverge.
-    let haiku_model = resolve(advanced.haiku_model.clone().or(advanced.small_fast_model.clone()));
+    let haiku_model = resolve(
+        advanced
+            .haiku_model
+            .clone()
+            .or(advanced.small_fast_model.clone()),
+    );
     let sonnet_model = resolve(advanced.sonnet_model.clone());
     let opus_model = resolve(advanced.opus_model.clone());
     let fable_model = resolve(advanced.fable_model.clone());
     let small_fast_model = haiku_model.clone();
+    let clear_model = main_model.is_none();
     Ok(ClaudeSettingsPatch {
         model: main_model,
         base_url: provider.and_then(|provider| non_empty(provider.base_url.clone())),
@@ -1687,7 +1700,7 @@ fn patch_for_claude(
         haiku_model,
         fable_model,
         disable_prompt_caching: advanced.disable_prompt_caching,
-        clear_model: managed.default_model_id.is_none(),
+        clear_model,
         clear_base_url: provider
             .map(|provider| provider.base_url.trim().is_empty())
             .unwrap_or(true),
@@ -1702,6 +1715,18 @@ fn patch_for_claude(
             .unwrap_or(false),
         strip_credential_helper: false,
     })
+}
+
+/// `__auto__` is a UI-only sentinel. The profile contract and Claude adapter
+/// represent automatic fallback as an absent value, so legacy empty strings and
+/// whitespace are normalized at the Tauri boundary as well.
+fn normalize_claude_model_option(value: String) -> Option<String> {
+    let value = value.trim().to_owned();
+    if value.is_empty() || value == "__auto__" {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn patch_for_codex(
@@ -2091,18 +2116,7 @@ fn claude_document_parts(
         view.managed_fields.clone(),
         Some("Claude 默认 Profile 只投影受管字段，保留 settings 中其他字段"),
     );
-    let schema_capability = schema_value(
-        "claude-code.settings",
-        None,
-        if view.warnings.is_empty() {
-            "supported"
-        } else {
-            "partial"
-        },
-        view.managed_fields.clone(),
-        Vec::new(),
-        view.unknown_fields.clone(),
-    );
+    let schema_capability = claude_schema_capability(view);
     let launch = json!({
         "executable":view.launch.executable,
         "profile_argument":Value::Null,
@@ -2389,6 +2403,70 @@ fn schema_value(
         "unsupported_fields":unsupported_fields,
         "unknown_fields":unknown_fields
     })
+}
+
+fn claude_schema_capability(view: &ClaudeCodeProfileView) -> Value {
+    let model_values = view
+        .model
+        .clone()
+        .into_iter()
+        .filter_map(normalize_claude_model_option)
+        .collect::<Vec<_>>();
+    let declaration_status = if view.managed_fields.is_empty() {
+        "unavailable"
+    } else {
+        "declared"
+    };
+    let custom_options_status = if model_values.is_empty() {
+        "unavailable"
+    } else {
+        "available"
+    };
+    let mut capability = schema_value(
+        "claude-code.settings",
+        Some("1.0"),
+        if view.warnings.is_empty() {
+            "supported"
+        } else {
+            "partial"
+        },
+        view.managed_fields.clone(),
+        Vec::new(),
+        view.unknown_fields.clone(),
+    );
+    if let Some(object) = capability.as_object_mut() {
+        object.insert(
+            "capability_declaration".to_owned(),
+            json!({
+                "status": declaration_status,
+                "source": "claude-code.settings.adapter",
+                "version": "1.0",
+                "supported_fields": view.managed_fields,
+                "fallback_priority": [
+                    "explicit_override",
+                    "managed.default_model_id",
+                    "unavailable"
+                ],
+                "message": if declaration_status == "declared" { Value::Null } else { json!("Claude Code capability declaration is unavailable") }
+            }),
+        );
+        object.insert(
+            "custom_model_options".to_owned(),
+            json!({
+                "status": custom_options_status,
+                "source": "managed.providers[].models",
+                "values": model_values,
+                "allow_custom": custom_options_status == "available",
+                "fallback_priority": [
+                    "explicit_override",
+                    "managed.default_model_id",
+                    "unavailable"
+                ],
+                "message": if custom_options_status == "available" { Value::Null } else { json!("No managed Claude model is available for custom selection") }
+            }),
+        );
+    }
+    capability
 }
 
 fn string_vec(values: &[&str]) -> Vec<String> {
@@ -3822,6 +3900,17 @@ mod tests {
         assert_eq!(patch.subagent_model.as_deref(), Some("water18"));
         assert_eq!(patch.small_fast_model.as_deref(), Some("water18"));
         assert_eq!(patch.haiku_model.as_deref(), Some("water18"));
+        // The React-only sentinel is treated exactly like an absent override at
+        // the Tauri boundary and therefore never reaches the settings payload.
+        managed.claude_advanced = Some(ClaudeAdvancedInput {
+            subagent_model: Some("__auto__".to_owned()),
+            small_fast_model: Some("".to_owned()),
+            ..Default::default()
+        });
+        let patch = patch_for_claude(&managed).unwrap();
+        assert_eq!(patch.subagent_model.as_deref(), Some("water18"));
+        assert_eq!(patch.small_fast_model.as_deref(), Some("water18"));
+        assert_eq!(patch.clear_model, false);
         // Explicit haiku alias wins over small_fast_model and stays unified.
         managed.claude_advanced = Some(ClaudeAdvancedInput {
             small_fast_model: Some("water18-mini".to_owned()),

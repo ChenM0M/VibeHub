@@ -49,6 +49,7 @@ import {
     releaseFixtureUpstreamModels,
 } from '@/lib/releaseFixture';
 import { tauriApi, V3AgentProfileSaveRequest } from '@/services/tauri';
+import { CLAUDE_AUTO_MODEL_VALUE, normalizeClaudeModelSelection } from './claudeProfile';
 import type {
     AgentKind,
     AgentProfileDiscoverResult,
@@ -1221,10 +1222,34 @@ export function AgentProfilesPanel() {
                                         const slash = id.lastIndexOf('/');
                                         return slash >= 0 ? id.slice(slash + 1) : id;
                                     })();
-                                    const candidateModels = Array.from(new Set(profileForEdit.managed.providers.flatMap((provider) => provider.models.filter((model) => model.enabled).map((model) => model.model_id))));
-                                    const subagentModel = advanced?.subagent_model ?? '';
-                                    const smallModel = advanced?.small_fast_model ?? '';
+                                    const capabilityDeclaration = profileForEdit.schema_capability.capability_declaration;
+                                    const customModelOptions = profileForEdit.schema_capability.custom_model_options;
+                                    const candidateModels = customModelOptions?.status === 'available'
+                                        ? Array.from(new Set([
+                                            ...customModelOptions.values,
+                                            ...profileForEdit.managed.providers.flatMap((provider) => provider.models.filter((model) => model.enabled).map((model) => model.model_id)),
+                                        ]))
+                                        : [];
+                                    const subagentSelection = normalizeClaudeModelSelection(advanced?.subagent_model, candidateModels);
+                                    const smallModelSelection = normalizeClaudeModelSelection(advanced?.small_fast_model, candidateModels);
+                                    const sonnetSelection = normalizeClaudeModelSelection(advanced?.sonnet_model, candidateModels);
+                                    const opusSelection = normalizeClaudeModelSelection(advanced?.opus_model, candidateModels);
+                                    const haikuSelection = normalizeClaudeModelSelection(advanced?.haiku_model, candidateModels);
+                                    const fableSelection = normalizeClaudeModelSelection(advanced?.fable_model, candidateModels);
                                     const caching = advanced?.disable_prompt_caching;
+                                    const renderModelOptions = (selection: ReturnType<typeof normalizeClaudeModelSelection>) => selection.options.map((modelId) => (
+                                        <option key={modelId} value={modelId}>
+                                            {modelId === CLAUDE_AUTO_MODEL_VALUE
+                                                ? t('agentProfiles.claudeCompatibility.autoOption')
+                                                : selection.status === 'unknown' && modelId === selection.uiValue
+                                                    ? `${modelId} (${t('agentProfiles.claudeCompatibility.unknownOption')})`
+                                                    : modelId}
+                                        </option>
+                                    ));
+                                    const updateModelSelection = (field: keyof NonNullable<AgentProfileDocument['managed']['claude_advanced']>, value: string) => {
+                                        const selection = normalizeClaudeModelSelection(value, candidateModels);
+                                        updateAdvanced({ [field]: selection.payloadValue } as Partial<NonNullable<AgentProfileDocument['managed']['claude_advanced']>>);
+                                    };
                                     const updateAdvanced = (patch: Partial<NonNullable<AgentProfileDocument['managed']['claude_advanced']>>) => {
                                         setDraft((current) => {
                                             if (!current) return current;
@@ -1236,22 +1261,43 @@ export function AgentProfilesPanel() {
                                     return (
                                         <>
                                             <button type="button" onClick={() => setCompatOpen((current) => !current)} className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-3 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={compatOpen}><span className="flex items-center gap-2"><Settings2 className="h-4 w-4 text-primary" /><span><span className="block text-sm font-medium">{t('agentProfiles.claudeCompatibility.title')}</span><span className="mt-0.5 block text-xs text-muted-foreground">{t('agentProfiles.claudeCompatibility.description')}</span></span></span><ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', compatOpen && 'rotate-180')} /></button>
+                                            <div className="mx-3 mb-2 grid gap-2 rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground md:grid-cols-2">
+                                                <div>
+                                                    <span className="font-medium text-foreground">{t('agentProfiles.claudeCompatibility.capabilityLabel')}: </span>
+                                                    <Badge variant="outline" className={cn('mr-1 px-1.5 py-0 text-[10px]', capabilityDeclaration?.status === 'declared' ? 'border-emerald-500/30 text-emerald-700 dark:text-emerald-300' : 'border-amber-500/30 text-amber-700 dark:text-amber-300')}>
+                                                        {capabilityDeclaration?.status === 'declared' ? t('agentProfiles.claudeCompatibility.capabilityDeclared') : t('agentProfiles.claudeCompatibility.capabilityUnavailable')}
+                                                    </Badge>
+                                                    {capabilityDeclaration?.source || t('agentProfiles.claudeCompatibility.capabilitySourceUnavailable')}
+                                                </div>
+                                                <div>
+                                                    <span className="font-medium text-foreground">{t('agentProfiles.claudeCompatibility.capabilityFieldsLabel')}: </span>
+                                                    {capabilityDeclaration?.supported_fields?.join(', ') || t('agentProfiles.claudeCompatibility.capabilitySourceUnavailable')}
+                                                </div>
+                                                <div>
+                                                    <span className="font-medium text-foreground">{t('agentProfiles.claudeCompatibility.customOptionsLabel')}: </span>
+                                                    {customModelOptions?.status === 'available' && customModelOptions.values.length > 0
+                                                        ? customModelOptions.values.join(', ')
+                                                        : customModelOptions?.message || t('agentProfiles.claudeCompatibility.customOptionsUnavailable')}
+                                                </div>
+                                                <div className="md:col-span-2">
+                                                    <span className="font-medium text-foreground">{t('agentProfiles.claudeCompatibility.fallbackPriority')}: </span>
+                                                    {(customModelOptions?.fallback_priority || capabilityDeclaration?.fallback_priority || ['explicit_override', 'managed.default_model_id', 'unavailable']).join(' → ')}
+                                                </div>
+                                            </div>
                                             {compatOpen && (
                                                 <div className="grid gap-4 pb-4 pt-2 text-xs md:grid-cols-2">
                                                     {mainModel && <div className="md:col-span-2 text-[11px] text-muted-foreground">{t('agentProfiles.claudeCompatibility.currentMainModel', { model: mainModel })}</div>}
                                                     <div>
                                                         <Label htmlFor="claude-subagent-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.subagentModel')}</Label>
-                                                        <select id="claude-subagent-model" aria-label={t('agentProfiles.claudeCompatibility.subagentModel')} value={subagentModel} onChange={(event) => updateAdvanced({ subagent_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
-                                                            <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
-                                                            {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                        <select id="claude-subagent-model" aria-label={t('agentProfiles.claudeCompatibility.subagentModel')} value={subagentSelection.uiValue} onChange={(event) => updateModelSelection('subagent_model', event.target.value)} className={fieldClass}>
+                                                            {renderModelOptions(subagentSelection)}
                                                         </select>
                                                         <p className="mt-1.5 leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.subagentModelHint')}</p>
                                                     </div>
                                                     <div>
                                                         <Label htmlFor="claude-small-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.smallFastModel')}</Label>
-                                                        <select id="claude-small-model" aria-label={t('agentProfiles.claudeCompatibility.smallFastModel')} value={smallModel} onChange={(event) => updateAdvanced({ small_fast_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
-                                                            <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
-                                                            {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                        <select id="claude-small-model" aria-label={t('agentProfiles.claudeCompatibility.smallFastModel')} value={smallModelSelection.uiValue} onChange={(event) => updateModelSelection('small_fast_model', event.target.value)} className={fieldClass}>
+                                                            {renderModelOptions(smallModelSelection)}
                                                         </select>
                                                         <p className="mt-1.5 leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.smallFastModelHint')}</p>
                                                     </div>
@@ -1260,31 +1306,27 @@ export function AgentProfilesPanel() {
                                                         <div className="grid gap-4 md:grid-cols-2">
                                                             <div>
                                                                 <Label htmlFor="claude-sonnet-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.sonnetModel')}</Label>
-                                                                <select id="claude-sonnet-model" aria-label={t('agentProfiles.claudeCompatibility.sonnetModel')} value={advanced?.sonnet_model ?? ''} onChange={(event) => updateAdvanced({ sonnet_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
-                                                                    <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
-                                                                    {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                                <select id="claude-sonnet-model" aria-label={t('agentProfiles.claudeCompatibility.sonnetModel')} value={sonnetSelection.uiValue} onChange={(event) => updateModelSelection('sonnet_model', event.target.value)} className={fieldClass}>
+                                                                    {renderModelOptions(sonnetSelection)}
                                                                 </select>
                                                             </div>
                                                             <div>
                                                                 <Label htmlFor="claude-opus-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.opusModel')}</Label>
-                                                                <select id="claude-opus-model" aria-label={t('agentProfiles.claudeCompatibility.opusModel')} value={advanced?.opus_model ?? ''} onChange={(event) => updateAdvanced({ opus_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
-                                                                    <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
-                                                                    {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                                <select id="claude-opus-model" aria-label={t('agentProfiles.claudeCompatibility.opusModel')} value={opusSelection.uiValue} onChange={(event) => updateModelSelection('opus_model', event.target.value)} className={fieldClass}>
+                                                                    {renderModelOptions(opusSelection)}
                                                                 </select>
                                                             </div>
                                                             <div>
                                                                 <Label htmlFor="claude-haiku-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.haikuModel')}</Label>
-                                                                <select id="claude-haiku-model" aria-label={t('agentProfiles.claudeCompatibility.haikuModel')} value={advanced?.haiku_model ?? ''} onChange={(event) => updateAdvanced({ haiku_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
-                                                                    <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
-                                                                    {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                                <select id="claude-haiku-model" aria-label={t('agentProfiles.claudeCompatibility.haikuModel')} value={haikuSelection.uiValue} onChange={(event) => updateModelSelection('haiku_model', event.target.value)} className={fieldClass}>
+                                                                    {renderModelOptions(haikuSelection)}
                                                                 </select>
                                                                 <p className="mt-1.5 leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.haikuModelHint')}</p>
                                                             </div>
                                                             <div>
                                                                 <Label htmlFor="claude-fable-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.fableModel')}</Label>
-                                                                <select id="claude-fable-model" aria-label={t('agentProfiles.claudeCompatibility.fableModel')} value={advanced?.fable_model ?? ''} onChange={(event) => updateAdvanced({ fable_model: event.target.value === '__auto__' ? null : event.target.value })} className={fieldClass}>
-                                                                    <option value="__auto__">{t('agentProfiles.claudeCompatibility.autoOption')}</option>
-                                                                    {candidateModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                                                                <select id="claude-fable-model" aria-label={t('agentProfiles.claudeCompatibility.fableModel')} value={fableSelection.uiValue} onChange={(event) => updateModelSelection('fable_model', event.target.value)} className={fieldClass}>
+                                                                    {renderModelOptions(fableSelection)}
                                                                 </select>
                                                             </div>
                                                         </div>

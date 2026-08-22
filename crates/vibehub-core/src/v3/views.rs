@@ -4,8 +4,8 @@ use super::blockers::{
     RepairActionKind, BLOCKER_MODEL_VERSION,
 };
 use super::lifecycle::{
-    fold_task, is_terminal_plan_node_state, valid_evidence_ref, CriterionState, PlanNodeProjection,
-    TaskLifecycleProjection,
+    fold_task, is_terminal_plan_node_state, task_truth_state, valid_evidence_ref, CriterionState,
+    PlanNodeProjection, TaskLifecycleProjection,
 };
 use super::orchestration::fold_task as fold_orchestration;
 use super::orchestration::LeaseState;
@@ -94,6 +94,137 @@ struct TaskDocument {
 struct TaskReadResult {
     tasks: Vec<TaskDocument>,
     warnings: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SessionIntegrity {
+    observed: BTreeSet<String>,
+    opened: BTreeSet<String>,
+    closed: BTreeSet<String>,
+    terminal_results: BTreeSet<String>,
+    unknown: Vec<String>,
+    gapped: Vec<String>,
+    closed_without_result: Vec<String>,
+}
+
+impl SessionIntegrity {
+    fn has_blocking_gap(&self) -> bool {
+        !self.unknown.is_empty()
+            || !self.gapped.is_empty()
+            || !self.closed_without_result.is_empty()
+    }
+
+    fn blocking_session_ids(&self) -> Vec<String> {
+        self
+            .unknown
+            .iter()
+            .chain(self.gapped.iter())
+            .chain(self.closed_without_result.iter())
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+}
+
+fn event_session_id(event: &V3EventEnvelope) -> Option<String> {
+    event
+        .session_id
+        .as_ref()
+        .map(|id| id.0.clone())
+        .or_else(|| {
+            event
+                .payload
+                .get("session_id")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+}
+
+/// Reconstruct Session coverage from the event log without inventing a
+/// missing `session.opened` or terminal result. A Session that only has a
+/// historical binding, or one that closed without a terminal result, is an
+/// explicit workflow gap rather than successful work.
+fn session_integrity(
+    events: &[V3EventEnvelope],
+    task_id: &str,
+    lifecycle: &TaskLifecycleProjection,
+) -> SessionIntegrity {
+    let mut integrity = SessionIntegrity::default();
+    for event in events.iter().filter(|event| event.task_id.0 == task_id) {
+        let Some(session_id) = event_session_id(event) else {
+            continue;
+        };
+        integrity.observed.insert(session_id.clone());
+        match event.event_type.as_str() {
+            "session.opened" => {
+                integrity.opened.insert(session_id);
+            }
+            "session.closed" => {
+                integrity.closed.insert(session_id);
+            }
+            "agent.result_recorded"
+                if matches!(
+                    event.payload.get("status").and_then(Value::as_str),
+                    Some("succeeded" | "failed")
+                ) => {
+                    integrity.terminal_results.insert(session_id);
+                }
+            _ => {}
+        }
+    }
+
+    for session_id in &integrity.observed {
+        let state = lifecycle
+            .sessions
+            .get(session_id)
+            .map(|session| session.state.as_str())
+            .unwrap_or("unknown");
+        if !integrity.opened.contains(session_id) || state == "unknown" {
+            integrity.unknown.push(session_id.clone());
+        }
+        if state == "gapped" {
+            integrity.gapped.push(session_id.clone());
+        }
+        if integrity.closed.contains(session_id)
+            && !integrity.terminal_results.contains(session_id)
+        {
+            integrity.closed_without_result.push(session_id.clone());
+        }
+    }
+    integrity
+}
+
+fn projection_is_stale(status: &Value) -> bool {
+    status.get("stale").and_then(Value::as_bool).unwrap_or(true)
+}
+
+fn projection_warning(status: &Value) -> Option<Value> {
+    if !projection_is_stale(status) {
+        return None;
+    }
+    Some(json!({
+        "code": "V3_PROJECTION_STALE",
+        "severity": "warning",
+        "message_key": "v3.warning.projection_stale",
+        "details": {
+            "event_count": status.get("event_count").cloned().unwrap_or(Value::Null),
+            "projection_event_count": status.get("projection_event_count").cloned().unwrap_or(Value::Null),
+            "last_event_timestamp": status.get("last_event_timestamp").cloned().unwrap_or(Value::Null),
+            "repair_action": "通过受支持的 projection rebuild 命令追平事件与 projection；在追平前不得宣称 completed"
+        },
+        "evidence_refs": []
+    }))
+}
+
+#[derive(Debug, Clone, Default)]
+struct SessionGitTrace {
+    session_id: String,
+    open_git_head: Option<String>,
+    close_git_head: Option<String>,
+    opened_at: Option<String>,
+    closed_at: Option<String>,
+    event_commit_shas: BTreeSet<String>,
 }
 
 fn default_workflow_profile() -> String {
@@ -243,10 +374,12 @@ impl V3ViewRepository {
 
     fn effective_current_task_id(&self, pointed_task_id: String) -> Result<String, V3Error> {
         let events = self.store.load_project(&self.project_id())?;
+        let projection_status = self.store.projection_status(&self.project_id())?;
+        let projection_stale = projection_is_stale(&projection_status);
         let tasks = self.read_tasks()?.tasks;
         let Some(pointed_task) = tasks.iter().find(|task| task.task_id == pointed_task_id) else {
             return self
-                .select_fallback_task_id(&tasks, &events)
+                .select_fallback_task_id(&tasks, &events, projection_stale)
                 .ok_or_else(|| {
                     V3Error::new(
                         "V3_CURRENT_TASK_INVALID",
@@ -257,27 +390,28 @@ impl V3ViewRepository {
                 });
         };
         let pointed_lifecycle = fold_task(&pointed_task_id, &events);
-        let pointed_has_lifecycle = events
-            .iter()
-            .any(|event| event.aggregate_id == pointed_task_id);
-        let pointed_state = if pointed_has_lifecycle {
-            projected_task_state(&pointed_lifecycle)
-        } else {
-            task_state(&pointed_task)
-        };
+        let pointed_integrity = session_integrity(&events, &pointed_task_id, &pointed_lifecycle);
+        let pointed_state = task_state_for(
+            &pointed_lifecycle,
+            Some(pointed_task.phase_status.as_str()),
+            &pointed_integrity,
+            projection_stale,
+        );
         if !is_terminal_task_state(pointed_state) {
             return Ok(pointed_task_id);
         }
 
         Ok(self
-            .select_fallback_task_id(&tasks, &events)
+            .select_fallback_task_id(&tasks, &events, projection_stale)
             .unwrap_or(pointed_task_id))
     }
 
     fn fallback_current_task_id(&self) -> Result<String, V3Error> {
         let events = self.store.load_project(&self.project_id())?;
+        let projection_status = self.store.projection_status(&self.project_id())?;
+        let projection_stale = projection_is_stale(&projection_status);
         let tasks = self.read_tasks()?.tasks;
-        self.select_fallback_task_id(&tasks, &events)
+        self.select_fallback_task_id(&tasks, &events, projection_stale)
             .ok_or_else(|| {
                 V3Error::new(
                     "V3_CURRENT_TASK_INVALID",
@@ -292,19 +426,19 @@ impl V3ViewRepository {
         &self,
         tasks: &[TaskDocument],
         events: &[V3EventEnvelope],
+        projection_stale: bool,
     ) -> Option<String> {
         tasks
             .iter()
             .find(|task| {
                 let lifecycle = fold_task(&task.task_id, events);
-                let has_lifecycle = events
-                    .iter()
-                    .any(|event| event.aggregate_id == task.task_id);
-                let state = if has_lifecycle {
-                    projected_task_state(&lifecycle)
-                } else {
-                    task_state(task)
-                };
+                let integrity = session_integrity(events, &task.task_id, &lifecycle);
+                let state = task_state_for(
+                    &lifecycle,
+                    Some(task.phase_status.as_str()),
+                    &integrity,
+                    projection_stale,
+                );
                 !is_terminal_task_state(state)
             })
             .or_else(|| tasks.first())
@@ -321,6 +455,8 @@ impl V3ViewRepository {
     pub fn task_candidates(&self) -> Result<Value, V3Error> {
         let project_id = self.project_id();
         let events = self.store.load_project(&project_id)?;
+        let projection_status = self.store.projection_status(&project_id)?;
+        let projection_stale = projection_is_stale(&projection_status);
         let tasks = self.read_tasks()?;
         let current_default = self.current_task_id().ok();
         let candidates = tasks
@@ -328,14 +464,13 @@ impl V3ViewRepository {
             .iter()
             .filter_map(|task| {
                 let lifecycle = fold_task(&task.task_id, &events);
-                let has_lifecycle = events
-                    .iter()
-                    .any(|event| event.aggregate_id == task.task_id);
-                let state = if has_lifecycle {
-                    projected_task_state(&lifecycle)
-                } else {
-                    task_state(task)
-                };
+                let integrity = session_integrity(&events, &task.task_id, &lifecycle);
+                let state = task_state_for(
+                    &lifecycle,
+                    Some(task.phase_status.as_str()),
+                    &integrity,
+                    projection_stale,
+                );
                 if is_terminal_task_state(state) {
                     return None;
                 }
@@ -365,6 +500,261 @@ impl V3ViewRepository {
         })
     }
 
+    /// Return a stable project task index.
+    ///
+    /// `task_candidates` is intentionally the active-only routing surface.
+    /// This index is the explicit query surface for archived tasks and keeps
+    /// its filtering and ordering independent from the current/default task
+    /// pointer. When `include_archived` is false, terminal tasks are omitted
+    /// from `tasks` but counted in `omitted_archived_count`.
+    pub fn task_list(&self, include_archived: bool) -> Result<Value, V3Error> {
+        let project_id = self.project_id();
+        let events = self.store.load_project(&project_id)?;
+        let projection_status = self.store.projection_status(&project_id)?;
+        let projection_stale = projection_is_stale(&projection_status);
+        let tasks = self.read_tasks()?;
+        let generated_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        let mut all: Vec<Value> = tasks
+            .tasks
+            .iter()
+            .filter_map(|task| {
+                let lifecycle = fold_task(&task.task_id, &events);
+                let integrity = session_integrity(&events, &task.task_id, &lifecycle);
+                let state = task_state_for(
+                    &lifecycle,
+                    Some(task.phase_status.as_str()),
+                    &integrity,
+                    projection_stale,
+                );
+                let is_terminal = is_terminal_task_state(state);
+                if !include_archived && is_terminal {
+                    return None;
+                }
+                Some(task_list_summary(
+                    task,
+                    &events,
+                    &lifecycle,
+                    state,
+                    &generated_at,
+                ))
+            })
+            .collect();
+        sort_task_list(&mut all);
+        let total = all.len();
+        let archived_count = all
+            .iter()
+            .filter(|task| task.get("is_terminal").and_then(Value::as_bool) == Some(true))
+            .count();
+        let active_count = total.saturating_sub(archived_count);
+        let project_task_count = tasks.tasks.len();
+        let omitted_archived_count = if include_archived {
+            0
+        } else {
+            project_task_count
+                .saturating_sub(active_count)
+                .saturating_sub(archived_count)
+        };
+        Ok(json!({
+            "schema_version": "1.0",
+            "tasks": all,
+            "total_count": total,
+            "returned_count": total,
+            "active_count": active_count,
+            "archived_count": archived_count,
+            "project_task_count": project_task_count,
+            "omitted_archived_count": omitted_archived_count,
+            "include_archived": include_archived,
+            "project_id": project_id,
+            "sort": {
+                "order": "non_terminal_first_then_terminal_at_desc",
+                "terminal_at_missing": "last",
+                "state_tie_breaker": "state_rank_ascending",
+                "tie_breaker": "task_id_ascending"
+            },
+        }))
+    }
+
+    /// Return Task -> Session Git traceability for a task.
+    pub fn task_commits(&self, task_id: &str) -> Result<Value, V3Error> {
+        validate_id("task_id", task_id)?;
+        let task = self.read_task(task_id)?;
+        let project_id = self.project_id();
+        let events = self.store.load_project(&project_id)?;
+        let traces = session_git_traces(&events, task_id);
+        let sessions = traces
+            .iter()
+            .map(session_git_trace_value)
+            .collect::<Vec<_>>();
+        let missing_heads = traces
+            .iter()
+            .filter_map(|trace| {
+                let mut missing = Vec::new();
+                if trace.open_git_head.is_none() {
+                    missing.push("open_git_head");
+                }
+                if trace.close_git_head.is_none() {
+                    missing.push("close_git_head");
+                }
+                (!missing.is_empty()).then(|| {
+                    json!({
+                        "task_id": task.task_id,
+                        "session_id": trace.session_id,
+                        "missing": missing,
+                        "reason": "historical session event did not record a Git HEAD; no commit binding is inferred"
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        let complete_sessions = traces
+            .iter()
+            .filter(|trace| trace.open_git_head.is_some() && trace.close_git_head.is_some())
+            .count();
+        let partial_sessions = traces
+            .iter()
+            .filter(|trace| {
+                trace.open_git_head.is_some() ^ trace.close_git_head.is_some()
+            })
+            .count();
+        let missing_sessions = traces
+            .iter()
+            .filter(|trace| trace.open_git_head.is_none() && trace.close_git_head.is_none())
+            .count();
+        Ok(json!({
+            "schema_version": "1.0",
+            "task_id": task_id,
+            "project_id": project_id,
+            "session_count": traces.len(),
+            "sessions": sessions,
+            "git_evidence": {
+                "status": if missing_sessions == traces.len() && !traces.is_empty() { "missing" } else if partial_sessions > 0 || missing_sessions > 0 { "partial" } else if complete_sessions > 0 { "complete" } else { "unavailable" },
+                "complete_sessions": complete_sessions,
+                "partial_sessions": partial_sessions,
+                "missing_sessions": missing_sessions,
+                "historical_gaps": missing_heads,
+            },
+            "source": "v3_session_git_head_events",
+        }))
+    }
+
+    /// Return all Tasks associated with a Git commit hash.
+    ///
+    /// A commit is associated from explicit event commit evidence or from a
+    /// recorded session open/close range. Missing historical HEADs never
+    /// become an inferred association. Unknown but syntactically valid hashes
+    /// return an empty `tasks` array; ambiguous short hashes fail explicitly.
+    pub fn commit_tasks(&self, commit_hash: &str) -> Result<Value, V3Error> {
+        let query_hash = normalize_commit_hash(commit_hash)?;
+        let project_id = self.project_id();
+        let events = self.store.load_project(&project_id)?;
+        let tasks = self.read_tasks()?;
+        let projection_status = self.store.projection_status(&project_id)?;
+        let projection_stale = projection_is_stale(&projection_status);
+        let stored_hashes = collect_stored_commit_hashes(&events);
+        let resolved_hash = resolve_commit_hash(&self.root, &query_hash, &stored_hashes)?;
+        let comparison_hash = resolved_hash.as_deref().unwrap_or(query_hash.as_str());
+        let mut associations = BTreeMap::<String, Value>::new();
+        let mut historical_gaps = Vec::new();
+
+        for task in &tasks.tasks {
+            let task_events = events
+                .iter()
+                .filter(|event| event.task_id.0 == task.task_id)
+                .collect::<Vec<_>>();
+            let lifecycle = fold_task(&task.task_id, &events);
+            let integrity = session_integrity(&events, &task.task_id, &lifecycle);
+            let state = task_state_for(
+                &lifecycle,
+                Some(task.phase_status.as_str()),
+                &integrity,
+                projection_stale,
+            );
+            let traces = session_git_traces(&events, &task.task_id);
+            for trace in &traces {
+                let mut missing = Vec::new();
+                if trace.open_git_head.is_none() {
+                    missing.push("open_git_head");
+                }
+                if trace.close_git_head.is_none() {
+                    missing.push("close_git_head");
+                }
+                if !missing.is_empty() {
+                    historical_gaps.push(json!({
+                        "task_id": task.task_id,
+                        "session_id": trace.session_id,
+                        "missing": missing,
+                        "reason": "historical session event did not record a Git HEAD; range matching is unavailable"
+                    }));
+                }
+                let mut match_kind = None;
+                if trace
+                    .open_git_head
+                    .as_deref()
+                    .is_some_and(|head| stored_hash_matches(comparison_hash, head))
+                {
+                    match_kind = Some("open_head");
+                } else if trace
+                    .close_git_head
+                    .as_deref()
+                    .is_some_and(|head| stored_hash_matches(comparison_hash, head))
+                {
+                    match_kind = Some("close_head");
+                } else if let (Some(open), Some(close), Some(resolved)) = (
+                    trace.open_git_head.as_deref(),
+                    trace.close_git_head.as_deref(),
+                    resolved_hash.as_deref(),
+                ) {
+                    if git_commit_in_session_range(&self.root, resolved, open, close) {
+                        match_kind = Some("session_range");
+                    }
+                }
+                if let Some(match_kind) = match_kind {
+                    add_commit_task_association(
+                        &mut associations,
+                        task,
+                        state,
+                        &trace.session_id,
+                        match_kind,
+                        trace,
+                    );
+                }
+            }
+            for event in task_events {
+                if event
+                    .commit_sha
+                    .as_deref()
+                    .is_some_and(|sha| stored_hash_matches(comparison_hash, sha))
+                {
+                    let session_id = event
+                        .session_id
+                        .as_ref()
+                        .map(|id| id.0.as_str())
+                        .unwrap_or("session.unknown");
+                    add_commit_task_association(
+                        &mut associations,
+                        task,
+                        state,
+                        session_id,
+                        "event_commit",
+                        &SessionGitTrace::default(),
+                    );
+                }
+            }
+        }
+
+        let task_values = associations.into_values().collect::<Vec<_>>();
+        Ok(json!({
+            "schema_version": "1.0",
+            "project_id": project_id,
+            "query_commit_hash": query_hash,
+            "resolved_commit_hash": resolved_hash,
+            "match": if task_values.is_empty() { "none" } else { "associated" },
+            "task_count": task_values.len(),
+            "tasks": task_values,
+            "historical_gaps": historical_gaps,
+            "source": "v3_git_traceability",
+        }))
+    }
+
     pub fn load_bundle(&self, task_id: &str) -> Result<V3ViewBundle, V3Error> {
         self.load_bundle_for_node(task_id, None)
     }
@@ -378,29 +768,36 @@ impl V3ViewRepository {
         let task = self.read_task(task_id)?;
         let project_id = self.project_id();
         let events = self.store.load_project(&project_id)?;
+        let projection_status = self.store.projection_status(&project_id)?;
+        let projection_stale = projection_is_stale(&projection_status);
+        let projection_warning = projection_warning(&projection_status);
         let lifecycle = fold_task(task_id, &events);
+        let task_integrity = session_integrity(&events, task_id, &lifecycle);
         let session_binding_projection = projection::fold(&project_id, &events).session_bindings;
         let orchestration = fold_orchestration(task_id, &events);
-        let has_lifecycle = events.iter().any(|event| event.aggregate_id == task_id);
         let generated_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let current_criteria = criteria(&task, &events, &lifecycle, &generated_at);
-        let current_blocker_details =
+        let mut current_blocker_details =
             blocker_details(&task, &events, &lifecycle, None, &generated_at);
+        if projection_stale {
+            current_blocker_details.push(projection_stale_blocker_detail(
+                &project_id,
+                &projection_status,
+                &generated_at,
+            ));
+        }
         let evidence_refs = evidence_refs(&task, &events, &generated_at);
         let native_root = native_path(&self.root);
         let sessions = sessions_for_task(&events, task_id);
         let opened_sessions = sessions.iter().filter(|session| session.1).count();
         let closed_sessions = sessions.iter().filter(|session| session.2).count();
-        let explicit_session_gaps = lifecycle
-            .sessions
-            .values()
-            .filter(|session| session.state == "gapped")
-            .count();
-        let current_task_state = if has_lifecycle {
-            projected_task_state(&lifecycle)
-        } else {
-            task_state(&task)
-        };
+        let explicit_session_gaps = task_integrity.blocking_session_ids().len();
+        let current_task_state = task_state_for(
+            &lifecycle,
+            Some(task.phase_status.as_str()),
+            &task_integrity,
+            projection_stale,
+        );
         let task_read = self.read_tasks()?;
         let task_metadata_warnings = task_read.warnings;
         let project_tasks = task_read.tasks;
@@ -409,14 +806,13 @@ impl V3ViewRepository {
             .iter()
             .filter_map(|project_task| {
                 let task_lifecycle = fold_task(&project_task.task_id, &events);
-                let task_has_lifecycle = events
-                    .iter()
-                    .any(|event| event.aggregate_id == project_task.task_id);
-                let state = if task_has_lifecycle {
-                    projected_task_state(&task_lifecycle)
-                } else {
-                    task_state(project_task)
-                };
+                let task_integrity = session_integrity(&events, &project_task.task_id, &task_lifecycle);
+                let state = task_state_for(
+                    &task_lifecycle,
+                    Some(project_task.phase_status.as_str()),
+                    &task_integrity,
+                    projection_stale,
+                );
                 if is_terminal_task_state(state) {
                     return None;
                 }
@@ -424,8 +820,15 @@ impl V3ViewRepository {
                 let task_opened_sessions = task_sessions.iter().filter(|session| session.1).count();
                 let task_closed_sessions = task_sessions.iter().filter(|session| session.2).count();
                 let task_criteria = criteria(project_task, &events, &task_lifecycle, &generated_at);
-                let task_blocker_details =
+                let mut task_blocker_details =
                     blocker_details(project_task, &events, &task_lifecycle, None, &generated_at);
+                if projection_stale {
+                    task_blocker_details.push(projection_stale_blocker_detail(
+                        &project_id,
+                        &projection_status,
+                        &generated_at,
+                    ));
+                }
                 Some(json!({
                     "task_id": project_task.task_id,
                     "title": project_task.title,
@@ -446,16 +849,21 @@ impl V3ViewRepository {
             .iter()
             .filter_map(|project_task| {
                 let task_lifecycle = fold_task(&project_task.task_id, &events);
-                let task_has_lifecycle = events
-                    .iter()
-                    .any(|event| event.aggregate_id == project_task.task_id);
-                let state = if task_has_lifecycle {
-                    projected_task_state(&task_lifecycle)
-                } else {
-                    task_state(project_task)
-                };
+                let task_integrity = session_integrity(&events, &project_task.task_id, &task_lifecycle);
+                let state = task_state_for(
+                    &task_lifecycle,
+                    Some(project_task.phase_status.as_str()),
+                    &task_integrity,
+                    projection_stale,
+                );
                 is_terminal_task_state(state).then(|| {
-                    archived_task_summary(project_task, &events, &task_lifecycle, &generated_at)
+                    archived_task_summary(
+                        project_task,
+                        &events,
+                        &task_lifecycle,
+                        state,
+                        &generated_at,
+                    )
                 })
             })
             .collect();
@@ -524,6 +932,9 @@ impl V3ViewRepository {
             .unwrap_or_default();
         let mut overview_warnings = task_metadata_warnings.clone();
         overview_warnings.extend(architecture_warnings.clone());
+        if let Some(warning) = projection_warning.clone() {
+            overview_warnings.push(warning);
+        }
         overview_warnings.extend(scope_inspection.warnings.iter().map(|warning| {
             json!({
                 "code": warning.split(':').next().unwrap_or("V3_PROJECT_SCOPE_WARNING"),
@@ -543,13 +954,18 @@ impl V3ViewRepository {
         let structure_freshness = project_structure["freshness"]
             .as_str()
             .unwrap_or("unavailable");
+        let view_freshness = if projection_stale {
+            "stale"
+        } else {
+            structure_freshness
+        };
         let structure_completeness = project_structure["completeness"]
             .as_str()
             .unwrap_or("unknown");
-        let overview_completeness = if task_metadata_warnings.is_empty() {
-            structure_completeness
-        } else {
+        let overview_completeness = if projection_stale || !task_metadata_warnings.is_empty() {
             "partial"
+        } else {
+            structure_completeness
         };
         let structure_model_version = project_structure["model_version"]
             .as_str()
@@ -559,7 +975,7 @@ impl V3ViewRepository {
             "schema_version": "1.0", "project_id": project_id, "name": self.root.file_name().and_then(|v| v.to_str()).unwrap_or("Project"),
             "root": native_root, "generated_at": generated_at, "model_version": MODEL_VERSION,
             "scopes": scope_inspection,
-            "freshness": structure_freshness, "completeness": overview_completeness,
+            "freshness": view_freshness, "completeness": overview_completeness,
             "repository": {"state": if resolved_scopes.git_root.is_some() {"available"} else {"not_repository"}, "branch": Value::Null, "head": Value::Null, "dirty": Value::Null, "worktree_count": if resolved_scopes.git_root.is_some() {1} else {0}},
             "model": {"state": model_state, "last_evidence_at": generated_at, "generator_version": structure_model_version, "indexed_files": indexed_files},
             "architecture": {"declared_docs": declared_docs, "modules": architecture_modules, "relationships": architecture_edges.len(), "confidence": architecture_confidence, "evidence_refs": architecture_evidence_refs},
@@ -597,11 +1013,15 @@ impl V3ViewRepository {
             .iter()
             .filter(|(_, binding)| binding.bound_task_id.as_deref() == Some(task_id))
             .collect::<BTreeMap<_, _>>();
+        let mut timeline_warnings = task_metadata_warnings.clone();
+        if let Some(warning) = projection_warning.clone() {
+            timeline_warnings.push(warning);
+        }
         let task_timeline = json!({
             "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "title": task.title, "state": current_task_state,
-            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": "fresh", "completeness": "complete",
+            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else {"complete"},
             "criteria": current_criteria, "blocker_details": current_blocker_details.clone(), "completion": completion_view(&lifecycle), "lanes": lanes, "events": timeline_events, "session_bindings": task_bindings, "window": page(events.len()),
-            "evidence_refs": evidence_refs, "warnings": task_metadata_warnings.clone(), "errors": []
+            "evidence_refs": evidence_refs, "warnings": timeline_warnings, "errors": []
         });
 
         let (parallel_layers, parallel_layer_counts) = effective_plan_layers(&lifecycle);
@@ -699,6 +1119,9 @@ impl V3ViewRepository {
         }))).collect();
         let node_id = select_node_id(&lifecycle, requested_node_id)?;
         let mut plan_warnings = task_metadata_warnings.clone();
+        if let Some(warning) = projection_warning.clone() {
+            plan_warnings.push(warning);
+        }
         let effective_plan_is_empty = lifecycle.effective_nodes().next().is_none();
         if effective_plan_is_empty && task.workflow_profile != "lightweight" {
             plan_warnings.push(json!({
@@ -718,7 +1141,7 @@ impl V3ViewRepository {
         let plan_graph = json!({
             "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "plan_version": lifecycle.version,
             "workflow_profile": task.workflow_profile, "planning_required": task.workflow_profile != "lightweight",
-            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": "fresh", "completeness": if effective_plan_is_empty && task.workflow_profile == "lightweight" {"complete"} else if effective_plan_is_empty {"unknown"} else {"partial"}, "graph_state": "valid",
+            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else if effective_plan_is_empty && task.workflow_profile == "lightweight" {"complete"} else if effective_plan_is_empty {"unknown"} else {"partial"}, "graph_state": "valid",
             "nodes": graph_nodes,
             "scheduling_edges": scheduling_edges, "trace_relations": trace_relations,
             "execution": {"planned_sessions": 0, "observed_sessions": sessions.len(), "planned_worktrees": planned_worktrees, "observed_worktrees": observed_worktrees},
@@ -727,6 +1150,9 @@ impl V3ViewRepository {
 
         let mut node_warnings = task_metadata_warnings;
         node_warnings.extend(architecture_warnings.clone());
+        if let Some(warning) = projection_warning.clone() {
+            node_warnings.push(warning);
+        }
         let (
             max_tokens,
             estimated_tokens,
@@ -829,6 +1255,15 @@ impl V3ViewRepository {
             .values()
             .filter(|session| session.state != "closed")
             .map(|session| format!("{}={}", session.session_id, session.state))
+            .chain(
+                task_integrity
+                    .blocking_session_ids()
+                    .into_iter()
+                    .filter(|session_id| {
+                        !lifecycle.sessions.contains_key(session_id)
+                    })
+                    .map(|session_id| format!("{session_id}=unknown_or_incomplete")),
+            )
             .collect::<Vec<_>>();
         let opened_session_ids = task_events
             .iter()
@@ -1008,7 +1443,7 @@ impl V3ViewRepository {
                 "review_required": review_required,
                 "required_records": required_records
             },
-            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": structure_freshness, "completeness": structure_completeness,
+            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else {structure_completeness},
             "goal": selected_node.map(|node| node.goal.as_str()).unwrap_or(&task.intent),
             "scope": selected_node.map(|node| node.scope.clone()).unwrap_or_default(), "non_scope": [],
             "dependencies": selected_node.map(|node| node.dependencies.iter().cloned().collect::<Vec<_>>()).unwrap_or_default(),
@@ -1018,7 +1453,11 @@ impl V3ViewRepository {
             "coverage_mode": if effective_policy.is_some() {"enforced"} else {"legacy_degraded"},
             "completion_gate": completion_gate,
             "research_summary": [], "criteria": current_criteria, "files": [workspace_native_root],
-            "validation_commands": [], "state": selected_node.map(|node| view_node_state(&node.state)).unwrap_or_else(|| node_state(&task)), "next_intent": task.phase,
+            // `state` remains the selected plan-node state for the plan drawer.
+            // `task_state` is the canonical task conclusion shared with the
+            // timeline, overview and candidates; keeping both named avoids
+            // turning a historical node/task mismatch into a silent rewrite.
+            "validation_commands": [], "state": selected_node.map(|node| view_node_state(&node.state)).unwrap_or_else(|| node_state(&task)), "task_state": current_task_state, "next_intent": task.phase,
             "blocker_details": current_blocker_details,
             "budget": {"max_tokens": max_tokens, "estimated_tokens": estimated_tokens, "truncated_sections": []},
             "source_versions": {"view_model": MODEL_VERSION, "project_model": structure_model_version}, "protocol_coverage": if explicit_session_gaps>0{"gapped"}else{protocol_state},
@@ -2598,24 +3037,380 @@ fn sort_archived_tasks_newest_first(archived_tasks: &mut [Value]) {
     });
 }
 
+fn task_list_summary(
+    task: &TaskDocument,
+    events: &[V3EventEnvelope],
+    lifecycle: &TaskLifecycleProjection,
+    state: &str,
+    generated_at: &str,
+) -> Value {
+    let criteria = criteria(task, events, lifecycle, generated_at);
+    let criterion_pass_rate = criterion_pass_rate(&criteria);
+    let required_node_completion_rate = required_node_completion_rate(lifecycle);
+    let active_session_count = sessions_for_task(events, &task.task_id)
+        .into_iter()
+        .filter(|(_, open, closed)| *open && !*closed)
+        .count();
+    let terminal_at = task_terminal_at(&task.task_id, events);
+    json!({
+        "task_id": task.task_id,
+        "title": task.title,
+        "intent": task.intent,
+        "workflow_profile": task.workflow_profile,
+        "state": state,
+        "is_terminal": is_terminal_task_state(state),
+        "terminal_at": terminal_at,
+        "criterion_pass_rate": criterion_pass_rate,
+        "required_node_completion_rate": required_node_completion_rate,
+        "active_session_count": active_session_count,
+        "source": "v3_event_log_projection"
+    })
+}
+
+fn criterion_pass_rate(criteria: &[Value]) -> Value {
+    let required = criteria
+        .iter()
+        .filter(|criterion| criterion["required"].as_bool().unwrap_or(true))
+        .collect::<Vec<_>>();
+    let passed = required
+        .iter()
+        .filter(|criterion| criterion["status"] == "passed")
+        .count();
+    let not_applicable = required
+        .iter()
+        .filter(|criterion| criterion["status"] == "not_applicable")
+        .count();
+    let effective_passed = passed + not_applicable;
+    let total = required.len();
+    json!({
+        "passed": passed,
+        "not_applicable": not_applicable,
+        "effective_passed": effective_passed,
+        "total": total,
+        "ratio": if total == 0 { Value::Null } else { json!(effective_passed as f64 / total as f64) }
+    })
+}
+
+fn required_node_completion_rate(lifecycle: &TaskLifecycleProjection) -> Value {
+    let necessary = lifecycle
+        .effective_nodes()
+        .filter(|(_, node)| !node.is_historical_bootstrap())
+        .map(|(_, node)| node)
+        .collect::<Vec<_>>();
+    let total = necessary.len();
+    let completed = necessary
+        .iter()
+        .filter(|node| node.state == "completed")
+        .count();
+    let waived = necessary
+        .iter()
+        .filter(|node| node.state == "waived")
+        .count();
+    let credited = completed + waived;
+    json!({
+        "completed": completed,
+        "waived": waived,
+        "credited": credited,
+        "total": total,
+        "ratio": if total == 0 { Value::Null } else { json!(credited as f64 / total as f64) }
+    })
+}
+
+fn task_terminal_at(task_id: &str, events: &[V3EventEnvelope]) -> Option<String> {
+    events
+        .iter()
+        .filter(|event| {
+            event.task_id.0 == task_id
+                && matches!(
+                    event.event_type.as_str(),
+                    "task.completion_confirmed" | "task.closed_with_exceptions"
+                )
+        })
+        .max_by(|left, right| {
+            left.occurred_at
+                .cmp(&right.occurred_at)
+                .then_with(|| left.event_id.cmp(&right.event_id))
+        })
+        .map(|event| event.occurred_at.clone())
+}
+
+fn sort_task_list(tasks: &mut [Value]) {
+    tasks.sort_by(|left, right| {
+        let left_terminal = left["is_terminal"].as_bool().unwrap_or(false);
+        let right_terminal = right["is_terminal"].as_bool().unwrap_or(false);
+        match (left_terminal, right_terminal) {
+            (false, true) => Ordering::Less,
+            (true, false) => Ordering::Greater,
+            (true, true) => compare_terminal_at(left, right),
+            (false, false) => task_state_rank(left["state"].as_str().unwrap_or_default())
+                .cmp(&task_state_rank(right["state"].as_str().unwrap_or_default())),
+        }
+        .then_with(|| {
+            left["task_id"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(right["task_id"].as_str().unwrap_or_default())
+        })
+    });
+}
+
+fn compare_terminal_at(left: &Value, right: &Value) -> Ordering {
+    let left_at = left["terminal_at"].as_str();
+    let right_at = right["terminal_at"].as_str();
+    match (left_at, right_at) {
+        (Some(left_at), Some(right_at)) => right_at.cmp(left_at),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+}
+
+fn task_state_rank(state: &str) -> u8 {
+    match state {
+        "active" => 0,
+        "planned" => 1,
+        "blocked" => 2,
+        "review" => 3,
+        _ => 4,
+    }
+}
+
+fn session_git_traces(events: &[V3EventEnvelope], task_id: &str) -> Vec<SessionGitTrace> {
+    let mut traces = BTreeMap::<String, SessionGitTrace>::new();
+    for event in events.iter().filter(|event| {
+        event.task_id.0 == task_id
+            && matches!(event.event_type.as_str(), "session.opened" | "session.closed")
+    }) {
+        let Some(session_id) = event.session_id.as_ref().map(|id| id.0.clone()) else {
+            continue;
+        };
+        let trace = traces
+            .entry(session_id.clone())
+            .or_insert_with(|| SessionGitTrace {
+                session_id,
+                ..SessionGitTrace::default()
+            });
+        if let Some(commit_sha) = event.commit_sha.as_deref().and_then(normalize_stored_hash) {
+            trace.event_commit_shas.insert(commit_sha);
+        }
+        match event.event_type.as_str() {
+            "session.opened" => {
+                trace.open_git_head = git_head_from_event(event);
+                trace.opened_at = Some(event.occurred_at.clone());
+            }
+            "session.closed" => {
+                trace.close_git_head = git_head_from_event(event);
+                trace.closed_at = Some(event.occurred_at.clone());
+            }
+            _ => {}
+        }
+    }
+    traces.into_values().collect()
+}
+
+fn git_head_from_event(event: &V3EventEnvelope) -> Option<String> {
+    event
+        .payload
+        .get("git_head_sha")
+        .and_then(Value::as_str)
+        .and_then(normalize_stored_hash)
+}
+
+fn session_git_trace_value(trace: &SessionGitTrace) -> Value {
+    let status = git_trace_status(
+        trace.open_git_head.as_deref(),
+        trace.close_git_head.as_deref(),
+    );
+    json!({
+        "session_id": trace.session_id,
+        "open_git_head": trace.open_git_head,
+        "close_git_head": trace.close_git_head,
+        "opened_at": trace.opened_at,
+        "closed_at": trace.closed_at,
+        "git_trace_status": status,
+        "has_git_evidence": status != "missing" && status != "unavailable",
+        "event_commit_shas": trace.event_commit_shas.iter().cloned().collect::<Vec<_>>()
+    })
+}
+
+fn git_trace_status(open_git_head: Option<&str>, close_git_head: Option<&str>) -> &'static str {
+    match (open_git_head, close_git_head) {
+        (Some(_), Some(_)) => "complete",
+        (Some(_), None) | (None, Some(_)) => "partial",
+        (None, None) => "missing",
+    }
+}
+
+fn collect_stored_commit_hashes(events: &[V3EventEnvelope]) -> BTreeSet<String> {
+    let mut hashes = BTreeSet::new();
+    for event in events {
+        if let Some(hash) = event.commit_sha.as_deref().and_then(normalize_stored_hash) {
+            hashes.insert(hash);
+        }
+        if let Some(hash) = git_head_from_event(event) {
+            hashes.insert(hash);
+        }
+    }
+    hashes
+}
+
+fn normalize_stored_hash(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    (normalized.len() >= 4
+        && normalized.len() <= 64
+        && normalized.chars().all(|character| character.is_ascii_hexdigit()))
+        .then_some(normalized)
+}
+
+fn normalize_commit_hash(value: &str) -> Result<String, V3Error> {
+    normalize_stored_hash(value).ok_or_else(|| {
+        V3Error::new(
+            "V3_COMMIT_HASH_INVALID",
+            V3ErrorCategory::Validation,
+            false,
+            "commit hash must be 4-64 hexadecimal characters",
+        )
+    })
+}
+
+fn resolve_commit_hash(
+    root: &Path,
+    query_hash: &str,
+    stored_hashes: &BTreeSet<String>,
+) -> Result<Option<String>, V3Error> {
+    let matching_stored = stored_hashes
+        .iter()
+        .filter(|hash| hash.starts_with(query_hash))
+        .cloned()
+        .collect::<Vec<_>>();
+    if matching_stored.len() > 1 {
+        return Err(V3Error::new(
+            "V3_COMMIT_HASH_AMBIGUOUS",
+            V3ErrorCategory::Validation,
+            false,
+            "short commit hash matches multiple recorded Git commits",
+        )
+        .with_detail("query_commit_hash", query_hash.to_owned())
+        .with_detail("matching_commits", matching_stored));
+    }
+    if let Some(hash) = matching_stored.into_iter().next() {
+        return Ok(Some(hash));
+    }
+    let revision = format!("{query_hash}^{{commit}}");
+    let output = silent_command("git")
+        .arg("-C")
+        .arg(root)
+        .arg("rev-parse")
+        .arg("--verify")
+        .arg(revision)
+        .output();
+    if let Ok(output) = output {
+        if output.status.success() {
+            let resolved = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            if let Some(hash) = normalize_stored_hash(&resolved) {
+                return Ok(Some(hash));
+            }
+        }
+    }
+    if query_hash.len() >= 40 {
+        Ok(Some(query_hash.to_owned()))
+    } else {
+        Ok(None)
+    }
+}
+
+fn stored_hash_matches(query_hash: &str, stored_hash: &str) -> bool {
+    let query_hash = query_hash.trim().to_ascii_lowercase();
+    let stored_hash = stored_hash.trim().to_ascii_lowercase();
+    query_hash == stored_hash
+        || (query_hash.len() < stored_hash.len() && stored_hash.starts_with(&query_hash))
+        || (stored_hash.len() < query_hash.len() && query_hash.starts_with(&stored_hash))
+}
+
+fn git_commit_in_session_range(root: &Path, commit: &str, open: &str, close: &str) -> bool {
+    if commit == open || commit == close || open == close {
+        return false;
+    }
+    git_is_ancestor(root, open, commit) && git_is_ancestor(root, commit, close)
+}
+
+fn git_is_ancestor(root: &Path, ancestor: &str, descendant: &str) -> bool {
+    silent_command("git")
+        .arg("-C")
+        .arg(root)
+        .args(["merge-base", "--is-ancestor", ancestor, descendant])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn add_commit_task_association(
+    associations: &mut BTreeMap<String, Value>,
+    task: &TaskDocument,
+    state: &str,
+    session_id: &str,
+    match_kind: &str,
+    trace: &SessionGitTrace,
+) {
+    let entry = associations.entry(task.task_id.clone()).or_insert_with(|| {
+        json!({
+            "task_id": task.task_id,
+            "title": task.title,
+            "intent": task.intent,
+            "state": state,
+            "sessions": []
+        })
+    });
+    let sessions = entry
+        .get_mut("sessions")
+        .and_then(Value::as_array_mut)
+        .expect("commit association sessions must be an array");
+    if let Some(existing) = sessions
+        .iter_mut()
+        .find(|session| session["session_id"].as_str() == Some(session_id))
+    {
+        let match_kinds = existing
+            .get_mut("match_kinds")
+            .and_then(Value::as_array_mut)
+            .expect("commit association match_kinds must be an array");
+        if !match_kinds.iter().any(|kind| kind.as_str() == Some(match_kind)) {
+            match_kinds.push(Value::String(match_kind.to_owned()));
+        }
+        if existing["open_git_head"].is_null() {
+            existing["open_git_head"] = trace
+                .open_git_head
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null);
+        }
+        if existing["close_git_head"].is_null() {
+            existing["close_git_head"] = trace
+                .close_git_head
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null);
+        }
+        return;
+    }
+    sessions.push(json!({
+        "session_id": session_id,
+        "match_kinds": [match_kind],
+        "open_git_head": trace.open_git_head,
+        "close_git_head": trace.close_git_head,
+        "git_trace_status": git_trace_status(trace.open_git_head.as_deref(), trace.close_git_head.as_deref())
+    }));
+}
+
 fn archived_task_summary(
     task: &TaskDocument,
     events: &[V3EventEnvelope],
     lifecycle: &TaskLifecycleProjection,
+    state: &str,
     generated_at: &str,
 ) -> Value {
     let task_events: Vec<&V3EventEnvelope> = events
         .iter()
         .filter(|event| event.task_id.0 == task.task_id)
         .collect();
-    let state = if task_events
-        .iter()
-        .any(|event| event.aggregate_id == task.task_id)
-    {
-        projected_task_state(lifecycle)
-    } else {
-        task_state(task)
-    };
     let criteria = criteria(task, events, lifecycle, generated_at);
     let completion = completion_view(lifecycle);
     let confirmed = completion
@@ -2830,6 +3625,7 @@ fn blocker_details(
     generated_at: &str,
 ) -> Vec<Value> {
     let orchestration = fold_orchestration(&task.task_id, events);
+    let session_integrity = session_integrity(events, &task.task_id, lifecycle);
     let task_has_blocked_state = lifecycle
         .nodes
         .values()
@@ -2839,9 +3635,10 @@ fn blocker_details(
             .values()
             .any(|criterion| criterion.state == CriterionState::Blocked)
         || lifecycle
-            .sessions
-            .values()
-            .any(|session| session.state == "gapped")
+        .sessions
+        .values()
+        .any(|session| session.state == "gapped")
+        || session_integrity.has_blocking_gap()
         || lifecycle.has_open_findings()
         || orchestration.worktrees.values().any(|worktree| {
             matches!(
@@ -2914,38 +3711,89 @@ fn blocker_details(
     }
 
     if node_id.is_none() && task_has_blocked_state {
-        for session in lifecycle
-            .sessions
-            .values()
-            .filter(|session| session.state == "gapped")
-        {
-            let reason = format!("session.gap:{}", session.session_id);
+        let mut blocking_session_ids = session_integrity.blocking_session_ids();
+        blocking_session_ids.extend(
+            lifecycle
+                .sessions
+                .values()
+                .filter(|session| matches!(session.state.as_str(), "gapped" | "unknown"))
+                .map(|session| session.session_id.clone()),
+        );
+        blocking_session_ids.sort();
+        blocking_session_ids.dedup();
+        for session_id in blocking_session_ids {
+            let session = lifecycle.sessions.get(&session_id);
+            let state = session
+                .map(|value| value.state.as_str())
+                .unwrap_or("unknown");
+            let missing_terminal_result = !session_integrity.terminal_results.contains(&session_id);
+            let legacy_unknown = !session_integrity.opened.contains(&session_id);
+            let reason = if state == "gapped" {
+                format!("session.gap:{session_id}")
+            } else if legacy_unknown {
+                format!("session.unknown:{session_id}")
+            } else if missing_terminal_result {
+                format!("session.terminal_result_missing:{session_id}")
+            } else {
+                format!("session.unknown:{session_id}")
+            };
             if !seen_reasons.insert(reason.clone()) {
                 continue;
             }
+            let (summary, why_blocked, expected_state, observed_state, resume_action) =
+                if state == "gapped" {
+                    (
+                        format!("Session {session_id} 存在未恢复的执行 gap"),
+                        "session.gap_detected 已记录，但尚无匹配的 session.recovered 证据".to_owned(),
+                        "session=recovered/closed，gap evidence 已核对".to_owned(),
+                        format!("session={state}, terminal_result={missing_terminal_result}"),
+                        format!("调用 session_recovery(action=recover, session_id={session_id}, evidence_refs=[...])，再记录 terminal agent_result 并关闭 session"),
+                    )
+                } else if legacy_unknown {
+                    (
+                        format!("Legacy/unknown Session {session_id} 没有 session.opened 和 terminal agent result"),
+                        "历史事件带有 Session 关联，但没有可确认的 Session open 事实；V3 不补写成功或 terminal result".to_owned(),
+                        "session.opened 与 succeeded/failed terminal agent.result_recorded 均存在".to_owned(),
+                        format!("session={state}, opened=false, closed={}, terminal_result={missing_terminal_result}", session_integrity.closed.contains(&session_id)),
+                        format!("核对历史 Session {session_id} 的真实执行事实；无法恢复时保持 blocked，并用新的受支持 Session 重新执行和验证"),
+                    )
+                } else {
+                    (
+                        format!("Session {session_id} 没有可核验的 terminal agent result"),
+                        "历史 Session 只有绑定/打开/关闭等事实，缺少 succeeded 或 failed 的 terminal result；不能把历史 criterion 或 archive 摘要当作执行成功".to_owned(),
+                        "session 有 terminal agent.result_recorded(status=succeeded|failed)，且必要时完成 gap recovery".to_owned(),
+                        format!("session={state}, opened={}, closed={}, terminal_result=false", session_integrity.opened.contains(&session_id), session_integrity.closed.contains(&session_id)),
+                        format!("核对 Session {session_id} 的真实工作、工作树和验证输出；如为中断先调用 session_recovery(recover)，然后记录 succeeded/failed terminal agent_result，再 session_close"),
+                    )
+                };
             details.push(typed_blocker_detail(
-                format!("blocker.{}.gap", session.session_id),
+                format!("blocker.{}.session-gap", session_id),
                 BlockerKind::Workflow,
                 reason,
                 "session".to_owned(),
-                session.session_id.clone(),
-                format!("Session {} 存在未恢复的执行 gap", session.session_id),
-                "session.gap_detected 已记录，但尚无匹配的 session.recovered 证据".to_owned(),
-                "session=recovered/closed，gap evidence 已核对".to_owned(),
-                format!("session={}, coverage={}", session.state, session.coverage),
-                vec!["中断前后工作事实差异".to_owned(), "恢复 evidence_refs".to_owned()],
-                "该 session 的执行事实不完整，结果与完成门禁不可依赖".to_owned(),
-                session.host.clone(),
+                session_id.clone(),
+                summary,
+                why_blocked,
+                expected_state,
+                observed_state,
+                vec!["terminal agent.result_recorded 的真实状态".to_owned(), "Session gap/recovery evidence（如适用）".to_owned()],
+                "该 Session 的执行事实不完整，结果与完成门禁不可依赖".to_owned(),
+                session
+                    .map(|value| value.host.clone())
+                    .unwrap_or_else(|| "Session owner".to_owned()),
                 vec!["定位中断点并核对工作树、节点和已执行验证".to_owned()],
-                format!("调用 session_recovery(action=recover, session_id={}, evidence_refs=[...])，再记录 terminal agent_result 并关闭 session", session.session_id),
+                resume_action,
                 None,
                 None,
-                session.node_id.clone(),
+                session.and_then(|value| value.node_id.clone()),
                 Vec::new(),
                 BlockerProvenanceStatus::Native,
                 Vec::new(),
                 Vec::new(),
             ));
+            if details.len() >= 6 {
+                break;
+            }
         }
 
         for finding in lifecycle
@@ -3532,6 +4380,49 @@ fn generic_blocker_detail(node_id: Option<&str>) -> Value {
     )
 }
 
+fn projection_stale_blocker_detail(
+    project_id: &str,
+    status: &Value,
+    _generated_at: &str,
+) -> Value {
+    let event_count = status
+        .get("event_count")
+        .and_then(Value::as_u64)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "unknown".to_owned());
+    let projection_event_count = status
+        .get("projection_event_count")
+        .and_then(Value::as_u64)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "missing_or_unreadable".to_owned());
+    typed_blocker_detail(
+        format!("blocker.projection.stale.{project_id}"),
+        BlockerKind::Workflow,
+        "projection.stale".to_owned(),
+        "projection".to_owned(),
+        project_id.to_owned(),
+        "V3 projection 落后于事件日志，当前完成结论不可直接依赖".to_owned(),
+        "事件日志与 projection 的计数不一致；视图保留事件事实，但不能把旧 projection 的 terminal 摘要当作当前完成真值".to_owned(),
+        "projection_event_count=event_count 且 projection 可解析".to_owned(),
+        format!("event_count={event_count}, projection_event_count={projection_event_count}"),
+        vec![
+            "projection rebuild 的结构化结果".to_owned(),
+            "重新读取 task_view、task_candidates 和 archive 的一致状态".to_owned(),
+        ],
+        "所有受影响 Task 在 projection 追平前保持 stale/partial/blocked/review，不得宣称 completed".to_owned(),
+        "V3 控制面维护者".to_owned(),
+        vec!["保留当前事件日志和 projection 文件，不直接编辑 projection".to_owned()],
+        format!("通过受支持的 `v3 rebuild {project_id}` 追平 projection，失败时保留结构化错误并重新验证"),
+        None,
+        None,
+        None,
+        Vec::new(),
+        BlockerProvenanceStatus::Native,
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn typed_blocker_detail(
     blocker_id: String,
@@ -3883,16 +4774,6 @@ fn page(returned: usize) -> Value {
     json!({"cursor": Value::Null, "next_cursor": Value::Null, "limit": 200, "returned": returned, "total_estimate": returned, "truncated": false, "truncation_reason": "none", "model_version": MODEL_VERSION})
 }
 
-fn task_state(task: &TaskDocument) -> &'static str {
-    if task.phase_status == "completed" {
-        "completed"
-    } else if task.phase_status == "blocked" {
-        "blocked"
-    } else {
-        "active"
-    }
-}
-
 fn node_state(task: &TaskDocument) -> &'static str {
     if task.phase_status == "completed" {
         "completed"
@@ -3904,43 +4785,22 @@ fn node_state(task: &TaskDocument) -> &'static str {
 }
 
 fn projected_task_state(lifecycle: &TaskLifecycleProjection) -> &str {
-    match lifecycle.state.as_str() {
-        // Explicit terminal lifecycle events win over unresolved plan-node state.
-        "completion_pending" => "review",
-        "completed" => "completed",
-        "cancelled" => "cancelled",
-        "closed_with_exceptions" => "closed_with_exceptions",
-        "blocked" => "blocked",
-        _ if lifecycle
-            .effective_nodes()
-            .any(|(_, node)| node.state == "active") =>
-        {
-            "active"
-        }
-        _ if lifecycle
-            .effective_nodes()
-            .any(|(_, node)| matches!(node.state.as_str(), "blocked" | "failed")) =>
-        {
-            "blocked"
-        }
-        _ if lifecycle.effective_nodes().next().is_some()
-            && lifecycle
-                .effective_nodes()
-                .all(|(_, node)| matches!(node.state.as_str(), "completed" | "cancelled")) =>
-        {
-            "review"
-        }
-        _ if lifecycle
-            .effective_nodes()
-            .any(|(_, node)| node.state == "ready") =>
-        {
-            "planned"
-        }
-        _ if matches!(lifecycle.state.as_str(), "planned" | "active" | "review") => {
-            lifecycle.state.as_str()
-        }
-        _ => "active",
-    }
+    task_truth_state(lifecycle, None, false, false).as_str()
+}
+
+fn task_state_for(
+    lifecycle: &TaskLifecycleProjection,
+    fallback_state: Option<&str>,
+    session_integrity: &SessionIntegrity,
+    projection_stale: bool,
+) -> &'static str {
+    task_truth_state(
+        lifecycle,
+        fallback_state,
+        session_integrity.has_blocking_gap(),
+        projection_stale,
+    )
+    .as_str()
 }
 
 fn view_node_state(state: &str) -> &str {
@@ -4656,7 +5516,7 @@ mod tests {
     fn project_overview_lists_every_v3_task_with_its_own_session_count() {
         let root = std::env::temp_dir().join(format!("vibehub-v3-tasks-{}", Uuid::new_v4()));
         for (task_id, title, phase_status) in [
-            ("task.completed", "Completed task", "completed"),
+            ("task.completed", "Completed task", "active"),
             ("task.one", "First task", "active"),
             ("task.two", "Second task", "active"),
         ] {
@@ -4681,6 +5541,28 @@ mod tests {
                 "session.two.open",
             )
             .unwrap();
+        let store = V3EventStore::open(&root).unwrap();
+        store
+            .append(EventDraft {
+                event_type: "task.closed_with_exceptions".to_owned(),
+                aggregate_id: "task.completed".to_owned(),
+                expected_version: 0,
+                idempotency_key: "overview.task.completed.close".to_owned(),
+                project_id: ProjectId(project_id.clone()),
+                task_id: TaskId("task.completed".to_owned()),
+                node_id: None,
+                session_id: None,
+                worktree_id: None,
+                lease_id: None,
+                operation_id: None,
+                actor: "fixture".to_owned(),
+                evidence_grade: EvidenceGrade::HardObserved,
+                occurred_at: Some("2026-07-14T00:00:00.000Z".to_owned()),
+                commit_sha: None,
+                payload: json!({"reason": "fixture terminal task"}),
+            })
+            .unwrap();
+        store.rebuild_projection(&project_id).unwrap();
 
         let bundle = repository.load_bundle("task.one").unwrap();
         let tasks = bundle.project_overview["active_tasks"].as_array().unwrap();
@@ -4694,7 +5576,7 @@ mod tests {
             .unwrap();
         assert_eq!(archived.len(), 1);
         assert_eq!(archived[0]["task_id"], "task.completed");
-        assert_eq!(archived[0]["state"], "completed");
+        assert_eq!(archived[0]["state"], "closed_with_exceptions");
         assert_eq!(archived[0]["criteria"][0]["status"], "accepted");
         assert_eq!(archived[0]["plan"]["total"], 0);
         assert_eq!(archived[0]["result"]["status"], "not_executed");
@@ -4721,10 +5603,13 @@ mod tests {
         ] {
             let task_dir = root.join(".vibehub/tasks").join(task_id);
             fs::create_dir_all(&task_dir).unwrap();
-            let phase_status = if task_id == "task.active" {
-                "active"
-            } else {
-                "completed"
+            let phase_status = match task_id {
+                "task.active" => "active",
+                // An eventless legacy cancellation remains terminal, but has
+                // no terminal timestamp; it exercises the missing-value sort
+                // bucket without treating legacy completion as success.
+                "task.delta" => "cancelled",
+                _ => "active",
             };
             fs::write(
                 task_dir.join("task.yaml"),
@@ -4742,14 +5627,14 @@ mod tests {
         ] {
             store
                 .append(EventDraft {
-                    event_type: "progress.logged".to_owned(),
-                    aggregate_id: format!("session.{task_id}"),
+                    event_type: "task.closed_with_exceptions".to_owned(),
+                    aggregate_id: task_id.to_owned(),
                     expected_version: 0,
-                    idempotency_key: format!("archive.order.{task_id}"),
+                    idempotency_key: format!("archive.order.close.{task_id}"),
                     project_id: ProjectId(project_id.clone()),
                     task_id: TaskId(task_id.to_owned()),
                     node_id: None,
-                    session_id: Some(SessionId(format!("session.{task_id}"))),
+                    session_id: None,
                     worktree_id: None,
                     lease_id: None,
                     operation_id: None,
@@ -4757,10 +5642,11 @@ mod tests {
                     evidence_grade: EvidenceGrade::AgentReported,
                     occurred_at: Some(occurred_at.to_owned()),
                     commit_sha: None,
-                    payload: json!({"summary": "seed archive ordering"}),
+                    payload: json!({"reason": "seed archive ordering"}),
                 })
                 .unwrap();
         }
+        store.rebuild_projection(&project_id).unwrap();
 
         let bundle = repository.load_bundle("task.active").unwrap();
         let archived = bundle.project_overview["archived_tasks"]
@@ -4802,6 +5688,308 @@ mod tests {
     }
 
     #[test]
+    fn task_list_is_pointer_independent_and_exposes_rates_and_terminal_sorting() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-task-list-{}", Uuid::new_v4()));
+        for (task_id, phase_status, criteria) in [
+            ("task.active", "active", "- First\n- Second"),
+            ("task.alpha", "completed", "- Archived"),
+            ("task.beta", "completed", "- Archived"),
+            ("task.gamma", "completed", "- Archived"),
+            // A legacy task file may carry an explicit terminal cancellation
+            // without a V3 terminal event. Keep it terminal while exercising
+            // the documented missing-terminal_at sort bucket.
+            ("task.delta", "cancelled", "- Archived"),
+        ] {
+            let task_dir = root.join(".vibehub/tasks").join(task_id);
+            fs::create_dir_all(&task_dir).unwrap();
+            fs::write(
+                task_dir.join("task.yaml"),
+                format!(
+                    "task_id: {task_id}\ntitle: {task_id}\nintent: Verify task list\nphase: implement\nphase_status: {phase_status}\nacceptance_criteria:\n{criteria}\n"
+                ),
+            )
+            .unwrap();
+        }
+        let repository = V3ViewRepository::open(&root).unwrap();
+        let project_id = repository.project_id();
+        let store = V3EventStore::open(&root).unwrap();
+        store.rebuild_projection(&project_id).unwrap();
+
+        for (task_id, occurred_at) in [
+            ("task.alpha", "2026-01-01T00:00:00.000Z"),
+            ("task.beta", "2026-03-03T00:00:00.000Z"),
+            ("task.gamma", "2026-02-02T00:00:00.000Z"),
+        ] {
+            store
+                .append(EventDraft {
+                    event_type: "task.closed_with_exceptions".to_owned(),
+                    aggregate_id: task_id.to_owned(),
+                    expected_version: 0,
+                    idempotency_key: format!("task-list.close.{task_id}"),
+                    project_id: ProjectId(project_id.clone()),
+                    task_id: TaskId(task_id.to_owned()),
+                    node_id: None,
+                    session_id: None,
+                    worktree_id: None,
+                    lease_id: None,
+                    operation_id: None,
+                    actor: "fixture".to_owned(),
+                    evidence_grade: EvidenceGrade::HardObserved,
+                    occurred_at: Some(occurred_at.to_owned()),
+                    commit_sha: None,
+                    payload: json!({"reason": "fixture"}),
+                })
+                .unwrap();
+        }
+        let criterion_id = canonical_criterion_id("task.active", 0);
+        store
+            .append(EventDraft {
+                event_type: "criterion.passed".to_owned(),
+                aggregate_id: "task.active".to_owned(),
+                expected_version: 0,
+                idempotency_key: "task-list.criterion.passed".to_owned(),
+                project_id: ProjectId(project_id.clone()),
+                task_id: TaskId("task.active".to_owned()),
+                node_id: None,
+                session_id: None,
+                worktree_id: None,
+                lease_id: None,
+                operation_id: None,
+                actor: "fixture".to_owned(),
+                evidence_grade: EvidenceGrade::HardObserved,
+                occurred_at: None,
+                commit_sha: None,
+                payload: json!({
+                    "criterion_id": criterion_id,
+                    "title": "First",
+                    "required": true,
+                    "evidence_refs": ["test:task-list"]
+                }),
+            })
+            .unwrap();
+        store.rebuild_projection(&project_id).unwrap();
+
+        // An invalid current pointer must not prevent the explicit index query.
+        fs::write(
+            root.join(".vibehub/tasks/current"),
+            "schema_version: 1\nkind: current_task_pointer\ntask_id: task.missing\npath: .vibehub/tasks/task.missing\n",
+        )
+        .unwrap();
+
+        let active_only = repository.task_list(false).unwrap();
+        assert_eq!(active_only["tasks"].as_array().unwrap().len(), 1);
+        assert_eq!(active_only["tasks"][0]["task_id"], "task.active");
+        assert_eq!(active_only["omitted_archived_count"], 4);
+        let active = &active_only["tasks"][0];
+        assert_eq!(active["terminal_at"], Value::Null);
+        assert_eq!(active["criterion_pass_rate"]["passed"], 1);
+        assert_eq!(active["criterion_pass_rate"]["total"], 2);
+        assert_eq!(active["criterion_pass_rate"]["ratio"], 0.5);
+        assert!(active["required_node_completion_rate"]["ratio"].is_null());
+
+        let all = repository.task_list(true).unwrap();
+        let order = all["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|task| task["task_id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            order,
+            vec!["task.active", "task.beta", "task.gamma", "task.alpha", "task.delta"]
+        );
+        assert_eq!(all["archived_count"], 4);
+        assert_eq!(all["tasks"][1]["terminal_at"], "2026-03-03T00:00:00.000Z");
+        assert!(all["tasks"][4]["terminal_at"].is_null());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn commit_tasks_supports_short_full_unknown_and_historical_missing_head_facts() {
+        let root = std::env::temp_dir().join(format!("vibehub-v3-commit-tasks-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        for task_id in ["task.git.a", "task.git.b", "task.git.history"] {
+            let task_dir = root.join(".vibehub/tasks").join(task_id);
+            fs::create_dir_all(&task_dir).unwrap();
+            fs::write(
+                task_dir.join("task.yaml"),
+                format!(
+                    "task_id: {task_id}\ntitle: {task_id}\nintent: Verify Git traceability\nphase: implement\nphase_status: active\n"
+                ),
+            )
+            .unwrap();
+        }
+        let init = silent_command("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["init", "-q"])
+            .output()
+            .unwrap();
+        assert!(init.status.success());
+        for (key, value) in [("user.name", "VibeHub fixture"), ("user.email", "fixture@example.invalid")] {
+            assert!(silent_command("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["config", key, value])
+                .status()
+                .unwrap()
+                .success());
+        }
+        fs::write(root.join("trace.txt"), "base\n").unwrap();
+        assert!(silent_command("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success());
+        assert!(silent_command("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["commit", "-qm", "base"])
+            .status()
+            .unwrap()
+            .success());
+        let base = String::from_utf8(
+            silent_command("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .to_owned();
+        fs::write(root.join("trace.txt"), "middle\n").unwrap();
+        assert!(silent_command("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success());
+        assert!(silent_command("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["commit", "-qm", "middle"])
+            .status()
+            .unwrap()
+            .success());
+        let middle = String::from_utf8(
+            silent_command("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .to_owned();
+        fs::write(root.join("trace.txt"), "close\n").unwrap();
+        assert!(silent_command("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success());
+        assert!(silent_command("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["commit", "-qm", "close"])
+            .status()
+            .unwrap()
+            .success());
+        let close = String::from_utf8(
+            silent_command("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .to_owned();
+
+        let repository = V3ViewRepository::open(&root).unwrap();
+        let project_id = repository.project_id();
+        let store = V3EventStore::open(&root).unwrap();
+        for (task_id, session_id, with_heads) in [
+            ("task.git.a", "session.git.a", true),
+            ("task.git.b", "session.git.b", true),
+            ("task.git.history", "session.git.history", false),
+        ] {
+            for (event_type, expected_version, key, head) in [
+                ("session.opened", 0, "open", with_heads.then_some(base.as_str())),
+                ("session.closed", 1, "close", with_heads.then_some(close.as_str())),
+            ] {
+                store
+                    .append(EventDraft {
+                        event_type: event_type.to_owned(),
+                        aggregate_id: session_id.to_owned(),
+                        expected_version,
+                        idempotency_key: format!("git-fixture.{task_id}.{key}"),
+                        project_id: ProjectId(project_id.clone()),
+                        task_id: TaskId(task_id.to_owned()),
+                        node_id: None,
+                        session_id: Some(SessionId(session_id.to_owned())),
+                        worktree_id: None,
+                        lease_id: None,
+                        operation_id: None,
+                        actor: "fixture".to_owned(),
+                        evidence_grade: EvidenceGrade::HardObserved,
+                        occurred_at: None,
+                        commit_sha: None,
+                        payload: head.map(|value| json!({"git_head_sha": value})).unwrap_or_else(|| json!({})),
+                    })
+                    .unwrap();
+            }
+        }
+        store.rebuild_projection(&project_id).unwrap();
+
+        let short = &middle[..7];
+        let reverse = repository.commit_tasks(short).unwrap();
+        assert_eq!(reverse["resolved_commit_hash"], middle);
+        assert_eq!(reverse["match"], "associated");
+        assert_eq!(reverse["task_count"], 2);
+        assert_eq!(
+            reverse["tasks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|task| task["task_id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["task.git.a", "task.git.b"]
+        );
+        let full = repository.commit_tasks(&middle).unwrap();
+        assert_eq!(full["task_count"], 2);
+        let unknown = repository.commit_tasks("deadbeef").unwrap();
+        assert_eq!(unknown["match"], "none");
+        assert!(unknown["resolved_commit_hash"].is_null());
+        assert_eq!(unknown["tasks"], json!([]));
+
+        let complete = repository.task_commits("task.git.a").unwrap();
+        assert_eq!(complete["git_evidence"]["status"], "complete");
+        assert_eq!(complete["sessions"][0]["open_git_head"], base);
+        assert_eq!(complete["sessions"][0]["close_git_head"], close);
+        assert_eq!(complete["sessions"][0]["git_trace_status"], "complete");
+        let historical = repository.task_commits("task.git.history").unwrap();
+        assert_eq!(historical["git_evidence"]["status"], "missing");
+        assert_eq!(historical["sessions"][0]["open_git_head"], Value::Null);
+        assert_eq!(historical["sessions"][0]["has_git_evidence"], false);
+        assert_eq!(historical["git_evidence"]["historical_gaps"].as_array().unwrap().len(), 1);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn completed_pointer_falls_back_to_a_non_terminal_task_and_is_not_active() {
         let root = std::env::temp_dir().join(format!("vibehub-v3-current-{}", Uuid::new_v4()));
         let tasks_root = root.join(".vibehub/tasks");
@@ -4822,6 +6010,29 @@ mod tests {
         .unwrap();
 
         let repository = V3ViewRepository::open(&root).unwrap();
+        let project_id = repository.project_id();
+        let store = V3EventStore::open(&root).unwrap();
+        store
+            .append(EventDraft {
+                event_type: "task.closed_with_exceptions".to_owned(),
+                aggregate_id: "task.completed".to_owned(),
+                expected_version: 0,
+                idempotency_key: "current.task.completed.close".to_owned(),
+                project_id: ProjectId(project_id.clone()),
+                task_id: TaskId("task.completed".to_owned()),
+                node_id: None,
+                session_id: None,
+                worktree_id: None,
+                lease_id: None,
+                operation_id: None,
+                actor: "fixture".to_owned(),
+                evidence_grade: EvidenceGrade::HardObserved,
+                occurred_at: Some("2026-07-14T00:00:00.000Z".to_owned()),
+                commit_sha: None,
+                payload: json!({"reason": "fixture terminal task"}),
+            })
+            .unwrap();
+        store.rebuild_projection(&project_id).unwrap();
         assert_eq!(repository.current_task_id().unwrap(), "task.active");
         let bundle = repository.load_bundle("task.active").unwrap();
         assert_eq!(bundle.project_overview["current_task_id"], "task.active");
@@ -5086,10 +6297,16 @@ mod tests {
             .iter()
             .any(|record| record["status"] == "missing"
                 && record["repair_action"].as_str().is_some()));
-        assert_eq!(
-            bundle.plan_graph["warnings"][0]["code"],
-            "V3_PLAN_NOT_RECORDED"
-        );
+        assert!(bundle.plan_graph["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["code"] == "V3_PLAN_NOT_RECORDED"));
+        assert!(bundle.plan_graph["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["code"] == "V3_PROJECTION_STALE"));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -5743,5 +6960,78 @@ mod tests {
         assert_eq!(recovered["passed"], true);
         assert_eq!(recovered["missing_facts"], json!([]));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unknown_legacy_session_demotes_completion_and_exposes_recovery_action() {
+        let event = serde_json::from_value::<V3EventEnvelope>(json!({
+            "event_id": "evt.legacy.session",
+            "event_type": "session.task_bound",
+            "event_version": "1.0",
+            "aggregate_id": "session.legacy",
+            "aggregate_version": 1,
+            "expected_version": 0,
+            "idempotency_key": "legacy.session.bound",
+            "project_id": "project.test",
+            "task_id": "task.test",
+            "session_id": "session.legacy",
+            "actor": "legacy-agent",
+            "evidence_grade": "agent_reported",
+            "occurred_at": "2026-07-28T00:00:00Z",
+            "recorded_at": "2026-07-28T00:00:00Z",
+            "payload": {"session_id": "session.legacy"}
+        }))
+        .unwrap();
+        let events = vec![event];
+        let mut lifecycle = fold_task("task.test", &events);
+        lifecycle.state = "completed".to_owned();
+        let integrity = session_integrity(&events, "task.test", &lifecycle);
+        assert_eq!(integrity.unknown, vec!["session.legacy"]);
+        assert_eq!(
+            task_state_for(&lifecycle, None, &integrity, false),
+            "blocked"
+        );
+
+        let details = blocker_details(
+            &blocked_task_document(),
+            &events,
+            &lifecycle,
+            None,
+            "2026-07-28T00:00:00Z",
+        );
+        let legacy = details
+            .iter()
+            .map(typed_blocker)
+            .find(|detail| detail.reason_code == "session.unknown:session.legacy")
+            .expect("legacy Session must remain an actionable blocker");
+        assert!(legacy.summary.contains("Legacy/unknown"));
+        assert!(legacy.repair_actions[0]
+            .instructions
+            .contains("保持 blocked"));
+    }
+
+    #[test]
+    fn projection_stale_warning_is_actionable_and_not_a_completion_claim() {
+        let warning = projection_warning(&json!({
+            "stale": true,
+            "event_count": 12,
+            "projection_event_count": 11,
+            "last_event_timestamp": "2026-07-28T00:00:00Z"
+        }))
+        .expect("stale projection warning");
+        assert_eq!(warning["code"], "V3_PROJECTION_STALE");
+        assert_eq!(warning["details"]["event_count"], 12);
+        assert!(warning["details"]["repair_action"]
+            .as_str()
+            .is_some_and(|action| action.contains("rebuild")));
+
+        let blocker = projection_stale_blocker_detail(
+            "project.test",
+            &json!({"stale": true, "event_count": 12, "projection_event_count": 11}),
+            "2026-07-28T00:00:00Z",
+        );
+        let blocker = typed_blocker(&blocker);
+        assert_eq!(blocker.reason_code, "projection.stale");
+        assert!(blocker.why_blocked.contains("旧 projection"));
     }
 }

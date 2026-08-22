@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/task-commits-view.schema.json",
+  "title": "TaskCommitsView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "task_id", "session_count", "sessions", "git_evidence", "source"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+    "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "session_count": { "type": "integer", "minimum": 0 },
+    "sessions": { "type": "array", "items": { "$ref": "#/$defs/SessionGitTrace" } },
+    "git_evidence": { "$ref": "#/$defs/GitEvidence" },
+    "source": { "const": "v3_session_git_head_events" }
+  },
+  "$defs": {
+    "SessionGitTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "open_git_head", "close_git_head", "opened_at", "closed_at", "git_trace_status", "has_git_evidence", "event_commit_shas"],
+      "properties": {
+        "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "open_git_head": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{4,64}$" },
+        "close_git_head": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{4,64}$" },
+        "opened_at": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Timestamp" }, { "type": "null" }] },
+        "closed_at": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Timestamp" }, { "type": "null" }] },
+        "git_trace_status": { "enum": ["complete", "partial", "missing"] },
+        "has_git_evidence": { "type": "boolean" },
+        "event_commit_shas": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-fA-F]{4,64}$" }, "uniqueItems": true }
+      }
+    },
+    "GitEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "complete_sessions", "partial_sessions", "missing_sessions", "historical_gaps"],
+      "properties": {
+        "status": { "enum": ["complete", "partial", "missing", "unavailable"] },
+        "complete_sessions": { "type": "integer", "minimum": 0 },
+        "partial_sessions": { "type": "integer", "minimum": 0 },
+        "missing_sessions": { "type": "integer", "minimum": 0 },
+        "historical_gaps": { "type": "array", "items": { "$ref": "#/$defs/HistoricalGap" } }
+      }
+    },
+    "HistoricalGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "session_id", "missing", "reason"],
+      "properties": {
+        "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "missing": { "type": "array", "items": { "enum": ["open_git_head", "close_git_head"] }, "minItems": 1, "uniqueItems": true },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

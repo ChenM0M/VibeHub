@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.vibehub.dev/v3/1.0/commit-tasks-view.schema.json",
+  "title": "CommitTasksView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "query_commit_hash", "resolved_commit_hash", "match", "task_count", "tasks", "historical_gaps", "source"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
+    "project_id": { "$ref": "common.schema.json#/$defs/StableId" },
+    "query_commit_hash": { "type": "string", "pattern": "^[0-9a-fA-F]{4,64}$" },
+    "resolved_commit_hash": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{4,64}$" },
+    "match": { "enum": ["none", "associated"] },
+    "task_count": { "type": "integer", "minimum": 0 },
+    "tasks": { "type": "array", "items": { "$ref": "#/$defs/TaskAssociation" } },
+    "historical_gaps": { "type": "array", "items": { "$ref": "#/$defs/HistoricalGap" } },
+    "source": { "const": "v3_git_traceability" }
+  },
+  "$defs": {
+    "TaskAssociation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "title", "intent", "state", "sessions"],
+      "properties": {
+        "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "title": { "type": "string", "minLength": 1 },
+        "intent": { "type": "string" },
+        "state": { "enum": ["planned", "active", "blocked", "review", "completed", "cancelled", "closed_with_exceptions"] },
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/AssociationSession" } }
+      }
+    },
+    "AssociationSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "match_kinds", "open_git_head", "close_git_head", "git_trace_status"],
+      "properties": {
+        "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "match_kinds": { "type": "array", "items": { "enum": ["open_head", "close_head", "session_range", "event_commit"] }, "minItems": 1, "uniqueItems": true },
+        "open_git_head": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{4,64}$" },
+        "close_git_head": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{4,64}$" },
+        "git_trace_status": { "enum": ["complete", "partial", "missing"] }
+      }
+    },
+    "HistoricalGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "session_id", "missing", "reason"],
+      "properties": {
+        "task_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "session_id": { "$ref": "common.schema.json#/$defs/StableId" },
+        "missing": { "type": "array", "items": { "enum": ["open_git_head", "close_git_head"] }, "minItems": 1, "uniqueItems": true },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

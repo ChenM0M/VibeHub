@@ -90,11 +90,11 @@ pub fn apply_command(
         .iter()
         .any(|event| event.idempotency_key == command.idempotency_key)
     {
-        return store.append(draft(command, event_type));
+        return store.append_with_rebuild(draft(command, event_type));
     }
     let projection = fold(&command.project_id, &events);
     validate(&projection, &command)?;
-    store.append(draft(command, event_type))
+    store.append_with_rebuild(draft(command, event_type))
 }
 
 pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> MemoryProjection {
