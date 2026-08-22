@@ -1,8 +1,8 @@
-<!-- Header: badges + VibeHub (Unsloth-style README) -->
-
 <div align="center">
 
-# VibeHub
+<h1 align="center" style="margin: 0;">
+  <img src="assets/readme/vibehub-readme-header.png" alt="VibeHub" height="120" style="max-width: 100%;">
+</h1>
 
 [![GitHub Release](https://img.shields.io/github/v/release/ChenM0M/VibeHub)](https://github.com/ChenM0M/VibeHub/releases)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)

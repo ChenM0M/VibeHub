@@ -5,8 +5,9 @@
 ## 每个 tag 必交
 
 1. `docs/releases/<tag>.md`（含 `v` 前缀，例如 `v3.3.3.md`）
-2. 新功能或可见修复的界面截图：`assets/releases/<tag>/*.png`
-3. `CHANGELOG.md` 对应版本的条目（给仓库读者；GitHub Release 正文以本目录的 markdown 为准）
+2. `CHANGELOG.md` 对应版本的条目（给仓库读者；GitHub Release 正文以本目录的 markdown 为准）
+
+界面截图（`assets/releases/<tag>/*.png`）为可选项：提供时有助于展示新功能或可见修复，但不是发版前置条件。
 
 ## 说明文案
 
@@ -30,4 +31,4 @@
 ## 流水线
 
 Release workflow 用 `--notes-file` 创建或更新 draft，不再使用 `--generate-notes`。  
-`RELEASE_TAG=vX.Y.Z npm run release:check` 会确认说明文件存在、至少有一张 `assets/releases/` 截图，且 PNG 为 1600×1000。
+`RELEASE_TAG=vX.Y.Z npm run release:check` 会确认说明文件存在；若说明中引用了 `assets/releases/` 截图，则校验其为 1600×1000 的 PNG，但不要求必须提供截图。

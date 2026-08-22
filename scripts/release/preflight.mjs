@@ -108,10 +108,10 @@ if (releaseTag) {
   const tag = releaseTag.startsWith("v") ? releaseTag : `v${releaseTag}`;
   const notesPath = `docs/releases/${tag}.md`;
   const notes = await readText(notesPath);
+  // Release screenshots are optional. When the notes reference assets under
+  // assets/releases/, each must be a valid 1600x1000 PNG; a release with no
+  // screenshots is fully allowed.
   const imageRefs = [...notes.matchAll(/assets\/releases\/[^)\s]+/g)].map((match) => match[0]);
-  if (imageRefs.length === 0) {
-    throw new Error(`${notesPath} must include at least one screenshot under assets/releases/`);
-  }
   for (const relativePath of new Set(imageRefs)) {
     const bytes = Buffer.from(await readFile(new URL(relativePath, root)));
     const size = pngSize(bytes);
@@ -130,11 +130,11 @@ if (releaseTag) {
   if (rewritten !== "![demo](https://github.com/ChenM0M/VibeHub/raw/v0.0.0/assets/releases/v0.0.0/demo.png)") {
     throw new Error("scripts/release/notes.mjs did not rewrite relative screenshot URLs");
   }
-  await access(new URL("scripts/release/capture-macos.sh", root));
   const rendered = await buildReleaseNotes(tag);
-  if (!rendered.includes(`https://github.com/ChenM0M/VibeHub/raw/${tag}/`)) {
-    throw new Error("rendered GitHub notes must point screenshot URLs at the release tag");
+  if (rendered.trim().length === 0) {
+    throw new Error(`rendered release notes for ${tag} were empty`);
   }
+  await access(new URL("scripts/release/capture-macos.sh", root));
 }
 
 console.log(JSON.stringify({ ok: true, version: expected, release_tag: releaseTag || null }));
