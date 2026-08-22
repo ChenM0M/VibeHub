@@ -28,12 +28,19 @@
 | 优先级 | 条件 | Task 结论 | 允许的下一步 |
 |---|---|---|---|
 | 1 | 显式 `closed_with_exceptions` | `closed_with_exceptions` | 保留未解决项，创建后续任务或按授权恢复 |
-| 2 | 已记录 `completed`，但存在 unknown/gapped/无 terminal result Session 或 stale projection | `blocked` | 取得真实 Session/投影证据；不得显示为 completed |
+| 2 | 已记录 `completed` 但**无有效确认**，且存在 unknown/gapped/无 terminal result Session 或 stale projection | `blocked` | 取得真实 Session/投影证据；不得显示为 completed |
 | 3 | PlanNode/criterion blocked 或 failed，或 finding 未关闭 | `blocked` | 修复、reopen/replan 或记录准确风险 |
 | 4 | `task.completion_proposed` 尚未被当前 digest/用户确认闭环 | `review` | 复核 evidence 与 confirmation |
 | 5 | 生命周期为 active，或仍有 active PlanNode | `active` | 继续执行并记录 progress/result |
 | 6 | 依赖已 ready、尚未执行 | `planned` | 激活 ready PlanNode |
-| 7 | 有有效 `task.completion_confirmed`，无更高优先级阻塞事实 | `completed` | 只读回顾；不再当作可写执行目标 |
+| 7 | 有有效 `task.completion_confirmed`（digest 匹配、已被确认） | `completed`（terminal） | 只读回顾；不再当作可写执行目标 |
+
+有效 `task.completion_confirmed` 是 terminal 结论，优先于第 2/3 条的残留阻塞
+事实：已确认完成的任务**留在归档**，其残留 Session gap、stale projection、open
+finding、blocked PlanNode 只作为诊断展示在归档摘要与时间线里，不会把任务重新拉回
+active 队列改判为 `blocked`。第 2 条的 `completed → blocked` 只作用于**缺少有效
+确认**的历史 `completed` 声明（例如只有旧 `phase_status: completed`、没有 typed
+confirmation 的 legacy Task，那种情况会先落入第 4 条之后的 `review`）。
 
 `cancelled` 和 `closed_with_exceptions` 仍是 terminal，但两者都不等价于
 all-green `completed`。没有 typed completion confirmation 的旧 `phase_status:

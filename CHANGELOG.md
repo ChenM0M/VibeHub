@@ -2,6 +2,10 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.5
+
+- 修复 v3.3.4 引入的归档回归：带有残留阻塞事实（遗留/无 terminal result 的 Session、stale projection、未关闭 finding、blocked PlanNode）的已确认完成任务被改判为 `blocked`，导致已归档任务重新回到 active 列表、以及「完成并归档」后归档视图找不到该任务。现在真正确认完成的任务保持终态 `completed` 并留在归档，残留阻塞只作为诊断展示在归档摘要与时间线中。
+
 ## v3.3.4
 
 - V3 Task 列表、归档查询与 commit ↔ Task 双向溯源现在具有稳定的 CLI/MCP 契约；历史缺失 Git HEAD 会明确显示为缺口，不会被伪造成已绑定。

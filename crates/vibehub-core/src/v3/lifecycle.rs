@@ -212,13 +212,28 @@ impl TaskTruthState {
     }
 }
 
+/// A `completed` lifecycle state is only ever folded from a valid
+/// `task.completion_confirmed` (matching digest). This helper reports whether
+/// such a confirmation exists so a finished task stays terminal even when
+/// residual blockers remain visible as diagnostics.
+fn lifecycle_has_valid_completion_confirmation(lifecycle: &TaskLifecycleProjection) -> bool {
+    lifecycle
+        .confirmation
+        .as_ref()
+        .map(|confirmation| confirmation.valid && confirmation.confirmed_at_version.is_some())
+        .unwrap_or(false)
+}
+
 /// Resolve the canonical task conclusion from lifecycle facts.
 ///
-/// The ordering is intentional and tested: an incomplete Session or a stale
-/// projection can demote a historical `completed` claim to `blocked`; an
-/// explicit exception closure remains visibly distinct; pending confirmation
-/// is `review`; only a valid confirmation with no newer blocking fact is
-/// `completed`.  No historical event is rewritten by this projection helper.
+/// The ordering is intentional and tested. A task that reached `completed`
+/// through a valid typed completion confirmation is a terminal conclusion; its
+/// residual blockers are surfaced as diagnostics, not used to reopen it in the
+/// active queue. An incomplete Session, a stale projection, a blocked plan
+/// node, an open finding, or an unconfirmed historical `completed` claim that
+/// lacks such confirmation demotes the conclusion to `blocked`/`review`; an
+/// explicit exception closure remains visibly distinct. No historical event is
+/// rewritten by this projection helper.
 pub fn task_truth_state(
     lifecycle: &TaskLifecycleProjection,
     fallback_state: Option<&str>,
@@ -254,6 +269,15 @@ pub fn task_truth_state(
     // remain visible in the diagnostic payload.
     if raw_state == "closed_with_exceptions" {
         return TaskTruthState::ClosedWithExceptions;
+    }
+    // A valid typed completion confirmation is a terminal conclusion. A finished
+    // task keeps its residual blockers (gapped session, stale projection, open
+    // finding, blocked plan node) as diagnostics surfaced in the archived
+    // summary and timeline instead of being pulled back into the active queue as
+    // `blocked`. `lifecycle.state == "completed"` is only ever folded from such a
+    // valid confirmation, so a confirmed-complete task must remain terminal here.
+    if raw_state == "completed" && lifecycle_has_valid_completion_confirmation(lifecycle) {
+        return TaskTruthState::Completed;
     }
     if raw_state == "completed" && (inferred_blocked || projection_stale) {
         return TaskTruthState::Blocked;
@@ -1927,6 +1951,40 @@ fn task_truth_state_has_one_terminal_priority() {
     assert_eq!(
         task_truth_state(&lifecycle, None, true, true),
         TaskTruthState::ClosedWithExceptions
+    );
+}
+
+#[test]
+fn task_truth_state_keeps_confirmed_complete_terminal_despite_residual_blockers() {
+    // Regression: a task with a valid completion confirmation must stay archived
+    // (terminal) even when residual blockers remain, instead of being reopened
+    // in the active queue as `blocked`.
+    let mut lifecycle = TaskLifecycleProjection::empty("task.truth");
+    lifecycle.state = "completed".to_owned();
+    lifecycle.confirmation = Some(CompletionConfirmation {
+        proposal_event_id: "event.proposal".to_owned(),
+        digest: "digest.truth".to_owned(),
+        proposed_at_version: 1,
+        confirmed_at_version: Some(2),
+        confirmed_by: Some("reviewer".to_owned()),
+        channel: Some("cli".to_owned()),
+        valid: true,
+    });
+    lifecycle.criteria.insert(
+        "criterion.truth".to_owned(),
+        CriterionProjection {
+            criterion_id: "criterion.truth".to_owned(),
+            title: "Truth".to_owned(),
+            required: true,
+            state: CriterionState::Failed,
+            evidence_refs: vec!["evidence.truth".to_owned()],
+            reviewer: Some("reviewer".to_owned()),
+            version: 1,
+        },
+    );
+    assert_eq!(
+        task_truth_state(&lifecycle, None, false, false),
+        TaskTruthState::Completed
     );
 }
 
