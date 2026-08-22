@@ -946,7 +946,10 @@ fn apply_settings_patch_bytes(
         );
     }
     if matches!(patch.disable_prompt_caching, Some(true)) {
-        env.insert("DISABLE_PROMPT_CACHING".to_owned(), Value::String("1".to_owned()));
+        env.insert(
+            "DISABLE_PROMPT_CACHING".to_owned(),
+            Value::String("1".to_owned()),
+        );
     }
     if patch.strip_credential_helper {
         root.remove("apiKeyHelper");
@@ -1901,16 +1904,31 @@ mod tests {
         .unwrap();
         let value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(value["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "water18");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "water18-haiku");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "water18-sonnet");
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+            "water18-haiku"
+        );
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
+            "water18-sonnet"
+        );
         assert_eq!(value["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "water18-opus");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"], "water18-fable");
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"],
+            "water18-fable"
+        );
         assert_eq!(value["env"]["DISABLE_PROMPT_CACHING"], "1");
         let view = read_claude_profile(&target, &path).unwrap();
         assert_eq!(view.advanced.subagent_model.as_deref(), Some("water18"));
         // small_fast_model mirrors the canonical haiku tier after write-back.
-        assert_eq!(view.advanced.small_fast_model.as_deref(), Some("water18-haiku"));
-        assert_eq!(view.advanced.sonnet_model.as_deref(), Some("water18-sonnet"));
+        assert_eq!(
+            view.advanced.small_fast_model.as_deref(),
+            Some("water18-haiku")
+        );
+        assert_eq!(
+            view.advanced.sonnet_model.as_deref(),
+            Some("water18-sonnet")
+        );
         assert_eq!(view.advanced.opus_model.as_deref(), Some("water18-opus"));
         assert_eq!(view.advanced.haiku_model.as_deref(), Some("water18-haiku"));
         assert_eq!(view.advanced.fable_model.as_deref(), Some("water18-fable"));
@@ -1941,12 +1959,24 @@ mod tests {
         .unwrap();
         let value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(value["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "water18");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "water18-sonnet");
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
+            "water18-sonnet"
+        );
         assert_eq!(value["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "water18-opus");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "water18-haiku");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"], "water18-fable");
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+            "water18-haiku"
+        );
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"],
+            "water18-fable"
+        );
         let view = read_claude_profile(&target, &path).unwrap();
-        assert_eq!(view.advanced.sonnet_model.as_deref(), Some("water18-sonnet"));
+        assert_eq!(
+            view.advanced.sonnet_model.as_deref(),
+            Some("water18-sonnet")
+        );
         assert_eq!(view.advanced.opus_model.as_deref(), Some("water18-opus"));
         assert_eq!(view.advanced.haiku_model.as_deref(), Some("water18-haiku"));
         assert_eq!(view.advanced.fable_model.as_deref(), Some("water18-fable"));
@@ -2003,10 +2033,9 @@ mod tests {
         )
         .unwrap();
         let view = read_claude_profile(&target, &official).unwrap();
-        assert!(!view
-            .warnings
-            .iter()
-            .any(|code| code.starts_with("CLAUDE_") && code != "CLAUDE_JSONC_SAVE_REWRITES_FORMAT_UNSUPPORTED"),
+        assert!(
+            !view.warnings.iter().any(|code| code.starts_with("CLAUDE_")
+                && code != "CLAUDE_JSONC_SAVE_REWRITES_FORMAT_UNSUPPORTED"),
             "official endpoint must not trigger third-party diagnostics: {:?}",
             view.warnings
         );
@@ -2042,10 +2071,19 @@ mod tests {
         let value: Value =
             serde_json::from_slice(&fs::read(root.join(".claude/settings.json")).unwrap()).unwrap();
         assert_eq!(value["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "water18");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "water18-mini");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "water18-sonnet");
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+            "water18-mini"
+        );
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
+            "water18-sonnet"
+        );
         assert_eq!(value["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "water18-opus");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"], "water18-fable");
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"],
+            "water18-fable"
+        );
         assert_eq!(value["env"]["DISABLE_PROMPT_CACHING"], "1");
         fs::remove_dir_all(root).unwrap();
     }
@@ -2086,7 +2124,10 @@ mod tests {
         let value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         // Managed env is written.
         assert_eq!(value["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "water18-agent");
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "water18-sonnet");
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
+            "water18-sonnet"
+        );
         assert_eq!(value["env"]["DISABLE_PROMPT_CACHING"], "1");
         // Preserved and unknown fields are untouched.
         assert_eq!(value["permissions"]["allow"][0], "Bash(*)");

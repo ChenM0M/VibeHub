@@ -531,8 +531,14 @@ fn map_sync_to_install_result(
         .iter()
         .filter(|inspection| inspection.scope == crate::v3::HostConfigScope::Project)
         .map(|inspection| {
-            let blocking = sync.blocking_paths.iter().any(|path| path == &inspection.path);
-            let written = sync.written_paths.iter().any(|path| path == &inspection.path);
+            let blocking = sync
+                .blocking_paths
+                .iter()
+                .any(|path| path == &inspection.path);
+            let written = sync
+                .written_paths
+                .iter()
+                .any(|path| path == &inspection.path);
             let action = if blocking {
                 "conflict".to_string()
             } else if dry_run {
@@ -592,9 +598,11 @@ fn map_sync_to_install_result(
         )
     } else {
         let migration_note = if migrate_global {
-            format!(" Global migration path={} backup={}.",
+            format!(
+                " Global migration path={} backup={}.",
                 sync.global_migration.path.as_deref().unwrap_or("-"),
-                sync.global_migration.backup_path.as_deref().unwrap_or("-"))
+                sync.global_migration.backup_path.as_deref().unwrap_or("-")
+            )
         } else {
             String::new()
         };

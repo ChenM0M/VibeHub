@@ -91,20 +91,13 @@ impl V3EventStore {
     /// was written.
     pub fn rebuild_projection(&self, project_id: &str) -> Result<V3Projection, V3Error> {
         self.set_projection_runtime(ProjectionRuntimeState::Rebuilding);
-        let result = self
-            .rebuild_projection_inner(project_id)
-            .map_err(|error| {
-                if error.code == "V3_PROJECTION_REBUILD_FAILED" {
-                    error
-                } else {
-                    projection_rebuild_error(
-                        project_id,
-                        &self.projection_path(project_id),
-                        0,
-                        error,
-                    )
-                }
-            });
+        let result = self.rebuild_projection_inner(project_id).map_err(|error| {
+            if error.code == "V3_PROJECTION_REBUILD_FAILED" {
+                error
+            } else {
+                projection_rebuild_error(project_id, &self.projection_path(project_id), 0, error)
+            }
+        });
         match &result {
             Ok(_) => self.set_projection_runtime(ProjectionRuntimeState::Idle),
             Err(error) => {
@@ -162,16 +155,16 @@ impl V3EventStore {
         if !proj_path.exists() {
             return Ok(true);
         }
-        let content = fs::read_to_string(&proj_path).map_err(io_error("V3_PROJECTION_READ_FAILED"))?;
-        let projection: V3Projection =
-            serde_json::from_str(&content).map_err(|error| {
-                V3Error::new(
-                    "V3_PROJECTION_PARSE_FAILED",
-                    V3ErrorCategory::CorruptLog,
-                    false,
-                    error.to_string(),
-                )
-            })?;
+        let content =
+            fs::read_to_string(&proj_path).map_err(io_error("V3_PROJECTION_READ_FAILED"))?;
+        let projection: V3Projection = serde_json::from_str(&content).map_err(|error| {
+            V3Error::new(
+                "V3_PROJECTION_PARSE_FAILED",
+                V3ErrorCategory::CorruptLog,
+                false,
+                error.to_string(),
+            )
+        })?;
         // Use total_event_count if set (new projections), otherwise fall back
         // to source_event_ids.len() for backward compatibility with projections
         // written before this field existed.
@@ -843,12 +836,17 @@ mod tests {
     fn append_with_rebuild_writes_projection() {
         let root = root();
         let store = V3EventStore::open(&root).unwrap();
-        let result = store.append_with_rebuild(draft(0, "key.rebuild.one")).unwrap();
+        let result = store
+            .append_with_rebuild(draft(0, "key.rebuild.one"))
+            .unwrap();
         assert!(matches!(result, AppendResult::Appended { .. }));
 
         // The projection file should exist after append_with_rebuild
         let proj_path = store.projection_path("project.test");
-        assert!(proj_path.exists(), "projection.json should be written after append_with_rebuild");
+        assert!(
+            proj_path.exists(),
+            "projection.json should be written after append_with_rebuild"
+        );
 
         // Load and verify the projection contains our event
         let content = fs::read_to_string(&proj_path).unwrap();
@@ -862,7 +860,9 @@ mod tests {
         );
 
         // Append a second event with rebuild
-        store.append_with_rebuild(draft(1, "key.rebuild.two")).unwrap();
+        store
+            .append_with_rebuild(draft(1, "key.rebuild.two"))
+            .unwrap();
         let content2 = fs::read_to_string(&proj_path).unwrap();
         let projection2: serde_json::Value = serde_json::from_str(&content2).unwrap();
         assert_eq!(
@@ -976,7 +976,9 @@ mod tests {
     fn projection_is_stale_after_new_events() {
         let root = root();
         let store = V3EventStore::open(&root).unwrap();
-        store.append_with_rebuild(draft(0, "key.stale.new")).unwrap();
+        store
+            .append_with_rebuild(draft(0, "key.stale.new"))
+            .unwrap();
 
         // Projection is fresh after rebuild
         assert!(!store.projection_is_stale("project.test").unwrap());

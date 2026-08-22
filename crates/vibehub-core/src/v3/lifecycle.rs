@@ -234,7 +234,10 @@ pub fn task_truth_state(
         .effective_nodes()
         .any(|(_, node)| matches!(node.state.as_str(), "blocked" | "failed"));
     let criterion_blocked = lifecycle.criteria.values().any(|criterion| {
-        matches!(criterion.state, CriterionState::Failed | CriterionState::Blocked)
+        matches!(
+            criterion.state,
+            CriterionState::Failed | CriterionState::Blocked
+        )
     });
     let session_blocked = lifecycle
         .sessions

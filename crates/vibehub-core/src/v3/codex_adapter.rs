@@ -381,10 +381,7 @@ fn minimal_profile_template(target: &RuntimeTarget) -> Result<Option<Vec<u8>>, S
             minimal.insert((*key).to_string(), value.clone());
         }
     }
-    if let Some(provider_id) = root
-        .get("model_provider")
-        .and_then(toml::Value::as_str)
-    {
+    if let Some(provider_id) = root.get("model_provider").and_then(toml::Value::as_str) {
         if let Some(provider) = root
             .get("model_providers")
             .and_then(toml::Value::as_table)
@@ -392,10 +389,7 @@ fn minimal_profile_template(target: &RuntimeTarget) -> Result<Option<Vec<u8>>, S
         {
             let mut providers = toml::map::Map::new();
             providers.insert(provider_id.to_string(), provider.clone());
-            minimal.insert(
-                "model_providers".to_string(),
-                toml::Value::Table(providers),
-            );
+            minimal.insert("model_providers".to_string(), toml::Value::Table(providers));
         }
     }
 
@@ -1941,7 +1935,11 @@ env_key = "OPENAI_API_KEY"
     fn patch_sets_and_clears_model_catalog_json() {
         let (target, root) = temp_target();
         let path = root.join("config.toml");
-        fs::write(&path, "model = \"old\"\nmodel_catalog_json = \"openai.json\"\n").unwrap();
+        fs::write(
+            &path,
+            "model = \"old\"\nmodel_catalog_json = \"openai.json\"\n",
+        )
+        .unwrap();
 
         let document = read_document(&target, &path).unwrap();
         save_codex_profile(
@@ -2035,14 +2033,8 @@ env_key = "OPENAI_API_KEY"
         // Managed selection is carried over.
         assert_eq!(parsed["model"].as_str(), Some("gpt-5.6-sol"));
         assert_eq!(parsed["model_provider"].as_str(), Some("openai"));
-        assert_eq!(
-            parsed["model_catalog_json"].as_str(),
-            Some("cockpit.json")
-        );
-        assert_eq!(
-            parsed["model_reasoning_effort"].as_str(),
-            Some("high")
-        );
+        assert_eq!(parsed["model_catalog_json"].as_str(), Some("cockpit.json"));
+        assert_eq!(parsed["model_reasoning_effort"].as_str(), Some("high"));
         // The selected provider definition is kept.
         assert!(parsed["model_providers"]["openai"]["base_url"]
             .as_str()

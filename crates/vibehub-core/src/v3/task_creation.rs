@@ -653,7 +653,10 @@ fn ensure_safe_tasks_root(tasks_root: &Path) -> Result<(), V3Error> {
 fn read_existing_task_state(task_dir: &Path) -> Option<(String, String)> {
     let yaml = fs::read_to_string(task_dir.join("task.yaml")).ok()?;
     let document: TaskDocument = serde_yaml::from_str(&yaml).ok()?;
-    Some((document.task_id, format!("{}/{}", document.phase, document.phase_status)))
+    Some((
+        document.task_id,
+        format!("{}/{}", document.phase, document.phase_status),
+    ))
 }
 
 fn write_new_atomic(path: &Path, content: &[u8]) -> Result<(), V3Error> {
@@ -849,7 +852,10 @@ mod tests {
         assert_eq!(preflight.status, "preflight");
         assert!(preflight.preflight);
         assert!(!preflight.would_create);
-        assert_eq!(preflight.existing_task_id.as_deref(), Some(created.task_id.as_str()));
+        assert_eq!(
+            preflight.existing_task_id.as_deref(),
+            Some(created.task_id.as_str())
+        );
         assert!(preflight.existing_state.is_some());
 
         // A different request preflights to "would create".

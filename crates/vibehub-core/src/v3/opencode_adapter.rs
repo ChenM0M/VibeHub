@@ -119,7 +119,9 @@ pub fn opencode_config_paths(target: &RuntimeTarget) -> Vec<PathBuf> {
             home.join(".config").join("opencode"),
             home.join("AppData").join("Roaming").join("opencode"),
         ],
-        RuntimePlatform::Macos | RuntimePlatform::Linux => vec![home.join(".config").join("opencode")],
+        RuntimePlatform::Macos | RuntimePlatform::Linux => {
+            vec![home.join(".config").join("opencode")]
+        }
     };
     roots
         .into_iter()
@@ -1445,12 +1447,7 @@ mod tests {
 
         assert_eq!(
             paths,
-            vec![
-                xdg_jsonc.clone(),
-                xdg_json,
-                roaming_jsonc,
-                roaming_json
-            ]
+            vec![xdg_jsonc.clone(), xdg_json, roaming_jsonc, roaming_json]
         );
         // XDG location must win over the legacy Roaming location so detection
         // no longer reports an empty environment for real Windows installs.

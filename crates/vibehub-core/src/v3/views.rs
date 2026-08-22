@@ -115,8 +115,7 @@ impl SessionIntegrity {
     }
 
     fn blocking_session_ids(&self) -> Vec<String> {
-        self
-            .unknown
+        self.unknown
             .iter()
             .chain(self.gapped.iter())
             .chain(self.closed_without_result.iter())
@@ -167,9 +166,10 @@ fn session_integrity(
                 if matches!(
                     event.payload.get("status").and_then(Value::as_str),
                     Some("succeeded" | "failed")
-                ) => {
-                    integrity.terminal_results.insert(session_id);
-                }
+                ) =>
+            {
+                integrity.terminal_results.insert(session_id);
+            }
             _ => {}
         }
     }
@@ -186,8 +186,7 @@ fn session_integrity(
         if state == "gapped" {
             integrity.gapped.push(session_id.clone());
         }
-        if integrity.closed.contains(session_id)
-            && !integrity.terminal_results.contains(session_id)
+        if integrity.closed.contains(session_id) && !integrity.terminal_results.contains(session_id)
         {
             integrity.closed_without_result.push(session_id.clone());
         }
@@ -611,9 +610,7 @@ impl V3ViewRepository {
             .count();
         let partial_sessions = traces
             .iter()
-            .filter(|trace| {
-                trace.open_git_head.is_some() ^ trace.close_git_head.is_some()
-            })
+            .filter(|trace| trace.open_git_head.is_some() ^ trace.close_git_head.is_some())
             .count();
         let missing_sessions = traces
             .iter()
@@ -849,7 +846,8 @@ impl V3ViewRepository {
             .iter()
             .filter_map(|project_task| {
                 let task_lifecycle = fold_task(&project_task.task_id, &events);
-                let task_integrity = session_integrity(&events, &project_task.task_id, &task_lifecycle);
+                let task_integrity =
+                    session_integrity(&events, &project_task.task_id, &task_lifecycle);
                 let state = task_state_for(
                     &task_lifecycle,
                     Some(project_task.phase_status.as_str()),
@@ -1259,9 +1257,7 @@ impl V3ViewRepository {
                 task_integrity
                     .blocking_session_ids()
                     .into_iter()
-                    .filter(|session_id| {
-                        !lifecycle.sessions.contains_key(session_id)
-                    })
+                    .filter(|session_id| !lifecycle.sessions.contains_key(session_id))
                     .map(|session_id| format!("{session_id}=unknown_or_incomplete")),
             )
             .collect::<Vec<_>>();
@@ -3142,8 +3138,9 @@ fn sort_task_list(tasks: &mut [Value]) {
             (false, true) => Ordering::Less,
             (true, false) => Ordering::Greater,
             (true, true) => compare_terminal_at(left, right),
-            (false, false) => task_state_rank(left["state"].as_str().unwrap_or_default())
-                .cmp(&task_state_rank(right["state"].as_str().unwrap_or_default())),
+            (false, false) => task_state_rank(left["state"].as_str().unwrap_or_default()).cmp(
+                &task_state_rank(right["state"].as_str().unwrap_or_default()),
+            ),
         }
         .then_with(|| {
             left["task_id"]
@@ -3179,7 +3176,10 @@ fn session_git_traces(events: &[V3EventEnvelope], task_id: &str) -> Vec<SessionG
     let mut traces = BTreeMap::<String, SessionGitTrace>::new();
     for event in events.iter().filter(|event| {
         event.task_id.0 == task_id
-            && matches!(event.event_type.as_str(), "session.opened" | "session.closed")
+            && matches!(
+                event.event_type.as_str(),
+                "session.opened" | "session.closed"
+            )
     }) {
         let Some(session_id) = event.session_id.as_ref().map(|id| id.0.clone()) else {
             continue;
@@ -3258,8 +3258,10 @@ fn normalize_stored_hash(value: &str) -> Option<String> {
     let normalized = value.trim().to_ascii_lowercase();
     (normalized.len() >= 4
         && normalized.len() <= 64
-        && normalized.chars().all(|character| character.is_ascii_hexdigit()))
-        .then_some(normalized)
+        && normalized
+            .chars()
+            .all(|character| character.is_ascii_hexdigit()))
+    .then_some(normalized)
 }
 
 fn normalize_commit_hash(value: &str) -> Result<String, V3Error> {
@@ -3372,7 +3374,10 @@ fn add_commit_task_association(
             .get_mut("match_kinds")
             .and_then(Value::as_array_mut)
             .expect("commit association match_kinds must be an array");
-        if !match_kinds.iter().any(|kind| kind.as_str() == Some(match_kind)) {
+        if !match_kinds
+            .iter()
+            .any(|kind| kind.as_str() == Some(match_kind))
+        {
             match_kinds.push(Value::String(match_kind.to_owned()));
         }
         if existing["open_git_head"].is_null() {
@@ -3635,9 +3640,9 @@ fn blocker_details(
             .values()
             .any(|criterion| criterion.state == CriterionState::Blocked)
         || lifecycle
-        .sessions
-        .values()
-        .any(|session| session.state == "gapped")
+            .sessions
+            .values()
+            .any(|session| session.state == "gapped")
         || session_integrity.has_blocking_gap()
         || lifecycle.has_open_findings()
         || orchestration.worktrees.values().any(|worktree| {
@@ -3740,32 +3745,33 @@ fn blocker_details(
             if !seen_reasons.insert(reason.clone()) {
                 continue;
             }
-            let (summary, why_blocked, expected_state, observed_state, resume_action) =
-                if state == "gapped" {
-                    (
+            let (summary, why_blocked, expected_state, observed_state, resume_action) = if state
+                == "gapped"
+            {
+                (
                         format!("Session {session_id} 存在未恢复的执行 gap"),
                         "session.gap_detected 已记录，但尚无匹配的 session.recovered 证据".to_owned(),
                         "session=recovered/closed，gap evidence 已核对".to_owned(),
                         format!("session={state}, terminal_result={missing_terminal_result}"),
                         format!("调用 session_recovery(action=recover, session_id={session_id}, evidence_refs=[...])，再记录 terminal agent_result 并关闭 session"),
                     )
-                } else if legacy_unknown {
-                    (
+            } else if legacy_unknown {
+                (
                         format!("Legacy/unknown Session {session_id} 没有 session.opened 和 terminal agent result"),
                         "历史事件带有 Session 关联，但没有可确认的 Session open 事实；V3 不补写成功或 terminal result".to_owned(),
                         "session.opened 与 succeeded/failed terminal agent.result_recorded 均存在".to_owned(),
                         format!("session={state}, opened=false, closed={}, terminal_result={missing_terminal_result}", session_integrity.closed.contains(&session_id)),
                         format!("核对历史 Session {session_id} 的真实执行事实；无法恢复时保持 blocked，并用新的受支持 Session 重新执行和验证"),
                     )
-                } else {
-                    (
+            } else {
+                (
                         format!("Session {session_id} 没有可核验的 terminal agent result"),
                         "历史 Session 只有绑定/打开/关闭等事实，缺少 succeeded 或 failed 的 terminal result；不能把历史 criterion 或 archive 摘要当作执行成功".to_owned(),
                         "session 有 terminal agent.result_recorded(status=succeeded|failed)，且必要时完成 gap recovery".to_owned(),
                         format!("session={state}, opened={}, closed={}, terminal_result=false", session_integrity.opened.contains(&session_id), session_integrity.closed.contains(&session_id)),
                         format!("核对 Session {session_id} 的真实工作、工作树和验证输出；如为中断先调用 session_recovery(recover)，然后记录 succeeded/failed terminal agent_result，再 session_close"),
                     )
-                };
+            };
             details.push(typed_blocker_detail(
                 format!("blocker.{}.session-gap", session_id),
                 BlockerKind::Workflow,
@@ -3776,7 +3782,10 @@ fn blocker_details(
                 why_blocked,
                 expected_state,
                 observed_state,
-                vec!["terminal agent.result_recorded 的真实状态".to_owned(), "Session gap/recovery evidence（如适用）".to_owned()],
+                vec![
+                    "terminal agent.result_recorded 的真实状态".to_owned(),
+                    "Session gap/recovery evidence（如适用）".to_owned(),
+                ],
                 "该 Session 的执行事实不完整，结果与完成门禁不可依赖".to_owned(),
                 session
                     .map(|value| value.host.clone())
@@ -4380,11 +4389,7 @@ fn generic_blocker_detail(node_id: Option<&str>) -> Value {
     )
 }
 
-fn projection_stale_blocker_detail(
-    project_id: &str,
-    status: &Value,
-    _generated_at: &str,
-) -> Value {
+fn projection_stale_blocker_detail(project_id: &str, status: &Value, _generated_at: &str) -> Value {
     let event_count = status
         .get("event_count")
         .and_then(Value::as_u64)
@@ -5796,7 +5801,13 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             order,
-            vec!["task.active", "task.beta", "task.gamma", "task.alpha", "task.delta"]
+            vec![
+                "task.active",
+                "task.beta",
+                "task.gamma",
+                "task.alpha",
+                "task.delta"
+            ]
         );
         assert_eq!(all["archived_count"], 4);
         assert_eq!(all["tasks"][1]["terminal_at"], "2026-03-03T00:00:00.000Z");
@@ -5827,7 +5838,10 @@ mod tests {
             .output()
             .unwrap();
         assert!(init.status.success());
-        for (key, value) in [("user.name", "VibeHub fixture"), ("user.email", "fixture@example.invalid")] {
+        for (key, value) in [
+            ("user.name", "VibeHub fixture"),
+            ("user.email", "fixture@example.invalid"),
+        ] {
             assert!(silent_command("git")
                 .arg("-C")
                 .arg(&root)
@@ -5927,8 +5941,18 @@ mod tests {
             ("task.git.history", "session.git.history", false),
         ] {
             for (event_type, expected_version, key, head) in [
-                ("session.opened", 0, "open", with_heads.then_some(base.as_str())),
-                ("session.closed", 1, "close", with_heads.then_some(close.as_str())),
+                (
+                    "session.opened",
+                    0,
+                    "open",
+                    with_heads.then_some(base.as_str()),
+                ),
+                (
+                    "session.closed",
+                    1,
+                    "close",
+                    with_heads.then_some(close.as_str()),
+                ),
             ] {
                 store
                     .append(EventDraft {
@@ -5947,7 +5971,9 @@ mod tests {
                         evidence_grade: EvidenceGrade::HardObserved,
                         occurred_at: None,
                         commit_sha: None,
-                        payload: head.map(|value| json!({"git_head_sha": value})).unwrap_or_else(|| json!({})),
+                        payload: head
+                            .map(|value| json!({"git_head_sha": value}))
+                            .unwrap_or_else(|| json!({})),
                     })
                     .unwrap();
             }
@@ -5984,7 +6010,13 @@ mod tests {
         assert_eq!(historical["git_evidence"]["status"], "missing");
         assert_eq!(historical["sessions"][0]["open_git_head"], Value::Null);
         assert_eq!(historical["sessions"][0]["has_git_evidence"], false);
-        assert_eq!(historical["git_evidence"]["historical_gaps"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            historical["git_evidence"]["historical_gaps"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
 
         fs::remove_dir_all(root).unwrap();
     }

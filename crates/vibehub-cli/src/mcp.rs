@@ -2180,11 +2180,7 @@ fn first_non_terminal_node(bundle: &Value) -> Option<Value> {
         .cloned()
 }
 
-fn gate_next_tool(
-    gate: &str,
-    node_brief: &Value,
-    bundle: &Value,
-) -> (Option<&'static str>, Value) {
+fn gate_next_tool(gate: &str, node_brief: &Value, bundle: &Value) -> (Option<&'static str>, Value) {
     match gate {
         "criteria_green" => {
             let criterion = node_brief
@@ -2192,7 +2188,10 @@ fn gate_next_tool(
                 .and_then(|value| value.as_array())
                 .and_then(|criteria| {
                     criteria.iter().find(|criterion| {
-                        criterion.get("required").and_then(|v| v.as_bool()).unwrap_or(true)
+                        criterion
+                            .get("required")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true)
                             && criterion.get("status").and_then(|v| v.as_str()) != Some("passed")
                     })
                 });
@@ -2208,7 +2207,10 @@ fn gate_next_tool(
         "plan_terminal" => match first_non_terminal_node(bundle) {
             Some(node) => {
                 let node_id = node.get("node_id").cloned().unwrap_or(Value::Null);
-                let state = node.get("state").and_then(|v| v.as_str()).unwrap_or("planned");
+                let state = node
+                    .get("state")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("planned");
                 if state == "active" {
                     (
                         Some("plan_node_state_set"),

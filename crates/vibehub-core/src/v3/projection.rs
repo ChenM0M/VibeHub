@@ -75,9 +75,7 @@ pub fn session_has_milestone_evidence(session: &SessionProjection) -> bool {
 
 pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
     let total_event_count = events.len() as u64;
-    let last_event_timestamp = events
-        .last()
-        .map(|event| event.recorded_at.clone());
+    let last_event_timestamp = events.last().map(|event| event.recorded_at.clone());
     let mut projection = V3Projection {
         schema_version: "1.0".to_owned(),
         model_version: "v3-core-2".to_owned(),

@@ -54,7 +54,6 @@ const MAX_STATE_BYTES: u64 = 256 * 1024;
 // The official `api.anthropic.com` endpoint serves every native ID and emits
 // none of these. See `docs/v3/three-end-config-comparison.md`.
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentSpecArtifactStatus {

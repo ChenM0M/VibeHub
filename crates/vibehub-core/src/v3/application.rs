@@ -658,16 +658,13 @@ impl V3ApplicationService {
     pub fn sync_projection_if_stale(&self, project_id: &str) -> Result<bool, V3Error> {
         match self.store.projection_is_stale(project_id) {
             Ok(false) => Ok(false),
-            Ok(true) => self
-                .rebuild(project_id)
-                .map(|_| true)
-                .map_err(|error| {
-                    if error.code == "V3_PROJECTION_REBUILD_FAILED" {
-                        error
-                    } else {
-                        projection_sync_error(project_id, error)
-                    }
-                }),
+            Ok(true) => self.rebuild(project_id).map(|_| true).map_err(|error| {
+                if error.code == "V3_PROJECTION_REBUILD_FAILED" {
+                    error
+                } else {
+                    projection_sync_error(project_id, error)
+                }
+            }),
             Err(error) => Err(projection_sync_error(project_id, error)),
         }
     }
@@ -1465,8 +1462,7 @@ fn projection_sync_error(project_id: &str, cause: V3Error) -> V3Error {
     .with_detail("cause_code", cause.code)
     .with_detail(
         "cause_category",
-        serde_json::to_value(cause.category)
-            .unwrap_or(Value::String("internal".to_owned())),
+        serde_json::to_value(cause.category).unwrap_or(Value::String("internal".to_owned())),
     )
     .with_detail("cause_message", cause.message)
     .with_detail("cause_details", cause.details)
@@ -1667,9 +1663,7 @@ mod tests {
         fs::remove_file(&projection_path).unwrap();
         fs::create_dir(&projection_path).unwrap();
 
-        let error = app
-            .sync_projection_if_stale("project.test")
-            .unwrap_err();
+        let error = app.sync_projection_if_stale("project.test").unwrap_err();
         assert_eq!(error.code, "V3_PROJECTION_SYNC_FAILED");
         assert_eq!(error.details["project_id"], "project.test");
         assert_eq!(error.details["projection_state"], "rebuild_failed");

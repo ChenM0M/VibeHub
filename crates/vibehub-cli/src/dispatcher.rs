@@ -302,7 +302,9 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
         }
         "mcp-install" | "mcp_install" | "install-mcp" => {
             let dry_run = args.iter().any(|a| a == "--dry-run");
-            let migrate_global = args.iter().any(|a| a == "--migrate-global" || a == "--global");
+            let migrate_global = args
+                .iter()
+                .any(|a| a == "--migrate-global" || a == "--global");
             let tools = parse_agent_tools(&args[1..]);
             print_json(vibehub::agent_adapter::install_mcp_config(
                 project_path,
@@ -311,9 +313,7 @@ fn run_vibehub_action(action: &str, args: Vec<String>) {
                 migrate_global,
             ))
         }
-        "mcp-status" | "mcp_status" => {
-            print_json(vibehub::agent_adapter::mcp_status(project_path))
-        }
+        "mcp-status" | "mcp_status" => print_json(vibehub::agent_adapter::mcp_status(project_path)),
         "review" => {
             let locale = args.get(1).cloned();
             print_json(vibehub::review::generate_review_evidence_with_locale(
