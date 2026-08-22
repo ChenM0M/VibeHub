@@ -1,7 +1,11 @@
 <div align="center">
 
 <h1 align="center" style="margin: 0;">
-  <img src="assets/readme/vibehub-readme-header.png" alt="VibeHub" height="120" style="max-width: 100%;">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/vibehub-readme-header-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/readme/vibehub-readme-header.png">
+    <img src="assets/readme/vibehub-readme-header.png" alt="VibeHub" height="120" style="max-width: 100%;">
+  </picture>
 </h1>
 
 [![GitHub Release](https://img.shields.io/github/v/release/ChenM0M/VibeHub)](https://github.com/ChenM0M/VibeHub/releases)
