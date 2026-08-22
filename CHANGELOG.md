@@ -2,6 +2,14 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.4
+
+- V3 Task 列表、归档查询与 commit ↔ Task 双向溯源现在具有稳定的 CLI/MCP 契约；历史缺失 Git HEAD 会明确显示为缺口，不会被伪造成已绑定。
+- Agent 配置补齐 Claude Code 高级模型、能力声明与主模型回落，并统一三端配置契约和验证门禁。
+- 发布候选通过前端、V3 contracts、MCP、Rust workspace 与 macOS strict codesign 验证；Windows 原生验收仍需真实 Windows 主机完成。
+
+发布说明与截图见 [`docs/releases/v3.3.4.md`](docs/releases/v3.3.4.md)。
+
 ## v3.3.3
 
 填写 Base URL 和 API Key 就能启动；上游模型可以检测后勾选导入。标签启动会正确解析带引号的命令。发布说明与截图见 [`docs/releases/v3.3.3.md`](docs/releases/v3.3.3.md)。
