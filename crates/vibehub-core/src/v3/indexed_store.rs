@@ -1369,12 +1369,16 @@ fn ensure_backup(
     copy_backup_file(projection_path, &temp_dir, &manifest.projection)?;
     let content = serde_json::to_vec_pretty(manifest)
         .map_err(json_error("V3_INDEX_MIGRATION_BACKUP_ENCODE_FAILED"))?;
-    let mut file = File::create(temp_dir.join("manifest.json"))
-        .map_err(io_error("V3_INDEX_MIGRATION_BACKUP_WRITE_FAILED"))?;
-    file.write_all(&content)
-        .map_err(io_error("V3_INDEX_MIGRATION_BACKUP_WRITE_FAILED"))?;
-    file.sync_all()
-        .map_err(io_error("V3_INDEX_MIGRATION_BACKUP_SYNC_FAILED"))?;
+    {
+        let mut file = File::create(temp_dir.join("manifest.json"))
+            .map_err(io_error("V3_INDEX_MIGRATION_BACKUP_WRITE_FAILED"))?;
+        file.write_all(&content)
+            .map_err(io_error("V3_INDEX_MIGRATION_BACKUP_WRITE_FAILED"))?;
+        file.sync_all()
+            .map_err(io_error("V3_INDEX_MIGRATION_BACKUP_SYNC_FAILED"))?;
+    }
+    // Windows refuses to rename a directory while a file inside it is still
+    // open, so the manifest handle must be closed before the atomic rename.
     fs::rename(&temp_dir, &backup_dir)
         .map_err(io_error("V3_INDEX_MIGRATION_BACKUP_RENAME_FAILED"))?;
     sync_parent(&backup_dir)?;
@@ -1465,12 +1469,16 @@ fn write_migration_marker(
     });
     let content = serde_json::to_vec_pretty(&value)
         .map_err(json_error("V3_INDEX_MIGRATION_MARKER_ENCODE_FAILED"))?;
-    let mut file =
-        File::create(&temp).map_err(io_error("V3_INDEX_MIGRATION_MARKER_WRITE_FAILED"))?;
-    file.write_all(&content)
-        .map_err(io_error("V3_INDEX_MIGRATION_MARKER_WRITE_FAILED"))?;
-    file.sync_all()
-        .map_err(io_error("V3_INDEX_MIGRATION_MARKER_SYNC_FAILED"))?;
+    {
+        let mut file =
+            File::create(&temp).map_err(io_error("V3_INDEX_MIGRATION_MARKER_WRITE_FAILED"))?;
+        file.write_all(&content)
+            .map_err(io_error("V3_INDEX_MIGRATION_MARKER_WRITE_FAILED"))?;
+        file.sync_all()
+            .map_err(io_error("V3_INDEX_MIGRATION_MARKER_SYNC_FAILED"))?;
+    }
+    // Same Windows constraint as the backup rename: close the handle first so
+    // the marker rename never depends on FILE_SHARE_DELETE semantics.
     fs::rename(&temp, marker_path).map_err(io_error("V3_INDEX_MIGRATION_MARKER_RENAME_FAILED"))?;
     sync_parent(marker_path)
 }

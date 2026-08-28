@@ -2,6 +2,10 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.8
+
+- 修复 v3.3.7 引入的 Windows 回归：store format 1 → 2 迁移在写迁移备份与迁移标记时，manifest/标记文件的句柄未关闭就执行原子重命名。POSIX 允许重命名内部含打开句柄的目录，Windows 会拒绝并返回 `Access is denied (os error 5)`，导致 Windows 上首次打开旧 V3 项目时迁移必然失败（fail closed，不丢数据，可重试）。现在句柄在重命名前显式关闭，迁移在 Windows CI 上全部通过。macOS/Linux 行为不变。
+
 ## v3.3.7
 
 - V3 事件存储升级到 store format 2：新增可从零重建的 SQLite（WAL）增量索引 `store-v2.sqlite3`；`events.jsonl` 仍是不变、可审计的事件事实来源。首次访问旧项目时自动执行一次性兼容迁移：先写内容寻址备份（SHA-256 清单），构建临时索引并与全量重放逐字段比对，校验通过后才原子替换；磁盘满、重命名失败或文件损坏时 fail closed、保留源数据且可重试。
