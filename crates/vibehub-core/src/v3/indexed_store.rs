@@ -1395,7 +1395,11 @@ fn copy_backup_file(
     }
     let target = backup_dir.join(&snapshot.backup_name);
     fs::copy(source, &target).map_err(io_error("V3_INDEX_MIGRATION_BACKUP_COPY_FAILED"))?;
-    File::open(&target)
+    // Windows FlushFileBuffers requires a write handle; syncing through a
+    // read-only File::open fails with ACCESS_DENIED on every call.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&target)
         .and_then(|file| file.sync_all())
         .map_err(io_error("V3_INDEX_MIGRATION_BACKUP_SYNC_FAILED"))?;
     verify_backup_file(backup_dir, snapshot)

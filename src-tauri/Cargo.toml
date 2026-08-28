@@ -1,6 +1,6 @@
 [package]
 name = "vibehub"
-version = "3.3.8"
+version = "3.3.9"
 description = "A cross-platform launcher for development tools"
 authors = ["VibeHub"]
 license = "Apache-2.0"

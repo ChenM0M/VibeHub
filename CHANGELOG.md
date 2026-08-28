@@ -2,6 +2,11 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.9
+
+- 修复 v3.3.7 引入的 Windows 迁移回归(第二处):迁移备份写入 `events.jsonl` / `projection.json` 副本后,用只读句柄调用 `sync_all()` 刷盘;Windows 的 `FlushFileBuffers` 要求写权限句柄,导致 Windows 上首次迁移仍以 `Access is denied (os error 5)` 失败。现改用写句柄刷盘,v3.3.8 中已修复的迁移备份重命名与本修复共同使 store format 1 → 2 迁移在 Windows CI 上全部通过。macOS/Linux 行为不变。
+- 注:v3.3.8 已包含第一处修复(迁移备份 `manifest.json` 与迁移标记的句柄未关闭即重命名)。
+
 ## v3.3.8
 
 - 修复 v3.3.7 引入的 Windows 回归：store format 1 → 2 迁移在写迁移备份与迁移标记时，manifest/标记文件的句柄未关闭就执行原子重命名。POSIX 允许重命名内部含打开句柄的目录，Windows 会拒绝并返回 `Access is denied (os error 5)`，导致 Windows 上首次打开旧 V3 项目时迁移必然失败（fail closed，不丢数据，可重试）。现在句柄在重命名前显式关闭，迁移在 Windows CI 上全部通过。macOS/Linux 行为不变。
