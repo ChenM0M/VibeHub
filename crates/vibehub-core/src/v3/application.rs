@@ -223,13 +223,11 @@ impl V3ApplicationService {
         if facts_after_binding.open || facts_after_binding.closed || facts_after_binding.gapped {
             if let Some(existing) = self
                 .store
-                .load_project(project_id)?
-                .into_iter()
-                .find(|event| {
+                .event_by_idempotency_key(project_id, idempotency_key)?
+                .filter(|event| {
                     event.aggregate_id == session_id
                         && event.task_id.0 == task_id
                         && event.event_type == "session.opened"
-                        && event.idempotency_key == idempotency_key
                 })
             {
                 // Binding events are part of the session aggregate now. Return
@@ -237,11 +235,13 @@ impl V3ApplicationService {
                 // of reusing a pre-binding expected-version calculation.
                 return Ok(AppendResult::Duplicate { event: existing });
             }
-            if self.store.load_project(project_id)?.iter().any(|event| {
-                event.aggregate_id == session_id
-                    && event.event_type == "session.opened"
-                    && event.idempotency_key == idempotency_key
-            }) {
+            if self
+                .store
+                .event_by_idempotency_key(project_id, idempotency_key)?
+                .is_some_and(|event| {
+                    event.aggregate_id == session_id && event.event_type == "session.opened"
+                })
+            {
                 return self.append_session_event_with_context(
                     "session.opened",
                     project_id,
@@ -675,14 +675,7 @@ impl V3ApplicationService {
     }
 
     pub fn aggregate_version(&self, project_id: &str, aggregate_id: &str) -> Result<u64, V3Error> {
-        Ok(self
-            .store
-            .load_project(project_id)?
-            .into_iter()
-            .filter(|event| event.aggregate_id == aggregate_id)
-            .map(|event| event.aggregate_version)
-            .max()
-            .unwrap_or(0))
+        self.store.aggregate_version(project_id, aggregate_id)
     }
 
     pub fn lifecycle_command(&self, command: LifecycleCommand) -> Result<AppendResult, V3Error> {
@@ -745,8 +738,7 @@ impl V3ApplicationService {
         project_id: &str,
         task_id: &str,
     ) -> Result<TaskLifecycleProjection, V3Error> {
-        let events = self.store.load_project(project_id)?;
-        Ok(super::lifecycle::fold_task(task_id, &events))
+        self.store.task_projection(project_id, task_id)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -834,7 +826,7 @@ impl V3ApplicationService {
                 "completion confirmation requires a trusted channel",
             ));
         }
-        let events = self.store.load_project(project_id)?;
+        let events = self.store.load_task_events(project_id, task_id)?;
         let proposal_key = format!("{idempotency_key}.proposal");
         let confirmation_key = format!("{idempotency_key}.confirmation");
         let existing_confirmation = events.iter().find(|event| {
@@ -939,10 +931,7 @@ impl V3ApplicationService {
         super::project_memory::apply_command(&self.store, command)
     }
     pub fn project_memory(&self, project_id: &str) -> Result<super::MemoryProjection, V3Error> {
-        Ok(super::project_memory::fold(
-            project_id,
-            &self.store.load_project(project_id)?,
-        ))
+        self.store.project_memory_projection(project_id)
     }
     pub fn query_project_memory(
         &self,
@@ -960,8 +949,7 @@ impl V3ApplicationService {
         project_id: &str,
         task_id: &str,
     ) -> Result<OrchestrationProjection, V3Error> {
-        let events = self.store.load_project(project_id)?;
-        Ok(orchestration::fold_task(task_id, &events))
+        self.store.orchestration_projection(project_id, task_id)
     }
 
     fn required_criterion_ids(&self, task_id: &str) -> Result<BTreeSet<String>, V3Error> {
@@ -1089,12 +1077,7 @@ impl V3ApplicationService {
 
     fn session_facts(&self, project_id: &str, session_id: &str) -> Result<SessionFacts, V3Error> {
         let mut facts = SessionFacts::default();
-        for event in self
-            .store
-            .load_project(project_id)?
-            .into_iter()
-            .filter(|event| event.aggregate_id == session_id)
-        {
+        for event in self.store.load_aggregate_events(project_id, session_id)? {
             facts.exists = true;
             facts.task_id = Some(event.task_id.0);
             if event.event_type == "session.opened" {
@@ -1355,10 +1338,7 @@ impl V3ApplicationService {
         Ok(format!("sha256:{:x}", hasher.finalize()))
     }
     fn rebuild_in_memory(&self, project_id: &str) -> Result<V3Projection, V3Error> {
-        Ok(projection::fold(
-            project_id,
-            &self.store.load_project(project_id)?,
-        ))
+        self.store.indexed_projection(project_id)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1381,7 +1361,7 @@ impl V3ApplicationService {
         // is accepted as an auditable compatibility read and normalized to
         // the real event-store version. New MCP/CLI callers resolve the real
         // aggregate version and take the direct branch.
-        let events = self.store.load_project(project_id)?;
+        let events = self.store.load_aggregate_events(project_id, session_id)?;
         let current_version = events
             .iter()
             .filter(|event| event.aggregate_id == session_id)
@@ -1645,7 +1625,7 @@ mod tests {
     }
 
     #[test]
-    fn projection_sync_failure_is_structured_and_blocks_old_projection() {
+    fn index_sync_failure_is_structured_and_blocks_old_compatibility_projection() {
         let root = std::env::temp_dir().join(format!("vibehub-v3-sync-failure-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join(".vibehub")).unwrap();
         let app = V3ApplicationService::open(&root).unwrap();
@@ -1659,21 +1639,22 @@ mod tests {
         )
         .unwrap();
 
+        app.rebuild("project.test").unwrap();
         let projection_path = app.store.projection_path("project.test");
-        fs::remove_file(&projection_path).unwrap();
-        fs::create_dir(&projection_path).unwrap();
+        let index_path = projection_path.parent().unwrap().join("store-v2.sqlite3");
+        fs::remove_file(&index_path).unwrap();
+        fs::create_dir(&index_path).unwrap();
 
         let error = app.sync_projection_if_stale("project.test").unwrap_err();
         assert_eq!(error.code, "V3_PROJECTION_SYNC_FAILED");
         assert_eq!(error.details["project_id"], "project.test");
         assert_eq!(error.details["projection_state"], "rebuild_failed");
-        assert_eq!(error.details["cause_code"], "V3_PROJECTION_READ_FAILED");
+        assert_eq!(error.details["cause_code"], "V3_INDEX_PATH_INVALID");
         assert!(error.details["repair_action"].as_str().is_some());
 
-        let status = app.projection_status("project.test").unwrap();
-        assert_eq!(status["state"], "rebuild_failed");
-        assert_eq!(status["stale"], true);
-        assert!(status["error"].is_object());
+        let status_error = app.projection_status("project.test").unwrap_err();
+        assert_eq!(status_error.code, "V3_INDEX_PATH_INVALID");
+        assert!(projection_path.is_file());
 
         fs::remove_dir_all(root).unwrap();
     }

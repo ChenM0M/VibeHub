@@ -72,6 +72,11 @@ export interface ProjectOverviewView {
     is_ui_selected?: boolean;
   }[];
   archived_tasks?: ArchivedTaskSummary[];
+  archived_task_count?: number;
+  archived_tasks_query?: {
+    surface: "task_archive_page";
+    default_limit: number;
+  };
   protocol_coverage: {
     state: "complete" | "partial" | "gapped" | "unknown";
     opened_sessions: number;

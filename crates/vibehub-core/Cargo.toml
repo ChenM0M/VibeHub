@@ -1,6 +1,6 @@
 [package]
 name = "vibehub-core"
-version = "3.3.6"
+version = "3.3.7"
 description = "Core VibeHub workflow engine"
 authors = ["VibeHub"]
 license = "Apache-2.0"
@@ -13,6 +13,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 sha2 = "0.10"
+rusqlite = { version = "0.32", features = ["bundled"] }
 toml = "0.8"
 uuid = { version = "1.8", features = ["v4", "serde"] }
 

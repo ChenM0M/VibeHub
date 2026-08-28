@@ -85,14 +85,13 @@ pub fn apply_command(
     command: MemoryCommand,
 ) -> Result<AppendResult, V3Error> {
     let event_type = event_type(&command.action)?;
-    let events = store.load_project(&command.project_id)?;
-    if events
-        .iter()
-        .any(|event| event.idempotency_key == command.idempotency_key)
+    if store
+        .event_by_idempotency_key(&command.project_id, &command.idempotency_key)?
+        .is_some()
     {
         return store.append_with_rebuild(draft(command, event_type));
     }
-    let projection = fold(&command.project_id, &events);
+    let projection = store.project_memory_projection(&command.project_id)?;
     validate(&projection, &command)?;
     store.append_with_rebuild(draft(command, event_type))
 }

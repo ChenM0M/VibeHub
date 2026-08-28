@@ -34,6 +34,12 @@ const diagnosticTranslationKeys: Record<string, string> = {
 };
 
 const diagnosticCodeTranslationKeys: Record<string, string> = {
+  V3_PROJECTION_SYNC_FAILED: "v3.diagnostics.messages.projectionUnavailable",
+  V3_PROJECTION_UPDATE_FAILED: "v3.diagnostics.messages.projectionUnavailable",
+  V3_PROJECTION_REBUILD_FAILED: "v3.diagnostics.messages.projectionUnavailable",
+  V3_INDEX_MODEL_OUTDATED: "v3.diagnostics.messages.projectionUnavailable",
+  V3_INDEX_SCHEMA_INCOMPLETE: "v3.diagnostics.messages.projectionUnavailable",
+  V3_INDEX_MIGRATION_VERIFY_FAILED: "v3.diagnostics.messages.projectionUnavailable",
   PI_INDEX_UNAVAILABLE: "v3.diagnostics.messages.projectIndexUnavailable",
   PI_ANALYZER_DEGRADED: "v3.diagnostics.messages.analyzerDegraded",
   PI_ANALYZER_UNSUPPORTED: "v3.diagnostics.messages.analyzerUnsupported",

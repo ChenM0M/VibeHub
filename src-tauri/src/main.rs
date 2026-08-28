@@ -103,6 +103,7 @@ fn main() {
             commands::v3_load_view_bundle,
             commands::v3_load_node_brief,
             commands::v3_query_project_structure,
+            commands::v3_query_archived_tasks,
             agent_profiles::v3_agent_profile_discover,
             agent_profiles::v3_agent_profile_runtime_targets,
             agent_profiles::v3_agent_profile_read,

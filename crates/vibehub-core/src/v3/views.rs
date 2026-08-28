@@ -31,6 +31,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const MODEL_VERSION: &str = "v3-core-2";
+const TASK_TIMELINE_WINDOW_LIMIT: usize = 200;
+const ARCHIVED_TASK_PAGE_LIMIT: usize = 50;
 const WORKSPACE_IGNORED_DIRS: &[&str] = &[
     ".git",
     ".vibehub",
@@ -194,6 +196,74 @@ fn session_integrity(
     integrity
 }
 
+fn session_integrity_from_projection(
+    projection: &projection::V3Projection,
+    task_id: &str,
+    lifecycle: &TaskLifecycleProjection,
+) -> SessionIntegrity {
+    let mut integrity = SessionIntegrity::default();
+    for (session_id, session) in projection
+        .sessions
+        .iter()
+        .filter(|(_, session)| session.task_id == task_id)
+    {
+        integrity.observed.insert(session_id.clone());
+        match session.state.as_str() {
+            "open" => {
+                integrity.opened.insert(session_id.clone());
+            }
+            "closed" => {
+                integrity.opened.insert(session_id.clone());
+                integrity.closed.insert(session_id.clone());
+            }
+            "gapped" => {
+                integrity.opened.insert(session_id.clone());
+                integrity.gapped.push(session_id.clone());
+            }
+            _ => integrity.unknown.push(session_id.clone()),
+        }
+        if session
+            .agent_results
+            .iter()
+            .any(|result| matches!(result.status.as_str(), "succeeded" | "failed"))
+        {
+            integrity.terminal_results.insert(session_id.clone());
+        }
+    }
+
+    for session_id in &integrity.observed {
+        let lifecycle_state = lifecycle
+            .sessions
+            .get(session_id)
+            .map(|session| session.state.as_str());
+        if lifecycle_state == Some("gapped") && !integrity.gapped.contains(session_id) {
+            integrity.gapped.push(session_id.clone());
+        }
+        if integrity.closed.contains(session_id) && !integrity.terminal_results.contains(session_id)
+        {
+            integrity.closed_without_result.push(session_id.clone());
+        }
+    }
+    integrity.unknown.sort();
+    integrity.unknown.dedup();
+    integrity.gapped.sort();
+    integrity.gapped.dedup();
+    integrity.closed_without_result.sort();
+    integrity.closed_without_result.dedup();
+    integrity
+}
+
+fn active_session_count_from_projection(
+    projection: &projection::V3Projection,
+    task_id: &str,
+) -> u64 {
+    projection
+        .sessions
+        .values()
+        .filter(|session| session.task_id == task_id && session.state == "open")
+        .count() as u64
+}
+
 fn projection_is_stale(status: &Value) -> bool {
     status.get("stale").and_then(Value::as_bool).unwrap_or(true)
 }
@@ -335,8 +405,34 @@ impl V3ViewRepository {
     }
 
     pub fn current_task_id(&self) -> Result<String, V3Error> {
+        let pointed_task_id = match self.pointed_task_id() {
+            Ok(task_id) => task_id,
+            Err(error) if current_task_fallback_allowed(&error) => {
+                return self.fallback_current_task_id().map_err(|fallback| {
+                    error
+                        .with_detail("fallback_code", fallback.code)
+                        .with_detail("fallback_message", fallback.message)
+                });
+            }
+            Err(error) => return Err(error),
+        };
+        self.effective_current_task_id(pointed_task_id)
+            .or_else(|error| {
+                if current_task_fallback_allowed(&error) {
+                    self.fallback_current_task_id().map_err(|fallback| {
+                        error
+                            .with_detail("fallback_code", fallback.code)
+                            .with_detail("fallback_message", fallback.message)
+                    })
+                } else {
+                    Err(error)
+                }
+            })
+    }
+
+    fn pointed_task_id(&self) -> Result<String, V3Error> {
         let pointer_path = self.root.join(".vibehub/tasks/current");
-        let pointed_task_id = if pointer_path.is_dir() {
+        if pointer_path.is_dir() {
             fs::read_to_string(pointer_path.join("task.yaml"))
                 .map_err(internal("V3_CURRENT_TASK_READ_FAILED"))
                 .and_then(|content| {
@@ -361,14 +457,59 @@ impl V3ViewRepository {
                         error.to_string(),
                     )
                 })
-        };
-        match pointed_task_id.and_then(|task_id| self.effective_current_task_id(task_id)) {
-            Ok(task_id) => Ok(task_id),
-            Err(error) if current_task_fallback_allowed(&error) => {
-                self.fallback_current_task_id().or(Err(error))
-            }
-            Err(error) => Err(error),
         }
+    }
+
+    fn current_task_id_from_projection(
+        &self,
+        tasks: &[TaskDocument],
+        projection: &projection::V3Projection,
+        projection_stale: bool,
+    ) -> Option<String> {
+        let pointed = self.pointed_task_id().ok();
+        pointed
+            .as_deref()
+            .and_then(|task_id| tasks.iter().find(|task| task.task_id == task_id))
+            .filter(|task| {
+                let lifecycle = projection
+                    .tasks
+                    .get(&task.task_id)
+                    .cloned()
+                    .unwrap_or_else(|| TaskLifecycleProjection::empty(&task.task_id));
+                let integrity =
+                    session_integrity_from_projection(projection, &task.task_id, &lifecycle);
+                !is_terminal_task_state(task_state_for(
+                    &lifecycle,
+                    Some(task.phase_status.as_str()),
+                    &integrity,
+                    projection_stale,
+                ))
+            })
+            .map(|task| task.task_id.clone())
+            .or_else(|| {
+                tasks
+                    .iter()
+                    .find(|task| {
+                        let lifecycle = projection
+                            .tasks
+                            .get(&task.task_id)
+                            .cloned()
+                            .unwrap_or_else(|| TaskLifecycleProjection::empty(&task.task_id));
+                        let integrity = session_integrity_from_projection(
+                            projection,
+                            &task.task_id,
+                            &lifecycle,
+                        );
+                        !is_terminal_task_state(task_state_for(
+                            &lifecycle,
+                            Some(task.phase_status.as_str()),
+                            &integrity,
+                            projection_stale,
+                        ))
+                    })
+                    .or_else(|| tasks.first())
+                    .map(|task| task.task_id.clone())
+            })
     }
 
     fn effective_current_task_id(&self, pointed_task_id: String) -> Result<String, V3Error> {
@@ -454,16 +595,32 @@ impl V3ViewRepository {
     pub fn task_candidates(&self) -> Result<Value, V3Error> {
         let project_id = self.project_id();
         let events = self.store.load_project(&project_id)?;
-        let projection_status = self.store.projection_status(&project_id)?;
+        let (projection_snapshot, projection_status) = self
+            .store
+            .projection_snapshot_for_events(&project_id, &events)?;
         let projection_stale = projection_is_stale(&projection_status);
         let tasks = self.read_tasks()?;
-        let current_default = self.current_task_id().ok();
+        let project_projection =
+            projection_snapshot.unwrap_or_else(|| projection::fold(&project_id, &events));
+        let current_default = self.current_task_id_from_projection(
+            &tasks.tasks,
+            &project_projection,
+            projection_stale,
+        );
         let candidates = tasks
             .tasks
             .iter()
             .filter_map(|task| {
-                let lifecycle = fold_task(&task.task_id, &events);
-                let integrity = session_integrity(&events, &task.task_id, &lifecycle);
+                let lifecycle = project_projection
+                    .tasks
+                    .get(&task.task_id)
+                    .cloned()
+                    .unwrap_or_else(|| TaskLifecycleProjection::empty(&task.task_id));
+                let integrity = session_integrity_from_projection(
+                    &project_projection,
+                    &task.task_id,
+                    &lifecycle,
+                );
                 let state = task_state_for(
                     &lifecycle,
                     Some(task.phase_status.as_str()),
@@ -473,10 +630,8 @@ impl V3ViewRepository {
                 if is_terminal_task_state(state) {
                     return None;
                 }
-                let active_session_count = sessions_for_task(&events, &task.task_id)
-                    .into_iter()
-                    .filter(|(_, open, closed)| *open && !*closed)
-                    .count() as u64;
+                let active_session_count =
+                    active_session_count_from_projection(&project_projection, &task.task_id);
                 Some(TaskRouteCandidate {
                     task_id: task.task_id.clone(),
                     title: task.title.clone(),
@@ -509,16 +664,28 @@ impl V3ViewRepository {
     pub fn task_list(&self, include_archived: bool) -> Result<Value, V3Error> {
         let project_id = self.project_id();
         let events = self.store.load_project(&project_id)?;
-        let projection_status = self.store.projection_status(&project_id)?;
+        let (projection_snapshot, projection_status) = self
+            .store
+            .projection_snapshot_for_events(&project_id, &events)?;
         let projection_stale = projection_is_stale(&projection_status);
+        let project_projection =
+            projection_snapshot.unwrap_or_else(|| projection::fold(&project_id, &events));
         let tasks = self.read_tasks()?;
         let generated_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let mut all: Vec<Value> = tasks
             .tasks
             .iter()
             .filter_map(|task| {
-                let lifecycle = fold_task(&task.task_id, &events);
-                let integrity = session_integrity(&events, &task.task_id, &lifecycle);
+                let lifecycle = project_projection
+                    .tasks
+                    .get(&task.task_id)
+                    .cloned()
+                    .unwrap_or_else(|| TaskLifecycleProjection::empty(&task.task_id));
+                let integrity = session_integrity_from_projection(
+                    &project_projection,
+                    &task.task_id,
+                    &lifecycle,
+                );
                 let state = task_state_for(
                     &lifecycle,
                     Some(task.phase_status.as_str()),
@@ -529,9 +696,14 @@ impl V3ViewRepository {
                 if !include_archived && is_terminal {
                     return None;
                 }
+                let scoped_events = events
+                    .iter()
+                    .filter(|event| event.task_id.0 == task.task_id)
+                    .cloned()
+                    .collect::<Vec<_>>();
                 Some(task_list_summary(
                     task,
-                    &events,
+                    &scoped_events,
                     &lifecycle,
                     state,
                     &generated_at,
@@ -570,6 +742,83 @@ impl V3ViewRepository {
                 "state_tie_breaker": "state_rank_ascending",
                 "tie_breaker": "task_id_ascending"
             },
+        }))
+    }
+
+    /// Return archived Task details only when explicitly requested. The
+    /// task-view bundle carries only the archived count and this query locator.
+    pub fn archived_tasks_page(
+        &self,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<Value, V3Error> {
+        let project_id = self.project_id();
+        let events = self.store.load_project(&project_id)?;
+        let (projection_snapshot, projection_status) = self
+            .store
+            .projection_snapshot_for_events(&project_id, &events)?;
+        let projection_stale = projection_is_stale(&projection_status);
+        let project_projection =
+            projection_snapshot.unwrap_or_else(|| projection::fold(&project_id, &events));
+        let task_read = self.read_tasks()?;
+        let generated_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        let mut archived = task_read
+            .tasks
+            .iter()
+            .filter_map(|task| {
+                let lifecycle = project_projection
+                    .tasks
+                    .get(&task.task_id)
+                    .cloned()
+                    .unwrap_or_else(|| TaskLifecycleProjection::empty(&task.task_id));
+                let integrity = session_integrity_from_projection(
+                    &project_projection,
+                    &task.task_id,
+                    &lifecycle,
+                );
+                let state = task_state_for(
+                    &lifecycle,
+                    Some(task.phase_status.as_str()),
+                    &integrity,
+                    projection_stale,
+                );
+                if !is_terminal_task_state(state) {
+                    return None;
+                }
+                let scoped_events = events
+                    .iter()
+                    .filter(|event| event.task_id.0 == task.task_id)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                Some(archived_task_summary(
+                    task,
+                    &scoped_events,
+                    &lifecycle,
+                    state,
+                    &generated_at,
+                ))
+            })
+            .collect::<Vec<_>>();
+        sort_archived_tasks_newest_first(&mut archived);
+        let total = archived.len();
+        let start = parse_offset_cursor(cursor, total)?;
+        let limit = limit.clamp(1, 100);
+        let end = start.saturating_add(limit).min(total);
+        let tasks = archived[start..end].to_vec();
+        Ok(json!({
+            "schema_version": "1.0",
+            "project_id": project_id,
+            "tasks": tasks,
+            "page": {
+                "cursor": cursor,
+                "next_cursor": (end < total).then(|| format!("offset:{end}")),
+                "limit": limit,
+                "returned": end.saturating_sub(start),
+                "total_estimate": total,
+                "truncated": end < total,
+                "truncation_reason": if end < total { "page_limit" } else { "none" },
+                "model_version": MODEL_VERSION
+            }
         }))
     }
 
@@ -764,18 +1013,23 @@ impl V3ViewRepository {
         validate_id("task_id", task_id)?;
         let task = self.read_task(task_id)?;
         let project_id = self.project_id();
-        let events = self.store.load_project(&project_id)?;
         let projection_status = self.store.projection_status(&project_id)?;
         let projection_stale = projection_is_stale(&projection_status);
         let projection_warning = projection_warning(&projection_status);
-        let lifecycle = fold_task(task_id, &events);
-        let task_integrity = session_integrity(&events, task_id, &lifecycle);
-        let session_binding_projection = projection::fold(&project_id, &events).session_bindings;
-        let orchestration = fold_orchestration(task_id, &events);
+        let project_projection = self.store.indexed_projection(&project_id)?;
+        let task_events = self.store.load_task_events(&project_id, task_id)?;
+        let lifecycle = project_projection
+            .tasks
+            .get(task_id)
+            .cloned()
+            .unwrap_or_else(|| fold_task(task_id, &task_events));
+        let task_integrity = session_integrity(&task_events, task_id, &lifecycle);
+        let session_binding_projection = project_projection.session_bindings.clone();
+        let orchestration = fold_orchestration(task_id, &task_events);
         let generated_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let current_criteria = criteria(&task, &events, &lifecycle, &generated_at);
+        let current_criteria = criteria(&task, &task_events, &lifecycle, &generated_at);
         let mut current_blocker_details =
-            blocker_details(&task, &events, &lifecycle, None, &generated_at);
+            blocker_details(&task, &task_events, &lifecycle, None, &generated_at);
         if projection_stale {
             current_blocker_details.push(projection_stale_blocker_detail(
                 &project_id,
@@ -783,9 +1037,9 @@ impl V3ViewRepository {
                 &generated_at,
             ));
         }
-        let evidence_refs = evidence_refs(&task, &events, &generated_at);
+        let evidence_refs = evidence_refs(&task, &task_events, &generated_at);
         let native_root = native_path(&self.root);
-        let sessions = sessions_for_task(&events, task_id);
+        let sessions = sessions_for_task(&task_events, task_id);
         let opened_sessions = sessions.iter().filter(|session| session.1).count();
         let closed_sessions = sessions.iter().filter(|session| session.2).count();
         let explicit_session_gaps = task_integrity.blocking_session_ids().len();
@@ -798,128 +1052,144 @@ impl V3ViewRepository {
         let task_read = self.read_tasks()?;
         let task_metadata_warnings = task_read.warnings;
         let project_tasks = task_read.tasks;
-        let effective_current_task_id = self.current_task_id().ok();
-        let active_tasks: Vec<Value> = project_tasks
+        let effective_current_task_id = self.current_task_id_from_projection(
+            &project_tasks,
+            &project_projection,
+            projection_stale,
+        );
+        let mut active_tasks = Vec::new();
+        for project_task in &project_tasks {
+            let task_lifecycle = project_projection
+                .tasks
+                .get(&project_task.task_id)
+                .cloned()
+                .unwrap_or_else(|| TaskLifecycleProjection::empty(&project_task.task_id));
+            let task_integrity = session_integrity_from_projection(
+                &project_projection,
+                &project_task.task_id,
+                &task_lifecycle,
+            );
+            let state = task_state_for(
+                &task_lifecycle,
+                Some(project_task.phase_status.as_str()),
+                &task_integrity,
+                projection_stale,
+            );
+            if is_terminal_task_state(state) {
+                continue;
+            }
+            let scoped_events = if project_task.task_id == task_id {
+                task_events.clone()
+            } else {
+                self.store
+                    .load_task_events(&project_id, &project_task.task_id)?
+            };
+            let task_criteria =
+                criteria(project_task, &scoped_events, &task_lifecycle, &generated_at);
+            let mut task_blocker_details = blocker_details(
+                project_task,
+                &scoped_events,
+                &task_lifecycle,
+                None,
+                &generated_at,
+            );
+            if projection_stale {
+                task_blocker_details.push(projection_stale_blocker_detail(
+                    &project_id,
+                    &projection_status,
+                    &generated_at,
+                ));
+            }
+            active_tasks.push(json!({
+                "task_id": project_task.task_id,
+                "title": project_task.title,
+                "intent": project_task.intent,
+                "workflow_profile": project_task.workflow_profile,
+                "state": state,
+                "risk_level": risk_level(&scoped_events, &project_task.task_id),
+                "criteria": task_criteria,
+                "blocker_details": task_blocker_details,
+                "relations": task_lifecycle.relations,
+                "active_sessions": active_session_count_from_projection(&project_projection, &project_task.task_id),
+                "is_current_default": effective_current_task_id.as_deref() == Some(project_task.task_id.as_str()),
+                "is_ui_selected": false
+            }));
+        }
+        let archived_task_count = project_tasks
             .iter()
-            .filter_map(|project_task| {
-                let task_lifecycle = fold_task(&project_task.task_id, &events);
-                let task_integrity = session_integrity(&events, &project_task.task_id, &task_lifecycle);
+            .filter(|project_task| {
+                let task_lifecycle = project_projection
+                    .tasks
+                    .get(&project_task.task_id)
+                    .cloned()
+                    .unwrap_or_else(|| TaskLifecycleProjection::empty(&project_task.task_id));
+                let task_integrity = session_integrity_from_projection(
+                    &project_projection,
+                    &project_task.task_id,
+                    &task_lifecycle,
+                );
                 let state = task_state_for(
                     &task_lifecycle,
                     Some(project_task.phase_status.as_str()),
                     &task_integrity,
                     projection_stale,
                 );
-                if is_terminal_task_state(state) {
-                    return None;
-                }
-                let task_sessions = sessions_for_task(&events, &project_task.task_id);
-                let task_opened_sessions = task_sessions.iter().filter(|session| session.1).count();
-                let task_closed_sessions = task_sessions.iter().filter(|session| session.2).count();
-                let task_criteria = criteria(project_task, &events, &task_lifecycle, &generated_at);
-                let mut task_blocker_details =
-                    blocker_details(project_task, &events, &task_lifecycle, None, &generated_at);
-                if projection_stale {
-                    task_blocker_details.push(projection_stale_blocker_detail(
-                        &project_id,
-                        &projection_status,
-                        &generated_at,
-                    ));
-                }
-                Some(json!({
-                    "task_id": project_task.task_id,
-                    "title": project_task.title,
-                    "intent": project_task.intent,
-                    "workflow_profile": project_task.workflow_profile,
-                    "state": state,
-                    "risk_level": risk_level(&events, &project_task.task_id),
-                    "criteria": task_criteria,
-                    "blocker_details": task_blocker_details,
-                    "relations": task_lifecycle.relations,
-                    "active_sessions": task_opened_sessions.saturating_sub(task_closed_sessions),
-                    "is_current_default": effective_current_task_id.as_deref() == Some(project_task.task_id.as_str()),
-                    "is_ui_selected": false
-                }))
+                is_terminal_task_state(state)
             })
-            .collect();
-        let mut archived_tasks: Vec<Value> = project_tasks
-            .iter()
-            .filter_map(|project_task| {
-                let task_lifecycle = fold_task(&project_task.task_id, &events);
-                let task_integrity =
-                    session_integrity(&events, &project_task.task_id, &task_lifecycle);
-                let state = task_state_for(
-                    &task_lifecycle,
-                    Some(project_task.phase_status.as_str()),
-                    &task_integrity,
-                    projection_stale,
-                );
-                is_terminal_task_state(state).then(|| {
-                    archived_task_summary(
-                        project_task,
-                        &events,
-                        &task_lifecycle,
-                        state,
-                        &generated_at,
-                    )
-                })
-            })
-            .collect();
-        sort_archived_tasks_newest_first(&mut archived_tasks);
-        let workspace = resolve_workspace(&self.root, task_id, &events);
+            .count();
+        let workspace = resolve_workspace(&self.root, task_id, &task_events);
         let workspace_native_root = native_path(&workspace.root);
         let resolved_scopes = resolve_project_scopes(&self.root, Some(&workspace.root))?;
         let scope_inspection = resolved_scopes.inspection();
-        let index = ProjectIndexService::open(&workspace.root).and_then(|service| {
-            let snapshot = service.current_snapshot()?;
-            let page = service.first_page()?;
-            Ok((page, snapshot))
-        });
-        let (index_page, index_snapshot) = match index {
-            Ok((page, snapshot)) => (Some(page), Some(snapshot)),
-            Err(_) => (None, None),
-        };
+        let index_snapshot = ProjectIndexService::open(&workspace.root)
+            .and_then(|service| service.current_snapshot())
+            .ok();
         let indexed_files = index_snapshot
             .as_ref()
             .map(|snapshot| snapshot.indexed_files)
             .unwrap_or(0);
-        let project_structure = project_structure_view(
+        let project_structure = project_structure_locator_view(
             &workspace.root,
             &project_id,
             &generated_at,
             &evidence_refs,
-            index_page,
             index_snapshot.as_ref(),
             &workspace,
         );
-        let architecture_nodes = project_structure["architecture_nodes"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
-        let architecture_edges = project_structure["architecture_edges"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
-        let architecture_modules = architecture_nodes
-            .iter()
-            .filter(|node| node["kind"] != "workspace")
-            .count();
-        let declared_docs = architecture_nodes
-            .iter()
-            .filter(|node| node["source_kind"] == "documentation")
-            .count();
-        let architecture_claims = architecture_nodes
-            .iter()
-            .filter(|node| node["kind"] != "workspace")
-            .chain(architecture_edges.iter())
-            .filter_map(|claim| claim["confidence"].as_f64())
-            .collect::<Vec<_>>();
-        let architecture_confidence = if architecture_claims.is_empty() {
-            0.0
-        } else {
-            architecture_claims.iter().sum::<f64>() / architecture_claims.len() as f64
-        };
-        let architecture_evidence_refs = architecture_view_evidence_refs(&project_structure);
+        let architecture_modules = index_snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .analyzer_findings
+                    .iter()
+                    .filter(|finding| finding.kind == "package_manifest")
+                    .map(|finding| finding.path.as_str())
+                    .collect::<BTreeSet<_>>()
+                    .len()
+            })
+            .unwrap_or(0);
+        let declared_docs = index_snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .analyzer_findings
+                    .iter()
+                    .filter(|finding| finding.kind == "architecture_document")
+                    .count()
+            })
+            .unwrap_or(0);
+        let architecture_relationships = index_snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .analyzer_findings
+                    .iter()
+                    .filter(|finding| matches!(finding.kind.as_str(), "dependency" | "import"))
+                    .count()
+            })
+            .unwrap_or(0);
+        let architecture_confidence = if index_snapshot.is_some() { 1.0 } else { 0.0 };
+        let architecture_evidence_refs = evidence_refs.iter().take(8).cloned().collect::<Vec<_>>();
         let architecture_warnings = project_structure["warnings"]
             .as_array()
             .cloned()
@@ -968,6 +1238,10 @@ impl V3ViewRepository {
         let structure_model_version = project_structure["model_version"]
             .as_str()
             .unwrap_or(MODEL_VERSION);
+        let selected_session_bindings = session_binding_projection
+            .iter()
+            .filter(|(_, binding)| binding.bound_task_id.as_deref() == Some(task_id))
+            .collect::<BTreeMap<_, _>>();
 
         let project_overview = json!({
             "schema_version": "1.0", "project_id": project_id, "name": self.root.file_name().and_then(|v| v.to_str()).unwrap_or("Project"),
@@ -976,18 +1250,25 @@ impl V3ViewRepository {
             "freshness": view_freshness, "completeness": overview_completeness,
             "repository": {"state": if resolved_scopes.git_root.is_some() {"available"} else {"not_repository"}, "branch": Value::Null, "head": Value::Null, "dirty": Value::Null, "worktree_count": if resolved_scopes.git_root.is_some() {1} else {0}},
             "model": {"state": model_state, "last_evidence_at": generated_at, "generator_version": structure_model_version, "indexed_files": indexed_files},
-            "architecture": {"declared_docs": declared_docs, "modules": architecture_modules, "relationships": architecture_edges.len(), "confidence": architecture_confidence, "evidence_refs": architecture_evidence_refs},
+            "architecture": {"declared_docs": declared_docs, "modules": architecture_modules, "relationships": architecture_relationships, "confidence": architecture_confidence, "evidence_refs": architecture_evidence_refs},
             "current_task_id": effective_current_task_id,
             "current_default_task_id": effective_current_task_id,
             "ui_selected_task_id": Value::Null,
-            "session_bindings": session_binding_projection.clone(),
+            "session_bindings": selected_session_bindings,
             "active_tasks": active_tasks,
-            "archived_tasks": archived_tasks,
+            "archived_tasks": [],
+            "archived_task_count": archived_task_count,
+            "archived_tasks_query": {"surface": "task_archive_page", "default_limit": ARCHIVED_TASK_PAGE_LIMIT},
             "protocol_coverage": {"state": protocol_coverage(opened_sessions, closed_sessions, explicit_session_gaps), "opened_sessions": opened_sessions, "closed_sessions": closed_sessions, "gaps": explicit_session_gaps},
             "evidence_refs": evidence_refs, "warnings": overview_warnings, "errors": architecture_errors
         });
-        let agent_results =
-            agent_results_view(&project_id, task_id, &generated_at, &events, &evidence_refs);
+        let agent_results = agent_results_view(
+            &project_id,
+            task_id,
+            &generated_at,
+            &task_events,
+            &evidence_refs,
+        );
 
         let lanes: Vec<Value> = lifecycle
             .sessions
@@ -1002,11 +1283,11 @@ impl V3ViewRepository {
                 })
             })
             .collect();
-        let timeline_events: Vec<Value> = events
-            .iter()
-            .filter(|event| event.task_id.0 == task_id)
-            .map(timeline_event)
-            .collect();
+        let all_timeline_events: Vec<Value> = task_events.iter().map(timeline_event).collect();
+        let timeline_start = all_timeline_events
+            .len()
+            .saturating_sub(TASK_TIMELINE_WINDOW_LIMIT);
+        let timeline_events = all_timeline_events[timeline_start..].to_vec();
         let task_bindings = session_binding_projection
             .iter()
             .filter(|(_, binding)| binding.bound_task_id.as_deref() == Some(task_id))
@@ -1018,7 +1299,8 @@ impl V3ViewRepository {
         let task_timeline = json!({
             "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "title": task.title, "state": current_task_state,
             "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else {"complete"},
-            "criteria": current_criteria, "blocker_details": current_blocker_details.clone(), "completion": completion_view(&lifecycle), "lanes": lanes, "events": timeline_events, "session_bindings": task_bindings, "window": page(events.len()),
+            "criteria": current_criteria, "blocker_details": current_blocker_details.clone(), "completion": completion_view(&lifecycle), "lanes": lanes, "events": timeline_events, "session_bindings": task_bindings,
+            "window": bounded_window(all_timeline_events.len(), timeline_start, TASK_TIMELINE_WINDOW_LIMIT),
             "evidence_refs": evidence_refs, "warnings": timeline_warnings, "errors": []
         });
 
@@ -1033,11 +1315,10 @@ impl V3ViewRepository {
                     .map(|session| session.session_id.clone())
                     .collect::<Vec<_>>();
                 let session_id_set = session_ids.iter().cloned().collect::<BTreeSet<_>>();
-                let result_events = events
+                let result_events = task_events
                     .iter()
                     .filter(|event| {
-                        event.task_id.0 == task_id
-                            && event.event_type == "agent.result_recorded"
+                        event.event_type == "agent.result_recorded"
                             && (event
                                 .node_id
                                 .as_ref()
@@ -1083,7 +1364,7 @@ impl V3ViewRepository {
                 let layer = parallel_layers.get(&node.node_id).copied().unwrap_or(0);
                 let node_blocker_details = blocker_details(
                     &task,
-                    &events,
+                    &task_events,
                     &lifecycle,
                     Some(node.node_id.as_str()),
                     &generated_at,
@@ -1210,10 +1491,6 @@ impl V3ViewRepository {
                     ]
                 }
             });
-        let task_events = events
-            .iter()
-            .filter(|event| event.task_id.0 == task.task_id)
-            .collect::<Vec<_>>();
         let record_present = |record: &str| match record {
             "plan" => lifecycle.effective_nodes().next().is_some(),
             "session" => task_events
@@ -1408,7 +1685,7 @@ impl V3ViewRepository {
         let memory_scope = selected_node
             .map(|node| node.scope.clone())
             .unwrap_or_default();
-        let actor = events
+        let actor = task_events
             .iter()
             .rev()
             .find(|event| {
@@ -1417,7 +1694,10 @@ impl V3ViewRepository {
             })
             .map(|event| format!("user:{}", event.actor))
             .unwrap_or_else(|| "team".to_owned());
-        let memory_projection = super::project_memory::fold(&project_id, &events);
+        let memory_projection = match project_projection.project_memory.clone() {
+            Some(projection) => projection,
+            None => self.store.project_memory_projection(&project_id)?,
+        };
         let injected_memory = super::project_memory::query(&memory_projection, &super::MemoryQuery { kinds: Vec::new(), scope: memory_scope.clone(), principal_scope: Some(actor), include_stale: false, include_disputed: false, token_budget: max_tokens / 4 }).into_iter().filter(|entry| !super::prompt_injection_suspected(&entry.content)).map(|entry| json!({
             "entry_id": entry.entry_id, "kind": entry.kind, "source": "project_memory", "revision": entry.revision, "status": entry.status,
             "evidence_refs": entry.evidence_refs, "content": entry.content, "why_injected": format!("scope/freshness/precedence match; precedence={}", super::memory_precedence(&entry.kind)),
@@ -1811,6 +2091,43 @@ impl ArchitectureView {
         nearest_architecture_module(&self.modules, path, &file_analyzer(path))
             .map(|module| module.node_id.as_str())
     }
+}
+
+fn project_structure_locator_view(
+    _root: &Path,
+    project_id: &str,
+    generated_at: &str,
+    evidence_refs: &[Value],
+    index_snapshot: Option<&ProjectModelSnapshot>,
+    workspace: &WorkspaceSelection,
+) -> Value {
+    let Some(snapshot) = index_snapshot else {
+        return json!({
+            "schema_version": "1.0", "project_id": project_id, "generated_at": generated_at, "model_version": MODEL_VERSION,
+            "freshness": "unavailable", "completeness": "unknown", "index_state": "error",
+            "workspace": workspace_view(workspace),
+            "nodes": [], "edges": [], "architecture_nodes": [], "architecture_edges": [], "unsupported_analyzers": ["cargo", "npm", "python", "imports"],
+            "page": {"cursor": Value::Null, "next_cursor": Value::Null, "limit": 200, "returned": 0, "total_estimate": Value::Null, "truncated": false, "truncation_reason": "none", "model_version": MODEL_VERSION},
+            "evidence_refs": evidence_refs.iter().take(8).cloned().collect::<Vec<_>>(), "warnings": [],
+            "errors": [{"code": "PI_INDEX_UNAVAILABLE", "category": "internal", "recoverable": true, "message_key": "v3.error.project_index_unavailable", "details": {}, "evidence_refs": []}]
+        });
+    };
+    json!({
+        "schema_version": "1.0", "project_id": project_id, "generated_at": snapshot.generated_at, "model_version": snapshot.model_version,
+        "freshness": "fresh", "completeness": "partial", "index_state": "ready",
+        "workspace": workspace_view(workspace),
+        "nodes": [], "edges": [], "architecture_nodes": [], "architecture_edges": [], "unsupported_analyzers": [],
+        "page": {"cursor": Value::Null, "next_cursor": Value::Null, "limit": 200, "returned": 0, "total_estimate": snapshot.indexed_files, "truncated": true, "truncation_reason": "size_budget", "model_version": snapshot.model_version},
+        "evidence_refs": evidence_refs.iter().take(8).cloned().collect::<Vec<_>>(),
+        "warnings": [{
+            "code": "V3_PROJECT_STRUCTURE_QUERY_REQUIRED",
+            "severity": "info",
+            "message_key": "v3.warning.project_structure_query_required",
+            "details": {"surface": "project_structure_page", "default_limit": 200},
+            "evidence_refs": []
+        }],
+        "errors": []
+    })
 }
 
 fn project_structure_view(
@@ -4779,6 +5096,39 @@ fn page(returned: usize) -> Value {
     json!({"cursor": Value::Null, "next_cursor": Value::Null, "limit": 200, "returned": returned, "total_estimate": returned, "truncated": false, "truncation_reason": "none", "model_version": MODEL_VERSION})
 }
 
+fn bounded_window(total: usize, start: usize, limit: usize) -> Value {
+    let truncated = start > 0;
+    json!({
+        "cursor": if truncated { Value::String(format!("offset:{start}")) } else { Value::Null },
+        "next_cursor": if truncated { Value::String(format!("before:{start}")) } else { Value::Null },
+        "limit": limit,
+        "returned": total.saturating_sub(start),
+        "total_estimate": total,
+        "truncated": truncated,
+        "truncation_reason": if truncated { "size_budget" } else { "none" },
+        "model_version": MODEL_VERSION
+    })
+}
+
+fn parse_offset_cursor(cursor: Option<&str>, total: usize) -> Result<usize, V3Error> {
+    let Some(cursor) = cursor else {
+        return Ok(0);
+    };
+    let offset = cursor
+        .strip_prefix("offset:")
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|offset| *offset <= total)
+        .ok_or_else(|| {
+            V3Error::new(
+                "V3_PAGE_CURSOR_INVALID",
+                V3ErrorCategory::Validation,
+                false,
+                "cursor must be an in-range offset:<number> value",
+            )
+        })?;
+    Ok(offset)
+}
+
 fn node_state(task: &TaskDocument) -> &'static str {
     if task.phase_status == "completed" {
         "completed"
@@ -5240,7 +5590,13 @@ mod tests {
             .as_array()
             .unwrap()
             .is_empty());
-        let archived = &bundle.project_overview["archived_tasks"][0];
+        assert_eq!(bundle.project_overview["archived_task_count"], 1);
+        assert!(bundle.project_overview["archived_tasks"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let archive_page = repository.archived_tasks_page(None, 50).unwrap();
+        let archived = &archive_page["tasks"][0];
         assert_eq!(archived["state"], "closed_with_exceptions");
         assert_eq!(archived["closure"]["method"], "with_exceptions");
         assert_eq!(archived["closure"]["confirmed_by"], "ChenM0M");
@@ -5430,12 +5786,15 @@ mod tests {
             .iter()
             .any(|finding| finding.kind == "dependency"));
 
-        let nodes = first.project_structure["architecture_nodes"]
+        assert!(first.project_structure["architecture_nodes"]
             .as_array()
+            .unwrap()
+            .is_empty());
+        let first_structure = repository
+            .load_project_structure_page("task.test", ".", None, 200)
             .unwrap();
-        let edges = first.project_structure["architecture_edges"]
-            .as_array()
-            .unwrap();
+        let nodes = first_structure["architecture_nodes"].as_array().unwrap();
+        let edges = first_structure["architecture_edges"].as_array().unwrap();
         let ids = nodes
             .iter()
             .filter_map(|node| node["node_id"].as_str())
@@ -5448,21 +5807,28 @@ mod tests {
         }));
         assert_eq!(
             first.project_overview["architecture"]["modules"],
-            nodes
+            snapshot
+                .analyzer_findings
                 .iter()
-                .filter(|node| node["kind"] != "workspace")
-                .count()
+                .filter(|finding| finding.kind == "package_manifest")
+                .map(|finding| finding.path.as_str())
+                .collect::<BTreeSet<_>>()
+                .len()
         );
         assert_eq!(
             first.project_overview["architecture"]["relationships"],
-            edges.len()
+            snapshot
+                .analyzer_findings
+                .iter()
+                .filter(|finding| matches!(finding.kind.as_str(), "dependency" | "import"))
+                .count()
         );
         assert!(first.project_overview["warnings"]
             .as_array()
             .unwrap()
             .iter()
             .all(|warning| warning["code"] != "V3_ARCHITECTURE_INDEX_PENDING"));
-        assert!(first.project_structure["evidence_refs"]
+        assert!(first_structure["evidence_refs"]
             .as_array()
             .unwrap()
             .iter()
@@ -5498,8 +5864,10 @@ mod tests {
         )
         .unwrap();
         fs::write(project.join("aaa/src/lib.rs"), "pub struct Unrelated;\n").unwrap();
-        let second = repository.load_bundle("task.test").unwrap();
-        let second_ids = second.project_structure["architecture_nodes"]
+        let second = repository
+            .load_project_structure_page("task.test", ".", None, 200)
+            .unwrap();
+        let second_ids = second["architecture_nodes"]
             .as_array()
             .unwrap()
             .iter()
@@ -5576,9 +5944,9 @@ mod tests {
         assert_eq!(tasks[0]["active_sessions"], 0);
         assert_eq!(tasks[1]["task_id"], "task.two");
         assert_eq!(tasks[1]["active_sessions"], 1);
-        let archived = bundle.project_overview["archived_tasks"]
-            .as_array()
-            .unwrap();
+        assert_eq!(bundle.project_overview["archived_task_count"], 1);
+        let archive_page = repository.archived_tasks_page(None, 50).unwrap();
+        let archived = archive_page["tasks"].as_array().unwrap();
         assert_eq!(archived.len(), 1);
         assert_eq!(archived[0]["task_id"], "task.completed");
         assert_eq!(archived[0]["state"], "closed_with_exceptions");
@@ -5587,10 +5955,20 @@ mod tests {
         assert_eq!(archived[0]["result"]["status"], "not_executed");
         assert_eq!(archived[0]["completion"]["confirmed"], false);
         assert_eq!(archived[0]["source"], "v3_projection");
+        assert_eq!(bundle.project_structure["page"]["returned"], 0);
         assert_eq!(
-            bundle.project_structure["page"]["returned"],
-            bundle.project_structure["page"]["total_estimate"]
+            bundle.project_structure["page"]["truncation_reason"],
+            "size_budget"
         );
+        let structure_page = repository
+            .load_project_structure_page("task.one", ".", None, 200)
+            .unwrap();
+        assert_eq!(
+            structure_page["project_id"],
+            bundle.project_overview["project_id"]
+        );
+        assert_eq!(structure_page["index_state"], "ready");
+        assert_eq!(structure_page["page"]["truncation_reason"], "none");
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -5654,9 +6032,9 @@ mod tests {
         store.rebuild_projection(&project_id).unwrap();
 
         let bundle = repository.load_bundle("task.active").unwrap();
-        let archived = bundle.project_overview["archived_tasks"]
-            .as_array()
-            .unwrap();
+        assert_eq!(bundle.project_overview["archived_task_count"], 4);
+        let archive_page = repository.archived_tasks_page(None, 50).unwrap();
+        let archived = archive_page["tasks"].as_array().unwrap();
         let order: Vec<&str> = archived
             .iter()
             .map(|task| task["task_id"].as_str().unwrap())
@@ -6334,7 +6712,7 @@ mod tests {
             .unwrap()
             .iter()
             .any(|warning| warning["code"] == "V3_PLAN_NOT_RECORDED"));
-        assert!(bundle.plan_graph["warnings"]
+        assert!(!bundle.plan_graph["warnings"]
             .as_array()
             .unwrap()
             .iter()

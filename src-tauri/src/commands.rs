@@ -697,6 +697,32 @@ pub async fn v3_query_project_structure(
     .map_err(|error| format!("V3_PROJECT_INDEX_TASK_FAILED: {error}"))?
 }
 
+#[tauri::command]
+pub async fn v3_query_archived_tasks(
+    project_path: String,
+    cursor: Option<String>,
+    limit: Option<usize>,
+    expected_project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    tokio::task::spawn_blocking(move || {
+        let repository =
+            V3ViewRepository::open(&project_path).map_err(|error| error.to_string())?;
+        let project_id = repository.project_id();
+        if let Some(expected) = expected_project_id {
+            if expected != project_id {
+                return Err(format!(
+                    "V3_IDENTITY_MISMATCH: expected project {expected}, received {project_id}"
+                ));
+            }
+        }
+        repository
+            .archived_tasks_page(cursor.as_deref(), limit.unwrap_or(50))
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("V3_ARCHIVE_QUERY_TASK_FAILED: {error}"))?
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsExportFile {
     pub schema_version: u32,

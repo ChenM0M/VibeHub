@@ -77,6 +77,16 @@
       "type": "array",
       "items": { "$ref": "#/$defs/ArchivedTaskSummary" }
     },
+    "archived_task_count": { "type": "integer", "minimum": 0 },
+    "archived_tasks_query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "default_limit"],
+      "properties": {
+        "surface": { "const": "task_archive_page" },
+        "default_limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
     "protocol_coverage": {
       "type": "object", "additionalProperties": false,
       "required": ["state", "opened_sessions", "closed_sessions", "gaps"],

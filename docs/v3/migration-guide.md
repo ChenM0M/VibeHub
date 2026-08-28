@@ -125,6 +125,35 @@ vibehub v3 "/absolute/path/to/project" doctor
 
 The repair command creates only `.vibehub/project.yaml` when the V3 marker is missing and `.vibehub/tasks/current`; it does not rewrite `legacy-v2`, V3 events, projections, task documents, or project settings. The desktop recovery surface exposes the same verified candidates and typed command. Missing/mismatched events, unsafe paths, an existing current pointer, pure V2 state, or any other ambiguous layout still fail closed.
 
+## 6. V3 event store format 1 → format 2
+
+This migration is separate from the V2-layout migration above. It applies only to an already initialized V3 Project whose audit source is:
+
+```text
+.vibehub/v3/projects/<project-id>/events.jsonl
+.vibehub/v3/projects/<project-id>/projection.json   # optional compatibility snapshot
+```
+
+The current-source typed V3 read/write surface performs a non-destructive, one-time compatibility migration when `store-v2.sqlite3` is absent:
+
+1. Validate the bounded `project.*` identity and reject symlinked/non-directory store paths or symlinked source files.
+2. While the Project event source is stable, hash `events.jsonl` and the optional `projection.json` with SHA-256.
+3. Copy both source files to `backups/store-format-1-<digest>/` and write `manifest.json`; an existing backup is reused only after its identity, sizes and hashes match.
+4. Build `store-v2.sqlite3.migrating` from JSONL, compare the materialized shards with a complete replay, verify the source hashes again, and checkpoint WAL.
+5. Atomically rename the verified temp database to `store-v2.sqlite3`, then atomically write `store-v2-migration.json`.
+
+The migration never rewrites or removes JSONL, `projection.json`, Task YAML, Plan history, `legacy-v2`, the current pointer, or user files. A disk/capacity, permission, checkpoint, verification, or rename failure returns a structured error and leaves the source plus verified backup unchanged. A verified `.migrating` database is reusable on retry; a corrupt interrupted temp database is quarantined as `store-v2.sqlite3.failed.<id>` before rebuilding.
+
+Historical audit records may contain the earlier path-safe `T-*` Task identity.
+Compatibility replay preserves that identity verbatim; the migration must not rename
+or rewrite such events. Session and binding shards are rebuilt by `session_id` across
+all Task identities, because a historical Session can contain bind/unbind or recovery
+events associated with more than one Task. Derived projection model upgrades (for
+example `v3-sqlite-wal-1` to `v3-sqlite-wal-2`) quarantine and rebuild the disposable
+index from JSONL while unsupported store formats continue to fail closed.
+
+Do not copy a `store-v2.sqlite3` file while WAL writers are active. For acceptance, use a disposable copy and verify `projection-status` reports store format 2, a synchronized index watermark, the migration marker and the expected event count. Windows and macOS atomic rename, lock and crash behavior require separate native evidence.
+
 ## Error diagnosis
 
 - `V3_PROJECT_ROOT_NOT_FOUND`: the project path does not exist or cannot be resolved.

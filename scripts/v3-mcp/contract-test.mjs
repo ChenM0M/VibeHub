@@ -31,7 +31,7 @@ await writeFile(join(root, ".vibehub", "tasks", "current"), [
   `task_id: ${taskId}`,
   `path: .vibehub/tasks/${taskId}`,
   "updated_at: 2026-08-14T00:00:00Z",
-  "updated_by: v3-mcp-contract-test",
+  "updated_by: vibehub",
   "",
 ].join("\n"));
 
@@ -71,7 +71,7 @@ function request(method, params = {}) {
   const response = new Promise((resolveRequest, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id);
-      reject(new Error(`${method} timed out`));
+      reject(new Error(`${method} timed out${stderr ? `; child stderr: ${stderr}` : ""}`));
     }, 3000);
     pending.set(id, {
       resolve(message) {
@@ -107,7 +107,7 @@ try {
   const tools = await request("tools/list");
   assert(resources.resources.length === 7, "expected seven versioned resources");
   assert(resources.resources.every((resource) => resource.uri.startsWith("vibehub://v3/1.0/")), "resource URI is not versioned");
-  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,attempt_manage,commit_tasks,criterion_review,event_log,finding_manage,memory_query,memory_write,orchestration_write,plan_criteria_set,plan_dependencies_set,plan_node_add,plan_node_state_set,projection_rebuild,projection_status,session_close,session_open,session_recovery,session_task_bind,session_task_unbind,task_candidates,task_commits,task_complete,task_completion_propose,task_create,task_list,task_policy_upgrade,task_route,task_view,v3_next_action", "unexpected tool catalog");
+  assert(tools.tools.map((tool) => tool.name).sort().join(",") === "agent_result_record,attempt_manage,commit_tasks,criterion_review,event_log,finding_manage,memory_query,memory_write,orchestration_write,plan_criteria_set,plan_dependencies_set,plan_node_add,plan_node_state_set,projection_rebuild,projection_status,session_close,session_open,session_recovery,session_task_bind,session_task_unbind,task_archive_page,task_candidates,task_commits,task_complete,task_completion_propose,task_create,task_list,task_policy_upgrade,task_route,task_view,v3_next_action", "unexpected tool catalog");
   const planToolNames = ["plan_node_add", "plan_dependencies_set", "plan_node_state_set"];
   for (const name of planToolNames) {
     const schema = tools.tools.find((tool) => tool.name === name)?.inputSchema;
@@ -174,9 +174,20 @@ try {
   const taskListArchived = await request("tools/call", { name: "task_list", arguments: { project_id: projectId, include_archived: true } });
   assert(Array.isArray(taskListArchived.structuredContent.result.tasks), "task_list(include_archived) did not return tasks array");
   assert(ajv.validate("task-list-view.schema.json", taskListArchived.structuredContent.result), `task_list(include_archived) failed schema validation: ${JSON.stringify(ajv.errors)}`);
+  const initialArchivePage = await request("tools/call", { name: "task_archive_page", arguments: { project_id: projectId, limit: 10 } });
+  assert(Array.isArray(initialArchivePage.structuredContent.result.tasks), "task_archive_page did not return tasks array");
 
   const projStatus = await request("tools/call", { name: "projection_status", arguments: { project_id: projectId } });
   assert(typeof projStatus.structuredContent.result.stale === "boolean", "projection_status did not return stale boolean");
+  assert(projStatus.structuredContent.result.store_format === "2", "projection_status did not report store format 2");
+  assert(/^v3-sqlite-wal-\d+$/.test(projStatus.structuredContent.result.store_model_version), "projection_status did not report the indexed model version");
+  assert(["synced", "behind", "ahead"].includes(projStatus.structuredContent.result.index_state), "projection_status did not report a bounded index state");
+  assert(Number.isInteger(projStatus.structuredContent.result.event_count), "projection_status did not report event_count");
+  assert(Number.isInteger(projStatus.structuredContent.result.projection_event_count), "projection_status did not report projection_event_count");
+  assert(Number.isInteger(projStatus.structuredContent.result.last_global_seq), "projection_status did not report last_global_seq");
+  assert(Number.isInteger(projStatus.structuredContent.result.last_incremental_source_offset), "projection_status did not report the incremental source watermark");
+  assert(Number.isInteger(projStatus.structuredContent.result.source_file_bytes), "projection_status did not report source_file_bytes");
+  assert(projStatus.structuredContent.result.repair_action === null || typeof projStatus.structuredContent.result.repair_action === "string", "projection_status repair_action was not executable-or-null");
 
   const taskCommits = await request("tools/call", { name: "task_commits", arguments: { project_id: projectId, task_id: taskId } });
   assert(taskCommits.structuredContent.result.task_id === taskId, "task_commits did not return the requested task");
@@ -347,7 +358,9 @@ try {
   } });
   assert(completed.structuredContent.result.status === "appended", "task_complete did not append");
   const completedView = await request("tools/call", { name: "task_view", arguments: { task_id: taskId } });
-  assert(completedView.structuredContent.result.project_overview.archived_tasks.some((task) => task.task_id === taskId && task.state === "completed"), "task_complete did not close the lifecycle");
+  assert(completedView.structuredContent.result.project_overview.archived_tasks.length === 0 && completedView.structuredContent.result.project_overview.archived_task_count === 1, "task_view embedded archive details or lost the archive count");
+  const completedArchivePage = await request("tools/call", { name: "task_archive_page", arguments: { project_id: projectId, limit: 10 } });
+  assert(completedArchivePage.structuredContent.result.tasks.some((task) => task.task_id === taskId && task.state === "completed"), "task_complete did not close the lifecycle on the archive query surface");
   assert(completedView.structuredContent.result.task_timeline.events.filter((event) => event.summary_key === "task.completion_proposed").length === 1, "task_complete did not confirm the proposal the user reviewed");
 
   const created = await request("tools/call", { name: "task_create", arguments: {

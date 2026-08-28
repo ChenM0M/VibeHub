@@ -190,6 +190,15 @@ struct TaskListRead {
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+struct TaskArchivePageRead {
+    project_id: String,
+    #[serde(default)]
+    cursor: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 struct ProjectIdRead {
     project_id: String,
 }
@@ -960,6 +969,27 @@ impl V3McpServer {
         }
         let include_archived = input.include_archived.unwrap_or(false);
         self.tool_result(self.views.task_list(include_archived))
+    }
+
+    #[tool(
+        description = "Return one bounded page of archived V3 Task details. When: the user opens archive history or needs one archived Task after task-view reported archived_task_count. Prerequisite: project_id and a synchronized projection. Typical params: project_id, cursor, limit (default 50, maximum 100). This is the on-demand archive surface; task_view never embeds the full archive."
+    )]
+    fn task_archive_page(
+        &self,
+        Parameters(input): Parameters<TaskArchivePageRead>,
+    ) -> CallToolResult {
+        if let Err(error) = self.require_project(&input.project_id) {
+            return tool_error(serde_json::to_value(error).unwrap_or_else(
+                |_| json!({"code":"V3_INTERNAL","message":"project validation failed"}),
+            ));
+        }
+        if let Err(error) = self.ensure_projection_ready() {
+            return self.tool_result::<Value>(Err(error));
+        }
+        self.tool_result(
+            self.views
+                .archived_tasks_page(input.cursor.as_deref(), input.limit.unwrap_or(50)),
+        )
     }
 
     #[tool(

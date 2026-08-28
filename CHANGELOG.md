@@ -2,6 +2,14 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.7
+
+- V3 事件存储升级到 store format 2：新增可从零重建的 SQLite（WAL）增量索引 `store-v2.sqlite3`；`events.jsonl` 仍是不变、可审计的事件事实来源。首次访问旧项目时自动执行一次性兼容迁移：先写内容寻址备份（SHA-256 清单），构建临时索引并与全量重放逐字段比对，校验通过后才原子替换；磁盘满、重命名失败或文件损坏时 fail closed、保留源数据且可重试。
+- 稳态读写不再整本重放事件日志，也不再重写 `projection.json`（后者仅由显式 rebuild 生成）。1k Tasks / 50k events 基准：steady-state append p95 20.5 ms（门禁 250 ms），索引重载 360 ms；真实项目规模（约 6k events）task-view 连续 20 次 p95 249 ms（门禁 500 ms）。
+- 归档任务查询改为 typed 分页命令：project-overview 视图新增 `archived_task_count` 与 `task_archive_page` 查询契约，Cockpit 归档列表改为按页加载，不再一次性物化全部归档任务。
+- 新增并发与故障恢复测试覆盖：24 独立 Task 并发写入、热点 aggregate 单写多冲突、幂等去重、partial-tail 隔离、索引落后追赶、投影事务失败不丢事件等（macOS 原生 29 项通过）。决策与证据见 `docs/v3/adr/006` 及 `docs/v3/*-2026-08-23/24.md`。
+- Windows 原生验收（文件锁、原子替换、崩溃恢复、路径语义与真实 artifact 手测）仍待发布后在 Windows 主机完成。
+
 ## v3.3.6
 
 - 修复 Windows OpenCode 配置发现：按优先级独立检查 XDG `.config/opencode` 与 legacy `AppData/Roaming/opencode` 候选；单个候选损坏、无权限或路径不可信时，不再阻塞其他候选。

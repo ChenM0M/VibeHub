@@ -100,16 +100,17 @@ pub(crate) fn apply_command(
         ));
     }
     validate_identity(&command)?;
-    let events = store.load_project(&command.project_id)?;
-    if events.iter().any(|event| {
-        event.idempotency_key == command.idempotency_key
-            && event.event_type == command.event_type
-            && event.worktree_id.as_ref().map(|id| id.0.as_str())
-                == Some(command.worktree_id.as_str())
-    }) {
+    if store
+        .event_by_idempotency_key(&command.project_id, &command.idempotency_key)?
+        .is_some_and(|event| {
+            event.event_type == command.event_type
+                && event.worktree_id.as_ref().map(|id| id.0.as_str())
+                    == Some(command.worktree_id.as_str())
+        })
+    {
         return store.append_with_rebuild(command_draft(command));
     }
-    let projection = fold_task(&command.task_id, &events);
+    let projection = store.orchestration_projection(&command.project_id, &command.task_id)?;
     validate_transition(projection.worktrees.get(&command.worktree_id), &command)?;
     store.append_with_rebuild(command_draft(command))
 }

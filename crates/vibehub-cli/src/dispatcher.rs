@@ -143,6 +143,7 @@ vibehub-cli <action> <project_path> [args...]   (legacy alias)
   v3 <project> task-lifecycle <project_id> <task_id>
   v3 <project> task-candidates
   v3 <project> task-list [--include-archived]
+  v3 <project> task-archive-page [cursor|-] [limit]
   v3 <project> task-route <request_json_path|--stdin|->
   v3 <project> task-view <task_id>
   v3 <project> task-view <task_id> [node_id]
@@ -834,6 +835,18 @@ fn run_v3_action(project_root: &str, args: &[String]) {
             let include_archived = args.iter().any(|arg| arg == "--include-archived");
             let repository = open_synced_v3_view_repository(&app, project_root);
             print_v3_json(repository.task_list(include_archived));
+        }
+        "task-archive-page" => {
+            let cursor = args
+                .get(1)
+                .filter(|value| value.as_str() != "-")
+                .map(String::as_str);
+            let limit = args
+                .get(2)
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(50);
+            let repository = open_synced_v3_view_repository(&app, project_root);
+            print_v3_json(repository.archived_tasks_page(cursor, limit));
         }
         "task-route" => {
             let Some(json_path) = args.get(1) else {

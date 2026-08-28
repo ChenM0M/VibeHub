@@ -28,6 +28,7 @@ import type { LegacyV2Card } from "@/legacy-v2/contracts";
 import type { V3TaskCreateRequest, V3TaskCreateResult } from "@/v3/contracts";
 import type { V3AppendResult, V3PlanAddNodeCommand, V3PlanSetDependenciesCommand, V3PlanSetStateCommand } from "@/types";
 import type { LegacyV2Loader } from "@/services/legacyV2";
+import { queryV3ArchivedTasks } from "@/services/v3ProductionViews";
 import { useTranslation } from "react-i18next";
 
 const scenarios: V3FixtureScenario[] = ["FX-EMPTY", "FX-HAPPY", "FX-NO-DOCS", "FX-PARALLEL", "FX-REWORK", "FX-STALE", "FX-PARTIAL", "FX-ERROR", "FX-WIN-PATHS", "FX-MAC-PATHS", "FX-LARGE", "FX-COVERAGE-GAP"];
@@ -156,6 +157,9 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   const [showTokenPanel, setShowTokenPanel] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [archivedDetail, setArchivedDetail] = useState<V3ArchivedTask | LegacyV2Card | null>(null);
+  const [archivedTaskPage, setArchivedTaskPage] = useState<V3ArchivedTask[]>([]);
+  const [archivedTaskLoading, setArchivedTaskLoading] = useState(false);
+  const [archivedTaskError, setArchivedTaskError] = useState<string | null>(null);
   const [legacyFileError, setLegacyFileError] = useState<string | null>(null);
   const [timelineFilter, setTimelineFilter] = useState<string>("all");
   const [showCreateTask, setShowCreateTask] = useState(false);
@@ -259,9 +263,29 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
 
   useEffect(() => {
     setArchivedDetail(null);
+    setArchivedTaskPage([]);
+    setArchivedTaskError(null);
     setLegacyFileError(null);
     setShowArchived(false);
   }, [activeProjectPath]);
+
+  useEffect(() => {
+    if (!showArchived || sourceMode !== "production" || !activeProjectPath || !bundle?.projectOverview.project_id) return;
+    let cancelled = false;
+    setArchivedTaskLoading(true);
+    setArchivedTaskError(null);
+    void queryV3ArchivedTasks(activeProjectPath, bundle.projectOverview.project_id)
+      .then((result) => {
+        if (!cancelled) setArchivedTaskPage(result.tasks);
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setArchivedTaskError(error.message);
+      })
+      .finally(() => {
+        if (!cancelled) setArchivedTaskLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [showArchived, sourceMode, activeProjectPath, bundle?.projectOverview.project_id]);
 
   useEffect(() => {
     if (sourceMode !== "production" || !activeProjectPath || !selectedTaskId) {
@@ -287,7 +311,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   const nodeBrief = bundle?.nodeBrief;
   const structure = bundle?.projectStructure;
   const agentResults = bundle?.agentResults;
-  const archivedTasks = overview?.archived_tasks ?? [];
+  const archivedTasks = sourceMode === "production" ? archivedTaskPage : overview?.archived_tasks ?? [];
   const selectedTask = overview?.active_tasks.find((t) => t.task_id === selectedTaskId) ?? null;
   const selectedTaskHasDetail =
     selectedTaskId === timeline?.task_id &&
@@ -303,10 +327,13 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
 
   const refreshAfterTaskClosure = async (taskId: string) => {
     const refreshedBundle = await loadCurrentBundle(null);
-    const archivedTask = findArchivedTaskAfterClosure(refreshedBundle, taskId);
+    const archivedTask = sourceMode === "production" && activeProjectPath && refreshedBundle
+      ? (await queryV3ArchivedTasks(activeProjectPath, refreshedBundle.projectOverview.project_id, null, 100)).tasks.find((task) => task.task_id === taskId) ?? null
+      : findArchivedTaskAfterClosure(refreshedBundle, taskId);
     if (!archivedTask) {
       throw new Error(t("v3.cockpit.archive.refreshMissing"));
     }
+    if (sourceMode === "production") setArchivedTaskPage((tasks) => [archivedTask, ...tasks.filter((task) => task.task_id !== taskId)]);
     setShowArchived(true);
     setArchivedDetail(archivedTask);
   };
@@ -730,6 +757,8 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
           {!currentScenario && <div className="shrink-0 border-t border-border/50 pt-2 mt-2 flex flex-col">
             {showArchived && (
               <div className="mb-2 space-y-1.5 max-h-[40vh] overflow-y-auto scrollbar-auto-hide pr-1">
+                {archivedTaskLoading && <div className="px-2 py-2 text-xs text-muted-foreground">{t("v3.cockpit.archive.loading")}</div>}
+                {archivedTaskError && <div className="rounded border border-destructive/30 bg-destructive/5 px-2 py-2 text-xs text-destructive">{archivedTaskError}</div>}
                 {archivedTasks.length > 0 && <>
                   <div className="px-2 text-[10px] font-medium text-muted-foreground">{t("v3.cockpit.archive.v3Ended")}</div>
                   {archivedTasks.map((at) => {
@@ -773,7 +802,7 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
             )}
             <button type="button" onClick={() => setShowArchived(!showArchived)} className="flex w-full items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
               {showArchived ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-              <Archive className="h-3.5 w-3.5" />{t("v3.cockpit.archive.taskCount", { count: archivedTasks.length + (legacyArchive?.cards.length ?? 0) })}
+              <Archive className="h-3.5 w-3.5" />{t("v3.cockpit.archive.taskCount", { count: (overview.archived_task_count ?? archivedTasks.length) + (legacyArchive?.cards.length ?? 0) })}
             </button>
           </div>}
         </div>

@@ -627,12 +627,12 @@ pub(crate) fn apply_command(
     store: &V3EventStore,
     command: LifecycleCommand,
 ) -> Result<AppendResult, V3Error> {
-    let required_criterion_ids =
-        fold_task(&command.task_id, &store.load_project(&command.project_id)?)
-            .criteria
-            .into_iter()
-            .filter_map(|(id, criterion)| criterion.required.then_some(id))
-            .collect();
+    let required_criterion_ids = store
+        .task_projection(&command.project_id, &command.task_id)?
+        .criteria
+        .into_iter()
+        .filter_map(|(id, criterion)| criterion.required.then_some(id))
+        .collect();
     apply_command_with_required_criteria(store, command, &required_criterion_ids)
 }
 
@@ -647,15 +647,15 @@ pub(crate) fn apply_command_with_required_criteria(
             "event type is not part of the M4 lifecycle catalog",
         ));
     }
-    let events = store.load_project(&command.project_id)?;
-    if events.iter().any(|event| {
-        event.idempotency_key == command.idempotency_key
-            && event.event_type == command.event_type
-            && event.task_id.0 == command.task_id
-    }) {
+    if store
+        .event_by_idempotency_key(&command.project_id, &command.idempotency_key)?
+        .is_some_and(|event| {
+            event.event_type == command.event_type && event.task_id.0 == command.task_id
+        })
+    {
         return store.append_with_rebuild(command_draft(command));
     }
-    let projection = fold_task(&command.task_id, &events);
+    let projection = store.task_projection(&command.project_id, &command.task_id)?;
     if command.event_type == "task.completion_proposed"
         && command
             .payload

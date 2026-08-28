@@ -10,6 +10,7 @@ pub mod event_store;
 pub mod execution_policy;
 pub mod git_runner;
 pub mod host_mcp_config;
+pub(crate) mod indexed_store;
 pub mod lifecycle;
 pub mod opencode_adapter;
 pub mod orchestration;

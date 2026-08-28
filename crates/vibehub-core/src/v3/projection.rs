@@ -73,6 +73,16 @@ pub fn session_has_milestone_evidence(session: &SessionProjection) -> bool {
                 .any(|result| result.status == "failed"))
 }
 
+pub(crate) fn is_known_event_type(event_type: &str) -> bool {
+    LIFECYCLE_EVENT_TYPES.contains(&event_type)
+        || ORCHESTRATION_EVENT_TYPES.contains(&event_type)
+        || MEMORY_EVENT_TYPES.contains(&event_type)
+        || matches!(
+            event_type,
+            "progress.logged" | "risk.logged" | "agent.result_recorded"
+        )
+}
+
 pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
     let total_event_count = events.len() as u64;
     let last_event_timestamp = events.last().map(|event| event.recorded_at.clone());
@@ -99,13 +109,7 @@ pub fn fold(project_id: &str, events: &[V3EventEnvelope]) -> V3Projection {
             .aggregate_versions
             .insert(event.aggregate_id.clone(), event.aggregate_version);
         let is_lifecycle_event = LIFECYCLE_EVENT_TYPES.contains(&event.event_type.as_str());
-        let is_known_event = is_lifecycle_event
-            || ORCHESTRATION_EVENT_TYPES.contains(&event.event_type.as_str())
-            || MEMORY_EVENT_TYPES.contains(&event.event_type.as_str())
-            || matches!(
-                event.event_type.as_str(),
-                "progress.logged" | "risk.logged" | "agent.result_recorded"
-            );
+        let is_known_event = is_known_event_type(&event.event_type);
         if is_lifecycle_event {
             lifecycle_task_ids.insert(event.task_id.0.clone());
         }

@@ -74,6 +74,24 @@ export function StructureArchitecture({ data, taskId, projectPath, highlightModu
     setFileActionError(null);
   }, [data]);
 
+  useEffect(() => {
+    if (!projectPath || data.index_state !== "ready" || data.nodes.length > 0 || !data.page.truncated) return;
+    let cancelled = false;
+    setQueryLoading(true);
+    setQueryError(null);
+    void queryV3ProjectStructure(projectPath, taskId, ".")
+      .then((result) => {
+        if (!cancelled) setViewData(result);
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setQueryError(error.message);
+      })
+      .finally(() => {
+        if (!cancelled) setQueryLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [data, projectPath, taskId]);
+
   const treeRoots = useMemo(() => buildTree(viewData.nodes), [viewData.nodes]);
   const flatNodes = useMemo(() => (search ? null : flattenTree(treeRoots, expanded)), [treeRoots, expanded, search]);
 
