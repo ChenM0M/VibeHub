@@ -60,6 +60,19 @@ jobs:
       - name: Format Rust code
         run: cargo fmt --all -- --check
 
+      - name: Exclude build paths from Windows Defender
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          # Real-time scanning briefly holds handles on freshly written or
+          # removed files, which breaks the store's rename/remove/lock
+          # semantics tests with spurious ERROR_SHARING_VIOLATION and
+          # delete-pending ACCESS_DENIED on windows-latest.
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE" -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath "$env:RUNNER_TEMP" -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath "$env:TEMP" -ErrorAction SilentlyContinue
+
       - name: Test Rust workspace
         shell: bash
         run: |
