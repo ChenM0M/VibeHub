@@ -16,7 +16,11 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use uuid::Uuid;
 
-const LOCK_TIMEOUT: Duration = Duration::from_secs(3);
+// A retryable safety valve: under heavy multi-writer contention on slow
+// filesystems (notably throttled CI runners), waiting out the handover is
+// preferable to failing an append of an event that is the workflow's
+// source of truth.
+const LOCK_TIMEOUT: Duration = Duration::from_secs(10);
 const STALE_LOCK_AGE: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
@@ -1132,7 +1136,10 @@ mod tests {
         .unwrap();
         let started = Instant::now();
         store.append(draft(0, "key.recovered")).unwrap();
-        assert!(started.elapsed() < Duration::from_secs(1));
+        // The bound proves recovery did not wait for STALE_LOCK_AGE; the
+        // budget is generous because a cold first append also initializes
+        // the derived index, which is slow on throttled CI runners.
+        assert!(started.elapsed() < Duration::from_secs(5));
         assert!(!paths.lock.exists());
         fs::remove_dir_all(root).unwrap();
     }
@@ -1658,6 +1665,8 @@ mod tests {
             AppendResult::Appended { .. }
         ));
         assert_eq!(store.load_project("project.test").unwrap().len(), 2);
+        // Windows cannot remove a directory tree under an open SQLite file.
+        drop(blocker);
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1945,6 +1954,9 @@ mod tests {
             )
             .unwrap();
         assert!(task_table_exists);
+        // Windows cannot remove a directory tree under an open SQLite file;
+        // close the test connection before cleanup.
+        drop(connection);
         fs::remove_dir_all(root).unwrap();
     }
 
