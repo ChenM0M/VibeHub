@@ -3,32 +3,93 @@
   "$id": "https://schemas.vibehub.dev/v3/1.0/agent-profile.schema.json",
   "title": "V3AgentProfileContract",
   "oneOf": [
-    { "$ref": "#/$defs/AgentProfileReadResult" },
-    { "$ref": "#/$defs/AgentProfileDiscoverResult" },
-    { "$ref": "#/$defs/AgentProfileCommand" },
-    { "$ref": "#/$defs/AgentProfileSaveResult" },
-    { "$ref": "#/$defs/AgentProfileDiagnosticsResult" }
+    {
+      "$ref": "#/$defs/AgentProfileReadResult"
+    },
+    {
+      "$ref": "#/$defs/AgentProfileDiscoverResult"
+    },
+    {
+      "$ref": "#/$defs/AgentProfileCommand"
+    },
+    {
+      "$ref": "#/$defs/AgentProfileSaveResult"
+    },
+    {
+      "$ref": "#/$defs/AgentProfileDiagnosticsResult"
+    }
   ],
   "$defs": {
-    "AgentKind": { "enum": ["claude_code", "opencode", "codex"] },
-    "RuntimeTargetKind": { "enum": ["host", "wsl"] },
-    "RuntimePlatform": { "enum": ["macos", "windows", "linux"] },
+    "AgentKind": {
+      "enum": [
+        "claude_code",
+        "opencode",
+        "codex"
+      ]
+    },
+    "RuntimeTargetKind": {
+      "enum": [
+        "host",
+        "wsl"
+      ]
+    },
+    "RuntimePlatform": {
+      "enum": [
+        "macos",
+        "windows",
+        "linux"
+      ]
+    },
     "RuntimeTarget": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["target_id", "kind", "platform", "display_name", "home_path", "source"],
+      "required": [
+        "target_id",
+        "kind",
+        "platform",
+        "display_name",
+        "home_path",
+        "source"
+      ],
       "properties": {
-        "target_id": { "$ref": "common.schema.json#/$defs/StableId" },
-        "kind": { "$ref": "#/$defs/RuntimeTargetKind" },
-        "platform": { "$ref": "#/$defs/RuntimePlatform" },
-        "distribution": { "type": ["string", "null"], "minLength": 1 },
-        "display_name": { "type": "string", "minLength": 1 },
-        "home_path": { "$ref": "common.schema.json#/$defs/NativePath" },
-        "source": { "enum": ["observed", "user_selected", "fixture"] },
+        "target_id": {
+          "$ref": "common.schema.json#/$defs/StableId"
+        },
+        "kind": {
+          "$ref": "#/$defs/RuntimeTargetKind"
+        },
+        "platform": {
+          "$ref": "#/$defs/RuntimePlatform"
+        },
+        "distribution": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "home_path": {
+          "$ref": "common.schema.json#/$defs/NativePath"
+        },
+        "source": {
+          "enum": [
+            "observed",
+            "user_selected",
+            "fixture"
+          ]
+        },
         "capability_manifest_revision": {
           "anyOf": [
-            { "$ref": "common.schema.json#/$defs/StableId" },
-            { "type": "null" }
+            {
+              "$ref": "common.schema.json#/$defs/StableId"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       }
@@ -36,16 +97,47 @@
     "ConfigSource": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "format", "scope", "profile_name"],
+      "required": [
+        "path",
+        "format",
+        "scope",
+        "profile_name"
+      ],
       "properties": {
-        "path": { "$ref": "common.schema.json#/$defs/NativePath" },
-        "format": { "enum": ["json", "jsonc", "toml", "unknown"] },
-        "scope": { "enum": ["user", "project", "profile", "unknown"] },
-        "profile_name": { "type": ["string", "null"], "minLength": 1 },
+        "path": {
+          "$ref": "common.schema.json#/$defs/NativePath"
+        },
+        "format": {
+          "enum": [
+            "json",
+            "jsonc",
+            "toml",
+            "unknown"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "user",
+            "project",
+            "profile",
+            "unknown"
+          ]
+        },
+        "profile_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
         "last_modified": {
           "anyOf": [
-            { "$ref": "common.schema.json#/$defs/Timestamp" },
-            { "type": "null" }
+            {
+              "$ref": "common.schema.json#/$defs/Timestamp"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       }
@@ -53,104 +145,357 @@
     "ConfigRevision": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["revision", "content_sha256", "observed_at"],
+      "required": [
+        "revision",
+        "content_sha256",
+        "observed_at"
+      ],
       "properties": {
-        "revision": { "type": "integer", "minimum": 0 },
-        "content_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
-        "observed_at": { "$ref": "common.schema.json#/$defs/Timestamp" }
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "observed_at": {
+          "$ref": "common.schema.json#/$defs/Timestamp"
+        }
       }
     },
     "CredentialReference": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "reference", "display", "secret_state", "persisted_in_config"],
+      "required": [
+        "kind",
+        "reference",
+        "display",
+        "secret_state",
+        "persisted_in_config"
+      ],
       "properties": {
-        "kind": { "enum": ["env", "keychain", "credential_manager", "secret_store", "none", "unknown"] },
-        "reference": { "type": "string", "minLength": 1 },
-        "display": { "type": "string", "minLength": 1 },
-        "secret_state": { "enum": ["configured", "missing", "unavailable", "unknown"] },
-        "persisted_in_config": { "const": false }
+        "kind": {
+          "enum": [
+            "env",
+            "keychain",
+            "credential_manager",
+            "secret_store",
+            "none",
+            "unknown"
+          ]
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display": {
+          "type": "string",
+          "minLength": 1
+        },
+        "secret_state": {
+          "enum": [
+            "configured",
+            "missing",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "persisted_in_config": {
+          "const": false
+        }
       }
     },
     "ThinkingProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["supports_reasoning", "supports_effort", "selected", "options", "custom_allowed"],
+      "required": [
+        "supports_reasoning",
+        "supports_effort",
+        "selected",
+        "options",
+        "custom_allowed"
+      ],
       "properties": {
-        "supports_reasoning": { "type": "boolean" },
-        "supports_effort": { "type": "boolean" },
-        "selected": { "type": ["string", "null"], "minLength": 1 },
-        "options": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "custom_allowed": { "type": "boolean" }
+        "supports_reasoning": {
+          "type": "boolean"
+        },
+        "supports_effort": {
+          "type": "boolean"
+        },
+        "selected": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "custom_allowed": {
+          "type": "boolean"
+        },
+        "variant_values": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        },
+        "variant_values_changed": {
+          "type": "boolean"
+        }
       }
     },
     "ModelProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model_id", "display_name", "enabled", "thinking"],
+      "required": [
+        "model_id",
+        "display_name",
+        "enabled",
+        "thinking"
+      ],
       "properties": {
-        "model_id": { "type": "string", "minLength": 1 },
-        "display_name": { "type": "string", "minLength": 1 },
-        "enabled": { "type": "boolean" },
-        "thinking": { "$ref": "#/$defs/ThinkingProfile" }
+        "model_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "thinking": {
+          "$ref": "#/$defs/ThinkingProfile"
+        }
       }
     },
     "ProtocolCapability": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["native_protocol", "upstream_protocol", "route", "compatibility", "adapter_id", "adapter_version", "limitations"],
+      "required": [
+        "native_protocol",
+        "upstream_protocol",
+        "route",
+        "compatibility",
+        "adapter_id",
+        "adapter_version",
+        "limitations"
+      ],
       "properties": {
-        "native_protocol": { "enum": ["openai_responses", "openai_chat_completions", "anthropic_messages", "unknown"] },
-        "upstream_protocol": { "enum": ["openai_responses", "openai_chat_completions", "anthropic_messages", "unknown"] },
-        "route": { "enum": ["direct", "adapter", "unavailable"] },
-        "compatibility": { "enum": ["supported", "partial", "unknown", "unsupported"] },
-        "adapter_id": { "type": ["string", "null"], "minLength": 1 },
-        "adapter_version": { "type": ["string", "null"], "minLength": 1 },
-        "limitations": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+        "native_protocol": {
+          "enum": [
+            "openai_responses",
+            "openai_chat_completions",
+            "anthropic_messages",
+            "unknown"
+          ]
+        },
+        "upstream_protocol": {
+          "enum": [
+            "openai_responses",
+            "openai_chat_completions",
+            "anthropic_messages",
+            "unknown"
+          ]
+        },
+        "route": {
+          "enum": [
+            "direct",
+            "adapter",
+            "unavailable"
+          ]
+        },
+        "compatibility": {
+          "enum": [
+            "supported",
+            "partial",
+            "unknown",
+            "unsupported"
+          ]
+        },
+        "adapter_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "adapter_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "route": { "const": "direct" } }, "required": ["route"] },
-          "then": { "properties": { "compatibility": { "enum": ["supported", "partial"] } } }
-        },
-        {
-          "if": { "properties": { "route": { "const": "adapter" } }, "required": ["route"] },
+          "if": {
+            "properties": {
+              "route": {
+                "const": "direct"
+              }
+            },
+            "required": [
+              "route"
+            ]
+          },
           "then": {
             "properties": {
-              "adapter_id": { "type": "string", "minLength": 1 },
-              "adapter_version": { "type": "string", "minLength": 1 }
+              "compatibility": {
+                "enum": [
+                  "supported",
+                  "partial"
+                ]
+              }
             }
           }
         },
         {
-          "if": { "properties": { "route": { "const": "unavailable" } }, "required": ["route"] },
-          "then": { "properties": { "compatibility": { "enum": ["unknown", "unsupported"] } } }
+          "if": {
+            "properties": {
+              "route": {
+                "const": "adapter"
+              }
+            },
+            "required": [
+              "route"
+            ]
+          },
+          "then": {
+            "properties": {
+              "adapter_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "adapter_version": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "route": {
+                "const": "unavailable"
+              }
+            },
+            "required": [
+              "route"
+            ]
+          },
+          "then": {
+            "properties": {
+              "compatibility": {
+                "enum": [
+                  "unknown",
+                  "unsupported"
+                ]
+              }
+            }
+          }
         }
       ]
     },
     "ProviderProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider_id", "display_name", "base_url", "credential", "protocol", "models"],
+      "required": [
+        "provider_id",
+        "display_name",
+        "base_url",
+        "credential",
+        "protocol",
+        "models"
+      ],
       "properties": {
-        "provider_id": { "$ref": "common.schema.json#/$defs/StableId" },
-        "display_name": { "type": "string", "minLength": 1 },
-        "base_url": { "type": "string", "minLength": 1 },
-        "credential": { "$ref": "#/$defs/CredentialReference" },
-        "protocol": { "$ref": "#/$defs/ProtocolCapability" },
-        "models": { "type": "array", "items": { "$ref": "#/$defs/ModelProfile" }, "uniqueItems": true }
+        "provider_id": {
+          "$ref": "common.schema.json#/$defs/StableId"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "credential": {
+          "$ref": "#/$defs/CredentialReference"
+        },
+        "protocol": {
+          "$ref": "#/$defs/ProtocolCapability"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelProfile"
+          },
+          "uniqueItems": true
+        }
       }
     },
     "ManagedProfileFields": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["providers", "default_provider_id", "default_model_id", "small_model_id"],
+      "required": [
+        "providers",
+        "default_provider_id",
+        "default_model_id",
+        "small_model_id"
+      ],
       "properties": {
-        "providers": { "type": "array", "items": { "$ref": "#/$defs/ProviderProfile" }, "uniqueItems": true },
-        "default_provider_id": { "type": ["string", "null"], "minLength": 1 },
-        "default_model_id": { "type": ["string", "null"], "minLength": 1 },
-        "small_model_id": { "type": ["string", "null"], "minLength": 1 },
-        "claude_advanced": { "$ref": "#/$defs/ClaudeAdvancedSettings" }
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderProfile"
+          },
+          "uniqueItems": true
+        },
+        "default_provider_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "default_model_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "small_model_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "claude_advanced": {
+          "$ref": "#/$defs/ClaudeAdvancedSettings"
+        }
       }
     },
     "ClaudeAdvancedSettings": {
@@ -158,163 +503,539 @@
       "additionalProperties": false,
       "description": "Claude Code only. Optional overrides for subagent, tier-alias, and small/fast model projection. When a field is null/absent, VibeHub projects the managed default model so subagents and background tasks do not fall back to native-only model IDs.",
       "properties": {
-        "subagent_model": { "type": ["string", "null"], "minLength": 1, "description": "Maps to env CLAUDE_CODE_SUBAGENT_MODEL. Null/absent falls back to the default model." },
-        "small_fast_model": { "type": ["string", "null"], "minLength": 1, "description": "Generic small/fast model; maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL unless haiku_model is set. Null/absent falls back to the default model." },
-        "sonnet_model": { "type": ["string", "null"], "minLength": 1, "description": "Maps to env ANTHROPIC_DEFAULT_SONNET_MODEL. Null/absent falls back to the default model." },
-        "opus_model": { "type": ["string", "null"], "minLength": 1, "description": "Maps to env ANTHROPIC_DEFAULT_OPUS_MODEL. Null/absent falls back to the default model." },
-        "haiku_model": { "type": ["string", "null"], "minLength": 1, "description": "Maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL. Wins over small_fast_model. Null/absent falls back to the default model." },
-        "fable_model": { "type": ["string", "null"], "minLength": 1, "description": "Maps to env ANTHROPIC_DEFAULT_FABLE_MODEL. Null/absent falls back to the default model." },
-        "disable_prompt_caching": { "type": ["boolean", "null"], "description": "When true, sets env DISABLE_PROMPT_CACHING=1 for endpoints that do not support prompt caching." }
+        "subagent_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Maps to env CLAUDE_CODE_SUBAGENT_MODEL. Null/absent falls back to the default model."
+        },
+        "small_fast_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Generic small/fast model; maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL unless haiku_model is set. Null/absent falls back to the default model."
+        },
+        "sonnet_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Maps to env ANTHROPIC_DEFAULT_SONNET_MODEL. Null/absent falls back to the default model."
+        },
+        "opus_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Maps to env ANTHROPIC_DEFAULT_OPUS_MODEL. Null/absent falls back to the default model."
+        },
+        "haiku_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL. Wins over small_fast_model. Null/absent falls back to the default model."
+        },
+        "fable_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Maps to env ANTHROPIC_DEFAULT_FABLE_MODEL. Null/absent falls back to the default model."
+        },
+        "disable_prompt_caching": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "When true, sets env DISABLE_PROMPT_CACHING=1 for endpoints that do not support prompt caching."
+        }
       }
     },
     "DefaultProjection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["strategy", "target_path", "managed_field_paths", "warning"],
+      "required": [
+        "strategy",
+        "target_path",
+        "managed_field_paths",
+        "warning"
+      ],
       "properties": {
-        "strategy": { "enum": ["native_profile", "settings_projection", "base_config_projection", "none", "unknown"] },
-        "target_path": {
-          "anyOf": [
-            { "$ref": "common.schema.json#/$defs/NativePath" },
-            { "type": "null" }
+        "strategy": {
+          "enum": [
+            "native_profile",
+            "settings_projection",
+            "base_config_projection",
+            "none",
+            "unknown"
           ]
         },
-        "managed_field_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "warning": { "type": ["string", "null"], "minLength": 1 }
+        "target_path": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/NativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "managed_field_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "warning": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
       }
     },
     "DefaultState": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["is_default", "selected_by", "projection"],
+      "required": [
+        "is_default",
+        "selected_by",
+        "projection"
+      ],
       "properties": {
-        "is_default": { "type": "boolean" },
-        "selected_by": { "enum": ["vibehub", "native", "unknown"] },
-        "projection": { "$ref": "#/$defs/DefaultProjection" }
+        "is_default": {
+          "type": "boolean"
+        },
+        "selected_by": {
+          "enum": [
+            "vibehub",
+            "native",
+            "unknown"
+          ]
+        },
+        "projection": {
+          "$ref": "#/$defs/DefaultProjection"
+        }
       }
     },
     "PreservationSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["unknown_fields_preserved", "comments_preserved", "formatting_preserved", "managed_field_paths", "unmanaged_field_paths", "backup_path", "rollback_available"],
+      "required": [
+        "unknown_fields_preserved",
+        "comments_preserved",
+        "formatting_preserved",
+        "managed_field_paths",
+        "unmanaged_field_paths",
+        "backup_path",
+        "rollback_available"
+      ],
       "properties": {
-        "unknown_fields_preserved": { "type": "boolean" },
-        "comments_preserved": { "type": "boolean" },
-        "formatting_preserved": { "type": "boolean" },
-        "managed_field_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "unmanaged_field_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "unknown_fields_preserved": {
+          "type": "boolean"
+        },
+        "comments_preserved": {
+          "type": "boolean"
+        },
+        "formatting_preserved": {
+          "type": "boolean"
+        },
+        "managed_field_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "unmanaged_field_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
         "backup_path": {
           "anyOf": [
-            { "$ref": "common.schema.json#/$defs/NativePath" },
-            { "type": "null" }
+            {
+              "$ref": "common.schema.json#/$defs/NativePath"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
-        "rollback_available": { "type": "boolean" }
+        "rollback_available": {
+          "type": "boolean"
+        }
       }
     },
     "CapabilityDeclaration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "source", "version", "supported_fields", "fallback_priority", "message"],
+      "required": [
+        "status",
+        "source",
+        "version",
+        "supported_fields",
+        "fallback_priority",
+        "message"
+      ],
       "properties": {
-        "status": { "enum": ["declared", "unavailable"] },
-        "source": { "type": "string", "minLength": 1 },
-        "version": { "type": ["string", "null"], "minLength": 1 },
-        "supported_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "fallback_priority": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
-        "message": { "type": ["string", "null"], "minLength": 1 }
+        "status": {
+          "enum": [
+            "declared",
+            "unavailable"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "supported_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "fallback_priority": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
       }
     },
     "CustomModelOptions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "source", "values", "allow_custom", "fallback_priority", "message"],
+      "required": [
+        "status",
+        "source",
+        "values",
+        "allow_custom",
+        "fallback_priority",
+        "message"
+      ],
       "properties": {
-        "status": { "enum": ["available", "unavailable"] },
-        "source": { "type": "string", "minLength": 1 },
-        "values": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "allow_custom": { "type": "boolean" },
-        "fallback_priority": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
-        "message": { "type": ["string", "null"], "minLength": 1 }
+        "status": {
+          "enum": [
+            "available",
+            "unavailable"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "allow_custom": {
+          "type": "boolean"
+        },
+        "fallback_priority": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
       }
     },
     "SchemaCapability": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_id", "schema_version", "compatibility", "supported_fields", "unsupported_fields", "unknown_fields"],
+      "required": [
+        "schema_id",
+        "schema_version",
+        "compatibility",
+        "supported_fields",
+        "unsupported_fields",
+        "unknown_fields"
+      ],
       "properties": {
-        "schema_id": { "type": "string", "minLength": 1 },
-        "schema_version": { "type": ["string", "null"], "minLength": 1 },
-        "compatibility": { "enum": ["supported", "partial", "unknown", "unsupported"] },
-        "supported_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "unsupported_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "unknown_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "capability_declaration": { "$ref": "#/$defs/CapabilityDeclaration" },
-        "custom_model_options": { "$ref": "#/$defs/CustomModelOptions" }
+        "schema_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "compatibility": {
+          "enum": [
+            "supported",
+            "partial",
+            "unknown",
+            "unsupported"
+          ]
+        },
+        "supported_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "unsupported_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "unknown_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "capability_declaration": {
+          "$ref": "#/$defs/CapabilityDeclaration"
+        },
+        "custom_model_options": {
+          "$ref": "#/$defs/CustomModelOptions"
+        }
       }
     },
     "LaunchSpec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["executable", "profile_argument", "settings_argument", "extra_arguments"],
+      "required": [
+        "executable",
+        "profile_argument",
+        "settings_argument",
+        "extra_arguments"
+      ],
       "properties": {
-        "executable": { "type": "string", "minLength": 1 },
-        "profile_argument": { "type": ["string", "null"], "minLength": 1 },
-        "settings_argument": { "type": ["string", "null"], "minLength": 1 },
-        "extra_arguments": { "type": "array", "items": { "type": "string" } }
+        "executable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "profile_argument": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "settings_argument": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "extra_arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "AgentProfileDocument": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile_id", "display_name", "agent", "runtime_target_id", "source", "revision", "managed", "default_state", "preservation", "protocol", "schema_capability", "launch"],
+      "required": [
+        "profile_id",
+        "display_name",
+        "agent",
+        "runtime_target_id",
+        "source",
+        "revision",
+        "managed",
+        "default_state",
+        "preservation",
+        "protocol",
+        "schema_capability",
+        "launch"
+      ],
       "properties": {
-        "profile_id": { "$ref": "common.schema.json#/$defs/StableId" },
-        "display_name": { "type": "string", "minLength": 1 },
-        "agent": { "$ref": "#/$defs/AgentKind" },
-        "runtime_target_id": { "$ref": "common.schema.json#/$defs/StableId" },
-        "source": { "$ref": "#/$defs/ConfigSource" },
-        "revision": { "$ref": "#/$defs/ConfigRevision" },
-        "managed": { "$ref": "#/$defs/ManagedProfileFields" },
-        "default_state": { "$ref": "#/$defs/DefaultState" },
-        "preservation": { "$ref": "#/$defs/PreservationSummary" },
-        "protocol": { "$ref": "#/$defs/ProtocolCapability" },
-        "schema_capability": { "$ref": "#/$defs/SchemaCapability" },
-        "launch": { "$ref": "#/$defs/LaunchSpec" }
+        "profile_id": {
+          "$ref": "common.schema.json#/$defs/StableId"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "$ref": "#/$defs/AgentKind"
+        },
+        "runtime_target_id": {
+          "$ref": "common.schema.json#/$defs/StableId"
+        },
+        "source": {
+          "$ref": "#/$defs/ConfigSource"
+        },
+        "revision": {
+          "$ref": "#/$defs/ConfigRevision"
+        },
+        "managed": {
+          "$ref": "#/$defs/ManagedProfileFields"
+        },
+        "default_state": {
+          "$ref": "#/$defs/DefaultState"
+        },
+        "preservation": {
+          "$ref": "#/$defs/PreservationSummary"
+        },
+        "protocol": {
+          "$ref": "#/$defs/ProtocolCapability"
+        },
+        "schema_capability": {
+          "$ref": "#/$defs/SchemaCapability"
+        },
+        "launch": {
+          "$ref": "#/$defs/LaunchSpec"
+        }
       }
     },
     "ContractMetadata": {
       "type": "object",
-      "required": ["schema_version", "generated_at", "model_version", "freshness", "completeness", "evidence_refs", "warnings", "errors"],
+      "required": [
+        "schema_version",
+        "generated_at",
+        "model_version",
+        "freshness",
+        "completeness",
+        "evidence_refs",
+        "warnings",
+        "errors"
+      ],
       "properties": {
-        "schema_version": { "$ref": "common.schema.json#/$defs/SchemaVersion" },
-        "generated_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
-        "model_version": { "type": "string", "minLength": 1 },
-        "freshness": { "$ref": "common.schema.json#/$defs/Freshness" },
-        "completeness": { "$ref": "common.schema.json#/$defs/Completeness" },
-        "evidence_refs": { "$ref": "common.schema.json#/$defs/EvidenceRefs" },
-        "warnings": { "$ref": "common.schema.json#/$defs/Warnings" },
-        "errors": { "$ref": "common.schema.json#/$defs/Errors" }
+        "schema_version": {
+          "$ref": "common.schema.json#/$defs/SchemaVersion"
+        },
+        "generated_at": {
+          "$ref": "common.schema.json#/$defs/Timestamp"
+        },
+        "model_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "freshness": {
+          "$ref": "common.schema.json#/$defs/Freshness"
+        },
+        "completeness": {
+          "$ref": "common.schema.json#/$defs/Completeness"
+        },
+        "evidence_refs": {
+          "$ref": "common.schema.json#/$defs/EvidenceRefs"
+        },
+        "warnings": {
+          "$ref": "common.schema.json#/$defs/Warnings"
+        },
+        "errors": {
+          "$ref": "common.schema.json#/$defs/Errors"
+        }
       }
     },
     "AgentProfileReadResult": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/ContractMetadata" },
+        {
+          "$ref": "#/$defs/ContractMetadata"
+        },
         {
           "type": "object",
-          "required": ["kind", "agent", "runtime_target", "source", "revision", "managed_fields", "default_state", "protocol", "profile", "schema_capability"],
+          "required": [
+            "kind",
+            "agent",
+            "runtime_target",
+            "source",
+            "revision",
+            "managed_fields",
+            "default_state",
+            "protocol",
+            "profile",
+            "schema_capability"
+          ],
           "properties": {
-            "kind": { "const": "agent_profile_read_result" },
-            "agent": { "$ref": "#/$defs/AgentKind" },
-            "runtime_target": { "$ref": "#/$defs/RuntimeTarget" },
-            "source": { "$ref": "#/$defs/ConfigSource" },
-            "revision": { "$ref": "#/$defs/ConfigRevision" },
-            "managed_fields": { "$ref": "#/$defs/ManagedProfileFields" },
-            "default_state": { "$ref": "#/$defs/DefaultState" },
-            "protocol": { "$ref": "#/$defs/ProtocolCapability" },
-            "profile": { "$ref": "#/$defs/AgentProfileDocument" },
-            "schema_capability": { "$ref": "#/$defs/SchemaCapability" }
+            "kind": {
+              "const": "agent_profile_read_result"
+            },
+            "agent": {
+              "$ref": "#/$defs/AgentKind"
+            },
+            "runtime_target": {
+              "$ref": "#/$defs/RuntimeTarget"
+            },
+            "source": {
+              "$ref": "#/$defs/ConfigSource"
+            },
+            "revision": {
+              "$ref": "#/$defs/ConfigRevision"
+            },
+            "managed_fields": {
+              "$ref": "#/$defs/ManagedProfileFields"
+            },
+            "default_state": {
+              "$ref": "#/$defs/DefaultState"
+            },
+            "protocol": {
+              "$ref": "#/$defs/ProtocolCapability"
+            },
+            "profile": {
+              "$ref": "#/$defs/AgentProfileDocument"
+            },
+            "schema_capability": {
+              "$ref": "#/$defs/SchemaCapability"
+            }
           }
         }
       ],
@@ -323,31 +1044,99 @@
     "AgentProfileSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile_id", "display_name", "agent", "runtime_target_id", "source_path", "revision", "is_default", "compatibility"],
+      "required": [
+        "profile_id",
+        "display_name",
+        "agent",
+        "runtime_target_id",
+        "source_path",
+        "revision",
+        "is_default",
+        "compatibility"
+      ],
       "properties": {
-        "profile_id": { "$ref": "common.schema.json#/$defs/StableId" },
-        "display_name": { "type": "string", "minLength": 1 },
-        "agent": { "$ref": "#/$defs/AgentKind" },
-        "runtime_target_id": { "$ref": "common.schema.json#/$defs/StableId" },
-        "source_path": { "$ref": "common.schema.json#/$defs/NativePath" },
-        "revision": { "$ref": "#/$defs/ConfigRevision" },
-        "is_default": { "type": "boolean" },
-        "compatibility": { "enum": ["supported", "partial", "unknown", "unsupported"] }
+        "profile_id": {
+          "$ref": "common.schema.json#/$defs/StableId"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "$ref": "#/$defs/AgentKind"
+        },
+        "runtime_target_id": {
+          "$ref": "common.schema.json#/$defs/StableId"
+        },
+        "source_path": {
+          "$ref": "common.schema.json#/$defs/NativePath"
+        },
+        "revision": {
+          "$ref": "#/$defs/ConfigRevision"
+        },
+        "is_default": {
+          "type": "boolean"
+        },
+        "compatibility": {
+          "enum": [
+            "supported",
+            "partial",
+            "unknown",
+            "unsupported"
+          ]
+        }
       }
     },
     "AgentProfileDiscoverResult": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/ContractMetadata" },
+        {
+          "$ref": "#/$defs/ContractMetadata"
+        },
         {
           "type": "object",
-          "required": ["kind", "agent", "runtime_targets", "profiles", "default_profile_id"],
+          "required": [
+            "kind",
+            "agent",
+            "runtime_targets",
+            "profiles",
+            "default_profile_id"
+          ],
           "properties": {
-            "kind": { "const": "agent_profile_discover_result" },
-            "agent": { "$ref": "#/$defs/AgentKind" },
-            "runtime_targets": { "type": "array", "items": { "$ref": "#/$defs/RuntimeTarget" }, "uniqueItems": true },
-            "profiles": { "type": "array", "items": { "$ref": "#/$defs/AgentProfileSummary" }, "uniqueItems": true },
-            "default_profile_id": { "type": ["string", "null"], "minLength": 1 }
+            "kind": {
+              "const": "agent_profile_discover_result"
+            },
+            "agent": {
+              "$ref": "#/$defs/AgentKind"
+            },
+            "runtime_targets": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RuntimeTarget"
+              },
+              "uniqueItems": true
+            },
+            "profiles": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/AgentProfileSummary"
+              },
+              "uniqueItems": true
+            },
+            "default_profile_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "errors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/AgentProfileDiscoverError"
+              },
+              "uniqueItems": false
+            }
           }
         }
       ],
@@ -355,40 +1144,90 @@
     },
     "AgentProfileCommandBase": {
       "type": "object",
-      "required": ["kind", "agent", "runtime_target_id"],
+      "required": [
+        "kind",
+        "agent",
+        "runtime_target_id"
+      ],
       "properties": {
-        "kind": { "const": "agent_profile_command" },
-        "agent": { "$ref": "#/$defs/AgentKind" },
-        "runtime_target_id": { "$ref": "common.schema.json#/$defs/StableId" }
+        "kind": {
+          "const": "agent_profile_command"
+        },
+        "agent": {
+          "$ref": "#/$defs/AgentKind"
+        },
+        "runtime_target_id": {
+          "$ref": "common.schema.json#/$defs/StableId"
+        }
       }
     },
     "DiscoverCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
-        { "type": "object", "required": ["command"], "properties": { "command": { "const": "discover" } } }
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "command": {
+              "const": "discover"
+            }
+          }
+        }
       ],
       "unevaluatedProperties": false
     },
     "ReadCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
-        { "type": "object", "required": ["command", "profile_id"], "properties": { "command": { "const": "read" }, "profile_id": { "$ref": "common.schema.json#/$defs/StableId" } } }
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "command",
+            "profile_id"
+          ],
+          "properties": {
+            "command": {
+              "const": "read"
+            },
+            "profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            }
+          }
+        }
       ],
       "unevaluatedProperties": false
     },
     "CreateCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
         {
           "type": "object",
-          "required": ["command", "profile_name"],
+          "required": [
+            "command",
+            "profile_name"
+          ],
           "properties": {
-            "command": { "const": "create" },
-            "profile_name": { "type": "string", "minLength": 1 },
-            "template_profile_id": { "$ref": "common.schema.json#/$defs/StableId" }
+            "command": {
+              "const": "create"
+            },
+            "profile_name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "template_profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            }
           }
         }
       ],
@@ -397,14 +1236,27 @@
     "CloneCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
         {
           "type": "object",
-          "required": ["command", "source_profile_id", "profile_name"],
+          "required": [
+            "command",
+            "source_profile_id",
+            "profile_name"
+          ],
           "properties": {
-            "command": { "const": "clone" },
-            "source_profile_id": { "$ref": "common.schema.json#/$defs/StableId" },
-            "profile_name": { "type": "string", "minLength": 1 }
+            "command": {
+              "const": "clone"
+            },
+            "source_profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            },
+            "profile_name": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       ],
@@ -413,14 +1265,27 @@
     "RenameCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
         {
           "type": "object",
-          "required": ["command", "profile_id", "new_profile_name"],
+          "required": [
+            "command",
+            "profile_id",
+            "new_profile_name"
+          ],
           "properties": {
-            "command": { "const": "rename" },
-            "profile_id": { "$ref": "common.schema.json#/$defs/StableId" },
-            "new_profile_name": { "type": "string", "minLength": 1 }
+            "command": {
+              "const": "rename"
+            },
+            "profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            },
+            "new_profile_name": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       ],
@@ -429,14 +1294,25 @@
     "DeleteCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
         {
           "type": "object",
-          "required": ["command", "profile_id"],
+          "required": [
+            "command",
+            "profile_id"
+          ],
           "properties": {
-            "command": { "const": "delete" },
-            "profile_id": { "$ref": "common.schema.json#/$defs/StableId" },
-            "replacement_profile_id": { "$ref": "common.schema.json#/$defs/StableId" }
+            "command": {
+              "const": "delete"
+            },
+            "profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            },
+            "replacement_profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            }
           }
         }
       ],
@@ -445,15 +1321,31 @@
     "SaveCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
         {
           "type": "object",
-          "required": ["command", "profile_id", "expected_revision", "profile"],
+          "required": [
+            "command",
+            "profile_id",
+            "expected_revision",
+            "profile"
+          ],
           "properties": {
-            "command": { "const": "save" },
-            "profile_id": { "$ref": "common.schema.json#/$defs/StableId" },
-            "expected_revision": { "type": "integer", "minimum": 0 },
-            "profile": { "$ref": "#/$defs/AgentProfileDocument" }
+            "command": {
+              "const": "save"
+            },
+            "profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            },
+            "expected_revision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "profile": {
+              "$ref": "#/$defs/AgentProfileDocument"
+            }
           }
         }
       ],
@@ -462,22 +1354,51 @@
     "ValidateCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
-        { "type": "object", "required": ["command", "profile"], "properties": { "command": { "const": "validate" }, "profile": { "$ref": "#/$defs/AgentProfileDocument" } } }
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "command",
+            "profile"
+          ],
+          "properties": {
+            "command": {
+              "const": "validate"
+            },
+            "profile": {
+              "$ref": "#/$defs/AgentProfileDocument"
+            }
+          }
+        }
       ],
       "unevaluatedProperties": false
     },
     "ActivateCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
         {
           "type": "object",
-          "required": ["command", "profile_id", "expected_revision"],
+          "required": [
+            "command",
+            "profile_id",
+            "expected_revision"
+          ],
           "properties": {
-            "command": { "const": "activate" },
-            "profile_id": { "$ref": "common.schema.json#/$defs/StableId" },
-            "expected_revision": { "type": "integer", "minimum": 0 }
+            "command": {
+              "const": "activate"
+            },
+            "profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            },
+            "expected_revision": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         }
       ],
@@ -486,14 +1407,29 @@
     "LaunchCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
         {
           "type": "object",
-          "required": ["command", "profile_id", "launch_mode"],
+          "required": [
+            "command",
+            "profile_id",
+            "launch_mode"
+          ],
           "properties": {
-            "command": { "const": "launch" },
-            "profile_id": { "$ref": "common.schema.json#/$defs/StableId" },
-            "launch_mode": { "enum": ["temporary", "default"] }
+            "command": {
+              "const": "launch"
+            },
+            "profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            },
+            "launch_mode": {
+              "enum": [
+                "temporary",
+                "default"
+              ]
+            }
           }
         }
       ],
@@ -502,15 +1438,32 @@
     "RestoreCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
         {
           "type": "object",
-          "required": ["command", "profile_id", "expected_revision", "backup_path"],
+          "required": [
+            "command",
+            "profile_id",
+            "expected_revision",
+            "backup_path"
+          ],
           "properties": {
-            "command": { "const": "restore" },
-            "profile_id": { "$ref": "common.schema.json#/$defs/StableId" },
-            "expected_revision": { "type": "integer", "minimum": 0 },
-            "backup_path": { "type": "string", "minLength": 1 }
+            "command": {
+              "const": "restore"
+            },
+            "profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            },
+            "expected_revision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "backup_path": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       ],
@@ -519,13 +1472,21 @@
     "DiagnosticsCommand": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/AgentProfileCommandBase" },
+        {
+          "$ref": "#/$defs/AgentProfileCommandBase"
+        },
         {
           "type": "object",
-          "required": ["command"],
+          "required": [
+            "command"
+          ],
           "properties": {
-            "command": { "const": "diagnostics" },
-            "profile_id": { "$ref": "common.schema.json#/$defs/StableId" }
+            "command": {
+              "const": "diagnostics"
+            },
+            "profile_id": {
+              "$ref": "common.schema.json#/$defs/StableId"
+            }
           }
         }
       ],
@@ -533,39 +1494,96 @@
     },
     "AgentProfileCommand": {
       "oneOf": [
-        { "$ref": "#/$defs/DiscoverCommand" },
-        { "$ref": "#/$defs/ReadCommand" },
-        { "$ref": "#/$defs/CreateCommand" },
-        { "$ref": "#/$defs/CloneCommand" },
-        { "$ref": "#/$defs/RenameCommand" },
-        { "$ref": "#/$defs/DeleteCommand" },
-        { "$ref": "#/$defs/SaveCommand" },
-        { "$ref": "#/$defs/ValidateCommand" },
-        { "$ref": "#/$defs/ActivateCommand" },
-        { "$ref": "#/$defs/LaunchCommand" },
-        { "$ref": "#/$defs/RestoreCommand" },
-        { "$ref": "#/$defs/DiagnosticsCommand" }
+        {
+          "$ref": "#/$defs/DiscoverCommand"
+        },
+        {
+          "$ref": "#/$defs/ReadCommand"
+        },
+        {
+          "$ref": "#/$defs/CreateCommand"
+        },
+        {
+          "$ref": "#/$defs/CloneCommand"
+        },
+        {
+          "$ref": "#/$defs/RenameCommand"
+        },
+        {
+          "$ref": "#/$defs/DeleteCommand"
+        },
+        {
+          "$ref": "#/$defs/SaveCommand"
+        },
+        {
+          "$ref": "#/$defs/ValidateCommand"
+        },
+        {
+          "$ref": "#/$defs/ActivateCommand"
+        },
+        {
+          "$ref": "#/$defs/LaunchCommand"
+        },
+        {
+          "$ref": "#/$defs/RestoreCommand"
+        },
+        {
+          "$ref": "#/$defs/DiagnosticsCommand"
+        }
       ]
     },
     "AgentProfileSaveResult": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/ContractMetadata" },
+        {
+          "$ref": "#/$defs/ContractMetadata"
+        },
         {
           "type": "object",
-          "required": ["kind", "operation", "profile", "revision", "backup_path", "rollback_available"],
+          "required": [
+            "kind",
+            "operation",
+            "profile",
+            "revision",
+            "backup_path",
+            "rollback_available"
+          ],
           "properties": {
-            "kind": { "const": "agent_profile_save_result" },
-            "operation": { "enum": ["create", "clone", "rename", "delete", "save", "validate", "activate", "launch", "restore"] },
-            "profile": { "$ref": "#/$defs/AgentProfileDocument" },
-            "revision": { "$ref": "#/$defs/ConfigRevision" },
-            "backup_path": {
-              "anyOf": [
-                { "$ref": "common.schema.json#/$defs/NativePath" },
-                { "type": "null" }
+            "kind": {
+              "const": "agent_profile_save_result"
+            },
+            "operation": {
+              "enum": [
+                "create",
+                "clone",
+                "rename",
+                "delete",
+                "save",
+                "validate",
+                "activate",
+                "launch",
+                "restore"
               ]
             },
-            "rollback_available": { "type": "boolean" }
+            "profile": {
+              "$ref": "#/$defs/AgentProfileDocument"
+            },
+            "revision": {
+              "$ref": "#/$defs/ConfigRevision"
+            },
+            "backup_path": {
+              "anyOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/NativePath"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rollback_available": {
+              "type": "boolean"
+            }
           }
         }
       ],
@@ -574,22 +1592,121 @@
     "AgentProfileDiagnosticsResult": {
       "type": "object",
       "allOf": [
-        { "$ref": "#/$defs/ContractMetadata" },
+        {
+          "$ref": "#/$defs/ContractMetadata"
+        },
         {
           "type": "object",
-          "required": ["kind", "agent", "runtime_target", "status", "profiles", "source_paths", "auth_files_skipped"],
+          "required": [
+            "kind",
+            "agent",
+            "runtime_target",
+            "status",
+            "profiles",
+            "source_paths",
+            "auth_files_skipped"
+          ],
           "properties": {
-            "kind": { "const": "agent_profile_diagnostics_result" },
-            "agent": { "$ref": "#/$defs/AgentKind" },
-            "runtime_target": { "$ref": "#/$defs/RuntimeTarget" },
-            "status": { "enum": ["empty", "ready", "partial", "unsupported", "error"] },
-            "profiles": { "type": "array", "items": { "$ref": "#/$defs/AgentProfileSummary" }, "uniqueItems": true },
-            "source_paths": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/NativePath" }, "uniqueItems": true },
-            "auth_files_skipped": { "const": true }
+            "kind": {
+              "const": "agent_profile_diagnostics_result"
+            },
+            "agent": {
+              "$ref": "#/$defs/AgentKind"
+            },
+            "runtime_target": {
+              "$ref": "#/$defs/RuntimeTarget"
+            },
+            "status": {
+              "enum": [
+                "empty",
+                "ready",
+                "partial",
+                "unsupported",
+                "error"
+              ]
+            },
+            "profiles": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/AgentProfileSummary"
+              },
+              "uniqueItems": true
+            },
+            "source_paths": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/NativePath"
+              },
+              "uniqueItems": true
+            },
+            "auth_files_skipped": {
+              "const": true
+            }
           }
         }
       ],
       "unevaluatedProperties": false
+    },
+    "AgentProfileDiscoverError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "category",
+        "recoverable",
+        "message_key",
+        "details",
+        "evidence_refs"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+        },
+        "category": {
+          "enum": [
+            "validation",
+            "not_found",
+            "permission",
+            "conflict",
+            "unsupported",
+            "internal"
+          ]
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "message_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "message",
+            "path",
+            "recovery_hint"
+          ],
+          "properties": {
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recovery_hint": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "evidence_refs": {
+          "$ref": "common.schema.json#/$defs/EvidenceRefs"
+        }
+      }
     }
   }
 }

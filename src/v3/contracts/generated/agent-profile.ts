@@ -53,6 +53,7 @@ export type AgentProfileDiscoverResult = ContractMetadata & {
   runtime_targets: RuntimeTarget[];
   profiles: AgentProfileSummary[];
   default_profile_id: string | null;
+  errors?: AgentProfileDiscoverError[];
   [k: string]: unknown;
 };
 export type AgentProfileCommand =
@@ -253,6 +254,10 @@ export interface ThinkingProfile {
   selected: string | null;
   options: string[];
   custom_allowed: boolean;
+  variant_values?: {
+    [k: string]: unknown;
+  } | null;
+  variant_values_changed?: boolean;
 }
 /**
  * Claude Code only. Optional overrides for subagent, tier-alias, and small/fast model projection. When a field is null/absent, VibeHub projects the managed default model so subagents and background tasks do not fall back to native-only model IDs.
@@ -368,6 +373,18 @@ export interface AgentProfileSummary {
   revision: ConfigRevision;
   is_default: boolean;
   compatibility: "supported" | "partial" | "unknown" | "unsupported";
+}
+export interface AgentProfileDiscoverError {
+  code: string;
+  category: "validation" | "not_found" | "permission" | "conflict" | "unsupported" | "internal";
+  recoverable: boolean;
+  message_key: string;
+  details: {
+    message: string;
+    path: string;
+    recovery_hint: string;
+  };
+  evidence_refs: EvidenceRefs;
 }
 export interface AgentProfileCommandBase {
   kind: "agent_profile_command";

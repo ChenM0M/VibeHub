@@ -110,6 +110,7 @@ type ModelForm = {
     selected: string;
     options: string[];
     custom_allowed: boolean;
+    variant_values: Record<string, unknown> | null;
 };
 
 function cloneProfile(profile: AgentProfileDocument): AgentProfileDocument {
@@ -138,11 +139,39 @@ function attachCredentialWrite(
     return next;
 }
 
+// Structured config-location errors (CONFIG_* / OPENCODE_CONFIG_*) carry a
+// code, path and recovery hint from the Rust core. Render them as a precise
+// diagnostic instead of a bare path or a raw JSON dump.
+function structuredConfigError(error: unknown): string | null {
+    if (!error || typeof error !== 'object') return null;
+    const candidate = error as {
+        code?: string;
+        details?: { path?: string; recovery_hint?: string; message?: string };
+        path?: string;
+        recovery_hint?: string;
+    };
+    const details = candidate.details ?? {};
+    const code = candidate.code ?? '';
+    const isConfigError = /^(CONFIG_|OPENCODE_CONFIG_|RUNTIME_|OPENCODE_)/.test(code);
+    if (!isConfigError) return null;
+    const message = details.message ?? (candidate as { message?: string }).message;
+    const path = details.path ?? candidate.path;
+    const hint = details.recovery_hint ?? candidate.recovery_hint;
+    const parts: string[] = [];
+    if (code) parts.push(code);
+    if (message) parts.push(message);
+    if (path) parts.push(path);
+    if (hint) parts.push(hint);
+    return parts.length > 0 ? parts.join(' — ') : null;
+}
+
 function errorText(error: unknown, desktopRuntimeRequired: string): string {
     if (typeof error === 'string') {
         return error.includes("reading 'invoke'") ? desktopRuntimeRequired : error;
     }
     if (error && typeof error === 'object') {
+        const structured = structuredConfigError(error);
+        if (structured) return structured;
         const candidate = error as { code?: string; details?: { message?: string }; message?: string };
         const text = candidate.details?.message || candidate.message || candidate.code || JSON.stringify(error);
         return text.includes("reading 'invoke'") ? desktopRuntimeRequired : text;
@@ -194,6 +223,8 @@ function modelFromUpstream(agent: AgentKind, modelId: string, displayName: strin
             selected: defaults.options[0] || null,
             options: [...defaults.options],
             custom_allowed: defaults.custom_allowed,
+            variant_values: null,
+            variant_values_changed: agent === 'opencode' && defaults.options.length > 0,
         },
     };
 }
@@ -329,6 +360,7 @@ function modelFormFrom(model: ModelProfile): ModelForm {
         selected: model.thinking.selected || '',
         options: [...model.thinking.options],
         custom_allowed: model.thinking.custom_allowed,
+        variant_values: model.thinking.variant_values ? { ...model.thinking.variant_values } : null,
     };
 }
 
@@ -342,6 +374,7 @@ function emptyModelForm(agent: AgentKind): ModelForm {
         selected: '',
         options: agent === 'codex' ? ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] : [],
         custom_allowed: false,
+        variant_values: null,
     };
 }
 
@@ -498,7 +531,18 @@ export function AgentProfilesPanel() {
                 if (requestId !== discoveryRequest.current || requestContextRef.current !== requestContextSnapshot) return;
                 setDiscovery(result);
                 setSelectedProfileId(result.default_profile_id || result.profiles[0]?.profile_id || '');
-                setNotice(null);
+                const discoverErrors = result.errors ?? [];
+                if (discoverErrors.length > 0) {
+                    const text = discoverErrors
+                        .map((entry) => {
+                            const structured = structuredConfigError(entry);
+                            return structured || entry.code || JSON.stringify(entry);
+                        })
+                        .join('; ');
+                    setNotice({ kind: discoverErrors.length > 0 && result.profiles.length > 0 ? 'info' : 'error', text });
+                } else {
+                    setNotice(null);
+                }
             })
             .catch((error) => requestId === discoveryRequest.current && requestContextRef.current === requestContextSnapshot && setNotice({ kind: 'error', text: formatError(error) }))
             .finally(() => requestId === discoveryRequest.current && requestContextRef.current === requestContextSnapshot && setLoadingProfiles(false));
@@ -847,6 +891,15 @@ export function AgentProfilesPanel() {
         }
         const options = Array.from(new Set(modelForm.options.map((option) => option.trim()).filter(Boolean)));
         const selected = modelForm.selected && options.includes(modelForm.selected) ? modelForm.selected : options[0] || null;
+        const previousModel = modelEditor.modelId
+            ? provider.models.find((model) => model.model_id === modelEditor.modelId)
+            : undefined;
+        const previousOptions = previousModel?.thinking.options || [];
+        const variantValuesChanged = agent === 'opencode'
+            && (previousModel === undefined || JSON.stringify(previousOptions) !== JSON.stringify(options));
+        const variantValues = modelForm.variant_values
+            ? Object.fromEntries(options.map((option) => [option, modelForm.variant_values?.[option] ?? {}]))
+            : null;
         const nextModel: ModelProfile = {
             model_id: modelId,
             display_name: displayName,
@@ -857,6 +910,8 @@ export function AgentProfilesPanel() {
                 selected,
                 options,
                 custom_allowed: modelForm.custom_allowed,
+                variant_values: variantValues,
+                variant_values_changed: variantValuesChanged,
             },
         };
         setDraft((current) => {

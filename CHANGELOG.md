@@ -2,6 +2,13 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.6
+
+- 修复 Windows OpenCode 配置发现：按优先级独立检查 XDG `.config/opencode` 与 legacy `AppData/Roaming/opencode` 候选；单个候选损坏、无权限或路径不可信时，不再阻塞其他候选。
+- 配置发现错误现在返回错误码、具体路径、原因和恢复建议，Agent Profiles 不再只显示一条无法操作的裸路径。
+- Windows WSL/runtime 探测统一使用静默子进程，切换 Agent 配置时不主动弹出可见的 cmd/PowerShell 窗口。
+- OpenCode JSON/JSONC 保存保留注释、未知字段和完整的复杂 variant 对象，并区分未编辑 variant 与明确清空 variant。
+
 ## v3.3.5
 
 - 修复 v3.3.4 引入的归档回归：带有残留阻塞事实（遗留/无 terminal result 的 Session、stale projection、未关闭 finding、blocked PlanNode）的已确认完成任务被改判为 `blocked`，导致已归档任务重新回到 active 列表、以及「完成并归档」后归档视图找不到该任务。现在真正确认完成的任务保持终态 `completed` 并留在归档，残留阻塞只作为诊断展示在归档摘要与时间线中。

@@ -628,6 +628,33 @@ const agentProfileReadResult = {
   schema_capability: agentProfileDocument.schema_capability,
 };
 assert(agentProfileValidator(agentProfileReadResult), "agent profile read result validates: " + ajv.errorsText(agentProfileValidator.errors));
+const agentProfileDiscoverError = {
+  code: "CONFIG_PATH_LINK_REJECTED",
+  category: "validation",
+  recoverable: true,
+  message_key: "agent_profile.discovery_error",
+  details: {
+    message: "configuration path is a reparse point",
+    path: "C:\\Users\\alex\\.config\\opencode\\opencode.jsonc",
+    recovery_hint: "use a regular file inside the runtime home",
+  },
+  evidence_refs: [],
+};
+assert(agentProfileValidator({
+  schema_version: "1.0",
+  kind: "agent_profile_discover_result",
+  generated_at: agentProfileTimestamp,
+  model_version: "agent-profile.fixture.1",
+  freshness: "fresh",
+  completeness: "complete",
+  evidence_refs: [],
+  warnings: [],
+  errors: [agentProfileDiscoverError],
+  agent: "opencode",
+  runtime_targets: [agentProfileTarget],
+  profiles: [],
+  default_profile_id: null,
+}), "agent profile discovery result preserves structured per-candidate errors: " + ajv.errorsText(agentProfileValidator.errors));
 assert(agentProfileSchemaCapabilityValidator({
   schema_id: "claude-code.settings",
   schema_version: "1.0",

@@ -32,6 +32,10 @@ pub struct OpenCodeModelView {
     pub declared_id: Option<String>,
     pub reasoning: Option<bool>,
     pub variants: Vec<String>,
+    /// Full variant values retained for the Tauri/UI round-trip. The editor
+    /// displays only the names, but saving an unrelated field must not rebuild
+    /// complex variant objects from names alone.
+    pub variant_values: Option<BTreeMap<String, Value>>,
     pub unknown_fields: Vec<String>,
 }
 
@@ -107,6 +111,28 @@ pub struct OpenCodeConfigPatch {
     pub providers: BTreeMap<String, OpenCodeProviderPatch>,
 }
 
+/// A single candidate location that could not be read during discovery.
+///
+/// Discovery must be fault-tolerant: one unreadable/invalid candidate must not
+/// abort the remaining candidates. Every failure is captured here with its
+/// structured path and an actionable recovery hint so the desktop frontend can
+/// present a precise diagnostic instead of a bare path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenCodeDiscoveryError {
+    pub code: String,
+    pub message: String,
+    pub path: String,
+    pub recovery_hint: String,
+}
+
+/// Discovered profiles plus the per-candidate errors that did not abort the
+/// scan. See [`discover_opencode_profiles_tolerant`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct OpenCodeDiscoveryOutcome {
+    pub profiles: Vec<OpenCodeProfileView>,
+    pub errors: Vec<OpenCodeDiscoveryError>,
+}
+
 pub fn opencode_config_paths(target: &RuntimeTarget) -> Vec<PathBuf> {
     let home = target.home_path.as_path();
     // opencode follows the XDG convention on every platform, including
@@ -132,11 +158,71 @@ pub fn opencode_config_paths(target: &RuntimeTarget) -> Vec<PathBuf> {
 pub fn discover_opencode_profiles(
     target: &RuntimeTarget,
 ) -> Result<Vec<OpenCodeProfileView>, StorageError> {
-    opencode_config_paths(target)
-        .into_iter()
-        .filter(|path| path.is_file())
-        .map(|path| read_opencode_profile(target, path))
-        .collect()
+    Ok(discover_opencode_profiles_tolerant(target).profiles)
+}
+
+/// Fault-tolerant discovery. Every candidate location (XDG first, then the
+/// legacy Roaming fallback) is checked independently: a single unreadable or
+/// invalid candidate is recorded in [`OpenCodeDiscoveryOutcome::errors`] with a
+/// structured code, path, reason and recovery hint, and never aborts the scan
+/// of the remaining candidates. Only candidates that exist as regular files are
+/// attempted, so absent locations are silently skipped while metadata/access
+/// failures are surfaced as candidate errors.
+pub fn discover_opencode_profiles_tolerant(target: &RuntimeTarget) -> OpenCodeDiscoveryOutcome {
+    let mut outcome = OpenCodeDiscoveryOutcome::default();
+    for path in opencode_config_paths(target) {
+        match std::fs::symlink_metadata(&path) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                outcome.errors.push(OpenCodeDiscoveryError {
+                    code: "CONFIG_DISCOVERY_STAT_FAILED".to_owned(),
+                    message: error.to_string(),
+                    path: path.to_string_lossy().into_owned(),
+                    recovery_hint: "检查配置目录是否存在且当前用户具有访问权限。".to_owned(),
+                });
+                continue;
+            }
+        }
+        match read_opencode_profile(target, &path) {
+            Ok(profile) => outcome.profiles.push(profile),
+            Err(error) => outcome.errors.push(OpenCodeDiscoveryError {
+                code: error.code.to_owned(),
+                message: error.message.clone(),
+                path: error
+                    .path
+                    .clone()
+                    .unwrap_or_else(|| path.to_string_lossy().into_owned()),
+                recovery_hint: recovery_hint_for(error.code),
+            }),
+        }
+    }
+    outcome
+}
+
+/// Actionable recovery guidance keyed by the storage error code. The hints are
+/// operator-facing and never contain credential material.
+fn recovery_hint_for(code: &str) -> String {
+    match code {
+        "CONFIG_NOT_FOUND" => "确认配置文件存在且路径正确。".to_owned(),
+        "CONFIG_PATH_OUTSIDE_RUNTIME_HOME" => {
+            "该配置路径指向 runtime home 之外（可能为越界 junction/symlink），请改用 home 内的真实路径。".to_owned()
+        }
+        "CONFIG_PATH_LINK_REJECTED" => {
+            "配置路径是符号链接或 junction；请指向 runtime home 内的真实文件。".to_owned()
+        }
+        "CONFIG_READ_FAILED" | "CONFIG_NOT_REGULAR_FILE" => {
+            "检查文件是否存在、具有读取权限且为普通文件。".to_owned()
+        }
+        "CONFIG_DISCOVERY_STAT_FAILED" => {
+            "检查配置目录是否存在且当前用户具有访问权限。".to_owned()
+        }
+        "CONFIG_TOO_LARGE" => "配置文件过大，请精简后重试。".to_owned(),
+        "OPENCODE_CONFIG_FORMAT_UNSUPPORTED" => "OpenCode 仅接受 JSON/JSONC 配置。".to_owned(),
+        "OPENCODE_CONFIG_ROOT_INVALID" => "配置文件根必须是 JSON 对象。".to_owned(),
+        "OPENCODE_CONFIG_TRAILING_CONTENT" => "配置文件根对象之后存在多余内容，请修复 JSON/JSONC 语法。".to_owned(),
+        _ => "请检查配置文件内容与权限后重试。".to_owned(),
+    }
 }
 
 pub fn read_opencode_profile(
@@ -353,8 +439,17 @@ fn model_view(model_id: &str, value: &Value) -> Result<OpenCodeModelView, Storag
     let variants = object
         .get("variants")
         .and_then(Value::as_object)
-        .map(|variants| variants.keys().cloned().collect())
+        .map(|variants| variants.keys().cloned().collect::<Vec<_>>())
         .unwrap_or_default();
+    let variant_values = object
+        .get("variants")
+        .and_then(Value::as_object)
+        .map(|variants| {
+            variants
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect::<BTreeMap<_, _>>()
+        });
     let known = [
         "id",
         "modelID",
@@ -390,6 +485,7 @@ fn model_view(model_id: &str, value: &Value) -> Result<OpenCodeModelView, Storag
             .map(str::to_owned),
         reasoning: object.get("reasoning").and_then(Value::as_bool),
         variants,
+        variant_values,
         unknown_fields: object
             .keys()
             .filter(|key| !known.contains(&key.as_str()))
@@ -576,6 +672,9 @@ impl JsoncEditor {
                     )?;
                 }
                 if let Some(variants) = &model_patch.variants {
+                    // None means variants were not edited. Some(empty) is an
+                    // explicit request to clear them, so preserve this
+                    // distinction all the way from the UI patch.
                     let variants = Value::Object(variants.clone().into_iter().collect());
                     self.set_path(
                         &[provider_key, provider_id, "models", model_id, "variants"],
@@ -1409,7 +1508,6 @@ mod tests {
     }
 
     fn windows_target(home: PathBuf) -> RuntimeTarget {
-        let home_native = home.to_string_lossy().into_owned();
         RuntimeTarget {
             target_id: "runtime.windows.host".to_owned(),
             kind: RuntimeTargetKind::Host,
@@ -1454,5 +1552,201 @@ mod tests {
         assert_eq!(paths[0], xdg_jsonc);
 
         fs::remove_dir_all(&home).unwrap();
+    }
+
+    // Regression: criterion c02 requires that reading a complex variant object,
+    // modifying an unrelated field, and saving preserves the full variant object
+    // value. A patch that touches the model but carries no variant content must
+    // not replace the complex variant with `{}`.
+    #[test]
+    fn patch_touching_model_without_variants_preserves_complex_variant_object() {
+        let (target, root) = temp_target();
+        let path = root.join("opencode.jsonc");
+        let original = br#"{
+  "model": "deepseek/deepseek-chat#high",
+  "provider": {
+    "deepseek": {
+      "name": "DeepSeek",
+      "models": {
+        "deepseek-chat": {
+          "name": "DeepSeek Chat",
+          "variants": {
+            "high": { "reasoningEffort": "high", "extra": { "keep": true } },
+            "low": { "reasoningEffort": "low" }
+          }
+        }
+      }
+    }
+  },
+  "permissions": { "edit": "ask" }
+}"#;
+        fs::write(&path, original).unwrap();
+        let document = read_document(&target, &path).unwrap();
+
+        // Patch only the model display name; variants are intentionally omitted
+        // (the UI has no complex-variant editor). This mirrors the
+        // `patch_for_opencode` shape produced when an unrelated field changes.
+        let mut models = BTreeMap::new();
+        models.insert(
+            "deepseek-chat".to_owned(),
+            OpenCodeModelPatch {
+                display_name: Some("DeepSeek Chat (renamed)".to_owned()),
+                ..Default::default()
+            },
+        );
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "deepseek".to_owned(),
+            OpenCodeProviderPatch {
+                models,
+                ..Default::default()
+            },
+        );
+        save_opencode_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &OpenCodeConfigPatch {
+                providers,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        // The complex variant object content must survive untouched.
+        assert!(raw.contains("\"reasoningEffort\": \"high\""));
+        assert!(raw.contains("\"extra\": { \"keep\": true }"));
+        assert!(raw.contains("\"reasoningEffort\": \"low\""));
+        // The unrelated field was still updated.
+        assert!(raw.contains("DeepSeek Chat (renamed)"));
+        // And unrelated root content is preserved.
+        assert!(raw.contains("\"permissions\""));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn patch_explicitly_clears_variants_when_requested() {
+        let (target, root) = temp_target();
+        let path = root.join("opencode.json");
+        fs::write(
+            &path,
+            br#"{
+  "provider": {
+    "deepseek": {
+      "models": {
+        "deepseek-chat": {
+          "variants": { "high": { "reasoningEffort": "high" } }
+        }
+      }
+    }
+  }
+}"#,
+        )
+        .unwrap();
+        let document = read_document(&target, &path).unwrap();
+        let mut models = BTreeMap::new();
+        models.insert(
+            "deepseek-chat".to_owned(),
+            OpenCodeModelPatch {
+                variants: Some(BTreeMap::new()),
+                ..Default::default()
+            },
+        );
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "deepseek".to_owned(),
+            OpenCodeProviderPatch {
+                models,
+                ..Default::default()
+            },
+        );
+        save_opencode_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &OpenCodeConfigPatch {
+                providers,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let updated = read_opencode_profile(&target, &path).unwrap();
+        assert!(updated.providers[0].models[0].variants.is_empty());
+        assert_eq!(
+            updated.providers[0].models[0].variant_values,
+            Some(BTreeMap::new())
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // Regression: criterion c02 — even when the patch does not mention the model
+    // at all, a complex variant object must be preserved byte-for-byte.
+    #[test]
+    fn patch_without_model_preserves_complex_variant_object() {
+        let (target, root) = temp_target();
+        let path = root.join("opencode.jsonc");
+        let original = br#"{
+  "model": "deepseek/deepseek-chat#high",
+  "provider": {
+    "deepseek": {
+      "models": {
+        "deepseek-chat": {
+          "variants": { "high": { "reasoningEffort": "high" } }
+        }
+      }
+    }
+  }
+}"#;
+        fs::write(&path, original).unwrap();
+        let document = read_document(&target, &path).unwrap();
+        save_opencode_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &OpenCodeConfigPatch {
+                default_model: Some("deepseek/deepseek-chat".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(raw.contains("\"reasoningEffort\": \"high\""));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // Regression: criterion c01 — tolerant discovery records a per-candidate
+    // structured error (code, path, reason, recovery hint) and still returns the
+    // readable candidates instead of aborting the whole scan.
+    #[test]
+    fn tolerant_discovery_records_error_and_keeps_valid_candidate() {
+        let root = env::temp_dir().join(format!("vibehub-opencode-disc-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = windows_target(root.clone());
+        let xdg = root.join(".config").join("opencode");
+        fs::create_dir_all(&xdg).unwrap();
+        let good = xdg.join("opencode.jsonc");
+        fs::write(&good, br#"{ "model": "openai/gpt-4o" }"#).unwrap();
+        // The legacy Roaming candidate exists but is invalid JSON.
+        let roaming = root.join("AppData").join("Roaming").join("opencode");
+        fs::create_dir_all(&roaming).unwrap();
+        let bad = roaming.join("opencode.json");
+        fs::write(&bad, br#"{ "model": "broken" "#).unwrap();
+
+        let outcome = discover_opencode_profiles_tolerant(&target);
+
+        assert_eq!(outcome.profiles.len(), 1);
+        assert_eq!(
+            outcome.profiles[0].default_model.as_deref(),
+            Some("openai/gpt-4o")
+        );
+        assert_eq!(outcome.errors.len(), 1);
+        let error = &outcome.errors[0];
+        assert!(!error.code.is_empty());
+        assert!(error.path.contains("opencode.json"));
+        assert!(!error.message.is_empty());
+        assert!(!error.recovery_hint.is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 }

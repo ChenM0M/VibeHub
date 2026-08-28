@@ -6,8 +6,6 @@ use std::fmt::{Display, Formatter};
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
-#[cfg(windows)]
-use std::process::Command;
 use uuid::Uuid;
 
 const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
@@ -166,7 +164,7 @@ pub fn discover_runtime_targets() -> Result<Vec<RuntimeTarget>, StorageError> {
 
 #[cfg(windows)]
 fn discover_wsl_distributions() -> Result<Vec<String>, StorageError> {
-    let output = Command::new("wsl.exe")
+    let output = crate::process_util::silent_command("wsl.exe")
         .args(["-l", "-q"])
         .output()
         .map_err(|error| StorageError::new("RUNTIME_WSL_DISCOVERY_FAILED", error.to_string()))?;
@@ -188,7 +186,7 @@ fn discover_wsl_distributions() -> Result<Vec<String>, StorageError> {
 
 #[cfg(windows)]
 fn wsl_home(distribution: &str) -> Result<String, StorageError> {
-    let output = Command::new("wsl.exe")
+    let output = crate::process_util::silent_command("wsl.exe")
         .args(["-d", distribution, "--", "sh", "-lc", "printf %s \"$HOME\""])
         .output()
         .map_err(|error| {
@@ -334,6 +332,12 @@ pub struct WriteReport {
 pub struct StorageError {
     pub code: &'static str,
     pub message: String,
+    /// Offending path, when the error is tied to a specific config location.
+    /// Carried to the desktop frontend so errors can be shown with their
+    /// structured path instead of a bare path string.
+    pub path: Option<String>,
+    /// Actionable recovery suggestion for the operator (never credential data).
+    pub recovery_hint: Option<String>,
 }
 
 impl StorageError {
@@ -341,7 +345,43 @@ impl StorageError {
         Self {
             code,
             message: message.into(),
+            path: None,
+            recovery_hint: None,
         }
+    }
+
+    pub(crate) fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.path = Some(path.into());
+        self
+    }
+
+    pub(crate) fn with_recovery(mut self, hint: impl Into<String>) -> Self {
+        self.recovery_hint = Some(hint.into());
+        self
+    }
+
+    pub(crate) fn with_path_context(self, path: &Path) -> Self {
+        let hint = storage_recovery_hint(self.code).to_owned();
+        self.with_path(path.display().to_string())
+            .with_recovery(hint)
+    }
+}
+
+fn storage_recovery_hint(code: &str) -> &'static str {
+    match code {
+        "CONFIG_NOT_FOUND" => "确认配置文件存在且路径正确。",
+        "CONFIG_PATH_LINK_REJECTED" => {
+            "配置路径是符号链接或 junction；请指向 runtime home 内的真实文件。"
+        }
+        "CONFIG_PATH_OUTSIDE_RUNTIME_HOME" => {
+            "请改用 runtime home 内的真实配置路径，不要使用越界链接。"
+        }
+        "CONFIG_REVISION_CONFLICT" => "重新读取配置后再保存，避免覆盖其他修改。",
+        "CONFIG_FORMAT_UNSUPPORTED" | "OPENCODE_CONFIG_FORMAT_UNSUPPORTED" => {
+            "使用 JSON 或 JSONC 配置文件。"
+        }
+        "CONFIG_JSON_INVALID" | "CONFIG_JSONC_INVALID" => "修复配置文件语法后重试。",
+        _ => "检查文件是否存在、具有访问权限且路径位于 runtime home 内。",
     }
 }
 
@@ -357,26 +397,39 @@ pub fn read_document(
     target: &RuntimeTarget,
     path: impl AsRef<Path>,
 ) -> Result<ConfigDocument, StorageError> {
-    let path = validate_target_path(target, path.as_ref(), false)?;
-    let format = ConfigFormat::from_path(&path)?;
-    let metadata = fs::symlink_metadata(&path)
-        .map_err(|error| StorageError::new("CONFIG_READ_FAILED", error.to_string()))?;
-    reject_link_or_reparse(&metadata, &path)?;
+    let requested_path = path.as_ref().to_path_buf();
+    let path = validate_target_path(target, &requested_path, false)
+        .map_err(|error| error.with_path_context(&requested_path))?;
+    let format = ConfigFormat::from_path(&path).map_err(|error| error.with_path_context(&path))?;
+    let metadata = fs::symlink_metadata(&path).map_err(|error| {
+        let code = if error.kind() == io::ErrorKind::NotFound {
+            "CONFIG_NOT_FOUND"
+        } else {
+            "CONFIG_READ_FAILED"
+        };
+        StorageError::new(code, error.to_string()).with_path_context(&path)
+    })?;
+    reject_link_or_reparse(&metadata, &path, None)
+        .map_err(|error| error.with_path_context(&path))?;
     if !metadata.is_file() {
-        return Err(StorageError::new(
-            "CONFIG_NOT_REGULAR_FILE",
-            path.display().to_string(),
-        ));
+        return Err(
+            StorageError::new("CONFIG_NOT_REGULAR_FILE", "配置路径不是普通文件")
+                .with_path_context(&path),
+        );
     }
     if metadata.len() > MAX_CONFIG_BYTES {
         return Err(StorageError::new(
             "CONFIG_TOO_LARGE",
             format!("{} bytes exceeds the configured limit", metadata.len()),
-        ));
+        )
+        .with_path_context(&path));
     }
-    let raw = fs::read(&path)
-        .map_err(|error| StorageError::new("CONFIG_READ_FAILED", error.to_string()))?;
-    format.validate(&raw)?;
+    let raw = fs::read(&path).map_err(|error| {
+        StorageError::new("CONFIG_READ_FAILED", error.to_string()).with_path_context(&path)
+    })?;
+    format
+        .validate(&raw)
+        .map_err(|error| error.with_path_context(&path))?;
     let revision = revision_for(&raw);
     Ok(ConfigDocument {
         path,
@@ -392,15 +445,20 @@ pub fn write_document(
     expected_revision: Option<&DocumentRevision>,
     content: &[u8],
 ) -> Result<WriteReport, StorageError> {
-    let path = validate_target_path(target, path.as_ref(), true)?;
-    let format = ConfigFormat::from_path(&path)?;
+    let requested_path = path.as_ref().to_path_buf();
+    let path = validate_target_path(target, &requested_path, true)
+        .map_err(|error| error.with_path_context(&requested_path))?;
+    let format = ConfigFormat::from_path(&path).map_err(|error| error.with_path_context(&path))?;
     if content.len() as u64 > MAX_CONFIG_BYTES {
         return Err(StorageError::new(
             "CONFIG_TOO_LARGE",
             format!("{} bytes exceeds the configured limit", content.len()),
-        ));
+        )
+        .with_path_context(&path));
     }
-    format.validate(content)?;
+    format
+        .validate(content)
+        .map_err(|error| error.with_path_context(&path))?;
 
     let current = match read_document(target, &path) {
         Ok(document) => Some(document),
@@ -412,7 +470,8 @@ pub fn write_document(
         return Err(StorageError::new(
             "CONFIG_REVISION_CONFLICT",
             "the file changed after it was read; reload before saving",
-        ));
+        )
+        .with_path_context(&path));
     }
 
     let backup_path = if let Some(document) = current.as_ref() {
@@ -450,8 +509,12 @@ pub fn restore_document(
     backup_path: impl AsRef<Path>,
     expected_current_revision: &DocumentRevision,
 ) -> Result<WriteReport, StorageError> {
-    let path = validate_target_path(target, path.as_ref(), false)?;
-    let backup_path = validate_target_path(target, backup_path.as_ref(), false)?;
+    let requested_path = path.as_ref().to_path_buf();
+    let requested_backup_path = backup_path.as_ref().to_path_buf();
+    let path = validate_target_path(target, &requested_path, false)
+        .map_err(|error| error.with_path_context(&requested_path))?;
+    let backup_path = validate_target_path(target, &requested_backup_path, false)
+        .map_err(|error| error.with_path_context(&requested_backup_path))?;
     let backup = read_raw_regular_file(&backup_path)?;
     let current = read_document(target, &path)?;
     if current.revision != *expected_current_revision {
@@ -474,7 +537,7 @@ fn same_revision(expected: Option<&DocumentRevision>, actual: Option<&DocumentRe
 fn read_raw_regular_file(path: &Path) -> Result<Vec<u8>, StorageError> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|error| StorageError::new("CONFIG_BACKUP_READ_FAILED", error.to_string()))?;
-    reject_link_or_reparse(&metadata, path)?;
+    reject_link_or_reparse(&metadata, path, None)?;
     if !metadata.is_file() {
         return Err(StorageError::new(
             "CONFIG_BACKUP_NOT_REGULAR_FILE",
@@ -624,7 +687,6 @@ fn validate_target_path(
     let raw_home = target.home_path.as_path();
     let home_metadata = fs::symlink_metadata(&raw_home)
         .map_err(|error| StorageError::new("RUNTIME_HOME_INVALID", error.to_string()))?;
-    reject_link_or_reparse(&home_metadata, &raw_home)?;
     if !home_metadata.is_dir() {
         return Err(StorageError::new(
             "RUNTIME_HOME_NOT_DIRECTORY",
@@ -634,6 +696,11 @@ fn validate_target_path(
     let home = raw_home
         .canonicalize()
         .map_err(|error| StorageError::new("RUNTIME_HOME_INVALID", error.to_string()))?;
+    // Allow an in-home junction/reparse point on the runtime home itself: a
+    // junction whose canonical target stays inside `home` is trusted, while one
+    // that escapes `home` is rejected (fail closed). Symlinks on home are
+    // always rejected.
+    reject_link_or_reparse(&home_metadata, &raw_home, Some(&home))?;
     let component_root = if path.strip_prefix(&raw_home).is_ok() {
         raw_home.as_path()
     } else if path.strip_prefix(&home).is_ok() {
@@ -644,7 +711,7 @@ fn validate_target_path(
             path.display().to_string(),
         ));
     };
-    reject_path_components(component_root, path, allow_missing_file)?;
+    reject_path_components(component_root, path, allow_missing_file, &home)?;
     let candidate = if path.exists() {
         path.canonicalize()
             .map_err(|error| StorageError::new("CONFIG_PATH_INVALID", error.to_string()))?
@@ -672,6 +739,7 @@ fn reject_path_components(
     raw_home: &Path,
     path: &Path,
     allow_missing_file: bool,
+    canonical_home: &Path,
 ) -> Result<(), StorageError> {
     let relative = path.strip_prefix(raw_home).map_err(|_| {
         StorageError::new(
@@ -694,7 +762,7 @@ fn reject_path_components(
         cursor.push(component.as_os_str());
         match fs::symlink_metadata(&cursor) {
             Ok(metadata) => {
-                reject_link_or_reparse(&metadata, &cursor)?;
+                reject_link_or_reparse(&metadata, &cursor, Some(canonical_home))?;
                 if index + 1 != components.len() && !metadata.is_dir() {
                     return Err(StorageError::new(
                         "CONFIG_PATH_PARENT_NOT_DIRECTORY",
@@ -714,12 +782,34 @@ fn reject_path_components(
     Ok(())
 }
 
-fn reject_link_or_reparse(metadata: &Metadata, path: &Path) -> Result<(), StorageError> {
-    if metadata.file_type().is_symlink() || is_reparse_point(metadata) {
+fn reject_link_or_reparse(
+    metadata: &Metadata,
+    path: &Path,
+    _canonical_home: Option<&Path>,
+) -> Result<(), StorageError> {
+    // Symlinks are never allowed: they can point anywhere and are the classic
+    // escape vector, so reject them unconditionally on every platform.
+    if metadata.file_type().is_symlink() {
         return Err(StorageError::new(
             "CONFIG_PATH_LINK_REJECTED",
             path.display().to_string(),
         ));
+    }
+    // A Windows reparse point (junction/mount point) is allowed only when its
+    // canonical target stays inside the trusted runtime home. One that escapes
+    // home, or one we cannot resolve, is rejected (fail closed). Non-Windows
+    // platforms have no reparse points, so this branch never runs there.
+    #[cfg(windows)]
+    if is_reparse_point(metadata) {
+        match _canonical_home {
+            Some(home) if reparse_target_within_home(path, home) => return Ok(()),
+            _ => {
+                return Err(StorageError::new(
+                    "CONFIG_PATH_LINK_REJECTED",
+                    path.display().to_string(),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -731,9 +821,39 @@ fn is_reparse_point(metadata: &Metadata) -> bool {
     metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 
-#[cfg(not(windows))]
-fn is_reparse_point(_metadata: &Metadata) -> bool {
-    false
+/// Whether a reparse point (Windows junction/mount point) resolves to a target
+/// that stays inside the trusted runtime `home`. A junction whose canonical
+/// target escapes `home` is never trusted; a junction contained within `home`
+/// is permitted so legitimate in-home config layouts work. Symlinks are never
+/// allowed through this path (they are rejected unconditionally by the caller).
+#[cfg(windows)]
+fn reparse_target_within_home(path: &Path, home: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return false,
+    };
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+        // Not a reparse point at all: only "within home" if the path already is.
+        return path.starts_with(home);
+    }
+    // Resolve the junction target. If it cannot be resolved, fail closed.
+    let resolved = match path.canonicalize() {
+        Ok(resolved) => resolved,
+        Err(_) => {
+            // The leaf may not exist yet (write of a new file). Fall back to
+            // the parent directory's canonical target.
+            match path.parent().and_then(|parent| parent.canonicalize().ok()) {
+                Some(parent) => match path.file_name() {
+                    Some(name) => parent.join(name),
+                    None => return false,
+                },
+                None => return false,
+            }
+        }
+    };
+    resolved.starts_with(home)
 }
 
 fn revision_for(raw: &[u8]) -> DocumentRevision {

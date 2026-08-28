@@ -20,8 +20,9 @@ use vibehub_core::v3::{
     self, AgentKind, ClaudeCodeProfileView, ClaudeCredentialKind, ClaudeSettingsPatch,
     ClaudeSettingsScope, CodexConfigPatch, CodexCredentialKind, CodexProfileView, CodexProtocol,
     CodexProviderPatch, ConfigFormat, DocumentRevision, NativeConfigPath, OpenCodeConfigPatch,
-    OpenCodeModelPatch, OpenCodeProfileView, OpenCodeProviderPatch, ParsedConfig, ProtocolKind,
-    ProtocolResolution, RuntimeTarget, RuntimeTargetKind, StorageError, WriteReport,
+    OpenCodeDiscoveryError, OpenCodeModelPatch, OpenCodeProfileView, OpenCodeProviderPatch,
+    ParsedConfig, ProtocolKind, ProtocolResolution, RuntimeTarget, RuntimeTargetKind, StorageError,
+    WriteReport,
 };
 
 const SCHEMA_VERSION: &str = "1.0";
@@ -107,12 +108,25 @@ impl From<StorageError> for AgentProfileCommandError {
         let recoverable = matches!(category, "permission" | "conflict" | "not_found")
             || error.code.contains("BACKUP")
             || error.code.contains("ROLLBACK");
-        Self::new(
+        let mut command_error = Self::new(
             error.code,
             category,
             recoverable,
             safe_storage_message(&error.message),
-        )
+        );
+        // Preserve the structured path and recovery hint so the frontend can
+        // render a precise config-location diagnostic instead of a bare path.
+        if let Some(path) = error.path {
+            command_error
+                .details
+                .insert("path".to_owned(), Value::String(path));
+        }
+        if let Some(hint) = error.recovery_hint {
+            command_error
+                .details
+                .insert("recovery_hint".to_owned(), Value::String(hint));
+        }
+        command_error
     }
 }
 
@@ -401,6 +415,10 @@ pub struct ThinkingProfileInput {
     pub selected: Option<String>,
     pub options: Vec<String>,
     pub custom_allowed: bool,
+    #[serde(default)]
+    pub variant_values: Option<BTreeMap<String, Value>>,
+    #[serde(default)]
+    pub variant_values_changed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -611,7 +629,24 @@ fn discover(
     request: AgentProfileTargetRequest,
 ) -> Result<AgentProfileDiscoverResult, AgentProfileCommandError> {
     let target = resolve_runtime_target(&request.runtime_target_id)?;
-    let profiles = discover_locations(&request.agent, &target)?;
+    // OpenCode discovery is fault-tolerant: each candidate (XDG first, then the
+    // legacy Roaming fallback) is checked independently, so a single
+    // unreadable/invalid candidate is recorded as a structured error instead of
+    // aborting the scan of the remaining candidates.
+    let (profiles, candidate_errors) = match request.agent {
+        AgentKind::Opencode => {
+            let outcome = v3::discover_opencode_profiles_tolerant(&target);
+            let profiles = outcome
+                .profiles
+                .into_iter()
+                .map(LocatedProfile::OpenCode)
+                .collect();
+            (profiles, outcome.errors)
+        }
+        AgentKind::ClaudeCode | AgentKind::Codex => {
+            (discover_locations(&request.agent, &target)?, Vec::new())
+        }
+    };
     let summaries = profiles
         .iter()
         .map(|profile| summary_for(&target, profile))
@@ -620,6 +655,23 @@ fn discover(
         .iter()
         .find(|summary| summary.is_default)
         .map(|summary| summary.profile_id.clone());
+    let errors = candidate_errors
+        .into_iter()
+        .map(|error: OpenCodeDiscoveryError| {
+            json!({
+                "code": error.code,
+                "category": discovery_error_category(&error.code),
+                "recoverable": true,
+                "message_key": "agent_profile.discovery_error",
+                "details": {
+                    "message": error.message,
+                    "path": error.path,
+                    "recovery_hint": error.recovery_hint,
+                },
+                "evidence_refs": [],
+            })
+        })
+        .collect();
     Ok(AgentProfileDiscoverResult {
         kind: "agent_profile_discover_result",
         schema_version: SCHEMA_VERSION,
@@ -629,12 +681,26 @@ fn discover(
         completeness: "complete",
         evidence_refs: Vec::new(),
         warnings: Vec::new(),
-        errors: Vec::new(),
+        errors,
         agent: request.agent,
         runtime_targets: vec![target],
         profiles: summaries,
         default_profile_id,
     })
+}
+
+fn discovery_error_category(code: &str) -> &'static str {
+    if code.contains("PERMISSION") || code.contains("ACCESS") {
+        "permission"
+    } else if code.contains("NOT_FOUND") || code.contains("MISSING") {
+        "not_found"
+    } else if code.contains("CONFLICT") || code.contains("REVISION") {
+        "conflict"
+    } else if code.contains("UNSUPPORTED") {
+        "unsupported"
+    } else {
+        "validation"
+    }
 }
 
 fn runtime_targets() -> Result<Vec<RuntimeTarget>, AgentProfileCommandError> {
@@ -1611,18 +1677,23 @@ fn patch_for_opencode(
             if !model.enabled {
                 continue;
             }
-            let variants = if model.thinking.options.is_empty() {
-                None
-            } else {
-                Some(
-                    model
-                        .thinking
-                        .options
-                        .iter()
-                        .map(|option| (option.clone(), Value::Object(Map::new())))
-                        .collect(),
-                )
-            };
+            let variants = model.thinking.variant_values_changed.then(|| {
+                model
+                    .thinking
+                    .options
+                    .iter()
+                    .map(|option| {
+                        let value = model
+                            .thinking
+                            .variant_values
+                            .as_ref()
+                            .and_then(|values| values.get(option))
+                            .cloned()
+                            .unwrap_or_else(|| Value::Object(Map::new()));
+                        (option.clone(), value)
+                    })
+                    .collect()
+            });
             models.insert(
                 model.model_id.clone(),
                 OpenCodeModelPatch {
@@ -1969,7 +2040,9 @@ fn opencode_document_parts(
                             "supports_effort":!model.variants.is_empty(),
                             "selected":view.default_variant,
                             "options":model.variants,
-                            "custom_allowed":false
+                            "custom_allowed":false,
+                            "variant_values":model.variant_values,
+                            "variant_values_changed":false
                         }
                     })
                 })
@@ -3778,6 +3851,76 @@ mod tests {
     }
 
     #[test]
+    fn opencode_patch_preserves_complex_variant_values_across_tauri_boundary() {
+        let mut variant_values = BTreeMap::new();
+        variant_values.insert(
+            "high".to_owned(),
+            json!({
+                "reasoningEffort": "high",
+                "extra": { "keep": true }
+            }),
+        );
+        variant_values.insert("low".to_owned(), json!({ "reasoningEffort": "low" }));
+        let managed = ManagedProfileInput {
+            providers: vec![ProviderProfileInput {
+                provider_id: "deepseek".to_owned(),
+                display_name: "DeepSeek".to_owned(),
+                base_url: "https://api.deepseek.com/v1".to_owned(),
+                credential: CredentialReferenceInput {
+                    kind: "env".to_owned(),
+                    reference: "DEEPSEEK_API_KEY".to_owned(),
+                    display: "环境变量".to_owned(),
+                    secret_state: "missing".to_owned(),
+                    persisted_in_config: false,
+                    secret: None,
+                    clear_secret: false,
+                },
+                protocol: ProtocolCapabilityInput {
+                    native_protocol: "openai_chat_completions".to_owned(),
+                    upstream_protocol: "openai_chat_completions".to_owned(),
+                    route: "direct".to_owned(),
+                    compatibility: "supported".to_owned(),
+                    adapter_id: None,
+                    adapter_version: None,
+                    limitations: Vec::new(),
+                },
+                models: vec![ModelProfileInput {
+                    model_id: "deepseek-chat".to_owned(),
+                    display_name: "DeepSeek Chat".to_owned(),
+                    enabled: true,
+                    thinking: ThinkingProfileInput {
+                        supports_reasoning: true,
+                        supports_effort: true,
+                        selected: Some("high".to_owned()),
+                        options: vec!["high".to_owned(), "low".to_owned()],
+                        custom_allowed: false,
+                        variant_values: Some(variant_values),
+                        variant_values_changed: true,
+                    },
+                }],
+            }],
+            default_provider_id: Some("deepseek".to_owned()),
+            default_model_id: Some("deepseek-chat".to_owned()),
+            small_model_id: None,
+            claude_advanced: None,
+        };
+
+        let patch = patch_for_opencode(&managed).unwrap();
+        let variants = patch.providers["deepseek"].models["deepseek-chat"]
+            .variants
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            variants["high"],
+            json!({
+                "reasoningEffort": "high",
+                "extra": { "keep": true }
+            })
+        );
+        assert_eq!(variants["low"], json!({ "reasoningEffort": "low" }));
+    }
+
+    #[test]
     fn claude_patch_falls_back_to_main_model_without_advanced() {
         // No claude_advanced: subagent and small/fast models must resolve to the
         // managed default model so built-in subagents (e.g. statusline-setup) and
@@ -3816,6 +3959,8 @@ mod tests {
                         selected: None,
                         options: Vec::new(),
                         custom_allowed: false,
+                        variant_values: None,
+                        variant_values_changed: false,
                     },
                 }],
             }],
@@ -3866,6 +4011,8 @@ mod tests {
                         selected: None,
                         options: Vec::new(),
                         custom_allowed: false,
+                        variant_values: None,
+                        variant_values_changed: false,
                     },
                 }],
             }],

@@ -50,6 +50,7 @@ const exportedDefinitions = new Map([
   ]],
   ["agent-profile.schema.json", [
     "V3AgentProfileContract", "AgentKind", "AgentProfileReadResult", "AgentProfileDiscoverResult",
+    "AgentProfileDiscoverError",
     "AgentProfileSummary", "AgentProfileCommand", "CreateCommand", "CloneCommand", "RenameCommand", "DeleteCommand",
     "AgentProfileSaveResult", "AgentProfileDiagnosticsResult", "AgentProfileDocument", "RuntimeTarget", "NativePath",
     "ConfigSource", "ConfigRevision", "CredentialReference", "ThinkingProfile", "ModelProfile",
