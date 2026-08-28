@@ -2,6 +2,10 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.10
+
+- 修复 v3.3.7 引入的 Windows 迁移回归(第三处):项目事件锁在 Windows 上,前一个持有者 `remove_file` 释放锁后的短暂 delete-pending 窗口内,其他线程的 `create_new` 会收到 `Access is denied (os error 5)` 而非 `AlreadyExists`,被误判为致命错误 `V3_LOCK_CREATE_FAILED`。现在 `PermissionDenied` 视为锁释放中的正常竞争,在超时窗口内重试。与 v3.3.8、v3.3.9 的修复合并后,存储与 MCP 测试在 Windows CI 预期全部通过。macOS/Linux 行为不变。
+
 ## v3.3.9
 
 - 修复 v3.3.7 引入的 Windows 迁移回归(第二处):迁移备份写入 `events.jsonl` / `projection.json` 副本后,用只读句柄调用 `sync_all()` 刷盘;Windows 的 `FlushFileBuffers` 要求写权限句柄,导致 Windows 上首次迁移仍以 `Access is denied (os error 5)` 失败。现改用写句柄刷盘,v3.3.8 中已修复的迁移备份重命名与本修复共同使 store format 1 → 2 迁移在 Windows CI 上全部通过。macOS/Linux 行为不变。

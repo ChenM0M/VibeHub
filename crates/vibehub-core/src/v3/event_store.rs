@@ -600,6 +600,21 @@ impl LockLease {
                     }
                     thread::sleep(Duration::from_millis(15));
                 }
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    // Windows: the previous owner's remove_file can still be
+                    // settling (delete-pending), which surfaces here as
+                    // ACCESS_DENIED instead of AlreadyExists. Treat it as
+                    // contention and retry until the name disappears.
+                    if started.elapsed() >= LOCK_TIMEOUT {
+                        return Err(V3Error::new(
+                            "V3_LOCK_TIMEOUT",
+                            V3ErrorCategory::VersionConflict,
+                            true,
+                            "timed out waiting for the project event-store lock",
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(15));
+                }
                 Err(error) => return Err(io_error("V3_LOCK_CREATE_FAILED")(error)),
             }
         }
