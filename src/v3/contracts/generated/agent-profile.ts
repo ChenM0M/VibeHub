@@ -260,35 +260,35 @@ export interface ThinkingProfile {
   variant_values_changed?: boolean;
 }
 /**
- * Claude Code only. Optional overrides for subagent, tier-alias, and small/fast model projection. When a field is null/absent, VibeHub projects the managed default model so subagents and background tasks do not fall back to native-only model IDs.
+ * Claude Code only. Optional explicit overrides for subagent, tier-alias, and small/fast model selection. When a field is null/absent, VibeHub removes that override and lets Claude Code apply its native settings and model precedence.
  */
 export interface ClaudeAdvancedSettings {
   /**
-   * Maps to env CLAUDE_CODE_SUBAGENT_MODEL. Null/absent falls back to the default model.
+   * Explicitly sets env CLAUDE_CODE_SUBAGENT_MODEL; Claude Code treats this as a hard subagent override. Null/absent removes the override.
    */
   subagent_model?: string | null;
   /**
-   * Generic small/fast model; maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL unless haiku_model is set. Null/absent falls back to the default model.
+   * Legacy input alias for haiku_model. New readers return null and the UI exposes only haiku_model; never mirror a persisted Haiku value into this field.
    */
   small_fast_model?: string | null;
   /**
-   * Maps to env ANTHROPIC_DEFAULT_SONNET_MODEL. Null/absent falls back to the default model.
+   * Explicitly maps to env ANTHROPIC_DEFAULT_SONNET_MODEL. Null/absent removes the override.
    */
   sonnet_model?: string | null;
   /**
-   * Maps to env ANTHROPIC_DEFAULT_OPUS_MODEL. Null/absent falls back to the default model.
+   * Explicitly maps to env ANTHROPIC_DEFAULT_OPUS_MODEL. Null/absent removes the override.
    */
   opus_model?: string | null;
   /**
-   * Maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL. Wins over small_fast_model. Null/absent falls back to the default model.
+   * Canonical Haiku/background override for ANTHROPIC_DEFAULT_HAIKU_MODEL. Wins over legacy small_fast_model input. Setting auto clears both fields.
    */
   haiku_model?: string | null;
   /**
-   * Maps to env ANTHROPIC_DEFAULT_FABLE_MODEL. Null/absent falls back to the default model.
+   * Explicitly maps to env ANTHROPIC_DEFAULT_FABLE_MODEL. Null/absent removes the override.
    */
   fable_model?: string | null;
   /**
-   * When true, sets env DISABLE_PROMPT_CACHING=1 for endpoints that do not support prompt caching.
+   * True sets DISABLE_PROMPT_CACHING=1, false removes that env key, and null preserves the existing value.
    */
   disable_prompt_caching?: boolean | null;
 }

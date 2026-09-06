@@ -293,7 +293,7 @@ function computeLaunchCommand(profile: AgentProfileDocument): string {
         return 'opencode';
     }
     if (profile.agent === 'claude_code') {
-        if (profile.default_state.is_default || profile.source.scope === 'user') {
+        if (profile.source.scope === 'user') {
             return 'claude';
         }
         return `claude --setting-sources "" --settings "${profile.source.path.native}"`;
@@ -485,6 +485,7 @@ export function AgentProfilesPanel() {
 
     useEffect(() => {
         if (!isReleaseFixture()) return;
+        setAgent(releaseFixtureProfile.agent);
         setTargets([releaseFixtureTarget]);
         setTargetId(releaseFixtureTarget.target_id);
         setDiscovery(releaseFixtureDiscovery);
@@ -1286,7 +1287,6 @@ export function AgentProfilesPanel() {
                                         ]))
                                         : [];
                                     const subagentSelection = normalizeClaudeModelSelection(advanced?.subagent_model, candidateModels);
-                                    const smallModelSelection = normalizeClaudeModelSelection(advanced?.small_fast_model, candidateModels);
                                     const sonnetSelection = normalizeClaudeModelSelection(advanced?.sonnet_model, candidateModels);
                                     const opusSelection = normalizeClaudeModelSelection(advanced?.opus_model, candidateModels);
                                     const haikuSelection = normalizeClaudeModelSelection(advanced?.haiku_model, candidateModels);
@@ -1310,6 +1310,9 @@ export function AgentProfilesPanel() {
                                             if (!current) return current;
                                             const next = cloneProfile(current);
                                             next.managed.claude_advanced = { ...(next.managed.claude_advanced || {}), ...patch };
+                                            if ('haiku_model' in patch) {
+                                                next.managed.claude_advanced.small_fast_model = null;
+                                            }
                                             return next;
                                         });
                                     };
@@ -1336,7 +1339,7 @@ export function AgentProfilesPanel() {
                                                 </div>
                                                 <div className="md:col-span-2">
                                                     <span className="font-medium text-foreground">{t('agentProfiles.claudeCompatibility.fallbackPriority')}: </span>
-                                                    {(customModelOptions?.fallback_priority || capabilityDeclaration?.fallback_priority || ['explicit_override', 'managed.default_model_id', 'unavailable']).join(' → ')}
+                                                    {(customModelOptions?.fallback_priority || capabilityDeclaration?.fallback_priority || ['explicit_override', 'claude_native_resolution']).join(' → ')}
                                                 </div>
                                             </div>
                                             {compatOpen && (
@@ -1348,13 +1351,6 @@ export function AgentProfilesPanel() {
                                                             {renderModelOptions(subagentSelection)}
                                                         </select>
                                                         <p className="mt-1.5 leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.subagentModelHint')}</p>
-                                                    </div>
-                                                    <div>
-                                                        <Label htmlFor="claude-small-model" className="mb-1.5 block">{t('agentProfiles.claudeCompatibility.smallFastModel')}</Label>
-                                                        <select id="claude-small-model" aria-label={t('agentProfiles.claudeCompatibility.smallFastModel')} value={smallModelSelection.uiValue} onChange={(event) => updateModelSelection('small_fast_model', event.target.value)} className={fieldClass}>
-                                                            {renderModelOptions(smallModelSelection)}
-                                                        </select>
-                                                        <p className="mt-1.5 leading-5 text-muted-foreground">{t('agentProfiles.claudeCompatibility.smallFastModelHint')}</p>
                                                     </div>
                                                     <div className="md:col-span-2 rounded-md border border-border/40 px-3 py-3">
                                                         <div className="mb-2 text-[11px] font-medium text-muted-foreground">{t('agentProfiles.claudeCompatibility.aliasGroupLabel')}</div>

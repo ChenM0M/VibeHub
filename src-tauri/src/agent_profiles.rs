@@ -325,16 +325,16 @@ pub struct ClaudeAdvancedInput {
     pub subagent_model: Option<String>,
     #[serde(default)]
     pub small_fast_model: Option<String>,
-    /// Maps to env `ANTHROPIC_DEFAULT_SONNET_MODEL`. Null/absent falls back to the default model.
+    /// Maps to env `ANTHROPIC_DEFAULT_SONNET_MODEL`; unset means no override.
     #[serde(default)]
     pub sonnet_model: Option<String>,
-    /// Maps to env `ANTHROPIC_DEFAULT_OPUS_MODEL`. Null/absent falls back to the default model.
+    /// Maps to env `ANTHROPIC_DEFAULT_OPUS_MODEL`; unset means no override.
     #[serde(default)]
     pub opus_model: Option<String>,
     /// Explicit alias for the `ANTHROPIC_DEFAULT_HAIKU_MODEL` tier; wins over `small_fast_model`.
     #[serde(default)]
     pub haiku_model: Option<String>,
-    /// Maps to env `ANTHROPIC_DEFAULT_FABLE_MODEL`. Null/absent falls back to the default model.
+    /// Maps to env `ANTHROPIC_DEFAULT_FABLE_MODEL`; unset means no override.
     #[serde(default)]
     pub fable_model: Option<String>,
     #[serde(default)]
@@ -875,7 +875,10 @@ fn launch_arguments_for(
                 "default launch requires the selected Profile to be the active default",
             ));
         }
-        return Ok(Vec::new());
+        return Ok(match profile {
+            LocatedProfile::Claude(view) => view.launch.arguments.clone(),
+            _ => Vec::new(),
+        });
     }
 
     Ok(match profile {
@@ -1735,30 +1738,39 @@ fn patch_for_claude(
         .default_model_id
         .clone()
         .and_then(normalize_claude_model_option);
-    // Compatibility projection: when a Claude Code Profile targets a third-party
-    // endpoint, subagents and background tasks must not fall back to native-only
-    // model IDs (for example `claude-sonnet-5`) that the endpoint does not serve.
-    // Advanced overrides win; otherwise the managed default model is projected so
-    // built-in subagents such as statusline-setup resolve to a reachable model.
     let advanced = managed.claude_advanced.clone().unwrap_or_default();
-    let resolve = |value: Option<String>| {
-        value
-            .and_then(normalize_claude_model_option)
-            .or_else(|| main_model.clone())
-    };
-    let subagent_model = resolve(advanced.subagent_model.clone());
-    // `small_fast_model` is the generic fallback for the haiku tier; an explicit
-    // `haiku_model` alias wins so the two never diverge.
-    let haiku_model = resolve(
-        advanced
-            .haiku_model
-            .clone()
-            .or(advanced.small_fast_model.clone()),
-    );
-    let sonnet_model = resolve(advanced.sonnet_model.clone());
-    let opus_model = resolve(advanced.opus_model.clone());
-    let fable_model = resolve(advanced.fable_model.clone());
-    let small_fast_model = haiku_model.clone();
+    let subagent_model = advanced
+        .subagent_model
+        .clone()
+        .and_then(normalize_claude_model_option);
+    let small_fast_model = None;
+    let sonnet_model = advanced
+        .sonnet_model
+        .clone()
+        .and_then(normalize_claude_model_option);
+    let opus_model = advanced
+        .opus_model
+        .clone()
+        .and_then(normalize_claude_model_option);
+    let haiku_model = advanced
+        .haiku_model
+        .clone()
+        .and_then(normalize_claude_model_option)
+        .or_else(|| {
+            advanced
+                .small_fast_model
+                .clone()
+                .and_then(normalize_claude_model_option)
+        });
+    let fable_model = advanced
+        .fable_model
+        .clone()
+        .and_then(normalize_claude_model_option);
+    let clear_subagent_model = subagent_model.is_none();
+    let clear_sonnet_model = sonnet_model.is_none();
+    let clear_opus_model = opus_model.is_none();
+    let clear_haiku_model = haiku_model.is_none();
+    let clear_fable_model = fable_model.is_none();
     let clear_model = main_model.is_none();
     Ok(ClaudeSettingsPatch {
         model: main_model,
@@ -1772,6 +1784,12 @@ fn patch_for_claude(
         fable_model,
         disable_prompt_caching: advanced.disable_prompt_caching,
         clear_model,
+        clear_subagent_model,
+        clear_small_fast_model: false,
+        clear_sonnet_model,
+        clear_opus_model,
+        clear_haiku_model,
+        clear_fable_model,
         clear_base_url: provider
             .map(|provider| provider.base_url.trim().is_empty())
             .unwrap_or(true),
@@ -2184,10 +2202,10 @@ fn claude_document_parts(
     let default_state = default_state_value(
         view.default_state.is_default,
         selector_name_claude(view.default_state.selected_by),
-        "settings_projection",
+        "none",
         projection,
-        view.managed_fields.clone(),
-        Some("Claude 默认 Profile 只投影受管字段，保留 settings 中其他字段"),
+        Vec::new(),
+        Some("VibeHub 默认选择只更新 Profile 索引，不改写用户 settings；独立 Profile 显式启动，原生用户配置沿用 Claude 配置层级。"),
     );
     let schema_capability = claude_schema_capability(view);
     let launch = json!({
@@ -2517,8 +2535,7 @@ fn claude_schema_capability(view: &ClaudeCodeProfileView) -> Value {
                 "supported_fields": view.managed_fields,
                 "fallback_priority": [
                     "explicit_override",
-                    "managed.default_model_id",
-                    "unavailable"
+                    "claude_native_resolution"
                 ],
                 "message": if declaration_status == "declared" { Value::Null } else { json!("Claude Code capability declaration is unavailable") }
             }),
@@ -2532,8 +2549,7 @@ fn claude_schema_capability(view: &ClaudeCodeProfileView) -> Value {
                 "allow_custom": custom_options_status == "available",
                 "fallback_priority": [
                     "explicit_override",
-                    "managed.default_model_id",
-                    "unavailable"
+                    "claude_native_resolution"
                 ],
                 "message": if custom_options_status == "available" { Value::Null } else { json!("No managed Claude model is available for custom selection") }
             }),
@@ -3921,11 +3937,166 @@ mod tests {
     }
 
     #[test]
-    fn claude_patch_falls_back_to_main_model_without_advanced() {
-        // No claude_advanced: subagent and small/fast models must resolve to the
-        // managed default model so built-in subagents (e.g. statusline-setup) and
-        // background tasks do not drift to native-only model IDs on third-party
-        // endpoints.
+    fn claude_launch_and_activation_keep_native_and_isolated_profiles_distinct() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-claude-isolation-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".claude")).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let user = root.join(".claude/settings.json");
+        let user_bytes =
+            br#"{"model":"native","apiKeyHelper":"native-helper","env":{"CUSTOM":"keep"}}"#;
+        fs::write(&user, user_bytes).unwrap();
+        let native = LocatedProfile::Claude(v3::read_claude_profile(&target, &user).unwrap());
+        for mode in ["default", "temporary"] {
+            assert!(launch_arguments_for(&native, mode).unwrap().is_empty());
+        }
+        let a = v3::create_claude_profile(&target, "a", None)
+            .unwrap()
+            .profile;
+        let b = v3::create_claude_profile(&target, "b", None)
+            .unwrap()
+            .profile;
+        let a_bytes = br#"{"model":"a","env":{"ANTHROPIC_AUTH_TOKEN":"fake-a"}}"#;
+        let b_bytes = br#"{"model":"b","env":{"ANTHROPIC_AUTH_TOKEN":"fake-b"}}"#;
+        fs::write(&a.source_path, a_bytes).unwrap();
+        fs::write(&b.source_path, b_bytes).unwrap();
+        for selected in [&a, &b, &a] {
+            v3::activate_claude_profile(&target, &selected.source_path).unwrap();
+            let reloaded =
+                locate_profile(&target, &AgentKind::ClaudeCode, &selected.profile_id).unwrap();
+            let expected = v3::claude_code_launch_args(&selected.source_path).unwrap();
+            for mode in ["default", "temporary"] {
+                assert_eq!(launch_arguments_for(&reloaded, mode).unwrap(), expected);
+            }
+            let document = profile_document(&target, &reloaded).unwrap();
+            assert_eq!(document["default_state"]["projection"]["strategy"], "none");
+            assert_eq!(
+                document["schema_capability"]["capability_declaration"]["fallback_priority"],
+                json!(["explicit_override", "claude_native_resolution"])
+            );
+            assert_eq!(fs::read(&user).unwrap(), user_bytes);
+            assert_eq!(fs::read(&a.source_path).unwrap(), a_bytes);
+            assert_eq!(fs::read(&b.source_path).unwrap(), b_bytes);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_save_rejects_stale_revision_and_invalid_json_without_modifying_files() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-claude-safe-save-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let profile = v3::create_claude_profile(&target, "safe", None)
+            .unwrap()
+            .profile;
+        fs::write(&profile.source_path, r#"{"model":"main","env":{"ANTHROPIC_AUTH_TOKEN":"${ANTHROPIC_AUTH_TOKEN}"},"unknown":true}"#).unwrap();
+        let read_input = || {
+            let located =
+                locate_profile(&target, &AgentKind::ClaudeCode, &profile.profile_id).unwrap();
+            serde_json::from_value::<AgentProfileDocumentInput>(
+                profile_document(&target, &located).unwrap(),
+            )
+            .unwrap()
+        };
+        let save_input = |input: AgentProfileDocumentInput| {
+            save_on_target(
+                target.clone(),
+                AgentProfileSaveRequest {
+                    agent: AgentKind::ClaudeCode,
+                    runtime_target_id: target.target_id.clone(),
+                    profile_id: profile.profile_id.clone(),
+                    expected_revision: input.revision.revision,
+                    profile: input,
+                },
+            )
+        };
+        save_input(read_input()).unwrap();
+        let value: Value =
+            serde_json::from_slice(&fs::read(&profile.source_path).unwrap()).unwrap();
+        assert_eq!(
+            value["env"]["ANTHROPIC_AUTH_TOKEN"],
+            "${ANTHROPIC_AUTH_TOKEN}"
+        );
+        assert_eq!(value["unknown"], true);
+        let stale = read_input();
+        let external = br#"{"model":"external","unknown":{"must":"survive"}}"#;
+        fs::write(&profile.source_path, external).unwrap();
+        assert_eq!(
+            save_input(stale).unwrap_err().code,
+            "AGENT_PROFILE_REVISION_CONFLICT"
+        );
+        assert_eq!(fs::read(&profile.source_path).unwrap(), external);
+        let before_invalid_edit = read_input();
+        let jsonc = b"{\n// keep comment\n\"model\":\"main\",\"unknown\":true\n}\n";
+        fs::write(&profile.source_path, jsonc).unwrap();
+        // Comments in a .json file fail on the fresh read inside save. The
+        // editor must not overwrite the externally edited invalid document.
+        assert_eq!(
+            save_input(before_invalid_edit).unwrap_err().code,
+            "CONFIG_JSON_INVALID"
+        );
+        assert_eq!(fs::read(&profile.source_path).unwrap(), jsonc);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_read_auto_save_read_removes_all_overrides() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-claude-roundtrip-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let created = v3::create_claude_profile(&target, "roundtrip", None).unwrap();
+        let path = &created.profile.source_path;
+        fs::write(path, r#"{"model":"main-a","env":{"CLAUDE_CODE_SUBAGENT_MODEL":"old","ANTHROPIC_DEFAULT_HAIKU_MODEL":"old","ANTHROPIC_DEFAULT_SONNET_MODEL":"old","ANTHROPIC_DEFAULT_OPUS_MODEL":"old","ANTHROPIC_DEFAULT_FABLE_MODEL":"old","DISABLE_PROMPT_CACHING":"1","CUSTOM":"keep"},"permissions":{"allow":["Read"]},"unknown":{"keep":true}}"#).unwrap();
+        let id = created.profile.profile_id;
+        let located = locate_profile(&target, &AgentKind::ClaudeCode, &id).unwrap();
+        let mut input: AgentProfileDocumentInput =
+            serde_json::from_value(profile_document(&target, &located).unwrap()).unwrap();
+        let advanced = input.managed.claude_advanced.as_mut().unwrap();
+        advanced.haiku_model = None;
+        advanced.subagent_model = None;
+        advanced.sonnet_model = None;
+        advanced.opus_model = None;
+        advanced.fable_model = None;
+        advanced.disable_prompt_caching = Some(false);
+        input.managed.default_model_id = Some("main-b".to_owned());
+        let result = save_on_target(
+            target.clone(),
+            AgentProfileSaveRequest {
+                agent: AgentKind::ClaudeCode,
+                runtime_target_id: target.target_id.clone(),
+                profile_id: id,
+                expected_revision: input.revision.revision,
+                profile: input,
+            },
+        )
+        .unwrap();
+        let raw: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(raw["model"], "main-b");
+        for key in [
+            "CLAUDE_CODE_SUBAGENT_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_FABLE_MODEL",
+            "DISABLE_PROMPT_CACHING",
+        ] {
+            assert!(
+                raw["env"].get(key).is_none(),
+                "override survived auto: {key}"
+            );
+        }
+        assert_eq!(raw["env"]["CUSTOM"], "keep");
+        assert_eq!(raw["unknown"]["keep"], true);
+        assert_eq!(raw["permissions"]["allow"], json!(["Read"]));
+        assert!(result.profile["managed"]["claude_advanced"]["haiku_model"].is_null());
+        assert!(result.profile["managed"]["claude_advanced"]["small_fast_model"].is_null());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn claude_patch_leaves_advanced_models_unset_without_explicit_overrides() {
         let managed = ManagedProfileInput {
             providers: vec![ProviderProfileInput {
                 provider_id: "anthropic".to_owned(),
@@ -3971,8 +4142,11 @@ mod tests {
         };
         let patch = patch_for_claude(&managed).unwrap();
         assert_eq!(patch.model.as_deref(), Some("water18"));
-        assert_eq!(patch.subagent_model.as_deref(), Some("water18"));
-        assert_eq!(patch.small_fast_model.as_deref(), Some("water18"));
+        assert_eq!(patch.subagent_model, None);
+        assert_eq!(patch.small_fast_model, None);
+        assert_eq!(patch.haiku_model, None);
+        assert!(patch.clear_subagent_model);
+        assert!(patch.clear_haiku_model);
         assert_eq!(patch.disable_prompt_caching, None);
     }
 
@@ -4029,13 +4203,13 @@ mod tests {
         let patch = patch_for_claude(&managed).unwrap();
         assert_eq!(patch.model.as_deref(), Some("water18"));
         assert_eq!(patch.subagent_model.as_deref(), Some("water18-sub"));
-        assert_eq!(patch.small_fast_model.as_deref(), Some("water18-mini"));
-        assert_eq!(patch.sonnet_model.as_deref(), Some("water18"));
-        assert_eq!(patch.opus_model.as_deref(), Some("water18"));
+        assert_eq!(patch.small_fast_model, None);
+        assert_eq!(patch.sonnet_model, None);
+        assert_eq!(patch.opus_model, None);
         assert_eq!(patch.haiku_model.as_deref(), Some("water18-mini"));
-        assert_eq!(patch.fable_model.as_deref(), Some("water18"));
+        assert_eq!(patch.fable_model, None);
         assert_eq!(patch.disable_prompt_caching, Some(true));
-        // Blank advanced override falls back to the main model.
+        // Blank advanced override means no override.
         managed.claude_advanced = Some(ClaudeAdvancedInput {
             subagent_model: Some("   ".to_owned()),
             small_fast_model: None,
@@ -4044,9 +4218,9 @@ mod tests {
             ..Default::default()
         });
         let patch = patch_for_claude(&managed).unwrap();
-        assert_eq!(patch.subagent_model.as_deref(), Some("water18"));
-        assert_eq!(patch.small_fast_model.as_deref(), Some("water18"));
-        assert_eq!(patch.haiku_model.as_deref(), Some("water18"));
+        assert_eq!(patch.subagent_model, None);
+        assert_eq!(patch.small_fast_model, None);
+        assert_eq!(patch.haiku_model, None);
         // The React-only sentinel is treated exactly like an absent override at
         // the Tauri boundary and therefore never reaches the settings payload.
         managed.claude_advanced = Some(ClaudeAdvancedInput {
@@ -4055,8 +4229,9 @@ mod tests {
             ..Default::default()
         });
         let patch = patch_for_claude(&managed).unwrap();
-        assert_eq!(patch.subagent_model.as_deref(), Some("water18"));
-        assert_eq!(patch.small_fast_model.as_deref(), Some("water18"));
+        assert_eq!(patch.subagent_model, None);
+        assert_eq!(patch.small_fast_model, None);
+        assert_eq!(patch.haiku_model, None);
         assert_eq!(patch.clear_model, false);
         // Explicit haiku alias wins over small_fast_model and stays unified.
         managed.claude_advanced = Some(ClaudeAdvancedInput {
@@ -4066,6 +4241,6 @@ mod tests {
         });
         let patch = patch_for_claude(&managed).unwrap();
         assert_eq!(patch.haiku_model.as_deref(), Some("water18-haiku"));
-        assert_eq!(patch.small_fast_model.as_deref(), Some("water18-haiku"));
+        assert_eq!(patch.small_fast_model, None);
     }
 }

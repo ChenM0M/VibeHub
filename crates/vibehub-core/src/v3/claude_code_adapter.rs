@@ -1,6 +1,6 @@
 use super::agent_profile_storage::{
-    read_document, restore_document, write_document, AgentKind, ConfigDocument, ConfigFormat,
-    DocumentRevision, ParsedConfig, RuntimeTarget, StorageError, WriteReport,
+    read_document, write_document, AgentKind, ConfigDocument, ConfigFormat, DocumentRevision,
+    ParsedConfig, RuntimeTarget, StorageError, WriteReport,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -132,25 +132,20 @@ pub struct ClaudeCodeProfileView {
     pub warnings: Vec<String>,
 }
 
-/// Optional Claude Code advanced overrides, resolved from the managed Profile
-/// before projection. When a field is `None`, `patch_for_claude` falls back to
-/// the managed default model so subagents and background tasks do not drift to
-/// native-only model IDs that a third-party endpoint does not serve.
+/// Optional Claude Code advanced overrides. A missing field means that VibeHub
+/// must not impose an override; Claude Code remains responsible for its native
+/// model-resolution and settings precedence rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ClaudeAdvancedInput {
     pub subagent_model: Option<String>,
     pub small_fast_model: Option<String>,
-    /// Maps to env `ANTHROPIC_DEFAULT_SONNET_MODEL`. Null/absent falls back to
-    /// the default model so the `sonnet` tier resolves on a third-party endpoint.
+    /// Maps to env `ANTHROPIC_DEFAULT_SONNET_MODEL`; unset means no override.
     pub sonnet_model: Option<String>,
-    /// Maps to env `ANTHROPIC_DEFAULT_OPUS_MODEL`. Null/absent falls back to the
-    /// default model.
+    /// Maps to env `ANTHROPIC_DEFAULT_OPUS_MODEL`; unset means no override.
     pub opus_model: Option<String>,
-    /// Maps to env `ANTHROPIC_DEFAULT_HAIKU_MODEL`. Null/absent falls back to the
-    /// default model (same tier as `small_fast_model`).
+    /// Canonical field for `ANTHROPIC_DEFAULT_HAIKU_MODEL`, including background tasks.
     pub haiku_model: Option<String>,
-    /// Maps to env `ANTHROPIC_DEFAULT_FABLE_MODEL`. Null/absent falls back to the
-    /// default model.
+    /// Maps to env `ANTHROPIC_DEFAULT_FABLE_MODEL`; unset means no override.
     pub fable_model: Option<String>,
     pub disable_prompt_caching: Option<bool>,
 }
@@ -160,9 +155,9 @@ pub struct ClaudeSettingsPatch {
     pub model: Option<String>,
     pub base_url: Option<String>,
     pub thinking_enabled: Option<bool>,
-    /// Resolved subagent model; maps to env `CLAUDE_CODE_SUBAGENT_MODEL`.
+    /// Explicit subagent override; maps to env `CLAUDE_CODE_SUBAGENT_MODEL`.
     pub subagent_model: Option<String>,
-    /// Resolved small/fast model; maps to env `ANTHROPIC_DEFAULT_HAIKU_MODEL`.
+    /// Explicit small/fast model override; maps to env `ANTHROPIC_DEFAULT_HAIKU_MODEL`.
     pub small_fast_model: Option<String>,
     /// Resolved `sonnet` tier model; maps to env `ANTHROPIC_DEFAULT_SONNET_MODEL`.
     pub sonnet_model: Option<String>,
@@ -176,6 +171,18 @@ pub struct ClaudeSettingsPatch {
     /// do not support prompt caching.
     pub disable_prompt_caching: Option<bool>,
     pub clear_model: bool,
+    #[serde(default)]
+    pub clear_subagent_model: bool,
+    #[serde(default)]
+    pub clear_small_fast_model: bool,
+    #[serde(default)]
+    pub clear_sonnet_model: bool,
+    #[serde(default)]
+    pub clear_opus_model: bool,
+    #[serde(default)]
+    pub clear_haiku_model: bool,
+    #[serde(default)]
+    pub clear_fable_model: bool,
     pub clear_base_url: bool,
     pub clear_thinking: bool,
     /// Environment variable *name* metadata. Optional `auth_token` is the only
@@ -533,53 +540,17 @@ pub fn activate_claude_profile(
             "only a VibeHub Profile can be activated",
         ));
     }
-    let user_path = claude_user_settings_path(target);
-    ensure_claude_directory(target)?;
-    let user_document = if user_path.is_file() {
-        Some(read_document(target, &user_path)?)
-    } else {
-        None
-    };
-    let source_document = read_document(target, profile_path)?;
-    let source_patch = managed_patch_from_document(&source_document)?;
-    let edited = match user_document.as_ref() {
-        Some(document) => apply_settings_patch(document, &source_patch)?,
-        None => apply_settings_patch_bytes(br#"{}"#, ConfigFormat::Json, &source_patch)?,
-    };
-    let user_write = match user_document.as_ref() {
-        Some(document) => write_document(target, &user_path, Some(&document.revision), &edited)?,
-        None => write_new_document(target, &user_path, &edited)?,
-    };
-
     let (mut index, index_revision) = read_profile_index(target)?;
     index.default_profile_id = Some(profile.profile_id.clone());
     index.profiles.insert(
         profile.profile_id.clone(),
         path_for_index(profile_path, target),
     );
-    let index_write = match write_profile_index(target, &index, index_revision.as_ref()) {
-        Ok(write) => write,
-        Err(error) => {
-            if let Some(backup) = user_write.backup_path.as_ref() {
-                let _ = restore_document(
-                    target,
-                    &user_path,
-                    backup.as_path(),
-                    &user_write.after_revision,
-                );
-            } else {
-                let _ = fs::remove_file(&user_path);
-            }
-            return Err(StorageError::new(
-                "CLAUDE_DEFAULT_PROJECTION_ROLLED_BACK",
-                format!("default Profile index write failed: {error}"),
-            ));
-        }
-    };
+    let index_write = write_profile_index(target, &index, index_revision.as_ref())?;
     let refreshed = read_claude_profile(target, profile_path)?;
     Ok(ClaudeProfileOperation {
         profile: refreshed,
-        write: Some(user_write),
+        write: None,
         index_write: Some(index_write),
     })
 }
@@ -642,8 +613,9 @@ fn read_claude_profile_with_index(
         .and_then(Value::as_str)
         .map(str::to_owned)
         .and_then(normalize_claude_model_value);
-    // Keep the legacy small/fast projection aligned with the canonical haiku tier.
-    let small_fast_model = haiku_model.clone();
+    // Legacy input alias only. Never mirror the canonical field on read-back:
+    // otherwise clearing haiku would resurrect this stale duplicate on save.
+    let small_fast_model: Option<String> = None;
     let disable_prompt_caching = env
         .and_then(|env| env.get("DISABLE_PROMPT_CACHING"))
         .and_then(Value::as_str)
@@ -713,9 +685,21 @@ fn read_claude_profile_with_index(
         default_state: ClaudeDefaultState {
             is_default,
             selected_by,
-            projection_target: claude_user_settings_path(target),
+            projection_target: if scope == ClaudeSettingsScope::Profile {
+                claude_profile_index_path(target)
+            } else {
+                path.clone()
+            },
         },
-        launch: claude_code_launch_spec(&path)?,
+        launch: if scope == ClaudeSettingsScope::User {
+            ClaudeLaunchSpec {
+                executable: CLAUDE_EXECUTABLE.to_owned(),
+                settings_argument: CLAUDE_SETTINGS_FLAG.to_owned(),
+                arguments: Vec::new(),
+            }
+        } else {
+            claude_code_launch_spec(&path)?
+        },
         managed_fields: MANAGED_SETTINGS_FIELDS
             .iter()
             .map(|field| (*field).to_owned())
@@ -874,6 +858,12 @@ fn apply_settings_patch_bytes(
         || patch.opus_model.is_some()
         || patch.haiku_model.is_some()
         || patch.fable_model.is_some()
+        || patch.clear_subagent_model
+        || patch.clear_small_fast_model
+        || patch.clear_sonnet_model
+        || patch.clear_opus_model
+        || patch.clear_haiku_model
+        || patch.clear_fable_model
         || patch.disable_prompt_caching.is_some();
     let mut env = if env_touched {
         take_env_object(&mut root)?
@@ -910,12 +900,16 @@ fn apply_settings_patch_bytes(
             "CLAUDE_CODE_SUBAGENT_MODEL".to_owned(),
             Value::String(subagent_model.to_owned()),
         );
+    } else if patch.clear_subagent_model {
+        env.remove("CLAUDE_CODE_SUBAGENT_MODEL");
     }
     if let Some(small_fast_model) = patch.small_fast_model.as_deref() {
         env.insert(
             "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(),
             Value::String(small_fast_model.to_owned()),
         );
+    } else if patch.clear_small_fast_model {
+        env.remove("ANTHROPIC_DEFAULT_HAIKU_MODEL");
     }
     if let Some(sonnet_model) = patch.sonnet_model.as_deref() {
         validate_non_empty("sonnet_model", sonnet_model)?;
@@ -923,6 +917,8 @@ fn apply_settings_patch_bytes(
             "ANTHROPIC_DEFAULT_SONNET_MODEL".to_owned(),
             Value::String(sonnet_model.to_owned()),
         );
+    } else if patch.clear_sonnet_model {
+        env.remove("ANTHROPIC_DEFAULT_SONNET_MODEL");
     }
     if let Some(opus_model) = patch.opus_model.as_deref() {
         validate_non_empty("opus_model", opus_model)?;
@@ -930,6 +926,8 @@ fn apply_settings_patch_bytes(
             "ANTHROPIC_DEFAULT_OPUS_MODEL".to_owned(),
             Value::String(opus_model.to_owned()),
         );
+    } else if patch.clear_opus_model {
+        env.remove("ANTHROPIC_DEFAULT_OPUS_MODEL");
     }
     if let Some(haiku_model) = patch.haiku_model.as_deref() {
         validate_non_empty("haiku_model", haiku_model)?;
@@ -937,6 +935,8 @@ fn apply_settings_patch_bytes(
             "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(),
             Value::String(haiku_model.to_owned()),
         );
+    } else if patch.clear_haiku_model {
+        env.remove("ANTHROPIC_DEFAULT_HAIKU_MODEL");
     }
     if let Some(fable_model) = patch.fable_model.as_deref() {
         validate_non_empty("fable_model", fable_model)?;
@@ -944,12 +944,16 @@ fn apply_settings_patch_bytes(
             "ANTHROPIC_DEFAULT_FABLE_MODEL".to_owned(),
             Value::String(fable_model.to_owned()),
         );
+    } else if patch.clear_fable_model {
+        env.remove("ANTHROPIC_DEFAULT_FABLE_MODEL");
     }
     if matches!(patch.disable_prompt_caching, Some(true)) {
         env.insert(
             "DISABLE_PROMPT_CACHING".to_owned(),
             Value::String("1".to_owned()),
         );
+    } else if matches!(patch.disable_prompt_caching, Some(false)) {
+        env.remove("DISABLE_PROMPT_CACHING");
     }
     if patch.strip_credential_helper {
         root.remove("apiKeyHelper");
@@ -967,76 +971,6 @@ fn apply_settings_patch_bytes(
             bytes
         })
         .map_err(|error| StorageError::new("CLAUDE_SETTINGS_SERIALIZE_FAILED", error.to_string()))
-}
-
-fn managed_patch_from_document(
-    document: &ConfigDocument,
-) -> Result<ClaudeSettingsPatch, StorageError> {
-    let root = settings_value(document)?;
-    let object = root.as_object().ok_or_else(|| {
-        StorageError::new(
-            "CLAUDE_SETTINGS_ROOT_INVALID",
-            "Claude Code settings root must be an object",
-        )
-    })?;
-    let env = object.get("env").and_then(Value::as_object);
-    let base_url = env
-        .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let auth_token = env.and_then(literal_claude_auth_token);
-    let subagent_model = env
-        .and_then(|env| env.get("CLAUDE_CODE_SUBAGENT_MODEL"))
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .and_then(normalize_claude_model_value);
-    let sonnet_model = env
-        .and_then(|env| env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"))
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .and_then(normalize_claude_model_value);
-    let opus_model = env
-        .and_then(|env| env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .and_then(normalize_claude_model_value);
-    let haiku_model = env
-        .and_then(|env| env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .and_then(normalize_claude_model_value);
-    // `haiku_model` is canonical for ANTHROPIC_DEFAULT_HAIKU_MODEL; `small_fast_model`
-    // mirrors it so read-back consumers see one unambiguous value.
-    let small_fast_model = haiku_model.clone();
-    let fable_model = env
-        .and_then(|env| env.get("ANTHROPIC_DEFAULT_FABLE_MODEL"))
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .and_then(normalize_claude_model_value);
-    let disable_prompt_caching = env
-        .and_then(|env| env.get("DISABLE_PROMPT_CACHING"))
-        .and_then(Value::as_str)
-        .map(|value| value == "1");
-    let helper_present = object.get("apiKeyHelper").is_some();
-    Ok(ClaudeSettingsPatch {
-        model: object
-            .get("model")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-            .and_then(normalize_claude_model_value),
-        base_url: base_url.clone(),
-        thinking_enabled: object.get("alwaysThinkingEnabled").and_then(Value::as_bool),
-        auth_token: auth_token.clone(),
-        subagent_model,
-        small_fast_model,
-        sonnet_model,
-        opus_model,
-        haiku_model,
-        fable_model,
-        disable_prompt_caching,
-        strip_credential_helper: !helper_present && (base_url.is_some() || auth_token.is_some()),
-        ..Default::default()
-    })
 }
 
 fn credential_reference(
@@ -1367,19 +1301,6 @@ fn take_env_object(root: &mut Map<String, Value>) -> Result<Map<String, Value>, 
     }
 }
 
-fn literal_claude_auth_token(env: &Map<String, Value>) -> Option<String> {
-    CLAUDE_AUTH_ENV_NAMES.iter().find_map(|name| {
-        env.get(*name).and_then(Value::as_str).and_then(|value| {
-            let value = value.trim();
-            if value.is_empty() || looks_like_reference(value) {
-                None
-            } else {
-                Some(value.to_owned())
-            }
-        })
-    })
-}
-
 fn validate_non_empty(field: &str, value: &str) -> Result<(), StorageError> {
     if value.trim().is_empty() {
         return Err(StorageError::new(
@@ -1573,7 +1494,31 @@ mod tests {
     }
 
     #[test]
-    fn default_projection_preserves_permissions_hooks_mcp_sandbox_and_unknown_fields() {
+    fn jsonc_can_be_read_but_save_rejects_without_losing_comments() {
+        let (target, root) = temp_target();
+        fs::create_dir_all(root.join(".claude/vibehub-profiles")).unwrap();
+        let path = root.join(".claude/vibehub-profiles/read-only.settings.jsonc");
+        let raw = b"{\n// retained comment\n\"model\":\"custom-model\",\"unknown\":true\n}\n";
+        fs::write(&path, raw).unwrap();
+        let view = read_claude_profile(&target, &path).unwrap();
+        assert_eq!(view.model.as_deref(), Some("custom-model"));
+        let error = save_claude_profile(
+            &target,
+            &path,
+            Some(&view.revision),
+            &ClaudeSettingsPatch {
+                clear_haiku_model: true,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "CLAUDE_JSONC_WRITE_UNSUPPORTED");
+        assert_eq!(fs::read(&path).unwrap(), raw);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn activation_preserves_entire_native_user_settings() {
         let (target, root) = temp_target();
         fs::create_dir_all(root.join(".claude/vibehub-profiles")).unwrap();
         fs::write(
@@ -1601,9 +1546,9 @@ mod tests {
         assert!(operation.profile.default_state.is_default);
         let value: Value =
             serde_json::from_slice(&fs::read(root.join(".claude/settings.json")).unwrap()).unwrap();
-        assert_eq!(value["model"], "deepseek-chat");
-        assert_eq!(value["alwaysThinkingEnabled"], true);
-        assert_eq!(value["env"]["ANTHROPIC_BASE_URL"], "https://api.invalid");
+        assert_eq!(value["model"], "old-model");
+        assert!(value.get("alwaysThinkingEnabled").is_none());
+        assert!(value.get("env").is_none());
         assert_eq!(value["permissions"]["allow"][0], "Read");
         assert_eq!(value["hooks"]["Stop"], serde_json::json!([]));
         assert_eq!(value["mcpServers"]["local"]["command"], "server");
@@ -1767,14 +1712,14 @@ mod tests {
         .unwrap();
         let value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(value["model"], "water18");
+        assert!(value.get("apiKeyHelper").is_none());
+        assert_eq!(value["env"]["ANTHROPIC_AUTH_TOKEN"], "stepfun-secret-value");
+        assert!(value["env"].get("ANTHROPIC_API_KEY").is_none());
+        assert!(value["env"].get("ANTHROPIC_API_BASE_URL").is_none());
         assert_eq!(
             value["env"]["ANTHROPIC_BASE_URL"],
             "https://api.stepfun.com"
         );
-        assert_eq!(value["env"]["ANTHROPIC_AUTH_TOKEN"], "stepfun-secret-value");
-        assert!(value["env"].get("ANTHROPIC_API_KEY").is_none());
-        assert!(value.get("apiKeyHelper").is_none());
-        assert!(value["env"].get("ANTHROPIC_API_BASE_URL").is_none());
         let view = read_claude_profile(&target, &path).unwrap();
         assert!(!serde_json::to_string(&view)
             .unwrap()
@@ -1784,7 +1729,7 @@ mod tests {
     }
 
     #[test]
-    fn activate_copies_profile_credentials_and_strips_user_helper() {
+    fn activation_does_not_copy_credentials_or_strip_user_helper() {
         let (target, root) = temp_target();
         fs::create_dir_all(root.join(".claude/vibehub-profiles")).unwrap();
         fs::write(
@@ -1819,15 +1764,13 @@ mod tests {
         .unwrap();
         let value: Value =
             serde_json::from_slice(&fs::read(root.join(".claude/settings.json")).unwrap()).unwrap();
-        assert_eq!(value["model"], "water18");
+        assert_eq!(value["model"], "claude-sonnet");
+        assert_eq!(value["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3456");
+        assert_eq!(value["apiKeyHelper"], "/tmp/helper.sh");
         assert_eq!(
-            value["env"]["ANTHROPIC_BASE_URL"],
-            "https://api.stepfun.com"
+            value["env"]["ANTHROPIC_API_BASE_URL"],
+            "http://127.0.0.1:3456"
         );
-        assert_eq!(value["env"]["ANTHROPIC_AUTH_TOKEN"], "stepfun-secret-value");
-        assert!(value["env"].get("ANTHROPIC_API_KEY").is_none());
-        assert!(value.get("apiKeyHelper").is_none());
-        assert!(value["env"].get("ANTHROPIC_API_BASE_URL").is_none());
         assert_eq!(value["permissions"]["allow"][0], "Read");
         fs::remove_dir_all(root).unwrap();
     }
@@ -1920,11 +1863,8 @@ mod tests {
         assert_eq!(value["env"]["DISABLE_PROMPT_CACHING"], "1");
         let view = read_claude_profile(&target, &path).unwrap();
         assert_eq!(view.advanced.subagent_model.as_deref(), Some("water18"));
-        // small_fast_model mirrors the canonical haiku tier after write-back.
-        assert_eq!(
-            view.advanced.small_fast_model.as_deref(),
-            Some("water18-haiku")
-        );
+        // Only the canonical Haiku field is returned; no stale legacy mirror.
+        assert_eq!(view.advanced.small_fast_model, None);
         assert_eq!(
             view.advanced.sonnet_model.as_deref(),
             Some("water18-sonnet")
@@ -2043,7 +1983,7 @@ mod tests {
     }
 
     #[test]
-    fn activation_projection_carries_advanced_env() {
+    fn activation_does_not_project_advanced_env_to_user_settings() {
         let (target, root) = temp_target();
         fs::create_dir_all(root.join(".claude/vibehub-profiles")).unwrap();
         fs::write(
@@ -2070,21 +2010,12 @@ mod tests {
         .unwrap();
         let value: Value =
             serde_json::from_slice(&fs::read(root.join(".claude/settings.json")).unwrap()).unwrap();
-        assert_eq!(value["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "water18");
-        assert_eq!(
-            value["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
-            "water18-mini"
-        );
-        assert_eq!(
-            value["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
-            "water18-sonnet"
-        );
-        assert_eq!(value["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "water18-opus");
-        assert_eq!(
-            value["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"],
-            "water18-fable"
-        );
-        assert_eq!(value["env"]["DISABLE_PROMPT_CACHING"], "1");
+        assert!(value["env"].get("CLAUDE_CODE_SUBAGENT_MODEL").is_none());
+        assert!(value["env"].get("ANTHROPIC_DEFAULT_HAIKU_MODEL").is_none());
+        assert_eq!(value["model"], "old");
+        assert!(value["env"].get("ANTHROPIC_DEFAULT_OPUS_MODEL").is_none());
+        assert!(value["env"].get("ANTHROPIC_DEFAULT_FABLE_MODEL").is_none());
+        assert!(value["env"].get("DISABLE_PROMPT_CACHING").is_none());
         fs::remove_dir_all(root).unwrap();
     }
 

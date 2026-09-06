@@ -16,7 +16,7 @@ function cleanModelValues(values: readonly string[]): string[] {
 /**
  * Canonicalizes the Claude advanced model value at the React boundary.
  * `__auto__` is a controlled-select sentinel only; the saved profile payload
- * uses null so the adapter can apply the managed default-model fallback.
+ * uses null so the adapter removes that override, leaving native resolution.
  * Unknown existing values remain visible and preserved instead of becoming a
  * blank controlled select.
  */

@@ -35,7 +35,7 @@ unknown、unsupported、版本漂移和协议能力不匹配都是显式状态�
 | Agent | Profile 来源 | 临时启动 | 默认 Profile 行为 | 受管字段 |
 | --- | --- | --- | --- | --- |
 | OpenCode | 其用户/项目配置 | 后续由 Agent Adapter 决定 | 直接修改原生默认字段 | Provider、Base URL、credential reference、模型、默认/小模型、variants/思考档位 |
-| Claude Code | VibeHub Profile 对应 settings | --settings path | 只投影受管字段到 settings，保留 permissions/hooks/MCP/sandbox | Provider、模型、协议字段及思考档位 |
+| Claude Code | VibeHub Profile 对应 settings | --setting-sources "" --settings path | 只更新 VibeHub 默认索引，不改写共享用户 settings；默认启动也显式指定 Profile。原生用户配置直接启动 claude | Provider、模型、协议字段及思考档位 |
 | Codex | ~/.codex/<name>.config.toml | --profile name | 只投影受管字段到基础 config.toml | Provider、模型、协议字段及 reasoning/思考档位 |
 
 Claude 和 Codex 的 Profile CRUD 不重写它们的未受管配置。删除默认 Profile 必须

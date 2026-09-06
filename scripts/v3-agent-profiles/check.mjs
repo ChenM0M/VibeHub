@@ -36,26 +36,18 @@ assert.equal(unknown.payloadValue, "legacy-model", "unknown configured values ar
 assert.equal(unknown.status, "unknown");
 assert.deepEqual(unknown.options, [CLAUDE_AUTO_MODEL_VALUE, "legacy-model"]);
 
-const capabilityFixture = {
-  capability_declaration: {
-    status: "declared",
-    source: "claude-code.settings.adapter",
-    version: "1.0",
-    supported_fields: ["model", "env.CLAUDE_CODE_SUBAGENT_MODEL"],
-    fallback_priority: ["explicit_override", "managed.default_model_id", "unavailable"],
-    message: null,
-  },
-  custom_model_options: {
-    status: "available",
-    source: "managed.providers[].models",
-    values: ["water18", "water18-mini"],
-    allow_custom: true,
-    fallback_priority: ["explicit_override", "managed.default_model_id", "unavailable"],
-    message: null,
-  },
-};
-assert.equal(capabilityFixture.custom_model_options.source, "managed.providers[].models");
-assert.deepEqual(capabilityFixture.custom_model_options.values, ["water18", "water18-mini"]);
-assert.deepEqual(capabilityFixture.custom_model_options.fallback_priority, ["explicit_override", "managed.default_model_id", "unavailable"]);
-
-console.log("v3-agent-profiles: 13 assertions passed");
+// Check the shipped UI and declarations, not a hand-written ideal fixture.
+for (const locale of ['en', 'zh', 'zh-TW']) {
+  const strings = JSON.parse(await readFile(resolve(projectRoot, `src/locales/${locale}.json`), 'utf8')).agentProfiles.claudeCompatibility;
+  for (const key of ['autoOption', 'description', 'aliasGroupHint', 'haikuModelHint']) {
+    assert.doesNotMatch(strings[key], /follow.*main model|project.*main model|沿用.*主模型|投影.*主模型|上面的|上方的|above/i);
+  }
+}
+const panel = await readFile(resolve(projectRoot, 'src/components/agent-profiles/AgentProfilesPanel.tsx'), 'utf8');
+assert.ok(!panel.includes('id="claude-small-model"'), 'one editor for the single Haiku/background key');
+assert.ok(panel.includes('claude_native_resolution'));
+const backend = await readFile(resolve(projectRoot, 'src-tauri/src/agent_profiles.rs'), 'utf8');
+const capability = backend.slice(backend.indexOf('fn claude_schema_capability('), backend.indexOf('fn default_state_value('));
+assert.ok(capability.includes('claude_native_resolution'));
+assert.ok(!capability.includes('managed.default_model_id'));
+console.log('v3-agent-profiles: selection normalization, unknown models, canonical Haiku editor, three locales and capability declarations passed');

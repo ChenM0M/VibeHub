@@ -8,7 +8,7 @@ Cursor、账号/OAuth 登录、配额、账号池和重型网关控制台不在�
 | Agent | macOS / Linux host | Windows host | WSL runtime | Profile 启动语义 |
 | --- | --- | --- | --- | --- |
 | OpenCode | `~/.config/opencode/opencode.jsonc` 或 `opencode.json` | `%APPDATA%\\opencode\\opencode.jsonc` 或 `opencode.json` | 目标发行版 home 下的 `~/.config/opencode/opencode.jsonc/json` | 原生单配置；“仅此次启动”使用当前配置 |
-| Claude Code | `~/.claude/settings.json`；受管 Profile 位于 `~/.claude/vibehub-profiles/<name>.settings.json` | `%USERPROFILE%\\.claude\\settings.json`；Profile 位于同目录 `vibehub-profiles` | 发行版 home 下的同名路径 | 临时启动使用 `claude --settings <Profile 路径>`；默认启动使用用户 settings 投影 |
+| Claude Code | `~/.claude/settings.json`；受管 Profile 位于 `~/.claude/vibehub-profiles/<name>.settings.json` | `%USERPROFILE%\\.claude\\settings.json`；Profile 位于同目录 `vibehub-profiles` | 发行版 home 下的同名路径 | 独立 Profile 默认/临时启动均为 `claude --setting-sources "" --settings <Profile 路径>`；原生用户配置为 `claude` |
 | Codex | `~/.codex/config.toml`；原生 Profile 为 `~/.codex/<name>.config.toml` | `%USERPROFILE%\\.codex\\config.toml`；Profile 为同目录 `<name>.config.toml` | 发行版 home 下的同名路径 | 临时启动使用当前 CLI 支持的 `codex --profile-v2 <name>`；默认通过受管字段投影到 `config.toml` |
 
 Windows host、WSL 每个发行版和 macOS/Linux host 都是独立 runtime target。VibeHub
@@ -21,7 +21,7 @@ Agent 时由 Rust 侧转换成 `wsl.exe -d <distribution> --cd <linux-home> -- .
 1. 从左侧导航打开独立的“Agent Profiles”单页面（也支持 `#agent-profiles` 深链接）。
 2. 选择 Agent 和 runtime target；列表会展示来源路径、revision、默认标记和兼容性。
 3. 选择 Profile 后，通过图形化表单新增/编辑/删除 Provider、模型、Base URL、credential reference、思考档位和 variants。
-4. 点击“保存”写回当前文件；“设为默认”只更新该 Agent 允许投影的字段；“仅此次启动”不修改默认配置。
+4. 点击“保存”写回当前文件；Claude 的“设为默认”只更新 VibeHub Profile 索引，不改写共享用户 settings，也不会影响外部终端直接执行 `claude`；“仅此次启动”不修改默认配置。其他 Agent 保持其原生投影规则。
 5. Claude Code 和 Codex 可以通过图形化 Dialog 新建、复制、重命名和删除 Profile。删除默认 Profile 必须先选择替代 Profile；Claude Code 的原生 settings 仅支持单一 Anthropic Provider，因此只允许编辑而不伪造多个 Provider。
 6. “高级配置”降为兜底入口，显示脱敏的受管结构化投影、原生来源、协议和保留范围；应用草稿后仍走相同的 Schema、revision、备份和原子写回门禁。
 
@@ -29,9 +29,20 @@ Claude Code 的兼容区还会显示 `schema_capability.capability_declaration` 
 `custom_model_options`：前者说明声明来源、支持字段和回落顺序，后者说明模型候选
 来自哪一层、当前可选值以及是否允许自定义。`__auto__` 只是受控 select 的界面
 占位值，保存 payload 使用 `null`；因此 null、空白、缺失和旧的 `__auto__` 值都会
-回到“自动沿用主模型”，不会在控件中留下空白值。已有但不在候选列表中的模型 ID
+移除该覆盖，交给 Claude 原生选择，不会复制或强制继承主模型。已有但不在候选列表中的模型 ID
 会作为未知值保留并可见，避免读取旧配置时静默丢值。适配器未声明能力时，界面明确
 显示 unavailable，并保留自动回落，而不是渲染一个没有选项的空控件。
+
+Haiku 与后台小/快模型使用同一个 `ANTHROPIC_DEFAULT_HAIKU_MODEL` 键，界面仅保留
+一个入口。旧 `small_fast_model` 仅作为兼容输入，不在读回时复制；切换 Haiku 为自动
+同时清除旧别名。`CLAUDE_CODE_SUBAGENT_MODEL` 是强制覆盖所有子 Agent 的选项，并非
+仅在缺省时生效的 fallback。第三方端点需要定向模型时应明确配置其支持的模型 ID。
+参照：[官方模型配置](https://code.claude.com/docs/en/model-config)、
+[官方 CLI 参数](https://code.claude.com/docs/en/cli-usage)。
+
+升级不会推测旧模型值是否来自历史自动投影，也不会自动恢复旧用户 settings；旧显式值
+保持可见，需要用户明确切回自动后保存。独立 settings 隔离不等于完整进程/账号隔离：
+进程环境变量和管理员策略仍可能影响 Claude，不能将此功能描述为独立账号沙箱。
 
 空状态表示目标可观察但尚无配置，不代表可以猜测路径。权限错误、语法错误、未知 Schema、协议能力未知和 revision 冲突都显示为可恢复或明确不可用状态，不能静默覆盖文件。
 

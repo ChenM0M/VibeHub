@@ -145,6 +145,38 @@ export const releaseFixtureProfile: AgentProfileDocument = {
     },
 };
 
+// Development-only Claude regression fixture; no user configuration is read or written.
+if (isReleaseFixture() && new URLSearchParams(window.location.search).get('fixtureAgent') === 'claude') {
+    Object.assign(releaseFixtureProfile, {
+        agent: 'claude_code', profile_id: 'claude.profile.demo', display_name: 'Claude regression',
+        source: { ...releaseFixtureProfile.source, scope: 'profile', path: demoPath('/Demo/Home/.claude/vibehub-profiles/demo.settings.json') },
+    });
+    const provider = releaseFixtureProfile.managed.providers[0];
+    provider.provider_id = 'anthropic';
+    provider.display_name = 'Anthropic fixture';
+    provider.base_url = 'https://example.invalid';
+    provider.protocol.native_protocol = 'anthropic_messages';
+    provider.protocol.upstream_protocol = 'anthropic_messages';
+    provider.models = [{ ...provider.models[0], model_id: 'demo-model', display_name: 'Demo model' }];
+    provider.models[0].thinking = { supports_reasoning: true, supports_effort: false, selected: null, options: ['enabled', 'disabled'], custom_allowed: false };
+    releaseFixtureProfile.managed.default_provider_id = 'anthropic';
+    releaseFixtureProfile.managed.default_model_id = 'demo-model';
+    releaseFixtureProfile.managed.small_model_id = null;
+    releaseFixtureProfile.protocol = { ...provider.protocol };
+    releaseFixtureProfile.schema_capability.schema_id = 'claude-code.settings';
+    releaseFixtureProfile.launch = { executable: 'claude', profile_argument: null, settings_argument: '--settings', extra_arguments: ['--setting-sources', ''] };
+    releaseFixtureProfile.managed.claude_advanced = { haiku_model: 'legacy-model', small_fast_model: null };
+    releaseFixtureProfile.schema_capability.capability_declaration = {
+        status: 'declared', source: 'claude-code.settings.adapter', version: '1.0',
+        supported_fields: ['model', 'env.ANTHROPIC_DEFAULT_HAIKU_MODEL'],
+        fallback_priority: ['explicit_override', 'claude_native_resolution'], message: null,
+    };
+    releaseFixtureProfile.schema_capability.custom_model_options = {
+        status: 'available', source: 'managed.providers[].models', values: ['demo-model'],
+        allow_custom: true, fallback_priority: ['explicit_override', 'claude_native_resolution'], message: null,
+    };
+}
+
 export const releaseFixtureDiscovery: AgentProfileDiscoverResult = {
     kind: 'agent_profile_discover_result',
     schema_version: '1.0',
@@ -155,13 +187,13 @@ export const releaseFixtureDiscovery: AgentProfileDiscoverResult = {
     evidence_refs: [],
     warnings: [],
     errors: [],
-    agent: 'opencode',
+    agent: releaseFixtureProfile.agent,
     runtime_targets: [releaseFixtureTarget],
     profiles: [
         {
             profile_id: releaseFixtureProfile.profile_id,
             display_name: releaseFixtureProfile.display_name,
-            agent: 'opencode',
+            agent: releaseFixtureProfile.agent,
             runtime_target_id: releaseFixtureTarget.target_id,
             source_path: releaseFixtureProfile.source.path,
             revision: releaseFixtureProfile.revision,

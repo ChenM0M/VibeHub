@@ -501,7 +501,7 @@
     "ClaudeAdvancedSettings": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Claude Code only. Optional overrides for subagent, tier-alias, and small/fast model projection. When a field is null/absent, VibeHub projects the managed default model so subagents and background tasks do not fall back to native-only model IDs.",
+      "description": "Claude Code only. Optional explicit overrides for subagent, tier-alias, and small/fast model selection. When a field is null/absent, VibeHub removes that override and lets Claude Code apply its native settings and model precedence.",
       "properties": {
         "subagent_model": {
           "type": [
@@ -509,7 +509,7 @@
             "null"
           ],
           "minLength": 1,
-          "description": "Maps to env CLAUDE_CODE_SUBAGENT_MODEL. Null/absent falls back to the default model."
+          "description": "Explicitly sets env CLAUDE_CODE_SUBAGENT_MODEL; Claude Code treats this as a hard subagent override. Null/absent removes the override."
         },
         "small_fast_model": {
           "type": [
@@ -517,7 +517,7 @@
             "null"
           ],
           "minLength": 1,
-          "description": "Generic small/fast model; maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL unless haiku_model is set. Null/absent falls back to the default model."
+          "description": "Legacy input alias for haiku_model. New readers return null and the UI exposes only haiku_model; never mirror a persisted Haiku value into this field."
         },
         "sonnet_model": {
           "type": [
@@ -525,7 +525,7 @@
             "null"
           ],
           "minLength": 1,
-          "description": "Maps to env ANTHROPIC_DEFAULT_SONNET_MODEL. Null/absent falls back to the default model."
+          "description": "Explicitly maps to env ANTHROPIC_DEFAULT_SONNET_MODEL. Null/absent removes the override."
         },
         "opus_model": {
           "type": [
@@ -533,7 +533,7 @@
             "null"
           ],
           "minLength": 1,
-          "description": "Maps to env ANTHROPIC_DEFAULT_OPUS_MODEL. Null/absent falls back to the default model."
+          "description": "Explicitly maps to env ANTHROPIC_DEFAULT_OPUS_MODEL. Null/absent removes the override."
         },
         "haiku_model": {
           "type": [
@@ -541,7 +541,7 @@
             "null"
           ],
           "minLength": 1,
-          "description": "Maps to env ANTHROPIC_DEFAULT_HAIKU_MODEL. Wins over small_fast_model. Null/absent falls back to the default model."
+          "description": "Canonical Haiku/background override for ANTHROPIC_DEFAULT_HAIKU_MODEL. Wins over legacy small_fast_model input. Setting auto clears both fields."
         },
         "fable_model": {
           "type": [
@@ -549,14 +549,14 @@
             "null"
           ],
           "minLength": 1,
-          "description": "Maps to env ANTHROPIC_DEFAULT_FABLE_MODEL. Null/absent falls back to the default model."
+          "description": "Explicitly maps to env ANTHROPIC_DEFAULT_FABLE_MODEL. Null/absent removes the override."
         },
         "disable_prompt_caching": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "When true, sets env DISABLE_PROMPT_CACHING=1 for endpoints that do not support prompt caching."
+          "description": "True sets DISABLE_PROMPT_CACHING=1, false removes that env key, and null preserves the existing value."
         }
       }
     },
