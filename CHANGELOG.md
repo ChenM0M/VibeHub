@@ -2,6 +2,13 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.11
+
+- 修复 Claude Code Agent Profile 的配置串线与漂移：Profile 激活改为仅写激活索引，不再把一个 Profile 的 provider、凭据、主模型/高级模型覆盖到另一个 Profile 或共享用户配置；`__auto__`/空值保存后不再生成模型 override，明确选择的模型才写入对应环境变量，并保留未知模型可见。
+- 对齐 Claude Code 原生 settings 优先级与 `--settings`/`--setting-sources` 启动语义，修正子 Agent 与 Sonnet/Opus/Haiku/小/快模型字段的 env 映射与 UI 文案；`CLAUDE_CODE_SUBAGENT_MODEL` 的强制覆盖语义在契约与文档中明确记录，不再伪装成 fallback。
+- 修复 OpenCode provider 上游协议无法持久化：协议选择此前被静默丢弃、读取路径一律推断为“未知”。现在协议会写入真实 `opencode.json` 的 npm 字段（Chat Completions → `@ai-sdk/openai-compatible`，Anthropic Messages → `@ai-sdk/anthropic`），读取时由 npm 反向解析，歧义包保持“未知”而不猜测；`openai_responses` 被明确拒绝而非静默丢弃。
+- Windows/WSL 同 artifact 原生验收（A07、E07、F07–F10、G05）仍待发布后用本版本 Windows artifact 手测；macOS/CI 证据不替代。
+
 ## v3.3.10
 
 - 修复 v3.3.7 引入的 Windows 迁移回归(第三处):项目事件锁在 Windows 上,前一个持有者 `remove_file` 释放锁后的短暂 delete-pending 窗口内,其他线程的 `create_new` 会收到 `Access is denied (os error 5)` 而非 `AlreadyExists`,被误判为致命错误 `V3_LOCK_CREATE_FAILED`。现在 `PermissionDenied` 视为锁释放中的正常竞争,在超时窗口内重试。与 v3.3.8、v3.3.9 的修复合并后,存储与 MCP 测试在 Windows CI 预期全部通过。macOS/Linux 行为不变。
