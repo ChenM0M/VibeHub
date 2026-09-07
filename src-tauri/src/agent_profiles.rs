@@ -1668,6 +1668,18 @@ fn patch_for_opencode(
         providers: BTreeMap::new(),
     };
     for provider in &managed.providers {
+        let protocol = match provider.protocol.native_protocol.trim() {
+            "unknown" | "" => None,
+            wire => match protocol_from_wire(wire)? {
+                ProtocolKind::OpenaiResponses => {
+                    return Err(AgentProfileCommandError::unsupported(
+                        "AGENT_PROFILE_OPENCODE_PROTOCOL_UNSUPPORTED",
+                        "OpenCode providers cannot persist the OpenAI Responses wire API; select Chat Completions or Anthropic Messages",
+                    ));
+                }
+                persisted => Some(persisted),
+            },
+        };
         let secret = credential_secret(&provider.credential);
         let clear_api_key = provider.credential.clear_secret && secret.is_none();
         let environment_references = if secret.is_some() {
@@ -1712,6 +1724,7 @@ fn patch_for_opencode(
             OpenCodeProviderPatch {
                 display_name: Some(provider.display_name.clone()),
                 base_url: non_empty(provider.base_url.clone()),
+                protocol,
                 environment_references,
                 api_key: secret,
                 clear_api_key,
@@ -2044,7 +2057,7 @@ fn opencode_document_parts(
         .providers
         .iter()
         .map(|provider| {
-            let native_protocol = infer_opencode_protocol(&provider.provider_id);
+            let native_protocol = provider.protocol;
             let models = provider
                 .models
                 .iter()
@@ -2089,12 +2102,7 @@ fn opencode_document_parts(
     let protocol = view
         .providers
         .first()
-        .map(|provider| {
-            protocol_value(protocol_resolution(
-                infer_opencode_protocol(&provider.provider_id),
-                infer_opencode_protocol(&provider.provider_id),
-            ))
-        })
+        .map(|provider| protocol_value(protocol_resolution(provider.protocol, provider.protocol)))
         .unwrap_or_else(|| {
             protocol_value(protocol_resolution(
                 ProtocolKind::Unknown,
@@ -2733,14 +2741,6 @@ fn selector_name_codex(selector: v3::CodexDefaultSelector) -> &'static str {
     }
 }
 
-fn infer_opencode_protocol(provider_id: &str) -> ProtocolKind {
-    // Provider protocol is not exposed by the adapter's observed schema. Do
-    // not guess from a brand/name; unknown remains unavailable until an
-    // actual upstream capability probe supplies evidence.
-    let _ = provider_id;
-    ProtocolKind::Unknown
-}
-
 fn codex_protocol_kind(protocol: CodexProtocol) -> ProtocolKind {
     match protocol {
         CodexProtocol::OpenaiResponses => ProtocolKind::OpenaiResponses,
@@ -3286,6 +3286,98 @@ mod tests {
             assert_eq!(result.errors, Vec::<Value>::new());
         }
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn opencode_protocol_selection_persists_to_npm_and_reads_back() {
+        let root =
+            std::env::temp_dir().join(format!("vibehub-agent-profile-protocol-{}", Uuid::new_v4()));
+        fs::create_dir_all(opencode_config_dir(&root)).unwrap();
+        fs::write(
+            opencode_config_dir(&root).join("opencode.jsonc"),
+            r#"{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "relay/relay-chat",
+  "provider": {
+    "relay": {
+      "name": "Relay",
+      "env": ["RELAY_API_KEY"],
+      "options": {"baseURL": "https://relay.invalid/v1"},
+      "models": {
+        "relay-chat": {"name": "Relay Chat", "reasoning": true}
+      }
+    }
+  }
+}"#,
+        )
+        .unwrap();
+        let target = RuntimeTarget::host(root.clone());
+
+        let locations = discover_locations(&AgentKind::Opencode, &target).unwrap();
+        let profile = locations.into_iter().next().unwrap();
+        let document = profile_document(&target, &profile).unwrap();
+        assert_eq!(
+            document["managed"]["providers"][0]["protocol"]["native_protocol"],
+            "unknown"
+        );
+
+        let mut input: AgentProfileDocumentInput = serde_json::from_value(document).unwrap();
+        input.managed.providers[0].protocol.native_protocol = "openai_responses".to_owned();
+        let responses_error = save_on_target(
+            target.clone(),
+            AgentProfileSaveRequest {
+                agent: AgentKind::Opencode,
+                runtime_target_id: target.target_id.clone(),
+                profile_id: input.profile_id.clone(),
+                expected_revision: input.revision.revision,
+                profile: input.clone(),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            responses_error.code,
+            "AGENT_PROFILE_OPENCODE_PROTOCOL_UNSUPPORTED"
+        );
+
+        input.managed.providers[0].protocol.native_protocol = "openai_chat_completions".to_owned();
+        input
+            .managed
+            .providers
+            .first_mut()
+            .unwrap()
+            .protocol
+            .upstream_protocol = "openai_chat_completions".to_owned();
+        save_on_target(
+            target.clone(),
+            AgentProfileSaveRequest {
+                agent: AgentKind::Opencode,
+                runtime_target_id: target.target_id.clone(),
+                profile_id: input.profile_id.clone(),
+                expected_revision: input.revision.revision,
+                profile: input,
+            },
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(opencode_config_dir(&root).join("opencode.jsonc")).unwrap();
+        assert!(raw.contains("\"npm\": \"@ai-sdk/openai-compatible\""));
+
+        let locations = discover_locations(&AgentKind::Opencode, &target).unwrap();
+        let profile = locations.into_iter().next().unwrap();
+        let document = profile_document(&target, &profile).unwrap();
+        assert_eq!(
+            document["managed"]["providers"][0]["protocol"]["native_protocol"],
+            "openai_chat_completions"
+        );
+        assert_eq!(
+            document["managed"]["providers"][0]["protocol"]["upstream_protocol"],
+            "openai_chat_completions"
+        );
+        assert_eq!(
+            document["managed"]["providers"][0]["protocol"]["route"],
+            "direct"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

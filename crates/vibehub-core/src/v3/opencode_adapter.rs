@@ -2,6 +2,7 @@ use super::agent_profile_storage::{
     read_document, write_document, AgentKind, ConfigDocument, ConfigFormat, DocumentRevision,
     ParsedConfig, RuntimePlatform, RuntimeTarget, StorageError, WriteReport,
 };
+use super::protocol_runtime::ProtocolKind;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -45,6 +46,10 @@ pub struct OpenCodeProviderView {
     pub display_name: String,
     pub base_url: Option<String>,
     pub credential: OpenCodeCredentialReference,
+    /// Upstream wire protocol reverse-resolved from the provider `npm`
+    /// package. `Unknown` means the configured package does not declare an
+    /// unambiguous protocol.
+    pub protocol: ProtocolKind,
     pub models: Vec<OpenCodeModelView>,
     pub unknown_fields: Vec<String>,
 }
@@ -69,6 +74,10 @@ pub struct OpenCodeProfileView {
 pub struct OpenCodeProviderPatch {
     pub display_name: Option<String>,
     pub base_url: Option<String>,
+    /// Upstream wire protocol to persist for this provider. `None` leaves the
+    /// existing `npm` package untouched; `Some` rewrites `npm` to the package
+    /// that speaks the selected protocol.
+    pub protocol: Option<ProtocolKind>,
     pub environment_references: Option<Vec<String>>,
     /// Written to `options.apiKey` so OpenCode can authenticate without a
     /// shell environment variable. Omitted from Debug/JSON logs.
@@ -85,6 +94,7 @@ impl std::fmt::Debug for OpenCodeProviderPatch {
             .debug_struct("OpenCodeProviderPatch")
             .field("display_name", &self.display_name)
             .field("base_url", &self.base_url)
+            .field("protocol", &self.protocol)
             .field("environment_references", &self.environment_references)
             .field("api_key", &self.api_key.as_ref().map(|_| "[redacted]"))
             .field("clear_api_key", &self.clear_api_key)
@@ -333,6 +343,33 @@ fn profile_from_document(document: &ConfigDocument) -> Result<OpenCodeProfileVie
     })
 }
 
+/// The npm package that actually carries the upstream wire protocol inside
+/// `opencode.json`. `@ai-sdk/openai-compatible` speaks Chat Completions and
+/// `@ai-sdk/anthropic` speaks Anthropic Messages; the AI SDK packages exposed
+/// by OpenCode have no member that faithfully speaks the Responses API, so
+/// that protocol cannot be persisted.
+fn protocol_npm_package(protocol: ProtocolKind) -> Result<&'static str, StorageError> {
+    match protocol {
+        ProtocolKind::OpenaiChatCompletions => Ok("@ai-sdk/openai-compatible"),
+        ProtocolKind::AnthropicMessages => Ok("@ai-sdk/anthropic"),
+        ProtocolKind::OpenaiResponses | ProtocolKind::Unknown => Err(StorageError::new(
+            "OPENCODE_PROTOCOL_UNSUPPORTED",
+            "OpenCode provider protocol must be Chat Completions or Anthropic Messages to persist",
+        )),
+    }
+}
+
+/// Inverse of [`protocol_npm_package`]. Packages with an unambiguous wire
+/// protocol resolve to it; everything else stays `Unknown` instead of guessing
+/// from a brand or name.
+fn protocol_from_npm(npm: Option<&str>) -> ProtocolKind {
+    match npm {
+        Some("@ai-sdk/openai-compatible") => ProtocolKind::OpenaiChatCompletions,
+        Some("@ai-sdk/anthropic") => ProtocolKind::AnthropicMessages,
+        _ => ProtocolKind::Unknown,
+    }
+}
+
 fn provider_view(
     provider_id: &str,
     value: &Value,
@@ -387,6 +424,7 @@ fn provider_view(
             .to_owned(),
         base_url,
         credential,
+        protocol: protocol_from_npm(object.get("npm").and_then(Value::as_str)),
         models,
         unknown_fields,
     })
@@ -616,6 +654,14 @@ impl JsoncEditor {
                 self.set_path(
                     &[provider_key, provider_id, "options", "baseURL"],
                     base_url.clone().into(),
+                    &mut replacements,
+                )?;
+            }
+            if let Some(protocol) = provider_patch.protocol {
+                let npm = protocol_npm_package(protocol)?;
+                self.set_path(
+                    &[provider_key, provider_id, "npm"],
+                    npm.into(),
                     &mut replacements,
                 )?;
             }
@@ -1504,6 +1550,112 @@ mod tests {
         let cleared = String::from_utf8(fs::read(&path).unwrap()).unwrap();
         assert!(!cleared.contains("opencode-secret-value"));
         assert!(!cleared.contains("apiKey"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn protocol_patch_persists_npm_package_and_round_trips() {
+        let (target, root) = temp_target();
+        let path = root.join("opencode.jsonc");
+        fs::write(
+            &path,
+            br#"{
+  "provider": {
+    "relay": {
+      "name": "Relay",
+      "options": { "baseURL": "https://relay.invalid/v1" },
+      "models": { "relay-chat": { "name": "Relay Chat" } }
+    }
+  }
+}"#,
+        )
+        .unwrap();
+        let document = read_document(&target, &path).unwrap();
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "relay".to_owned(),
+            OpenCodeProviderPatch {
+                protocol: Some(ProtocolKind::OpenaiChatCompletions),
+                ..Default::default()
+            },
+        );
+        save_opencode_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &OpenCodeConfigPatch {
+                providers,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(raw.contains("\"npm\": \"@ai-sdk/openai-compatible\""));
+        let view = read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(
+            view.providers[0].protocol,
+            ProtocolKind::OpenaiChatCompletions
+        );
+
+        let document = read_document(&target, &path).unwrap();
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "relay".to_owned(),
+            OpenCodeProviderPatch {
+                protocol: Some(ProtocolKind::AnthropicMessages),
+                ..Default::default()
+            },
+        );
+        save_opencode_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &OpenCodeConfigPatch {
+                providers,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(raw.contains("\"npm\": \"@ai-sdk/anthropic\""));
+        let view = read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(view.providers[0].protocol, ProtocolKind::AnthropicMessages);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn patch_without_protocol_preserves_npm_and_ambiguous_packages_stay_unknown() {
+        let (target, root) = temp_target();
+        let path = root.join("opencode.json");
+        fs::write(
+            &path,
+            br#"{"provider":{"openai":{"npm":"@ai-sdk/openai","models":{"gpt-5":{}}},"custom":{"models":{"m":{}}}}}"#,
+        )
+        .unwrap();
+        let view = read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(view.providers[0].protocol, ProtocolKind::Unknown);
+        assert_eq!(view.providers[1].protocol, ProtocolKind::Unknown);
+        let document = read_document(&target, &path).unwrap();
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "openai".to_owned(),
+            OpenCodeProviderPatch {
+                display_name: Some("OpenAI".to_owned()),
+                ..Default::default()
+            },
+        );
+        save_opencode_profile(
+            &target,
+            &path,
+            Some(&document.revision),
+            &OpenCodeConfigPatch {
+                providers,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
+        assert!(raw.contains("\"npm\":\"@ai-sdk/openai\""));
         fs::remove_dir_all(root).unwrap();
     }
 
