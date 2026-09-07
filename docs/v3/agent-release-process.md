@@ -86,6 +86,21 @@ git diff --check
 macOS 还要对当前版本 bundle 做一次构建和 strict codesign 检查。任何旧版本
 artifact/hash 都不能冒充当前版本证据。
 
+### 3.1 构建产物清理（强制）
+
+上述验证全部完成、且证据（hash、codesign 输出、测试结果）已写入 V3
+progress 事件后，必须立即清理本次产生的本地构建产物与缓存：
+
+- 移入 macOS 回收站：`target/release/`、`dist/`，以及
+  `target/debug/{deps,build,incremental,examples,.fingerprint}`；
+- 使用 `mv <path> ~/.Trash/<name>-<YYYYMMDDTHHMMSS>/`，禁止 `rm -rf`
+  直接删除（回收站可恢复，误删可找回）；
+- 不得长期保留在仓库目录或缓存目录中；
+- 保留 `target/debug/vibehub` 与 `target/debug/vibehub.d`：它们是 V3 MCP/CLI
+  fallback 运行时（见根 `AGENTS.md`）；
+- `node_modules` 等开发依赖不属于构建产物，不清理；
+- 清理动作与去向（回收站目录名）写入当次 progress 事件。
+
 ## 4. GitHub Actions 发布边界
 
 - `Build and Test` 在 feature、main/dev push 或 PR 上运行前端、contracts、Rust、

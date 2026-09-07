@@ -33,3 +33,4 @@
 - 在本仓库创建或重写提交前，必须确认 author 与 committer 都是 GitHub 用户 `ChenM0M <126325292+ChenM0M@users.noreply.github.com>`；提交后用 `git show -s --format='%an <%ae>%n%cn <%ce>' HEAD` 核验，不得使用主机本地域名邮箱或 Agent 身份。
 - 发布前必须运行 `npm run release:check`；它校验 package、lockfile、两个 V3 crate、Tauri Cargo 和 `tauri.conf.json` 的版本一致性。若设置 `RELEASE_TAG`，tag 版本也必须匹配。
 - 不得把 GitHub Actions 构建成功或 macOS evidence 当作 Windows 原生验收；Windows 必须使用同一 Release artifact/hash 在发布后手测，并保留 `A07`、`E07`、`F07–F10`、`G05` 的真实状态。
+- 允许本地构建与验证，但验证完成、证据（hash、codesign 输出、测试结果）记录进 V3 事件后，必须把本次产生的构建产物与缓存（如 `target/release/`、`target/debug/{deps,build,incremental,examples,.fingerprint}`、`dist/`）移入 macOS 回收站（`mv` 到 `~/.Trash/<name>-<timestamp>/`），禁止 `rm -rf` 直接删除，也不得长期保留在仓库目录。`target/debug/vibehub`（MCP/CLI fallback 运行时）与其 `vibehub.d` 必须保留；清理动作与去向写入当次 progress 事件。
