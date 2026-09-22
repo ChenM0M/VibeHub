@@ -3327,8 +3327,15 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(responses_result.profile["managed"]["providers"][0]["protocol"]["native_protocol"], "openai_responses");
-        assert!(fs::read_to_string(opencode_config_dir(&root).join("opencode.jsonc")).unwrap().contains("@ai-sdk/openai"));
+        assert_eq!(
+            responses_result.profile["managed"]["providers"][0]["protocol"]["native_protocol"],
+            "openai_responses"
+        );
+        assert!(
+            fs::read_to_string(opencode_config_dir(&root).join("opencode.jsonc"))
+                .unwrap()
+                .contains("@ai-sdk/openai")
+        );
         input = serde_json::from_value(responses_result.profile).unwrap();
 
         input.managed.providers[0].protocol.native_protocol = "openai_chat_completions".to_owned();
