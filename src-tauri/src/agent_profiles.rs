@@ -1592,8 +1592,13 @@ fn save_managed(
                 }
             }
             for provider in &managed.providers {
-                let previous = view.providers.iter().find(|item| item.provider_id == provider.provider_id);
-                let mut blacklist = previous.map(|item| item.blacklist.clone()).unwrap_or_default();
+                let previous = view
+                    .providers
+                    .iter()
+                    .find(|item| item.provider_id == provider.provider_id);
+                let mut blacklist = previous
+                    .map(|item| item.blacklist.clone())
+                    .unwrap_or_default();
                 let mut whitelist = previous.and_then(|item| item.whitelist.clone());
                 let original_blacklist = blacklist.clone();
                 let original_whitelist = whitelist.clone();
@@ -1601,16 +1606,28 @@ fn save_managed(
                     if model.enabled {
                         blacklist.retain(|id| id != &model.model_id);
                         if let Some(items) = &mut whitelist {
-                            if !items.contains(&model.model_id) { items.push(model.model_id.clone()); }
+                            if !items.contains(&model.model_id) {
+                                items.push(model.model_id.clone());
+                            }
                         }
                     } else if !blacklist.contains(&model.model_id)
-                        && whitelist.as_ref().is_none_or(|items| items.contains(&model.model_id)) {
+                        && whitelist
+                            .as_ref()
+                            .is_none_or(|items| items.contains(&model.model_id))
+                    {
                         blacklist.push(model.model_id.clone());
                     }
                 }
-                let provider_patch = patch.providers.get_mut(&provider.provider_id).expect("managed provider patch");
-                if blacklist != original_blacklist { provider_patch.blacklist = Some(blacklist); }
-                if whitelist != original_whitelist { provider_patch.whitelist = whitelist; }
+                let provider_patch = patch
+                    .providers
+                    .get_mut(&provider.provider_id)
+                    .expect("managed provider patch");
+                if blacklist != original_blacklist {
+                    provider_patch.blacklist = Some(blacklist);
+                }
+                if whitelist != original_whitelist {
+                    provider_patch.whitelist = whitelist;
+                }
             }
             Ok(Some(v3::save_opencode_profile(
                 target,
@@ -3166,7 +3183,8 @@ mod tests {
         let read = || {
             let view = v3::read_opencode_profile(&target, &path).unwrap();
             let located = LocatedProfile::OpenCode(view);
-            let input: AgentProfileDocumentInput = serde_json::from_value(profile_document(&target, &located).unwrap()).unwrap();
+            let input: AgentProfileDocumentInput =
+                serde_json::from_value(profile_document(&target, &located).unwrap()).unwrap();
             (located, input.managed)
         };
         let (located, mut managed) = read();
@@ -3177,20 +3195,37 @@ mod tests {
         let (located, mut managed) = read();
         assert_eq!(managed.providers[0].models.len(), 2);
         assert!(!managed.providers[0].models[0].enabled);
-        assert!(fs::read_to_string(&path).unwrap().contains("// keep model detail"));
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("// keep model detail"));
         let view = v3::read_opencode_profile(&target, &path).unwrap();
-        assert_eq!(view.providers[0].models[0].variant_values.as_ref().unwrap()["deep"]["budget"], 1234);
-        assert!(view.providers[0].models[0].unknown_fields.contains(&"custom".to_owned()));
-        for model in &mut managed.providers[0].models { model.enabled = true; }
+        assert_eq!(
+            view.providers[0].models[0].variant_values.as_ref().unwrap()["deep"]["budget"],
+            1234
+        );
+        assert!(view.providers[0].models[0]
+            .unknown_fields
+            .contains(&"custom".to_owned()));
+        for model in &mut managed.providers[0].models {
+            model.enabled = true;
+        }
         save_managed(&target, &located, &managed).unwrap();
         let view = v3::read_opencode_profile(&target, &path).unwrap();
         assert!(view.providers[0].models.iter().all(|model| model.enabled));
         assert_eq!(view.providers[0].blacklist, vec!["external-blocked"]);
-        assert_eq!(view.providers[0].whitelist.as_ref().unwrap(), &vec!["one", "external-allowed", "two"]);
+        assert_eq!(
+            view.providers[0].whitelist.as_ref().unwrap(),
+            &vec!["one", "external-allowed", "two"]
+        );
         let (located, mut managed) = read();
         managed.providers[0].models.remove(0);
         save_managed(&target, &located, &managed).unwrap();
-        assert_eq!(v3::read_opencode_profile(&target, &path).unwrap().providers[0].models.len(), 1);
+        assert_eq!(
+            v3::read_opencode_profile(&target, &path).unwrap().providers[0]
+                .models
+                .len(),
+            1
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
