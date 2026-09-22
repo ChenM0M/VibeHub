@@ -1662,6 +1662,9 @@ fn patch_for_opencode(
     let mut patch = OpenCodeConfigPatch {
         default_model: managed.default_model_id.clone(),
         small_model: managed.small_model_id.clone(),
+        clear_small_model: managed.small_model_id.is_none(),
+        clear_default_variant: selected_model(managed)
+            .is_some_and(|model| model.thinking.selected.is_none()),
         default_variant: selected_default_variant(managed),
         deleted_providers: Vec::new(),
         deleted_models: BTreeMap::new(),
@@ -1919,7 +1922,7 @@ fn selected_provider<'a>(managed: &'a ManagedProfileInput) -> Option<&'a Provide
         .or_else(|| managed.providers.first())
 }
 
-fn selected_thinking(managed: &ManagedProfileInput) -> Option<String> {
+fn selected_model(managed: &ManagedProfileInput) -> Option<&ModelProfileInput> {
     let model_id = managed.default_model_id.as_deref()?;
     // OpenCode persists provider/model, while the provider's model map uses
     // the bare ID (which may itself contain '/'). Resolve the qualified ID
@@ -1939,7 +1942,10 @@ fn selected_thinking(managed: &ManagedProfileInput) -> Option<String> {
                 .iter()
                 .find(|model| model.model_id == model_id)
         })
-        .and_then(|model| model.thinking.selected.clone())
+}
+
+fn selected_thinking(managed: &ManagedProfileInput) -> Option<String> {
+    selected_model(managed).and_then(|model| model.thinking.selected.clone())
 }
 
 fn selected_default_variant(managed: &ManagedProfileInput) -> Option<String> {
@@ -3202,6 +3208,54 @@ mod tests {
         assert_eq!(selected_thinking(&managed), None);
         managed.default_model_id = None;
         assert_eq!(selected_thinking(&managed), None);
+    }
+
+    #[test]
+    fn opencode_small_model_and_variant_can_be_kept_set_and_cleared() {
+        let root = std::env::temp_dir().join(format!("vibehub-clear-defaults-{}", Uuid::new_v4()));
+        let path = opencode_config_dir(&root).join("opencode.jsonc");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = r#"{ // keep comment
+            "model":"p/m","small_model":"p/small","agent":{"build":{"variant":"high","temperature":0.5}},
+            "provider":{"p":{"npm":"@ai-sdk/openai-compatible","models":{"m":{"reasoning":true,"variants":{"high":{},"low":{}}}}}}
+        }"#;
+        fs::write(&path, original).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let view = v3::read_opencode_profile(&target, &path).unwrap();
+        v3::save_opencode_profile(
+            &target,
+            &path,
+            Some(&view.revision),
+            &OpenCodeConfigPatch::default(),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        for (small, variant) in [(None, None), (Some("p/new-small"), Some("low"))] {
+            let located =
+                LocatedProfile::OpenCode(v3::read_opencode_profile(&target, &path).unwrap());
+            let mut input: AgentProfileDocumentInput =
+                serde_json::from_value(profile_document(&target, &located).unwrap()).unwrap();
+            input.managed.small_model_id = small.map(str::to_owned);
+            input.managed.providers[0].models[0].thinking.selected = variant.map(str::to_owned);
+            save_on_target(
+                target.clone(),
+                AgentProfileSaveRequest {
+                    agent: AgentKind::Opencode,
+                    runtime_target_id: target.target_id.clone(),
+                    profile_id: input.profile_id.clone(),
+                    expected_revision: input.revision.revision,
+                    profile: input,
+                },
+            )
+            .unwrap();
+            let saved = v3::read_opencode_profile(&target, &path).unwrap();
+            assert_eq!(saved.small_model.as_deref(), small);
+            assert_eq!(saved.default_variant.as_deref(), variant);
+            let source = fs::read_to_string(&path).unwrap();
+            assert!(source.contains("keep comment"));
+            assert!(source.contains("\"temperature\":0.5"));
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
