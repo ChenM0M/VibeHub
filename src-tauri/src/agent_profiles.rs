@@ -1920,12 +1920,25 @@ fn selected_provider<'a>(managed: &'a ManagedProfileInput) -> Option<&'a Provide
 }
 
 fn selected_thinking(managed: &ManagedProfileInput) -> Option<String> {
-    let provider = selected_provider(managed)?;
     let model_id = managed.default_model_id.as_deref()?;
-    provider
-        .models
+    // OpenCode persists provider/model, while the provider's model map uses
+    // the bare ID (which may itself contain '/'). Resolve the qualified ID
+    // first so duplicate model names cannot select another provider's effort.
+    managed
+        .providers
         .iter()
-        .find(|model| model.model_id == model_id)
+        .find_map(|provider| {
+            provider
+                .models
+                .iter()
+                .find(|model| format!("{}/{}", provider.provider_id, model.model_id) == model_id)
+        })
+        .or_else(|| {
+            selected_provider(managed)?
+                .models
+                .iter()
+                .find(|model| model.model_id == model_id)
+        })
         .and_then(|model| model.thinking.selected.clone())
 }
 
@@ -3168,6 +3181,27 @@ mod tests {
         provider.credential.kind = "env".to_owned();
         provider.credential.reference = "DEEPSEEK_API_KEY".to_owned();
         assert!(validate_provider_input(&provider).is_ok());
+    }
+
+    #[test]
+    fn selected_thinking_resolves_qualified_and_bare_model_ids() {
+        let mut managed: ManagedProfileInput = serde_json::from_value(json!({
+            "default_provider_id":"second", "default_model_id":"first/org/model", "small_model_id":null,
+            "providers":(["first", "second"].iter().map(|id| json!({
+                "provider_id":id, "display_name":id, "base_url":"",
+                "credential":{"kind":"none","reference":"","display":"","secret_state":"missing","persisted_in_config":false},
+                "protocol":{"native_protocol":"unknown","upstream_protocol":"unknown","route":"unsupported","compatibility":"unknown","adapter_id":null,"adapter_version":null,"limitations":[]},
+                "models":[{"model_id":"org/model", "display_name":"Model", "enabled":true,
+                    "thinking":{"supports_reasoning":true,"supports_effort":true,"selected":if *id == "first" {"high"} else {"low"},"options":["high","low"],"custom_allowed":false}}]
+            })).collect::<Vec<_>>())
+        })).unwrap();
+        assert_eq!(selected_thinking(&managed).as_deref(), Some("high"));
+        managed.default_model_id = Some("org/model".to_owned());
+        assert_eq!(selected_thinking(&managed).as_deref(), Some("low"));
+        managed.default_model_id = Some("missing/org/model".to_owned());
+        assert_eq!(selected_thinking(&managed), None);
+        managed.default_model_id = None;
+        assert_eq!(selected_thinking(&managed), None);
     }
 
     #[test]
