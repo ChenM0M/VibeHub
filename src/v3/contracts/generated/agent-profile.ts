@@ -249,6 +249,8 @@ export interface ModelProfile {
   thinking: ThinkingProfile;
   modalities?: ModelModalities | null;
   modalities_changed?: boolean;
+  limits?: ModelLimits | null;
+  limits_changed?: boolean;
 }
 export interface ThinkingProfile {
   supports_reasoning: boolean | null;
@@ -271,6 +273,11 @@ export interface ThinkingProfile {
 export interface ModelModalities {
   input: string[] | null;
   output: string[] | null;
+}
+export interface ModelLimits {
+  context: number | null;
+  input: number | null;
+  output: number | null;
 }
 /**
  * Claude Code only. Optional explicit overrides for subagent, tier-alias, and small/fast model selection. When a field is null/absent, VibeHub removes that override and lets Claude Code apply its native settings and model precedence.

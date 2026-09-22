@@ -333,6 +333,19 @@
         },
         "modalities_changed": {
           "type": "boolean"
+        },
+        "limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelLimits"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limits_changed": {
+          "type": "boolean"
         }
       }
     },
@@ -1792,6 +1805,41 @@
             "type": "string"
           },
           "uniqueItems": true
+        }
+      }
+    },
+    "ModelLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "input",
+        "output"
+      ],
+      "properties": {
+        "context": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "input": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "output": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       }
     }

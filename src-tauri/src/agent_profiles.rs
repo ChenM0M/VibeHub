@@ -414,6 +414,17 @@ pub struct ModelProfileInput {
     pub modalities: Option<ModelModalitiesInput>,
     #[serde(default)]
     pub modalities_changed: bool,
+    #[serde(default)]
+    pub limits: Option<ModelLimitsInput>,
+    #[serde(default)]
+    pub limits_changed: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModelLimitsInput {
+    pub context: Option<u64>,
+    pub input: Option<u64>,
+    pub output: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1680,6 +1691,21 @@ fn patch_for(
     })
 }
 
+fn opencode_limit_patches(model: &ModelProfileInput) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
+    if !model.limits_changed { return Ok(Vec::new()); }
+    let values = model.limits.as_ref();
+    let context = values.and_then(|v| v.context);
+    let input = values.and_then(|v| v.input);
+    let output = values.and_then(|v| v.output);
+    if context.is_none() && input.is_none() && output.is_none() {
+        return Ok(vec![v3::OpenCodeOptionPatch { path: vec!["limit".into()], value: None }]);
+    }
+    if context.is_none() || output.is_none() || [context, input, output].iter().flatten().any(|v| !(1..=9_007_199_254_740_991).contains(v)) {
+        return Err(AgentProfileCommandError::validation("AGENT_PROFILE_LIMIT_INVALID", "Limits require positive integer context and output values; input is optional"));
+    }
+    Ok([("context", context), ("input", input), ("output", output)].into_iter().map(|(key, value)| v3::OpenCodeOptionPatch { path: vec!["limit".into(), key.into()], value: value.map(Value::from) }).collect())
+}
+
 fn opencode_modality_patches(model: &ModelProfileInput) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
     if !model.modalities_changed { return Ok(Vec::new()); }
     let mut patches = Vec::new();
@@ -1792,7 +1818,7 @@ fn patch_for_opencode(
                     clear_reasoning: model.thinking.supports_reasoning.is_none(),
                     variants,
                     option_patches: opencode_thinking_patches(protocol, &model.thinking)?,
-                    field_patches: opencode_modality_patches(model)?,
+                    field_patches: opencode_modality_patches(model)?.into_iter().chain(opencode_limit_patches(model)?).collect(),
                 },
             );
         }
@@ -2145,6 +2171,8 @@ fn opencode_document_parts(
                         "enabled":true,
                         "modalities":{"input":model.input_modalities,"output":model.output_modalities},
                         "modalities_changed":false,
+                        "limits":{"context":model.limit_context,"input":model.limit_input,"output":model.limit_output},
+                        "limits_changed":false,
                         "thinking":{
                             "supports_reasoning":model.reasoning,
                             "supports_effort":Value::Null,
@@ -4110,6 +4138,40 @@ mod tests {
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         format!("http://{addr}")
+    }
+
+    #[test]
+    fn token_limits_validate_and_round_trip_without_losing_other_model_fields() {
+        let root = std::env::temp_dir().join(format!("vibehub-limits-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(&path, r#"{"provider":{"p":{"models":{"m":{"limit":{"context":32000,"output":4096,"custom":"keep"},"modalities":{"input":["text","image"]}}}}}}"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let mut model = ModelProfileInput { limits_changed: true, ..Default::default() };
+        for input in [Some(96000), None] {
+            model.limits = Some(ModelLimitsInput { context: Some(128000), input, output: Some(8192) });
+            let mut patch = OpenCodeConfigPatch::default();
+            patch.providers.insert("p".into(), OpenCodeProviderPatch { models: BTreeMap::from([("m".into(), OpenCodeModelPatch { field_patches: opencode_limit_patches(&model).unwrap(), ..Default::default() })]), ..Default::default() });
+            let before = v3::read_opencode_profile(&target, &path).unwrap();
+            v3::save_opencode_profile(&target, &path, Some(&before.revision), &patch).unwrap();
+            let after = v3::read_opencode_profile(&target, &path).unwrap();
+            let actual = &after.providers[0].models[0];
+            assert_eq!(actual.limit_context, Some(128000)); assert_eq!(actual.limit_input, input); assert_eq!(actual.limit_output, Some(8192));
+            assert_eq!(actual.input_modalities, Some(vec!["text".into(), "image".into()]));
+            assert!(fs::read_to_string(&path).unwrap().contains("\"custom\":\"keep\""));
+        }
+        for invalid in [None, Some(0), Some(9_007_199_254_740_992)] {
+            model.limits.as_mut().unwrap().context = invalid;
+            assert!(opencode_limit_patches(&model).is_err());
+        }
+        model.limits = None;
+        let before = v3::read_opencode_profile(&target, &path).unwrap();
+        let patch = OpenCodeConfigPatch { providers: BTreeMap::from([("p".into(), OpenCodeProviderPatch { models: BTreeMap::from([("m".into(), OpenCodeModelPatch { field_patches: opencode_limit_patches(&model).unwrap(), ..Default::default() })]), ..Default::default() })]), ..Default::default() };
+        v3::save_opencode_profile(&target, &path, Some(&before.revision), &patch).unwrap();
+        let after = v3::read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(after.providers[0].models[0].limit_context, None);
+        assert_eq!(after.providers[0].models[0].limit_output, None);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

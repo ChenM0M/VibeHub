@@ -1866,6 +1866,16 @@
       "audio": "Audio",
       "video": "Video",
       "pdf": "PDF"
+    },
+    "limits": {
+      "title": "Token limits",
+      "hint": "Leave all fields empty to inherit defaults. An explicit override requires context and output limits; the input limit is optional. Verify limits with the provider.",
+      "context": "Context window",
+      "input": "Maximum input",
+      "output": "Maximum output",
+      "inherit": "Inherit",
+      "invalid": "Enter positive whole numbers for context and output, or clear all limits to inherit defaults.",
+      "reset": "Inherit all limits"
     }
   },
   "update": {

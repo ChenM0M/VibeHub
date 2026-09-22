@@ -80,3 +80,13 @@ for (const invalid of ['[]', 'null', '"high"', '{', '{"thinking":{"type":"enable
 }
 assert.deepEqual(parseVariantDrafts([], {}, previousVariants), {});
 console.log('Variant parameters: same-name edits, unknown fields, deletion and invalid object/budget checks passed');
+
+const limitsSource = await readFile(resolve(projectRoot, 'src/components/agent-profiles/modelLimits.ts'), 'utf8');
+const limitsCode = ts.transpileModule(limitsSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
+const { parseModelLimits } = await import(`data:text/javascript;base64,${Buffer.from(limitsCode).toString('base64')}`);
+assert.equal(parseModelLimits({ context: '', input: ' ', output: '' }), null);
+assert.deepEqual(parseModelLimits({ context: '128000', input: '', output: '8192' }), { context: 128000, input: null, output: 8192 });
+for (const invalid of ['', '0', '-1', '1.5', 'Infinity', '9007199254740992']) {
+  assert.throws(() => parseModelLimits({ context: invalid, input: '', output: '8192' }));
+}
+console.log('Token limit inheritance, optional input, required context/output and safe integer checks passed');

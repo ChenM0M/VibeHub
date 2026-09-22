@@ -1,3 +1,5 @@
+import { ModelLimitsEditor } from './ModelLimitsEditor';
+import { parseModelLimits, type ModelLimitDraft } from './modelLimits';
 import { ModelModalitiesEditor } from './ModelModalitiesEditor';
 import { VariantParametersEditor } from './VariantParametersEditor';
 import { parseVariantDrafts } from './variantValues';
@@ -108,6 +110,8 @@ type ProviderForm = {
 };
 
 type ModelForm = ThinkingParameters & {
+    limit_draft: ModelLimitDraft;
+    limits_changed: boolean;
     input_modalities: string[] | null;
     output_modalities: string[] | null;
     modalities_changed: boolean;
@@ -344,6 +348,8 @@ function emptyProviderForm(agent: AgentKind, profile: AgentProfileDocument, notC
 
 function modelFormFrom(model: ModelProfile): ModelForm {
     return {
+        limit_draft: { context: model.limits?.context?.toString() || '', input: model.limits?.input?.toString() || '', output: model.limits?.output?.toString() || '' },
+        limits_changed: model.limits_changed || false,
         input_modalities: model.modalities?.input ?? null,
         output_modalities: model.modalities?.output ?? null,
         modalities_changed: model.modalities_changed || false,
@@ -367,6 +373,7 @@ function modelFormFrom(model: ModelProfile): ModelForm {
 
 function emptyModelForm(_agent: AgentKind): ModelForm {
     return {
+        limit_draft: { context: '', input: '', output: '' }, limits_changed: false,
         input_modalities: null, output_modalities: null, modalities_changed: false,
         reasoning_effort: '', thinking_mode: '', thinking_budget: '', effort_changed: false, thinking_changed: false,
         model_id: '',
@@ -917,12 +924,18 @@ export function AgentProfilesPanel() {
         const variantValuesChanged = agent === 'opencode' && (previousModel?.thinking.variant_values_changed === true
             || previousModel === undefined || JSON.stringify(previousOptions) !== JSON.stringify(options)
             || JSON.stringify(variantValues) !== JSON.stringify(previousModel.thinking.variant_values || {}));
+        let limits = previousModel?.limits;
+        if (modelForm.limits_changed) {
+            try { limits = parseModelLimits(modelForm.limit_draft); }
+            catch { setModelError(t('agentProfiles.limits.invalid')); return; }
+        }
         const nextModel: ModelProfile = {
             model_id: modelId,
             display_name: displayName,
             enabled: modelForm.enabled,
             modalities: { input: modelForm.input_modalities, output: modelForm.output_modalities },
             modalities_changed: modelForm.modalities_changed,
+            limits, limits_changed: modelForm.limits_changed,
             thinking: {
                 supports_reasoning: modelForm.supports_reasoning,
                 supports_effort: modelForm.supports_effort,
@@ -1508,6 +1521,7 @@ export function AgentProfilesPanel() {
                                     <div className="flex items-center gap-1"><Input value={variantInput} onChange={(event) => setVariantInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); } }} placeholder={t('agentProfiles.forms.addVariant')} className="h-8 w-32 text-xs" /><Button type="button" variant="outline" size="sm" onClick={() => { const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); }}>{t('agentProfiles.common.add')}</Button></div>
                                 </div>
                             </div>
+                            {agent === 'opencode' && <ModelLimitsEditor value={modelForm.limit_draft} onChange={value => setModelForm({ ...modelForm, limit_draft: value, limits_changed: true })} />}
                             {agent === 'opencode' && <ModelModalitiesEditor input={modelForm.input_modalities} output={modelForm.output_modalities}
                                 onChange={(direction, values) => setModelForm({ ...modelForm, [`${direction}_modalities`]: values, modalities_changed: true })} />}
                             {agent === 'opencode' && modelForm.options.map(name => <VariantParametersEditor key={name} name={name}
