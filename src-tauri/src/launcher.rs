@@ -2,6 +2,7 @@ use crate::models::{Project, TagCategory, TagConfig};
 #[cfg(target_os = "windows")]
 use crate::process_util::silent_command;
 use anyhow::{anyhow, Result};
+use std::collections::BTreeMap;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::process::Command;
@@ -33,6 +34,24 @@ impl Launcher {
         runtime_target_kind: &str,
         distribution: Option<&str>,
     ) -> Result<u32> {
+        Self::launch_agent_with_environment(
+            executable,
+            args,
+            working_directory,
+            runtime_target_kind,
+            distribution,
+            &BTreeMap::new(),
+        )
+    }
+
+    pub fn launch_agent_with_environment(
+        executable: &str,
+        args: &[String],
+        working_directory: &str,
+        runtime_target_kind: &str,
+        distribution: Option<&str>,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<u32> {
         if executable.trim().is_empty() || working_directory.trim().is_empty() {
             return Err(anyhow!(
                 "Agent executable and working directory are required"
@@ -61,6 +80,12 @@ impl Launcher {
                     .arg("--cd")
                     .arg(working_directory)
                     .arg("--")
+                    .arg("env")
+                    .args(
+                        environment
+                            .iter()
+                            .map(|(key, value)| format!("{key}={value}")),
+                    )
                     .arg(executable)
                     .args(args);
                 return Ok(command.spawn()?.id());
@@ -75,7 +100,10 @@ impl Launcher {
             }
             let mut last_error = None;
             for candidate in candidates {
-                match windows_agent_command(&candidate, args, working_directory).spawn() {
+                match windows_agent_command(&candidate, args, working_directory)
+                    .envs(environment)
+                    .spawn()
+                {
                     Ok(child) => return Ok(child.id()),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                         last_error = Some(error)
@@ -100,8 +128,14 @@ impl Launcher {
                 "cd".to_owned(),
                 Self::shell_quote(working_directory),
                 "&&".to_owned(),
-                Self::shell_quote(executable),
+                "env".to_owned(),
             ];
+            command_parts.extend(
+                environment
+                    .iter()
+                    .map(|(key, value)| Self::shell_quote(&format!("{key}={value}"))),
+            );
+            command_parts.push(Self::shell_quote(executable));
             command_parts.extend(args.iter().map(|arg| Self::shell_quote(arg)));
             let shell_command = command_parts.join(" ");
             if Self::launch_terminal_command(&shell_command)? {
@@ -118,6 +152,7 @@ impl Launcher {
             let mut command = Command::new(executable);
             command
                 .args(args)
+                .envs(environment)
                 .current_dir(working_directory)
                 .stdin(std::process::Stdio::inherit())
                 .stdout(std::process::Stdio::inherit())
@@ -666,6 +701,45 @@ mod tests {
             command.get_args().collect::<Vec<_>>(),
             args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>()
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn agent_environment_reaches_child_without_mutating_parent() {
+        use std::{fs, thread, time::Duration};
+        let root = std::env::temp_dir().join(format!("vibehub-env-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let record = root.join("selected.txt");
+        let expected = "/home/User Name/中文 & '/opencode.jsonc";
+        let previous = std::env::var_os("OPENCODE_CONFIG");
+        let environment = BTreeMap::from([("OPENCODE_CONFIG".to_owned(), expected.to_owned())]);
+        let args = vec![
+            "-c".to_owned(),
+            "printf %s \"$OPENCODE_CONFIG\" > \"$1\"".to_owned(),
+            "probe".to_owned(),
+            record.to_string_lossy().into_owned(),
+        ];
+        assert!(
+            Launcher::launch_agent_with_environment(
+                "sh",
+                &args,
+                root.to_str().unwrap(),
+                "host",
+                None,
+                &environment
+            )
+            .unwrap()
+                > 0
+        );
+        for _ in 0..100 {
+            if fs::read_to_string(&record).ok().as_deref() == Some(expected) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(fs::read_to_string(&record).unwrap(), expected);
+        assert_eq!(std::env::var_os("OPENCODE_CONFIG"), previous);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(target_os = "windows")]
