@@ -9,41 +9,12 @@ use std::process::Command;
 use std::{fs, os::unix::fs::PermissionsExt, thread, time::Duration};
 
 #[cfg(any(target_os = "windows", test))]
-const WINDOWS_AGENT_LAUNCH_SCRIPT: &str = r#"
-$ErrorActionPreference = 'Stop'
-$arguments = @()
-if ($env:VIBEHUB_AGENT_ARGUMENTS_JSON) {
-    $arguments = @($env:VIBEHUB_AGENT_ARGUMENTS_JSON | ConvertFrom-Json)
-}
-$startParameters = @{
-    FilePath = $env:VIBEHUB_AGENT_EXECUTABLE
-    WorkingDirectory = $env:VIBEHUB_AGENT_WORKING_DIRECTORY
-    PassThru = $true
-    WindowStyle = 'Normal'
-}
-if ($arguments.Count -gt 0) {
-    $startParameters.ArgumentList = [string[]]$arguments
-}
-$process = Start-Process @startParameters
-[Console]::Write($process.Id)
-"#;
-
-// A started bridge is not evidence that Start-Process accepted the Agent.
-#[cfg(any(target_os = "windows", test))]
-fn windows_agent_launch_result(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<u32> {
-    if !success {
-        let diagnostic = String::from_utf8_lossy(stderr);
-        return Err(anyhow!(
-            "Windows Agent launch failed: {}",
-            diagnostic.trim()
-        ));
-    }
-    String::from_utf8_lossy(stdout)
-        .trim()
-        .parse::<u32>()
-        .ok()
-        .filter(|pid| *pid > 0)
-        .ok_or_else(|| anyhow!("Windows Agent launcher did not return a valid child process ID"))
+fn windows_agent_command(executable: &str, args: &[String], working_directory: &str) -> Command {
+    let mut command = Command::new(executable);
+    command.args(args).current_dir(working_directory);
+    #[cfg(target_os = "windows")]
+    command.creation_flags(0x00000010); // CREATE_NEW_CONSOLE
+    command
 }
 
 pub struct Launcher;
@@ -95,24 +66,27 @@ impl Launcher {
                 return Ok(command.spawn()?.id());
             }
 
-            let arguments_json = serde_json::to_string(args)
-                .map_err(|error| anyhow!("Unable to encode Agent arguments: {error}"))?;
-            let mut command = silent_command("powershell.exe");
-            command
-                .arg("-NoLogo")
-                .arg("-NoProfile")
-                .arg("-NonInteractive")
-                .arg("-Command")
-                .arg(WINDOWS_AGENT_LAUNCH_SCRIPT)
-                .env("VIBEHUB_AGENT_EXECUTABLE", executable)
-                .env("VIBEHUB_AGENT_WORKING_DIRECTORY", working_directory)
-                .env("VIBEHUB_AGENT_ARGUMENTS_JSON", arguments_json);
-            let output = command.output()?;
-            return windows_agent_launch_result(
-                output.status.success(),
-                &output.stdout,
-                &output.stderr,
-            );
+            // Rust preserves native argv boundaries and applies its dedicated
+            // batch-file escaping to npm's .cmd shims. Unrepresentable batch
+            // arguments return an error instead of being silently corrupted.
+            let mut candidates = vec![executable.to_owned()];
+            if std::path::Path::new(executable).extension().is_none() {
+                candidates.extend([format!("{executable}.cmd"), format!("{executable}.bat")]);
+            }
+            let mut last_error = None;
+            for candidate in candidates {
+                match windows_agent_command(&candidate, args, working_directory).spawn() {
+                    Ok(child) => return Ok(child.id()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        last_error = Some(error)
+                    }
+                    Err(error) => return Err(anyhow!("Windows Agent launch failed: {error}")),
+                }
+            }
+            return Err(anyhow!(
+                "Windows Agent executable {executable} could not start: {}",
+                last_error.unwrap()
+            ));
         }
 
         #[cfg(target_os = "macos")]
@@ -678,35 +652,118 @@ mod tests {
     }
 
     #[test]
-    fn windows_launch_result_requires_success_and_a_real_child_id() {
-        assert_eq!(
-            windows_agent_launch_result(true, b" 421\r\n", b"").unwrap(),
-            421
-        );
-        let failure =
-            windows_agent_launch_result(false, b"123", b"executable was not found").unwrap_err();
-        assert!(failure.to_string().contains("executable was not found"));
-        for output in [b"".as_slice(), b"0", b"not a pid", b"1\n2"] {
-            assert!(windows_agent_launch_result(true, output, b"").is_err());
-        }
-    }
-
-    #[test]
-    fn windows_interactive_agent_launch_requests_a_visible_console() {
-        assert!(WINDOWS_AGENT_LAUNCH_SCRIPT.contains("WindowStyle = 'Normal'"));
-        assert!(!WINDOWS_AGENT_LAUNCH_SCRIPT.contains("WindowStyle = 'Hidden'"));
-    }
-
-    #[test]
-    fn malicious_agent_arguments_are_encoded_as_data() {
-        let arguments = vec![
-            "--settings".to_owned(),
-            r#"C:\Users\A&B\profile; Write-Output pwned\n"#.to_owned(),
+    fn windows_command_keeps_each_argument_as_data() {
+        let args = vec![
+            "".to_owned(),
+            "two words".to_owned(),
+            "含空格 的路径".to_owned(),
+            r#"a"b"#.to_owned(),
+            r"C:\path with spaces\".to_owned(),
+            "%PATH% & whoami".to_owned(),
         ];
-        let encoded = serde_json::to_string(&arguments).expect("arguments should serialize");
+        let command = windows_agent_command("agent.exe", &args, ".");
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>()
+        );
+    }
 
-        assert!(encoded.contains("A&B"));
-        assert!(encoded.contains("Write-Output"));
-        assert!(!encoded.contains("$env:"));
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_child_receives_exact_arguments_and_reports_spawn_errors() {
+        use std::{fs, thread, time::Duration};
+        let root = std::env::temp_dir().join(format!("VibeHub argv 中文 {}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let exe = root.join("argument probe.exe");
+        let output = silent_command("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command",
+                "Add-Type -TypeDefinition $env:VIBEHUB_PROBE_SOURCE -OutputAssembly $env:VIBEHUB_PROBE_EXE -OutputType ConsoleApplication"])
+            .env("VIBEHUB_PROBE_SOURCE", include_str!("../tests/fixtures/agent-argv-probe.cs"))
+            .env("VIBEHUB_PROBE_EXE", &exe).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let record = root.join("received.txt");
+        let values = vec![
+            "",
+            "two words",
+            "中文路径",
+            "a\"b",
+            r"C:\path with spaces\",
+            "%PATH% & whoami",
+            "line\nbreak",
+        ];
+        let mut args = vec![record.to_string_lossy().into_owned()];
+        args.extend(values.iter().map(|value| (*value).to_owned()));
+        let pid = Launcher::launch_agent(
+            exe.to_str().unwrap(),
+            &args,
+            root.to_str().unwrap(),
+            "host",
+            None,
+        )
+        .unwrap();
+        assert!(pid > 0);
+        for _ in 0..150 {
+            if record.exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(fs::read_to_string(&record).unwrap(), values.join("\0"));
+        // npm distributes Windows CLIs as .cmd shims; keep that path covered.
+        let shim = root.join("agent shim.cmd");
+        fs::write(&shim, "@echo off\r\n\"%~dp0argument probe.exe\" %*\r\n").unwrap();
+        let batch_record = root.join("batch-received.txt");
+        let batch_values = ["", "two words", "中文路径", r"C:\path with spaces\"];
+        let mut batch_args = vec![batch_record.to_string_lossy().into_owned()];
+        batch_args.extend(batch_values.iter().map(|value| (*value).to_owned()));
+        assert!(
+            Launcher::launch_agent(
+                shim.to_str().unwrap(),
+                &batch_args,
+                root.to_str().unwrap(),
+                "host",
+                None
+            )
+            .unwrap()
+                > 0
+        );
+        for _ in 0..150 {
+            if batch_record.exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(
+            fs::read_to_string(&batch_record).unwrap(),
+            batch_values.join("\0")
+        );
+        assert!(Launcher::launch_agent(
+            root.join("missing.exe").to_str().unwrap(),
+            &[],
+            root.to_str().unwrap(),
+            "host",
+            None
+        )
+        .is_err());
+        assert!(Launcher::launch_agent(
+            exe.to_str().unwrap(),
+            &[],
+            root.join("missing").to_str().unwrap(),
+            "host",
+            None
+        )
+        .is_err());
+        // Child records are written before process teardown releases the executable.
+        for attempt in 0..50 {
+            match fs::remove_dir_all(&root) {
+                Ok(()) => break,
+                Err(_) if attempt < 49 => thread::sleep(Duration::from_millis(20)),
+                Err(error) => panic!("could not clean native launch fixture: {error}"),
+            }
+        }
     }
 }
