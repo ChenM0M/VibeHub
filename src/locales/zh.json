@@ -1849,6 +1849,20 @@
       "allParameters": "全部参数（JSON 对象）",
       "jsonLabel": "{{name}} 的参数",
       "invalid": "每个变体必须是有效的 JSON 对象。思考预算必须是至少 1024 的整数。"
+    },
+    "modalities": {
+      "title": "模型多模态能力",
+      "hint": "声明将保存到 OpenCode。实际支持情况由模型和提供商决定；VibeHub 不进行音频、视频或 PDF 的跨协议转换。",
+      "input": "输入",
+      "output": "输出",
+      "inherit": "未声明 / 继承",
+      "declare": "声明支持的类型",
+      "empty": "已声明不支持任何类型",
+      "text": "文本",
+      "image": "图片",
+      "audio": "音频",
+      "video": "视频",
+      "pdf": "PDF"
     }
   },
   "update": {

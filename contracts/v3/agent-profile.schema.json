@@ -320,6 +320,19 @@
         },
         "thinking": {
           "$ref": "#/$defs/ThinkingProfile"
+        },
+        "modalities": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelModalities"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modalities_changed": {
+          "type": "boolean"
         }
       }
     },
@@ -1749,6 +1762,36 @@
         },
         "evidence_refs": {
           "$ref": "common.schema.json#/$defs/EvidenceRefs"
+        }
+      }
+    },
+    "ModelModalities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "output"
+      ],
+      "properties": {
+        "input": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "output": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
         }
       }
     }

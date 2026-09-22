@@ -404,12 +404,22 @@ pub struct ProtocolCapabilityInput {
     pub limitations: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ModelProfileInput {
     pub model_id: String,
     pub display_name: String,
     pub enabled: bool,
     pub thinking: ThinkingProfileInput,
+    #[serde(default)]
+    pub modalities: Option<ModelModalitiesInput>,
+    #[serde(default)]
+    pub modalities_changed: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModelModalitiesInput {
+    pub input: Option<Vec<String>>,
+    pub output: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1670,6 +1680,20 @@ fn patch_for(
     })
 }
 
+fn opencode_modality_patches(model: &ModelProfileInput) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
+    if !model.modalities_changed { return Ok(Vec::new()); }
+    let mut patches = Vec::new();
+    for (direction, values) in [("input", model.modalities.as_ref().and_then(|m| m.input.as_ref())), ("output", model.modalities.as_ref().and_then(|m| m.output.as_ref()))] {
+        if let Some(values) = values {
+            if values.iter().any(|v| !["text", "image", "audio", "video", "pdf"].contains(&v.as_str())) {
+                return Err(AgentProfileCommandError::validation("AGENT_PROFILE_MODALITY_INVALID", "Supported declarations: text, image, audio, video, pdf"));
+            }
+        }
+        patches.push(v3::OpenCodeOptionPatch { path: vec!["modalities".into(), direction.into()], value: values.map(|v| json!(v)) });
+    }
+    Ok(patches)
+}
+
 fn opencode_thinking_patches(protocol: Option<ProtocolKind>, thinking: &ThinkingProfileInput) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
     let mut patches = Vec::new();
     let invalid = |message| AgentProfileCommandError::validation("AGENT_PROFILE_THINKING_INVALID", message);
@@ -1768,6 +1792,7 @@ fn patch_for_opencode(
                     clear_reasoning: model.thinking.supports_reasoning.is_none(),
                     variants,
                     option_patches: opencode_thinking_patches(protocol, &model.thinking)?,
+                    field_patches: opencode_modality_patches(model)?,
                 },
             );
         }
@@ -2118,6 +2143,8 @@ fn opencode_document_parts(
                         "model_id":model.model_id,
                         "display_name":model.display_name,
                         "enabled":true,
+                        "modalities":{"input":model.input_modalities,"output":model.output_modalities},
+                        "modalities_changed":false,
                         "thinking":{
                             "supports_reasoning":model.reasoning,
                             "supports_effort":Value::Null,
@@ -4086,6 +4113,36 @@ mod tests {
     }
 
     #[test]
+    fn modalities_round_trip_preserves_unknown_empty_and_declared_states() {
+        let root = std::env::temp_dir().join(format!("vibehub-modalities-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(&path, r#"{"provider":{"p":{"models":{"m":{"limit":{"context":32000,"output":4096},"custom":"keep"}}}}}"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let mut model = ModelProfileInput::default();
+        model.modalities_changed = true;
+        for input in [Some(vec!["text", "image", "audio", "video", "pdf"]), Some(vec![]), None] {
+            let input = input.map(|v| v.into_iter().map(str::to_owned).collect::<Vec<_>>());
+            model.modalities = Some(ModelModalitiesInput { input: input.clone(), output: Some(vec!["text".into()]) });
+            let mut patch = OpenCodeConfigPatch::default();
+            patch.providers.insert("p".into(), OpenCodeProviderPatch { models: BTreeMap::from([("m".into(), OpenCodeModelPatch { field_patches: opencode_modality_patches(&model).unwrap(), ..Default::default() })]), ..Default::default() });
+            let before = v3::read_opencode_profile(&target, &path).unwrap();
+            v3::save_opencode_profile(&target, &path, Some(&before.revision), &patch).unwrap();
+            let after = v3::read_opencode_profile(&target, &path).unwrap();
+            assert_eq!(after.providers[0].models[0].input_modalities, input);
+            assert_eq!(after.providers[0].models[0].output_modalities, Some(vec!["text".into()]));
+            let value: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(value.pointer("/provider/p/models/m/limit/context"), Some(&json!(32000)));
+            assert_eq!(value.pointer("/provider/p/models/m/custom"), Some(&json!("keep")));
+        }
+        model.modalities.as_mut().unwrap().input = Some(vec!["invalid".into()]);
+        assert!(opencode_modality_patches(&model).is_err());
+        model.modalities_changed = false;
+        assert!(opencode_modality_patches(&model).unwrap().is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn thinking_parameters_round_trip_without_replacing_unmanaged_options() {
         let root = std::env::temp_dir().join(format!("vibehub-thinking-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join(".config/opencode")).unwrap();
@@ -4166,6 +4223,7 @@ mod tests {
                         variant_values_changed: true,
                         ..Default::default()
                     },
+                    ..Default::default()
                 }],
             }],
             default_provider_id: Some("deepseek".to_owned()),
@@ -4406,6 +4464,7 @@ mod tests {
                         variant_values_changed: false,
                         ..Default::default()
                     },
+                    ..Default::default()
                 }],
             }],
             default_provider_id: Some("anthropic".to_owned()),
@@ -4462,6 +4521,7 @@ mod tests {
                         variant_values_changed: false,
                         ..Default::default()
                     },
+                    ..Default::default()
                 }],
             }],
             default_provider_id: Some("anthropic".to_owned()),

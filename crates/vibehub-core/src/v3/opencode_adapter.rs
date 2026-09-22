@@ -35,6 +35,8 @@ pub struct OpenCodeModelView {
     pub reasoning_effort: Option<String>,
     pub thinking_mode: Option<String>,
     pub thinking_budget: Option<u64>,
+    pub input_modalities: Option<Vec<String>>,
+    pub output_modalities: Option<Vec<String>>,
     pub variants: Vec<String>,
     /// Full variant values retained for the Tauri/UI round-trip. The editor
     /// displays only the names, but saving an unrelated field must not rebuild
@@ -122,6 +124,8 @@ pub struct OpenCodeModelPatch {
     pub variants: Option<BTreeMap<String, Value>>,
     #[serde(default)]
     pub option_patches: Vec<OpenCodeOptionPatch>,
+    #[serde(default)]
+    pub field_patches: Vec<OpenCodeOptionPatch>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -538,6 +542,8 @@ fn model_view(model_id: &str, value: &Value) -> Result<OpenCodeModelView, Storag
         reasoning_effort: object.get("options").and_then(|v| v.get("reasoningEffort").or_else(|| v.get("effort"))).and_then(Value::as_str).map(str::to_owned),
         thinking_mode: object.get("options").and_then(|v| v.pointer("/thinking/type")).and_then(Value::as_str).map(str::to_owned),
         thinking_budget: object.get("options").and_then(|v| v.pointer("/thinking/budgetTokens")).and_then(Value::as_u64),
+        input_modalities: object.get("modalities").and_then(|v| v.get("input")).and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).map(str::to_owned).collect()),
+        output_modalities: object.get("modalities").and_then(|v| v.get("output")).and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).map(str::to_owned).collect()),
         variants,
         variant_values,
         unknown_fields: object
@@ -739,6 +745,16 @@ impl JsoncEditor {
                         "reasoning",
                         &mut replacements,
                     )?;
+                }
+                for field in &model_patch.field_patches {
+                    if field.path.is_empty() { continue; }
+                    let mut path = vec![provider_key, provider_id.as_str(), "models", model_id.as_str()];
+                    path.extend(field.path.iter().map(String::as_str));
+                    if let Some(value) = &field.value {
+                        self.set_path(&path, value.clone(), &mut replacements)?;
+                    } else {
+                        self.remove_member(&path[..path.len() - 1], path[path.len() - 1], &mut replacements)?;
+                    }
                 }
                 for option in &model_patch.option_patches {
                     if option.path.is_empty() { continue; }

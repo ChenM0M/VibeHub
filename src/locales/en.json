@@ -1852,6 +1852,20 @@
       "allParameters": "All parameters (JSON object)",
       "jsonLabel": "Parameters for {{name}}",
       "invalid": "Each variant must be a valid JSON object. Any thinking budget must be an integer of at least 1024."
+    },
+    "modalities": {
+      "title": "Model modalities",
+      "hint": "Declarations saved to OpenCode. Actual support depends on the model and provider. VibeHub does not convert audio, video or PDF requests between protocols.",
+      "input": "Inputs",
+      "output": "Outputs",
+      "inherit": "Unspecified / inherit",
+      "declare": "Declare supported types",
+      "empty": "No supported types declared",
+      "text": "Text",
+      "image": "Image",
+      "audio": "Audio",
+      "video": "Video",
+      "pdf": "PDF"
     }
   },
   "update": {

@@ -636,6 +636,13 @@ unknownEffortProfile.profile.managed.providers[0].models[0].thinking.supports_ef
 assert(agentProfileValidator(unknownEffortProfile), "model effort may remain unknown");
 unknownEffortProfile.profile.managed.providers[0].models[0].thinking.supports_effort = "yes";
 assert(!agentProfileValidator(unknownEffortProfile), "effort declaration must be boolean or null");
+const modalityProfile = structuredClone(agentProfileReadResult);
+for (const input of [null, [], ['text', 'image', 'audio', 'video', 'pdf']]) {
+  modalityProfile.profile.managed.providers[0].models[0].modalities = { input, output: ['text'] };
+  assert(agentProfileValidator(modalityProfile), 'modality unknown/empty/multimodal states validate');
+}
+modalityProfile.profile.managed.providers[0].models[0].modalities.input = 'image';
+assert(!agentProfileValidator(modalityProfile), 'modalities must be a list or null');
 const agentProfileDiscoverError = {
   code: "CONFIG_PATH_LINK_REJECTED",
   category: "validation",

@@ -1,3 +1,4 @@
+import { ModelModalitiesEditor } from './ModelModalitiesEditor';
 import { VariantParametersEditor } from './VariantParametersEditor';
 import { parseVariantDrafts } from './variantValues';
 import { ThinkingParametersEditor, type ThinkingParameters } from './ThinkingParametersEditor';
@@ -107,6 +108,9 @@ type ProviderForm = {
 };
 
 type ModelForm = ThinkingParameters & {
+    input_modalities: string[] | null;
+    output_modalities: string[] | null;
+    modalities_changed: boolean;
     model_id: string;
     display_name: string;
     enabled: boolean;
@@ -340,6 +344,9 @@ function emptyProviderForm(agent: AgentKind, profile: AgentProfileDocument, notC
 
 function modelFormFrom(model: ModelProfile): ModelForm {
     return {
+        input_modalities: model.modalities?.input ?? null,
+        output_modalities: model.modalities?.output ?? null,
+        modalities_changed: model.modalities_changed || false,
         reasoning_effort: model.thinking.reasoning_effort || '',
         thinking_mode: model.thinking.thinking_mode || '',
         thinking_budget: model.thinking.thinking_budget?.toString() || '',
@@ -360,6 +367,7 @@ function modelFormFrom(model: ModelProfile): ModelForm {
 
 function emptyModelForm(_agent: AgentKind): ModelForm {
     return {
+        input_modalities: null, output_modalities: null, modalities_changed: false,
         reasoning_effort: '', thinking_mode: '', thinking_budget: '', effort_changed: false, thinking_changed: false,
         model_id: '',
         display_name: '',
@@ -913,6 +921,8 @@ export function AgentProfilesPanel() {
             model_id: modelId,
             display_name: displayName,
             enabled: modelForm.enabled,
+            modalities: { input: modelForm.input_modalities, output: modelForm.output_modalities },
+            modalities_changed: modelForm.modalities_changed,
             thinking: {
                 supports_reasoning: modelForm.supports_reasoning,
                 supports_effort: modelForm.supports_effort,
@@ -1498,6 +1508,8 @@ export function AgentProfilesPanel() {
                                     <div className="flex items-center gap-1"><Input value={variantInput} onChange={(event) => setVariantInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); } }} placeholder={t('agentProfiles.forms.addVariant')} className="h-8 w-32 text-xs" /><Button type="button" variant="outline" size="sm" onClick={() => { const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); }}>{t('agentProfiles.common.add')}</Button></div>
                                 </div>
                             </div>
+                            {agent === 'opencode' && <ModelModalitiesEditor input={modelForm.input_modalities} output={modelForm.output_modalities}
+                                onChange={(direction, values) => setModelForm({ ...modelForm, [`${direction}_modalities`]: values, modalities_changed: true })} />}
                             {agent === 'opencode' && modelForm.options.map(name => <VariantParametersEditor key={name} name={name}
                                 text={modelForm.variant_drafts[name] ?? JSON.stringify(modelForm.variant_values?.[name] ?? {}, null, 2)}
                                 protocol={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.protocol.native_protocol || 'unknown'}
