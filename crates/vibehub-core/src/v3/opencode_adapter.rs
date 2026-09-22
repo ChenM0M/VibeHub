@@ -1,6 +1,6 @@
 use super::agent_profile_storage::{
-    read_document, write_document, AgentKind, ConfigDocument, ConfigFormat, DocumentRevision,
-    ParsedConfig, RuntimePlatform, RuntimeTarget, StorageError, WriteReport,
+    read_document_with_format, write_document_with_format, AgentKind, ConfigDocument, ConfigFormat,
+    DocumentRevision, ParsedConfig, RuntimePlatform, RuntimeTarget, StorageError, WriteReport,
 };
 use super::protocol_runtime::ProtocolKind;
 use serde::{Deserialize, Serialize};
@@ -239,8 +239,25 @@ pub fn read_opencode_profile(
     target: &RuntimeTarget,
     path: impl AsRef<Path>,
 ) -> Result<OpenCodeProfileView, StorageError> {
-    let document = read_document(target, path)?;
+    let document = read_opencode_document(target, path)?;
     profile_from_document(&document)
+}
+
+pub fn read_opencode_document(
+    target: &RuntimeTarget,
+    path: impl AsRef<Path>,
+) -> Result<ConfigDocument, StorageError> {
+    if !matches!(
+        ConfigFormat::from_path(path.as_ref())?,
+        ConfigFormat::Json | ConfigFormat::Jsonc
+    ) {
+        return Err(StorageError::new(
+            "OPENCODE_CONFIG_FORMAT_UNSUPPORTED",
+            "OpenCode accepts JSON or JSONC configuration",
+        )
+        .with_path_context(path.as_ref()));
+    }
+    read_document_with_format(target, path, ConfigFormat::Jsonc)
 }
 
 pub fn save_opencode_profile(
@@ -249,7 +266,7 @@ pub fn save_opencode_profile(
     expected_revision: Option<&DocumentRevision>,
     patch: &OpenCodeConfigPatch,
 ) -> Result<WriteReport, StorageError> {
-    let document = read_document(target, path)?;
+    let document = read_opencode_document(target, path)?;
     if !matches!(document.format, ConfigFormat::Json | ConfigFormat::Jsonc) {
         return Err(StorageError::new(
             "OPENCODE_CONFIG_FORMAT_UNSUPPORTED",
@@ -257,7 +274,13 @@ pub fn save_opencode_profile(
         ));
     }
     let edited = JsoncEditor::new(&document.raw)?.apply_patch(patch)?;
-    write_document(target, document.path, expected_revision, &edited)
+    write_document_with_format(
+        target,
+        document.path,
+        expected_revision,
+        &edited,
+        ConfigFormat::Jsonc,
+    )
 }
 
 fn profile_from_document(document: &ConfigDocument) -> Result<OpenCodeProfileView, StorageError> {
@@ -1224,7 +1247,8 @@ impl<'a> JsoncSpanParser<'a> {
 mod tests {
     use super::*;
     use crate::v3::agent_profile_storage::{
-        NativeConfigPath, RuntimePlatform, RuntimeTarget, RuntimeTargetKind, RuntimeTargetSource,
+        read_document, restore_document_with_format, NativeConfigPath, RuntimePlatform,
+        RuntimeTarget, RuntimeTargetKind, RuntimeTargetSource,
     };
     use std::env;
     use std::fs;
@@ -1337,6 +1361,52 @@ mod tests {
         assert!(updated.contains("\"unknown\": 1"));
         assert!(updated.contains("https://new.invalid/v1"));
         assert!(updated.contains("\"name\": \"Renamed\""));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn json_extension_accepts_jsonc_and_preserves_comments_on_save() {
+        let (target, root) = temp_target();
+        let path = root.join("opencode.json");
+        let original = "{\r\n  // user configuration\r\n  \"model\": \"local/old\",\r\n}\r\n";
+        fs::write(&path, original).unwrap();
+        let profile = read_opencode_profile(&target, &path).unwrap();
+        let report = save_opencode_profile(
+            &target,
+            &path,
+            Some(&profile.revision),
+            &OpenCodeConfigPatch {
+                default_model: Some("local/new".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            read_opencode_profile(&target, &path)
+                .unwrap()
+                .default_model
+                .as_deref(),
+            Some("local/new")
+        );
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("// user configuration\r\n"));
+        let backup = report.backup_path.unwrap().as_path();
+        assert_eq!(fs::read(&backup).unwrap(), original.as_bytes());
+        // Generic JSON consumers must keep strict JSON validation.
+        assert_eq!(
+            read_document(&target, &path).unwrap_err().code,
+            "CONFIG_JSON_INVALID"
+        );
+        restore_document_with_format(
+            &target,
+            &path,
+            backup,
+            &report.after_revision,
+            ConfigFormat::Jsonc,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), original.as_bytes());
         fs::remove_dir_all(root).unwrap();
     }
 

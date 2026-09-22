@@ -938,12 +938,14 @@ fn restore_on_target(
     let located = locate_profile(&target, &request.agent, &request.profile_id)?;
     ensure_revision(&located, request.expected_revision)?;
     let current_path = located.source_path().to_path_buf();
-    let backup_path = validate_backup_path(&target, &current_path, &request.backup_path)?;
-    let restored = v3::restore_document(
+    let format = profile_document_format(&located)?;
+    let backup_path = validate_backup_path(&target, &current_path, &request.backup_path, format)?;
+    let restored = v3::restore_document_with_format(
         &target,
         &current_path,
         backup_path,
         located.document_revision(),
+        format,
     )?;
     let refreshed = locate_profile(&target, &request.agent, &request.profile_id)?;
     save_result("restore", &target, &refreshed, Some(restored))
@@ -2655,6 +2657,7 @@ fn validate_backup_path(
     target: &RuntimeTarget,
     current_path: &Path,
     backup_path: &str,
+    format: ConfigFormat,
 ) -> Result<PathBuf, AgentProfileCommandError> {
     let backup = PathBuf::from(backup_path);
     if !backup.is_absolute() {
@@ -2694,7 +2697,7 @@ fn validate_backup_path(
             "only VibeHub backups for the selected profile can be restored",
         ));
     }
-    let _ = v3::read_document(target, current_path)?;
+    let _ = v3::read_document_with_format(target, current_path, format)?;
     Ok(backup)
 }
 
@@ -2913,12 +2916,23 @@ fn upstream_model_parts(item: &Value) -> Option<(String, String)> {
     }
 }
 
+fn profile_document_format(profile: &LocatedProfile) -> Result<ConfigFormat, StorageError> {
+    match profile {
+        LocatedProfile::OpenCode(_) => Ok(ConfigFormat::Jsonc),
+        _ => ConfigFormat::from_path(profile.source_path()),
+    }
+}
+
 fn stored_provider_secret(
     target: &RuntimeTarget,
     profile: &LocatedProfile,
     provider_id: &str,
 ) -> Result<Option<String>, AgentProfileCommandError> {
-    let document = v3::read_document(target, profile.source_path())?;
+    let document = v3::read_document_with_format(
+        target,
+        profile.source_path(),
+        profile_document_format(profile)?,
+    )?;
     let parsed = document.parse()?;
     let secret = match parsed {
         ParsedConfig::Json(value) => match profile {
@@ -3813,7 +3827,7 @@ mod tests {
         fs::create_dir_all(root.join(".codex")).unwrap();
         fs::write(
             opencode_config_dir(&root).join("opencode.json"),
-            r#"{"$schema":"https://opencode.ai/config.json","model":"openai/gpt-5","provider":{"openai":{"options":{"baseURL":"https://api.openai.com/v1","apiKey":"opencode-list-secret"},"models":{"gpt-5":{"reasoning":true}}}}}"#,
+            r#"{/* JSONC syntax is valid in OpenCode's .json files. */"$schema":"https://opencode.ai/config.json","model":"openai/gpt-5","provider":{"openai":{"options":{"baseURL":"https://api.openai.com/v1","apiKey":"opencode-list-secret"},"models":{"gpt-5":{"reasoning":true}}}},}"#,
         )
         .unwrap();
         fs::write(
