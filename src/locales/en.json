@@ -1876,6 +1876,16 @@
       "inherit": "Inherit",
       "invalid": "Enter positive whole numbers for context and output, or clear all limits to inherit defaults.",
       "reset": "Inherit all limits"
+    },
+    "capabilityAssessment": {
+      "title": "Declared capabilities",
+      "tools": "Tools",
+      "images": "Image input",
+      "reasoning": "Reasoning",
+      "unknown": "Unknown",
+      "yes": "Supported",
+      "no": "Unsupported",
+      "hint": "Declarations are not an API test. Missing streaming/usage metadata prevents a complete compatibility claim."
     }
   },
   "update": {

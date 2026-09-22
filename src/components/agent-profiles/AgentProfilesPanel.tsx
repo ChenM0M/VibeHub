@@ -1,3 +1,4 @@
+import { ModelCapabilitySummary } from './ModelCapabilitySummary';
 import { ModelLimitsEditor } from './ModelLimitsEditor';
 import { parseModelLimits, type ModelLimitDraft } from './modelLimits';
 import { ModelModalitiesEditor } from './ModelModalitiesEditor';
@@ -310,10 +311,10 @@ function defaultProtocol(agent: AgentKind): ProtocolCapability {
         native_protocol: protocol,
         upstream_protocol: protocol,
         route: agent === 'claude_code' ? 'direct' : 'adapter',
-        compatibility: 'supported',
+        compatibility: 'unknown',
         adapter_id: null,
         adapter_version: null,
-        limitations: [],
+        limitations: ['Model capability metadata has not been supplied'],
     };
 }
 
@@ -935,6 +936,7 @@ export function AgentProfilesPanel() {
             enabled: modelForm.enabled,
             modalities: { input: modelForm.input_modalities, output: modelForm.output_modalities },
             modalities_changed: modelForm.modalities_changed,
+            supports_tools: previousModel?.supports_tools,
             limits, limits_changed: modelForm.limits_changed,
             thinking: {
                 supports_reasoning: modelForm.supports_reasoning,
@@ -1286,6 +1288,7 @@ export function AgentProfilesPanel() {
                                                             {isDefault && <Badge variant="secondary" className="gap-1 text-[10px]"><Check className="h-3 w-3" />{t('agentProfiles.common.default')}</Badge>}
                                                         </div>
                                                         <div className="mt-1 truncate pl-6 font-mono text-[11px] text-muted-foreground">{model.model_id}</div>
+                                                        <ModelCapabilitySummary model={model} />
                                                         <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
                                                             {model.thinking.options.length > 0 ? model.thinking.options.map((option) => (
                                                                 <motion.button key={option} type="button" aria-pressed={model.thinking.selected === option} whileTap={{ scale: 0.93 }} onClick={() => setDraft((current) => current ? updateThinking(current, provider.provider_id, model.model_id, option) : current)} className={cn('rounded-full border px-2.5 py-0.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', model.thinking.selected === option ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-border/70 text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground')}>

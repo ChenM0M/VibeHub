@@ -2170,6 +2170,7 @@ fn opencode_document_parts(
                         "display_name":model.display_name,
                         "enabled":true,
                         "modalities":{"input":model.input_modalities,"output":model.output_modalities},
+                        "supports_tools":model.tool_call,
                         "modalities_changed":false,
                         "limits":{"context":model.limit_context,"input":model.limit_input,"output":model.limit_output},
                         "limits_changed":false,
@@ -2195,7 +2196,7 @@ fn opencode_document_parts(
                 "display_name":provider.display_name,
                 "base_url":provider.base_url.clone().unwrap_or_default(),
                 "credential":credential_value(&provider.credential),
-                "protocol":protocol_value(protocol_resolution(native_protocol, native_protocol)),
+                "protocol":protocol_value(opencode_protocol_resolution(native_protocol, native_protocol, selected_opencode_model(view, provider))),
                 "models":models
             })
         })
@@ -2211,16 +2212,9 @@ fn opencode_document_parts(
         "default_model_id":view.default_model,
         "small_model_id":view.small_model
     });
-    let protocol = view
-        .providers
-        .first()
-        .map(|provider| protocol_value(protocol_resolution(provider.protocol, provider.protocol)))
-        .unwrap_or_else(|| {
-            protocol_value(protocol_resolution(
-                ProtocolKind::Unknown,
-                ProtocolKind::Unknown,
-            ))
-        });
+    let protocol = view.providers.iter().find(|provider| selected_opencode_model(view, provider).is_some())
+        .map(|provider| protocol_value(opencode_protocol_resolution(provider.protocol, provider.protocol, selected_opencode_model(view, provider))))
+        .unwrap_or_else(|| protocol_value(protocol_resolution(ProtocolKind::Unknown, ProtocolKind::Unknown)));
     let source = json!({
         "scope":"user",
         "profile_name":view.source_path.file_name().and_then(|name|name.to_str())
@@ -2580,8 +2574,42 @@ fn credential_parts_codex(
     }
 }
 
+fn selected_opencode_model<'a>(view: &OpenCodeProfileView, provider: &'a v3::OpenCodeProviderView) -> Option<&'a v3::OpenCodeModelView> {
+    let (provider_id, model_id) = view.default_model.as_deref()?.split_once('/')?;
+    if provider_id != provider.provider_id { return None; }
+    provider.models.iter().find(|model| model.model_id == model_id)
+}
+
 fn protocol_resolution(native: ProtocolKind, upstream: ProtocolKind) -> ProtocolResolution {
-    v3::resolve_protocol(native, upstream, &Default::default())
+    opencode_protocol_resolution(native, upstream, None)
+}
+
+fn opencode_protocol_resolution(native: ProtocolKind, upstream: ProtocolKind, model: Option<&v3::OpenCodeModelView>) -> ProtocolResolution {
+    let tools = model.and_then(|m| m.tool_call);
+    let images = model.and_then(|m| m.input_modalities.as_ref()).map(|values| values.iter().any(|v| v == "image"));
+    let reasoning = model.and_then(|m| m.reasoning);
+    // No native declaration supplies streaming or usage capability here.
+    let capabilities = v3::ModelProtocolCapabilities { tools: tools == Some(true), images: images == Some(true), reasoning: reasoning == Some(true), streaming: false, usage: false };
+    let mut result = v3::resolve_protocol(native, upstream, &capabilities);
+    if native == ProtocolKind::Unknown || upstream == ProtocolKind::Unknown { return result; }
+    result.limitations.clear();
+    for (name, state) in [("tool calling", tools), ("image input", images), ("reasoning", reasoning), ("streaming", None), ("usage reporting", None)] {
+        match state {
+            Some(true) => {},
+            Some(false) => result.limitations.push(format!("model declares {name} unsupported")),
+            None => result.limitations.push(format!("model {name} capability is unknown")),
+        }
+    }
+    if native != upstream {
+        for modality in ["audio", "video", "pdf"] {
+            if model.is_some_and(|m| [&m.input_modalities, &m.output_modalities].iter().any(|values| values.as_ref().is_some_and(|v| v.iter().any(|v| v == modality)))) {
+                result.limitations.push(format!("adapter does not convert {modality} content"));
+            }
+        }
+    }
+    result.compatibility = if [tools, images, reasoning].iter().all(Option::is_none) { v3::ProtocolCompatibility::Unknown } else { v3::ProtocolCompatibility::Partial };
+    result.diagnostics.push("protocol.capability.from_observed_model_declarations".into());
+    result
 }
 
 fn protocol_value(resolution: ProtocolResolution) -> Value {
@@ -4138,6 +4166,34 @@ mod tests {
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         format!("http://{addr}")
+    }
+
+    #[test]
+    fn compatibility_uses_selected_model_and_distinguishes_unknown_capabilities() {
+        let root = std::env::temp_dir().join(format!("vibehub-capability-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(&path, r#"{"model":"z/org/m","provider":{"a":{"npm":"@ai-sdk/openai-compatible","models":{"m":{}}},"z":{"npm":"@ai-sdk/anthropic","models":{"org/m":{"reasoning":false,"tool_call":true,"modalities":{"input":["text","audio","pdf"],"output":["video"]}}}}}}"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let view = v3::read_opencode_profile(&target, &path).unwrap();
+        let provider = view.providers.iter().find(|p| p.provider_id == "z").unwrap();
+        let model = selected_opencode_model(&view, provider).unwrap();
+        assert_eq!(model.model_id, "org/m");
+        let direct = opencode_protocol_resolution(provider.protocol, provider.protocol, Some(model));
+        assert_eq!(direct.compatibility, v3::ProtocolCompatibility::Partial);
+        assert!(direct.limitations.iter().any(|v| v == "model declares reasoning unsupported"));
+        assert!(direct.limitations.iter().any(|v| v == "model declares image input unsupported"));
+        assert!(!direct.limitations.iter().any(|v| v.contains("tool calling")));
+        assert!(!direct.limitations.iter().any(|v| v.contains("convert")));
+        let adapted = opencode_protocol_resolution(ProtocolKind::OpenaiResponses, provider.protocol, Some(model));
+        for modality in ["audio", "video", "pdf"] { assert!(adapted.limitations.contains(&format!("adapter does not convert {modality} content"))); }
+        let unknown = protocol_resolution(provider.protocol, provider.protocol);
+        assert_eq!(unknown.compatibility, v3::ProtocolCompatibility::Unknown);
+        assert!(unknown.limitations.iter().all(|v| v.contains("unknown")));
+        let parts = opencode_document_parts(&target, &view).unwrap();
+        assert_eq!(parts.3["native_protocol"], "anthropic_messages");
+        assert_eq!(parts.3["compatibility"], "partial");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

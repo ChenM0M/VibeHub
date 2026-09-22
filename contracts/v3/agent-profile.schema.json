@@ -346,6 +346,12 @@
         },
         "limits_changed": {
           "type": "boolean"
+        },
+        "supports_tools": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       }
     },

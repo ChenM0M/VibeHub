@@ -32,6 +32,7 @@ pub struct OpenCodeModelView {
     pub display_name: String,
     pub declared_id: Option<String>,
     pub reasoning: Option<bool>,
+    pub tool_call: Option<bool>,
     pub reasoning_effort: Option<String>,
     pub thinking_mode: Option<String>,
     pub thinking_budget: Option<u64>,
@@ -542,6 +543,7 @@ fn model_view(model_id: &str, value: &Value) -> Result<OpenCodeModelView, Storag
             .and_then(Value::as_str)
             .map(str::to_owned),
         reasoning: object.get("reasoning").and_then(Value::as_bool),
+        tool_call: object.get("tool_call").and_then(Value::as_bool),
         reasoning_effort: object.get("options").and_then(|v| v.get("reasoningEffort").or_else(|| v.get("effort"))).and_then(Value::as_str).map(str::to_owned),
         thinking_mode: object.get("options").and_then(|v| v.pointer("/thinking/type")).and_then(Value::as_str).map(str::to_owned),
         thinking_budget: object.get("options").and_then(|v| v.pointer("/thinking/budgetTokens")).and_then(Value::as_u64),

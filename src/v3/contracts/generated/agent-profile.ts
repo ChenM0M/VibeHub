@@ -251,6 +251,7 @@ export interface ModelProfile {
   modalities_changed?: boolean;
   limits?: ModelLimits | null;
   limits_changed?: boolean;
+  supports_tools?: boolean | null;
 }
 export interface ThinkingProfile {
   supports_reasoning: boolean | null;
