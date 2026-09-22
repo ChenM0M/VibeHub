@@ -1639,7 +1639,8 @@
       "count": "{{count}} Profiles",
       "create": "Create Profile",
       "cloneCurrent": "Clone current Profile",
-      "openCodeSingle": "OpenCode uses one configuration"
+      "openCodeSingle": "OpenCode uses one configuration",
+      "readError": "Configuration could not be read"
     },
     "actions": {
       "setDefault": "Set as default",

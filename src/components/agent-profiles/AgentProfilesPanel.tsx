@@ -380,7 +380,7 @@ function emptyModelForm(agent: AgentKind): ModelForm {
 
 function ProfileSummaryRow({ summary, selected, onClick }: { summary: AgentProfileSummary; selected: boolean; onClick: () => void }) {
     const { t } = useTranslation();
-    const compatibility = summary.compatibility === 'supported'
+    const compatibility = summary.read_error ? t('agentProfiles.profiles.readError') : summary.compatibility === 'supported'
         ? t('agentProfiles.compatibility.editable')
         : summary.compatibility === 'partial'
             ? t('agentProfiles.compatibility.partialShort')
@@ -562,6 +562,8 @@ export function AgentProfilesPanel() {
         const requestId = ++profileRequest.current;
         const requestContextSnapshot = requestContextRef.current;
         setLoadingProfile(true);
+        setProfile(null);
+        setDraft(null);
         tauriApi.v3AgentProfileRead({ agent, runtime_target_id: targetId, profile_id: selectedProfileId })
             .then((result) => {
                 if (requestId !== profileRequest.current || requestContextRef.current !== requestContextSnapshot) return;
@@ -1178,9 +1180,9 @@ export function AgentProfilesPanel() {
                     <h2 className="mt-4 text-lg font-semibold">{t(targetId ? 'agentProfiles.empty.noProfilesTitle' : 'agentProfiles.empty.selectRuntimeTitle')}</h2>
                     <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{targetId ? t('agentProfiles.empty.noProfilesDescription', { agent: agentLabel(agent) }) : t('agentProfiles.empty.selectRuntimeDescription')}</p>
                 </div>
-            ) : loadingProfiles || loadingProfile ? (
+            ) : loadingProfiles ? (
                 <div className="flex items-center justify-center gap-3 py-20 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />{t('agentProfiles.loadingProfiles')}</div>
-            ) : discovery && profileForEdit ? (
+            ) : discovery ? (
                 <div className="grid gap-4 xl:grid-cols-[15rem_minmax(0,1fr)]">
                     <aside className="min-w-0" aria-label={t('agentProfiles.profiles.listLabel')}>
                         <div className="flex items-center justify-between gap-2 pb-2">
@@ -1199,7 +1201,9 @@ export function AgentProfilesPanel() {
                         </div>
                     </aside>
 
-                    <motion.article key={`${agent}:${selectedProfileId}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }} className="min-w-0 rounded-xl bg-muted/[0.18] p-3 shadow-sm ring-1 ring-border/25 sm:p-4">
+                    {loadingProfile ? (
+                        <div role="status" className="p-6">{t('agentProfiles.loadingProfiles')}</div>
+                    ) : profileForEdit ? <motion.article key={`${agent}:${selectedProfileId}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }} className="min-w-0 rounded-xl bg-muted/[0.18] p-3 shadow-sm ring-1 ring-border/25 sm:p-4">
                         <header className="flex flex-col gap-4 px-1 pb-3 pt-1 sm:px-2 xl:flex-row xl:items-start xl:justify-between">
                             <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
@@ -1417,7 +1421,14 @@ export function AgentProfilesPanel() {
                         </section>
 
                         {lastSave?.backup_path && <div className="flex flex-col gap-3 py-3 text-sm text-emerald-700 dark:text-emerald-300 md:flex-row md:items-center md:justify-between"><div className="min-w-0"><div className="font-medium">{t('agentProfiles.backup.available')}</div><div className="mt-1 truncate font-mono text-xs">{lastSave.backup_path.display}</div></div><Button type="button" size="sm" variant="outline" onClick={restoreLastSave} disabled={busyAction !== null}><RefreshCw className="mr-2 h-3.5 w-3.5" />{t('agentProfiles.backup.restore')}</Button></div>}
-                    </motion.article>
+                    </motion.article> : (
+                        <div role="alert" className="min-w-0 rounded-lg border border-destructive/25 p-5">
+                            <h2 className="font-semibold">{t('agentProfiles.profiles.readError')}</h2>
+                            <p className="mt-2 break-all font-mono text-xs">{selectedSummary?.source_path.display}</p>
+                            <p className="mt-3 whitespace-pre-wrap text-sm">{selectedSummary?.read_error ? formatError(selectedSummary.read_error) : notice?.text}</p>
+                            <Button type="button" variant="outline" className="mt-4" onClick={refresh}>{t('agentProfiles.common.refresh')}</Button>
+                        </div>
+                    )}
                 </div>
             ) : null}
 

@@ -435,7 +435,9 @@ pub struct AgentProfileSummaryWire {
     pub agent: AgentKind,
     pub runtime_target_id: String,
     pub source_path: NativeConfigPath,
-    pub revision: ConfigRevisionWire,
+    pub revision: Option<ConfigRevisionWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_error: Option<AgentProfileCommandError>,
     pub is_default: bool,
     pub compatibility: String,
 }
@@ -629,11 +631,18 @@ fn discover(
     request: AgentProfileTargetRequest,
 ) -> Result<AgentProfileDiscoverResult, AgentProfileCommandError> {
     let target = resolve_runtime_target(&request.runtime_target_id)?;
+    discover_on_target(request.agent, target)
+}
+
+fn discover_on_target(
+    agent: AgentKind,
+    target: RuntimeTarget,
+) -> Result<AgentProfileDiscoverResult, AgentProfileCommandError> {
     // OpenCode discovery is fault-tolerant: each candidate (XDG first, then the
     // legacy Roaming fallback) is checked independently, so a single
     // unreadable/invalid candidate is recorded as a structured error instead of
     // aborting the scan of the remaining candidates.
-    let (profiles, candidate_errors) = match request.agent {
+    let (profiles, candidate_errors) = match agent {
         AgentKind::Opencode => {
             let outcome = v3::discover_opencode_profiles_tolerant(&target);
             let profiles = outcome
@@ -644,10 +653,10 @@ fn discover(
             (profiles, outcome.errors)
         }
         AgentKind::ClaudeCode | AgentKind::Codex => {
-            (discover_locations(&request.agent, &target)?, Vec::new())
+            (discover_locations(&agent, &target)?, Vec::new())
         }
     };
-    let summaries = profiles
+    let mut summaries = profiles
         .iter()
         .map(|profile| summary_for(&target, profile))
         .collect::<Result<Vec<_>, _>>()?;
@@ -655,38 +664,62 @@ fn discover(
         .iter()
         .find(|summary| summary.is_default)
         .map(|summary| summary.profile_id.clone());
-    let errors = candidate_errors
+    let errors: Vec<_> = candidate_errors
         .into_iter()
-        .map(|error: OpenCodeDiscoveryError| {
-            json!({
-                "code": error.code,
-                "category": discovery_error_category(&error.code),
-                "recoverable": true,
-                "message_key": "agent_profile.discovery_error",
-                "details": {
-                    "message": error.message,
-                    "path": error.path,
-                    "recovery_hint": error.recovery_hint,
-                },
-                "evidence_refs": [],
-            })
-        })
+        .map(discovery_command_error)
         .collect();
+    for error in &errors {
+        let path = Path::new(error.details["path"].as_str().unwrap_or_default());
+        summaries.push(AgentProfileSummaryWire {
+            profile_id: opencode_profile_id(path),
+            display_name: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("OpenCode")
+                .to_owned(),
+            agent: AgentKind::Opencode,
+            runtime_target_id: target.target_id.clone(),
+            source_path: NativeConfigPath::from_path(path, target.platform),
+            revision: None,
+            read_error: Some(error.clone()),
+            is_default: false,
+            compatibility: "unknown".to_owned(),
+        });
+    }
     Ok(AgentProfileDiscoverResult {
         kind: "agent_profile_discover_result",
         schema_version: SCHEMA_VERSION,
         generated_at: now(),
         model_version: MODEL_VERSION,
         freshness: "fresh",
-        completeness: "complete",
+        completeness: if errors.is_empty() {
+            "complete"
+        } else {
+            "partial"
+        },
         evidence_refs: Vec::new(),
         warnings: Vec::new(),
-        errors,
-        agent: request.agent,
+        errors: errors.into_iter().map(|error| json!(error)).collect(),
+        agent,
         runtime_targets: vec![target],
         profiles: summaries,
         default_profile_id,
     })
+}
+
+fn discovery_command_error(error: OpenCodeDiscoveryError) -> AgentProfileCommandError {
+    let mut result = AgentProfileCommandError::new(
+        &error.code,
+        discovery_error_category(&error.code),
+        true,
+        safe_storage_message(&error.message),
+    );
+    result.message_key = "agent_profile.discovery_error".to_owned();
+    result.details.insert("path".to_owned(), json!(error.path));
+    result
+        .details
+        .insert("recovery_hint".to_owned(), json!(error.recovery_hint));
+    result
 }
 
 fn discovery_error_category(code: &str) -> &'static str {
@@ -1318,6 +1351,23 @@ fn locate_profile(
             "AGENT_PROFILE_ID_REQUIRED",
             "profile_id is required",
         ));
+    }
+    if *agent == AgentKind::Opencode {
+        let outcome = v3::discover_opencode_profiles_tolerant(target);
+        if let Some(profile) = outcome
+            .profiles
+            .into_iter()
+            .find(|view| opencode_profile_id(&view.source_path) == profile_id)
+        {
+            return Ok(LocatedProfile::OpenCode(profile));
+        }
+        if let Some(error) = outcome
+            .errors
+            .into_iter()
+            .find(|error| opencode_profile_id(Path::new(&error.path)) == profile_id)
+        {
+            return Err(discovery_command_error(error));
+        }
     }
     discover_locations(agent, target)?
         .into_iter()
@@ -2010,7 +2060,8 @@ fn summary_for(
         agent: profile.agent(),
         runtime_target_id: target.target_id.clone(),
         source_path: NativeConfigPath::from_path(profile.source_path(), target.platform),
-        revision: revision_wire(profile.document_revision()),
+        revision: Some(revision_wire(profile.document_revision())),
+        read_error: None,
         is_default: profile.is_default(),
         compatibility: profile.compatibility().to_owned(),
     })
@@ -3201,6 +3252,46 @@ mod tests {
         assert_eq!(revision_number(&min_revision), 1);
         assert!(revision_number(&sample_revision) <= JS_MAX_SAFE_INTEGER);
         assert_eq!(revision_number(&max_revision), 0xFFFFFFFFFFFF);
+    }
+
+    #[test]
+    fn invalid_opencode_candidate_remains_discoverable_and_read_reports_original_error() {
+        let root = std::env::temp_dir().join(format!("vibehub-discovery-error-{}", Uuid::new_v4()));
+        let dir = opencode_config_dir(&root);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("opencode.jsonc"), "{ invalid").unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let result = discover_on_target(AgentKind::Opencode, target.clone()).unwrap();
+        assert_eq!(result.completeness, "partial");
+        assert_eq!(result.profiles.len(), 1);
+        let failed = &result.profiles[0];
+        assert!(failed.revision.is_none());
+        let diagnostic = failed.read_error.as_ref().unwrap();
+        assert_eq!(diagnostic.code, "CONFIG_JSONC_INVALID");
+        assert!(diagnostic.details["message"]
+            .as_str()
+            .unwrap()
+            .contains("line"));
+        let error = locate_profile(&target, &AgentKind::Opencode, &failed.profile_id).unwrap_err();
+        assert_eq!(error.code, diagnostic.code);
+        assert_eq!(error.details, diagnostic.details);
+        fs::write(dir.join("opencode.json"), "{}").unwrap();
+        let mixed = discover_on_target(AgentKind::Opencode, target.clone()).unwrap();
+        assert_eq!(mixed.profiles.len(), 2);
+        assert_eq!(
+            mixed
+                .profiles
+                .iter()
+                .filter(|p| p.read_error.is_some())
+                .count(),
+            1
+        );
+        fs::write(dir.join("opencode.jsonc"), "{}").unwrap();
+        assert!(locate_profile(&target, &AgentKind::Opencode, &failed.profile_id).is_ok());
+        let repaired = discover_on_target(AgentKind::Opencode, target).unwrap();
+        assert_eq!(repaired.completeness, "complete");
+        assert!(repaired.errors.is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

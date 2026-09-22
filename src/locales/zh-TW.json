@@ -1636,7 +1636,8 @@
       "count": "{{count}} 個設定",
       "create": "新增 Profile",
       "cloneCurrent": "複製目前 Profile",
-      "openCodeSingle": "OpenCode 使用單一設定"
+      "openCodeSingle": "OpenCode 使用單一設定",
+      "readError": "無法讀取此設定"
     },
     "actions": {
       "setDefault": "設為預設",
