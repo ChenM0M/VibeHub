@@ -1051,10 +1051,16 @@ fn create_profile_on_target(
     let operation = match request.agent {
         AgentKind::Opencode => {
             if template.is_some() || request.profile_name != "opencode.jsonc" {
-                return Err(AgentProfileCommandError::unsupported("OPENCODE_PROFILE_CRUD_UNSUPPORTED", "OpenCode supports initialization of its native config, not named Profiles"));
+                return Err(AgentProfileCommandError::unsupported(
+                    "OPENCODE_PROFILE_CRUD_UNSUPPORTED",
+                    "OpenCode supports initialization of its native config, not named Profiles",
+                ));
             }
             let (profile, write) = v3::initialize_opencode_profile(&target)?;
-            OperationWrite { profile: LocatedProfile::OpenCode(profile), write: Some(write) }
+            OperationWrite {
+                profile: LocatedProfile::OpenCode(profile),
+                write: Some(write),
+            }
         }
         AgentKind::ClaudeCode => {
             let operation = v3::create_claude_profile(
@@ -3189,25 +3195,47 @@ mod tests {
         let root = std::env::temp_dir().join(format!("vibehub-initialize-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let target = RuntimeTarget::host(root.clone());
-        let created = create_profile_on_target(target.clone(), AgentProfileCreateRequest {
-            agent: AgentKind::Opencode, runtime_target_id: target.target_id.clone(),
-            profile_name: "opencode.jsonc".to_owned(), template_profile_id: None,
-        }).unwrap();
+        let created = create_profile_on_target(
+            target.clone(),
+            AgentProfileCreateRequest {
+                agent: AgentKind::Opencode,
+                runtime_target_id: target.target_id.clone(),
+                profile_name: "opencode.jsonc".to_owned(),
+                template_profile_id: None,
+            },
+        )
+        .unwrap();
         assert_eq!(created.profile["managed"]["providers"], json!([]));
         let path = v3::opencode_config_paths(&target)[0].clone();
         let original = fs::read(&path).unwrap();
         assert!(v3::initialize_opencode_profile(&target).is_err());
         assert_eq!(fs::read(&path).unwrap(), original);
         fs::write(&path, b"{broken").unwrap();
-        assert_eq!(v3::initialize_opencode_profile(&target).unwrap_err().code, "OPENCODE_INITIALIZE_DISCOVERY_INCOMPLETE");
+        assert_eq!(
+            v3::initialize_opencode_profile(&target).unwrap_err().code,
+            "OPENCODE_INITIALIZE_DISCOVERY_INCOMPLETE"
+        );
         assert_eq!(fs::read(&path).unwrap(), b"{broken");
         let destination = root.join("race.json");
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
-        let threads: Vec<_> = (0..2).map(|_| {
-            let target = target.clone(); let destination = destination.clone(); let barrier = barrier.clone();
-            std::thread::spawn(move || { barrier.wait(); v3::create_config_document(&target, &destination, b"{}").is_ok() })
-        }).collect();
-        assert_eq!(threads.into_iter().map(|thread| thread.join().unwrap() as usize).sum::<usize>(), 1);
+        let threads: Vec<_> = (0..2)
+            .map(|_| {
+                let target = target.clone();
+                let destination = destination.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    v3::create_config_document(&target, &destination, b"{}").is_ok()
+                })
+            })
+            .collect();
+        assert_eq!(
+            threads
+                .into_iter()
+                .map(|thread| thread.join().unwrap() as usize)
+                .sum::<usize>(),
+            1
+        );
         assert_eq!(fs::read(destination).unwrap(), b"{}");
         fs::remove_dir_all(root).unwrap();
     }
