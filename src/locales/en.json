@@ -1827,7 +1827,8 @@
       "customOptionsUnavailable": "Unavailable; automatic fallback remains available.",
       "fallbackPriority": "Fallback priority",
       "unknownOption": "unknown configured value"
-    }
+    },
+    "configPathsHint": "Detects XDG_CONFIG_HOME, OPENCODE_CONFIG and OPENCODE_CONFIG_DIR. Use absolute custom paths. Restart VibeHub after changing host environment variables; WSL uses the selected distribution."
   },
   "update": {
     "newVersion": "New Version Available",

@@ -453,7 +453,10 @@ pub fn create_config_document(
             "initial configuration exceeds the size limit",
         ));
     }
-    let home = target.home_path.as_path();
+    let home = storage_scope_home(target, path)?;
+    let mut scoped_target = target.clone();
+    scoped_target.home_path = NativeConfigPath::from_path(&home, target.platform);
+    let target = &scoped_target;
     let parent = path
         .parent()
         .ok_or_else(|| StorageError::new("CONFIG_PARENT_INVALID", "missing parent"))?;
@@ -789,6 +792,36 @@ fn temporary_path(path: &Path) -> PathBuf {
         .join(format!(".{file_name}.vibehub.{}.tmp", Uuid::new_v4()))
 }
 
+fn storage_scope_home(target: &RuntimeTarget, path: &Path) -> Result<PathBuf, StorageError> {
+    let home = target.home_path.as_path();
+    if path.starts_with(&home) || home.canonicalize().is_ok_and(|home| path.starts_with(home)) {
+        return Ok(home);
+    }
+    let Some(mut parent) = super::opencode_paths::observed_external_config_parent(target, path)?
+    else {
+        return Ok(home);
+    };
+    // Check every existing component of the external path; a configured path
+    // does not grant permission to follow a symlink/junction outside its scope.
+    while !parent.exists() {
+        if !parent.pop() {
+            return Err(StorageError::new(
+                "CONFIG_PARENT_INVALID",
+                path.display().to_string(),
+            ));
+        }
+    }
+    let canonical = parent
+        .canonicalize()
+        .map_err(|error| StorageError::new("CONFIG_PARENT_INVALID", error.to_string()))?;
+    let anchor = parent
+        .ancestors()
+        .last()
+        .ok_or_else(|| StorageError::new("CONFIG_PARENT_INVALID", path.display().to_string()))?;
+    reject_path_components(anchor, &parent, false, &canonical)?;
+    Ok(parent)
+}
+
 fn validate_target_path(
     target: &RuntimeTarget,
     path: &Path,
@@ -800,7 +833,7 @@ fn validate_target_path(
             path.display().to_string(),
         ));
     }
-    let raw_home = target.home_path.as_path();
+    let raw_home = storage_scope_home(target, path)?;
     let home_metadata = fs::symlink_metadata(&raw_home)
         .map_err(|error| StorageError::new("RUNTIME_HOME_INVALID", error.to_string()))?;
     if !home_metadata.is_dir() {

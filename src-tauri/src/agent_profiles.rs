@@ -3185,6 +3185,52 @@ mod tests {
     }
 
     #[test]
+    fn opencode_environment_paths_are_runtime_specific_and_external_scope_is_exact() {
+        if let Ok(root) = std::env::var("VIBEHUB_EXTERNAL_PATH_TEST") {
+            let root = PathBuf::from(root);
+            let target = RuntimeTarget::host(root.join("home"));
+            let paths = v3::opencode_config_paths(&target).unwrap();
+            assert_eq!(paths[0], root.join("external/custom.jsonc"));
+            let (view, _) = v3::initialize_opencode_profile(&target).unwrap();
+            assert_eq!(view.source_path, paths[0]);
+            let document = v3::read_document(&target, &paths[0]).unwrap();
+            let saved = v3::write_document(&target, &paths[0], Some(&document.revision), b"{\"provider\":{},\"model\":\"demo/test\"}").unwrap();
+            v3::restore_document(&target, &paths[0], saved.backup_path.unwrap().as_path(), &saved.after_revision).unwrap();
+            fs::write(root.join("external/other.json"), b"{}").unwrap();
+            assert_eq!(v3::read_document(&target, root.join("external/other.json")).unwrap_err().code, "CONFIG_PATH_OUTSIDE_RUNTIME_HOME");
+            #[cfg(unix)] {
+                fs::remove_file(&paths[0]).unwrap();
+                std::os::unix::fs::symlink(root.join("external/other.json"), &paths[0]).unwrap();
+                assert_eq!(v3::read_document(&target, &paths[0]).unwrap_err().code, "CONFIG_PATH_LINK_REJECTED");
+            }
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("vibehub-external-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("home")).unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "agent_profiles::tests::opencode_environment_paths_are_runtime_specific_and_external_scope_is_exact"])
+            .env("VIBEHUB_EXTERNAL_PATH_TEST", &root).env("OPENCODE_CONFIG", root.join("external/custom.jsonc"))
+            .env_remove("OPENCODE_CONFIG_DIR").env_remove("XDG_CONFIG_HOME").env_remove("WSL_DISTRO_NAME")
+            .status().unwrap();
+        assert!(status.success());
+        let target = RuntimeTarget::host(root.join("home"));
+        let values = v3::OpenCodeConfigEnvironment { xdg_config_home: Some(root.join("xdg").to_string_lossy().into_owned()), config_file: Some(root.join("custom.json").to_string_lossy().into_owned()), config_directory: None };
+        let paths = v3::opencode_config_paths_with_environment(&target, &values).unwrap();
+        assert_eq!(paths[0], root.join("custom.json"));
+        assert_eq!(paths[1], root.join("xdg/opencode/opencode.jsonc"));
+        let mut invalid = values; invalid.config_file = Some("relative.json".to_owned());
+        assert_eq!(v3::opencode_config_paths_with_environment(&target, &invalid).unwrap_err().code, "OPENCODE_CONFIG_PATH_NOT_ABSOLUTE");
+        let wsl = RuntimeTarget::wsl("Ubuntu", "/home/Alice");
+        let values = v3::OpenCodeConfigEnvironment { xdg_config_home: None, config_file: Some("/opt/KeepCase/opencode.jsonc".to_owned()), config_directory: Some("/opt/KeepCase".to_owned()) };
+        let paths = v3::opencode_config_paths_with_environment(&wsl, &values).unwrap();
+        assert_eq!(paths.len(), 5, "custom file duplicated in custom directory is listed once");
+        assert!(paths[0].to_string_lossy().contains("KeepCase"));
+        let values = v3::OpenCodeConfigEnvironment { config_file: Some(r"C:\Users\Alice\opencode.json".to_owned()), ..Default::default() };
+        assert!(v3::opencode_config_paths_with_environment(&wsl, &values).is_err(), "Windows paths cannot become WSL config paths");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn opencode_initialization_creates_once_and_preserves_existing_invalid_files() {
         let root = std::env::temp_dir().join(format!("vibehub-initialize-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
@@ -3194,7 +3240,7 @@ mod tests {
             profile_name: "opencode.jsonc".to_owned(), template_profile_id: None,
         }).unwrap();
         assert_eq!(created.profile["managed"]["providers"], json!([]));
-        let path = v3::opencode_config_paths(&target)[0].clone();
+        let path = v3::opencode_config_paths(&target).unwrap()[0].clone();
         let original = fs::read(&path).unwrap();
         assert!(v3::initialize_opencode_profile(&target).is_err());
         assert_eq!(fs::read(&path).unwrap(), original);

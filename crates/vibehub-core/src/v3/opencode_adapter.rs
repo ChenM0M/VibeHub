@@ -1,7 +1,8 @@
 use super::agent_profile_storage::{
     read_document, write_document, AgentKind, ConfigDocument, ConfigFormat, DocumentRevision,
-    ParsedConfig, RuntimePlatform, RuntimeTarget, StorageError, WriteReport,
+    ParsedConfig, RuntimeTarget, StorageError, WriteReport,
 };
+use super::opencode_paths::opencode_config_paths;
 use super::protocol_runtime::ProtocolKind;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -143,28 +144,6 @@ pub struct OpenCodeDiscoveryOutcome {
     pub errors: Vec<OpenCodeDiscoveryError>,
 }
 
-pub fn opencode_config_paths(target: &RuntimeTarget) -> Vec<PathBuf> {
-    let home = target.home_path.as_path();
-    // opencode follows the XDG convention on every platform, including
-    // Windows, where it stores configuration under `~/.config/opencode`
-    // rather than `%APPDATA%\\opencode`. Prefer the XDG location first and
-    // keep the legacy Roaming path as a backward-compatible fallback for
-    // users whose config was written by an older VibeHub build.
-    let roots: Vec<PathBuf> = match target.platform {
-        RuntimePlatform::Windows => vec![
-            home.join(".config").join("opencode"),
-            home.join("AppData").join("Roaming").join("opencode"),
-        ],
-        RuntimePlatform::Macos | RuntimePlatform::Linux => {
-            vec![home.join(".config").join("opencode")]
-        }
-    };
-    roots
-        .into_iter()
-        .flat_map(|root| [root.join("opencode.jsonc"), root.join("opencode.json")])
-        .collect()
-}
-
 pub fn initialize_opencode_profile(
     target: &RuntimeTarget,
 ) -> Result<(OpenCodeProfileView, WriteReport), StorageError> {
@@ -178,7 +157,7 @@ pub fn initialize_opencode_profile(
             "an OpenCode configuration already exists",
         ));
     }
-    let path = opencode_config_paths(target)
+    let path = opencode_config_paths(target)?
         .into_iter()
         .next()
         .ok_or_else(|| {
@@ -205,7 +184,14 @@ pub fn discover_opencode_profiles(
 /// failures are surfaced as candidate errors.
 pub fn discover_opencode_profiles_tolerant(target: &RuntimeTarget) -> OpenCodeDiscoveryOutcome {
     let mut outcome = OpenCodeDiscoveryOutcome::default();
-    for path in opencode_config_paths(target) {
+    let paths = match opencode_config_paths(target) {
+        Ok(paths) => paths,
+        Err(error) => {
+            outcome.errors.push(OpenCodeDiscoveryError { code: error.code.to_owned(), message: error.message, path: target.home_path.native.clone(), recovery_hint: "Check XDG_CONFIG_HOME, OPENCODE_CONFIG and OPENCODE_CONFIG_DIR in the selected runtime; custom paths must be absolute.".to_owned() });
+            return outcome;
+        }
+    };
+    for path in paths {
         match std::fs::symlink_metadata(&path) {
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
@@ -1705,7 +1691,11 @@ mod tests {
         fs::create_dir_all(&home).unwrap();
         let target = windows_target(home.clone());
 
-        let paths = opencode_config_paths(&target);
+        let paths = super::super::opencode_paths::opencode_config_paths_with_environment(
+            &target,
+            &Default::default(),
+        )
+        .unwrap();
 
         let xdg_jsonc = home.join(".config").join("opencode").join("opencode.jsonc");
         let xdg_json = home.join(".config").join("opencode").join("opencode.json");
@@ -1722,7 +1712,13 @@ mod tests {
 
         assert_eq!(
             paths,
-            vec![xdg_jsonc.clone(), xdg_json, roaming_jsonc, roaming_json]
+            vec![
+                xdg_jsonc.clone(),
+                xdg_json,
+                home.join(".config/opencode/config.json"),
+                roaming_jsonc,
+                roaming_json
+            ]
         );
         // XDG location must win over the legacy Roaming location so detection
         // no longer reports an empty environment for real Windows installs.

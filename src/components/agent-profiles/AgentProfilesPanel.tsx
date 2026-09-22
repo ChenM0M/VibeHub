@@ -1186,6 +1186,8 @@ export function AgentProfilesPanel() {
                 </div>
             </div>
 
+            {agent === 'opencode' && <p className="text-xs text-muted-foreground">{t('agentProfiles.configPathsHint')}</p>}
+
             {notice && <div className={cn('flex items-start gap-2 rounded-md border px-3 py-2 text-xs shadow-sm', notice.kind === 'success' && 'border-emerald-500/25 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300', notice.kind === 'error' && 'border-destructive/25 bg-destructive/5 text-destructive', notice.kind === 'info' && 'border-primary/20 bg-primary/5 text-primary')} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.kind === 'error' ? <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />}<span className="leading-5">{notice.text}</span></div>}
 
             {!targetId || (!loadingProfiles && discovery && discovery.profiles.length === 0) ? (

@@ -1824,7 +1824,8 @@
       "customOptionsUnavailable": "不可用；仍可使用自動回落。",
       "fallbackPriority": "回落優先權",
       "unknownOption": "未知的已設定值"
-    }
+    },
+    "configPathsHint": "識別 XDG_CONFIG_HOME、OPENCODE_CONFIG 和 OPENCODE_CONFIG_DIR。自訂路徑請使用絕對路徑；修改主機環境變數後請重新啟動 VibeHub。WSL 使用所選發行版的環境。"
   },
   "update": {
     "newVersion": "發現新版本",
