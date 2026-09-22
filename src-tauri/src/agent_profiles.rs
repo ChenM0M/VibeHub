@@ -1051,10 +1051,16 @@ fn create_profile_on_target(
     let operation = match request.agent {
         AgentKind::Opencode => {
             if template.is_some() || request.profile_name != "opencode.jsonc" {
-                return Err(AgentProfileCommandError::unsupported("OPENCODE_PROFILE_CRUD_UNSUPPORTED", "OpenCode supports initialization of its native config, not named Profiles"));
+                return Err(AgentProfileCommandError::unsupported(
+                    "OPENCODE_PROFILE_CRUD_UNSUPPORTED",
+                    "OpenCode supports initialization of its native config, not named Profiles",
+                ));
             }
             let (profile, write) = v3::initialize_opencode_profile(&target)?;
-            OperationWrite { profile: LocatedProfile::OpenCode(profile), write: Some(write) }
+            OperationWrite {
+                profile: LocatedProfile::OpenCode(profile),
+                write: Some(write),
+            }
         }
         AgentKind::ClaudeCode => {
             let operation = v3::create_claude_profile(
@@ -3194,14 +3200,35 @@ mod tests {
             let (view, _) = v3::initialize_opencode_profile(&target).unwrap();
             assert_eq!(view.source_path, paths[0]);
             let document = v3::read_document(&target, &paths[0]).unwrap();
-            let saved = v3::write_document(&target, &paths[0], Some(&document.revision), b"{\"provider\":{},\"model\":\"demo/test\"}").unwrap();
-            v3::restore_document(&target, &paths[0], saved.backup_path.unwrap().as_path(), &saved.after_revision).unwrap();
+            let saved = v3::write_document(
+                &target,
+                &paths[0],
+                Some(&document.revision),
+                b"{\"provider\":{},\"model\":\"demo/test\"}",
+            )
+            .unwrap();
+            v3::restore_document(
+                &target,
+                &paths[0],
+                saved.backup_path.unwrap().as_path(),
+                &saved.after_revision,
+            )
+            .unwrap();
             fs::write(root.join("external/other.json"), b"{}").unwrap();
-            assert_eq!(v3::read_document(&target, root.join("external/other.json")).unwrap_err().code, "CONFIG_PATH_OUTSIDE_RUNTIME_HOME");
-            #[cfg(unix)] {
+            assert_eq!(
+                v3::read_document(&target, root.join("external/other.json"))
+                    .unwrap_err()
+                    .code,
+                "CONFIG_PATH_OUTSIDE_RUNTIME_HOME"
+            );
+            #[cfg(unix)]
+            {
                 fs::remove_file(&paths[0]).unwrap();
                 std::os::unix::fs::symlink(root.join("external/other.json"), &paths[0]).unwrap();
-                assert_eq!(v3::read_document(&target, &paths[0]).unwrap_err().code, "CONFIG_PATH_LINK_REJECTED");
+                assert_eq!(
+                    v3::read_document(&target, &paths[0]).unwrap_err().code,
+                    "CONFIG_PATH_LINK_REJECTED"
+                );
             }
             return;
         }
@@ -3214,19 +3241,43 @@ mod tests {
             .status().unwrap();
         assert!(status.success());
         let target = RuntimeTarget::host(root.join("home"));
-        let values = v3::OpenCodeConfigEnvironment { xdg_config_home: Some(root.join("xdg").to_string_lossy().into_owned()), config_file: Some(root.join("custom.json").to_string_lossy().into_owned()), config_directory: None };
+        let values = v3::OpenCodeConfigEnvironment {
+            xdg_config_home: Some(root.join("xdg").to_string_lossy().into_owned()),
+            config_file: Some(root.join("custom.json").to_string_lossy().into_owned()),
+            config_directory: None,
+        };
         let paths = v3::opencode_config_paths_with_environment(&target, &values).unwrap();
         assert_eq!(paths[0], root.join("custom.json"));
         assert_eq!(paths[1], root.join("xdg/opencode/opencode.jsonc"));
-        let mut invalid = values; invalid.config_file = Some("relative.json".to_owned());
-        assert_eq!(v3::opencode_config_paths_with_environment(&target, &invalid).unwrap_err().code, "OPENCODE_CONFIG_PATH_NOT_ABSOLUTE");
+        let mut invalid = values;
+        invalid.config_file = Some("relative.json".to_owned());
+        assert_eq!(
+            v3::opencode_config_paths_with_environment(&target, &invalid)
+                .unwrap_err()
+                .code,
+            "OPENCODE_CONFIG_PATH_NOT_ABSOLUTE"
+        );
         let wsl = RuntimeTarget::wsl("Ubuntu", "/home/Alice");
-        let values = v3::OpenCodeConfigEnvironment { xdg_config_home: None, config_file: Some("/opt/KeepCase/opencode.jsonc".to_owned()), config_directory: Some("/opt/KeepCase".to_owned()) };
+        let values = v3::OpenCodeConfigEnvironment {
+            xdg_config_home: None,
+            config_file: Some("/opt/KeepCase/opencode.jsonc".to_owned()),
+            config_directory: Some("/opt/KeepCase".to_owned()),
+        };
         let paths = v3::opencode_config_paths_with_environment(&wsl, &values).unwrap();
-        assert_eq!(paths.len(), 5, "custom file duplicated in custom directory is listed once");
+        assert_eq!(
+            paths.len(),
+            5,
+            "custom file duplicated in custom directory is listed once"
+        );
         assert!(paths[0].to_string_lossy().contains("KeepCase"));
-        let values = v3::OpenCodeConfigEnvironment { config_file: Some(r"C:\Users\Alice\opencode.json".to_owned()), ..Default::default() };
-        assert!(v3::opencode_config_paths_with_environment(&wsl, &values).is_err(), "Windows paths cannot become WSL config paths");
+        let values = v3::OpenCodeConfigEnvironment {
+            config_file: Some(r"C:\Users\Alice\opencode.json".to_owned()),
+            ..Default::default()
+        };
+        assert!(
+            v3::opencode_config_paths_with_environment(&wsl, &values).is_err(),
+            "Windows paths cannot become WSL config paths"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -3235,25 +3286,47 @@ mod tests {
         let root = std::env::temp_dir().join(format!("vibehub-initialize-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let target = RuntimeTarget::host(root.clone());
-        let created = create_profile_on_target(target.clone(), AgentProfileCreateRequest {
-            agent: AgentKind::Opencode, runtime_target_id: target.target_id.clone(),
-            profile_name: "opencode.jsonc".to_owned(), template_profile_id: None,
-        }).unwrap();
+        let created = create_profile_on_target(
+            target.clone(),
+            AgentProfileCreateRequest {
+                agent: AgentKind::Opencode,
+                runtime_target_id: target.target_id.clone(),
+                profile_name: "opencode.jsonc".to_owned(),
+                template_profile_id: None,
+            },
+        )
+        .unwrap();
         assert_eq!(created.profile["managed"]["providers"], json!([]));
         let path = v3::opencode_config_paths(&target).unwrap()[0].clone();
         let original = fs::read(&path).unwrap();
         assert!(v3::initialize_opencode_profile(&target).is_err());
         assert_eq!(fs::read(&path).unwrap(), original);
         fs::write(&path, b"{broken").unwrap();
-        assert_eq!(v3::initialize_opencode_profile(&target).unwrap_err().code, "OPENCODE_INITIALIZE_DISCOVERY_INCOMPLETE");
+        assert_eq!(
+            v3::initialize_opencode_profile(&target).unwrap_err().code,
+            "OPENCODE_INITIALIZE_DISCOVERY_INCOMPLETE"
+        );
         assert_eq!(fs::read(&path).unwrap(), b"{broken");
         let destination = root.join("race.json");
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
-        let threads: Vec<_> = (0..2).map(|_| {
-            let target = target.clone(); let destination = destination.clone(); let barrier = barrier.clone();
-            std::thread::spawn(move || { barrier.wait(); v3::create_config_document(&target, &destination, b"{}").is_ok() })
-        }).collect();
-        assert_eq!(threads.into_iter().map(|thread| thread.join().unwrap() as usize).sum::<usize>(), 1);
+        let threads: Vec<_> = (0..2)
+            .map(|_| {
+                let target = target.clone();
+                let destination = destination.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    v3::create_config_document(&target, &destination, b"{}").is_ok()
+                })
+            })
+            .collect();
+        assert_eq!(
+            threads
+                .into_iter()
+                .map(|thread| thread.join().unwrap() as usize)
+                .sum::<usize>(),
+            1
+        );
         assert_eq!(fs::read(destination).unwrap(), b"{}");
         fs::remove_dir_all(root).unwrap();
     }
