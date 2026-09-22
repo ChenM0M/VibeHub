@@ -1641,7 +1641,8 @@
     "actions": {
       "setDefault": "设为默认",
       "launchOnce": "仅此次启动",
-      "copyLaunchCommand": "复制启动指令"
+      "copyLaunchCommand": "复制启动指令",
+      "saveAndLaunch": "保存并启动"
     },
     "route": {
       "adapter": "自动适配",

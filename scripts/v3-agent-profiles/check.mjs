@@ -51,3 +51,23 @@ const capability = backend.slice(backend.indexOf('fn claude_schema_capability(')
 assert.ok(capability.includes('claude_native_resolution'));
 assert.ok(!capability.includes('managed.default_model_id'));
 console.log('v3-agent-profiles: selection normalization, unknown models, canonical Haiku editor, three locales and capability declarations passed');
+
+const actionSource = await readFile(resolve(projectRoot, 'src/components/agent-profiles/profileActions.ts'), 'utf8');
+const actionModule = ts.transpileModule(actionSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
+const { profileForAction } = await import(`data:text/javascript;base64,${Buffer.from(actionModule).toString('base64')}`);
+const stored = { revision: 1 }, saved = { revision: 2 };
+let writes = 0;
+assert.equal(await profileForAction(stored, false, async () => { writes++; return saved; }), stored);
+assert.equal(writes, 0, 'clean launch does not rewrite config');
+assert.equal(await profileForAction(stored, true, async () => { writes++; return saved; }), saved, 'dirty action receives the saved snapshot');
+assert.equal(await profileForAction(stored, true, async () => null), null, 'failed save cannot authorize an action');
+assert.equal(await profileForAction(null, true, async () => { throw Error('should not save'); }), null);
+let finishSave;
+const delayed = profileForAction(stored, true, () => new Promise(resolve => { finishSave = resolve; }));
+let resolved = false;
+delayed.then(() => { resolved = true; });
+await Promise.resolve();
+assert.equal(resolved, false, 'action waits for persistence');
+finishSave(saved);
+assert.equal(await delayed, saved);
+console.log('agent profile save-before-action ordering, failure and clean-state checks passed');

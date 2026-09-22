@@ -1,3 +1,4 @@
+import { profileForAction } from './profileActions';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -601,8 +602,8 @@ export function AgentProfilesPanel() {
             .finally(() => requestId === discoveryRequest.current && requestContextRef.current === requestContextSnapshot && setLoadingProfiles(false));
     };
 
-    const saveDraft = async () => {
-        if (!draft || !profile || !targetId) return;
+    const saveDraft = async (): Promise<AgentProfileDocument | null> => {
+        if (!draft || !profile || !targetId) return null;
         setBusyAction('save');
         setNotice(null);
         try {
@@ -621,8 +622,10 @@ export function AgentProfilesPanel() {
             setDraft(cloneProfile(result.profile));
             setLastSave(result);
             setNotice({ kind: 'success', text: t('agentProfiles.notices.saved') });
+            return result.profile;
         } catch (error) {
             setNotice({ kind: 'error', text: t('agentProfiles.errors.saveFailed', { message: formatError(error) }) });
+            return null;
         } finally {
             setBusyAction(null);
         }
@@ -653,13 +656,15 @@ export function AgentProfilesPanel() {
 
     const prepareLaunch = async () => {
         if (!profile || !targetId) return;
+        const saved = await profileForAction(profile, dirty, saveDraft);
+        if (!saved) return;
         setBusyAction('launch');
         setNotice(null);
         try {
             const result = await tauriApi.v3AgentProfileLaunch({
                 agent,
                 runtime_target_id: targetId,
-                profile_id: profile.profile_id,
+                profile_id: saved.profile_id,
                 launch_mode: 'temporary',
             });
             setLastSave(result);
@@ -1213,7 +1218,7 @@ export function AgentProfilesPanel() {
                             <div className="flex flex-wrap gap-2">
                                 <Button type="button" variant="outline" onClick={activateDraft} disabled={!profile || busyAction !== null || selectedSummary?.is_default}>{busyAction === 'activate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{t('agentProfiles.actions.setDefault')}</Button>
                                 <Button type="button" variant="outline" onClick={copyLaunchCommand} disabled={!profileForEdit || busyAction !== null} title={t('agentProfiles.actions.copyLaunchCommand')} aria-label={t('agentProfiles.actions.copyLaunchCommand')}><Copy className="mr-2 h-4 w-4" />{t('agentProfiles.actions.copyLaunchCommand')}</Button>
-                                <Button type="button" variant="outline" onClick={prepareLaunch} disabled={!profile || busyAction !== null}>{busyAction === 'launch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Terminal className="mr-2 h-4 w-4" />}{t('agentProfiles.actions.launchOnce')}</Button>
+                                <Button type="button" variant="outline" onClick={prepareLaunch} disabled={!profile || busyAction !== null}>{busyAction === 'launch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Terminal className="mr-2 h-4 w-4" />}{t(dirty ? 'agentProfiles.actions.saveAndLaunch' : 'agentProfiles.actions.launchOnce')}</Button>
                                 <Button type="button" onClick={saveDraft} disabled={!dirty || busyAction !== null}>{busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t('agentProfiles.common.save')}</Button>
                             </div>
                         </header>

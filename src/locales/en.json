@@ -1644,7 +1644,8 @@
     "actions": {
       "setDefault": "Set as default",
       "launchOnce": "Launch once",
-      "copyLaunchCommand": "Copy launch command"
+      "copyLaunchCommand": "Copy launch command",
+      "saveAndLaunch": "Save and launch"
     },
     "route": {
       "adapter": "Automatic adaptation",
