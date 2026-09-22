@@ -90,3 +90,47 @@ for (const invalid of ['', '0', '-1', '1.5', 'Infinity', '9007199254740992']) {
   assert.throws(() => parseModelLimits({ context: invalid, input: '', output: '8192' }));
 }
 console.log('Token limit inheritance, optional input, required context/output and safe integer checks passed');
+
+const previewSource = await readFile(resolve(projectRoot, 'src/components/agent-profiles/effectiveConfig.ts'), 'utf8');
+const previewCode = ts.transpileModule(previewSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
+const { knownConfiguration, launchCommand } = await import(`data:text/javascript;base64,${Buffer.from(previewCode).toString('base64')}`);
+const previewProfile = {
+  agent: 'opencode', display_name: 'Demo', source: { path: { native: "/tmp/A B/quote'$(printf injected).jsonc", platform: 'linux' }, scope: 'user' }, default_state: {},
+  managed: { default_provider_id: 'wrong', default_model_id: 'p/org/m', providers: [
+    { provider_id: 'wrong', models: [], protocol: { native_protocol: 'unknown' } },
+    { provider_id: 'p', credential: { secret: 'SECRET_SENTINEL' }, protocol: { native_protocol: 'anthropic_messages' }, models: [{ model_id: 'org/m',
+      thinking: { reasoning_effort: 'low', thinking_mode: null, thinking_budget: null, selected: 'high', variant_values: { high: { effort: 'high', apiKey: 'SECRET_SENTINEL', thinking: { type: 'adaptive' } } } },
+      modalities: { input: ['text', 'image'], output: ['text'] }, limits: { context: 128000, input: null, output: 8192 }
+    }] }
+  ] }
+};
+const preview = knownConfiguration(previewProfile);
+assert.equal(preview.find(r => r.key === 'provider').value, 'p');
+assert.deepEqual(preview.find(r => r.key === 'reasoningEffort'), { key: 'reasoningEffort', value: 'high', source: 'variant', variant: 'high', overridden: 'low' });
+assert.equal(preview.find(r => r.key === 'thinkingMode').source, 'variant');
+assert.equal(preview.find(r => r.key === 'inputLimit').source, 'inherited');
+assert.ok(!JSON.stringify(preview).includes('SECRET_SENTINEL'));
+previewProfile.managed.providers[1].models[0].thinking.variant_values.high.disabled = true;
+assert.equal(knownConfiguration(previewProfile).find(r => r.key === 'reasoningEffort').value, 'low');
+const { mkdtempSync, writeFileSync, chmodSync, rmSync } = await import('node:fs');
+const { tmpdir } = await import('node:os');
+const { execFileSync } = await import('node:child_process');
+const probeDir = mkdtempSync(resolve(tmpdir(), 'vibehub-command-'));
+try {
+  const probe = resolve(probeDir, 'opencode');
+  writeFileSync(probe, '#!/bin/sh\nprintf \'%s\' "$OPENCODE_CONFIG"\n'); chmodSync(probe, 0o755);
+  const command = launchCommand(previewProfile, null).command;
+  const output = execFileSync('/bin/sh', ['-c', command], { env: { ...process.env, PATH: probeDir + ':' + process.env.PATH }, encoding: 'utf8' });
+  assert.equal(output, previewProfile.source.path.native, 'quoted POSIX path is passed literally to the child');
+} finally { rmSync(probeDir, { recursive: true }); }
+const windowsProfile = structuredClone(previewProfile);
+windowsProfile.source.path = { native: "C:\\Users\\A B\\it's.jsonc", platform: 'windows' };
+const windowsCommand = launchCommand(windowsProfile, { kind: 'host', platform: 'windows' });
+assert.equal(windowsCommand.shell, 'powershell');
+assert.ok(windowsCommand.command.includes("it''s.jsonc"));
+assert.ok(windowsCommand.command.includes('finally { $env:OPENCODE_CONFIG = $previousOpenCodeConfig }'));
+windowsProfile.source.path.native = '\\\\wsl.localhost\\Ubuntu\\home\\Case User\\opencode.jsonc';
+const wslCommand = launchCommand(windowsProfile, { kind: 'wsl', platform: 'linux', distribution: 'Ubuntu' });
+assert.ok(wslCommand.command.includes("'OPENCODE_CONFIG=/home/Case User/opencode.jsonc'"));
+assert.equal(launchCommand(windowsProfile, { kind: 'wsl', platform: 'linux', distribution: 'Debian' }).command, null);
+console.log('Preview source/override/credential exclusion and Linux child execution, Windows quoting and WSL path checks passed');

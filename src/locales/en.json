@@ -1886,6 +1886,41 @@
       "yes": "Supported",
       "no": "Unsupported",
       "hint": "Declarations are not an API test. Missing streaming/usage metadata prevents a complete compatibility claim."
+    },
+    "preview": {
+      "title": "Configuration values and sources",
+      "draft": "Unsaved",
+      "scope": "Known managed values in the selected file, with selected variant overrides. This is a partial preview, not the complete merged runtime configuration. Credentials are excluded.",
+      "inherited": "Inherited / source not read",
+      "field": "Setting",
+      "value": "Value",
+      "source": "Source",
+      "overrides": "Overrides: {{value}}",
+      "layers": "Other layers not evaluated: remote defaults → global configuration → selected OPENCODE_CONFIG → project configuration → configuration directories → OPENCODE_CONFIG_CONTENT → managed policy. Later layers may override these values.",
+      "launch": "Launch command ({{shell}})",
+      "saveFirst": "Save before running this command; terminal commands read the saved file.",
+      "runtimePathMismatch": "The configuration path cannot be mapped to the selected runtime.",
+      "origins": {
+        "file": "Selected file",
+        "model": "Model configuration",
+        "variant": "Selected variant",
+        "inherited": "External defaults (unknown)"
+      },
+      "fields": {
+        "provider": "Provider",
+        "model": "Default model",
+        "protocol": "Protocol",
+        "smallModel": "Small model",
+        "variant": "Default variant",
+        "reasoningEffort": "Reasoning effort",
+        "thinkingMode": "Thinking mode",
+        "thinkingBudget": "Thinking budget",
+        "inputModalities": "Input types",
+        "outputModalities": "Output types",
+        "context": "Context window",
+        "inputLimit": "Maximum input",
+        "outputLimit": "Maximum output"
+      }
     }
   },
   "update": {

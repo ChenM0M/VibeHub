@@ -1883,6 +1883,41 @@
       "yes": "支援",
       "no": "不支援",
       "hint": "宣告不等於介面實測。串流輸出和用量資訊缺少能力中繼資料時，不會標記為完全相容。"
+    },
+    "preview": {
+      "title": "設定值與來源預覽",
+      "draft": "未儲存",
+      "scope": "顯示所選檔案中已讀取的受管理設定及所選變體覆寫。這是部分預覽，不代表完整合併後的執行設定；憑證不會顯示。",
+      "inherited": "繼承 / 來源未讀取",
+      "field": "設定項目",
+      "value": "值",
+      "source": "來源",
+      "overrides": "覆寫：{{value}}",
+      "layers": "尚未計算的其他層：遠端預設設定 → 全域設定 → 所選 OPENCODE_CONFIG → 專案設定 → 設定目錄 → OPENCODE_CONFIG_CONTENT → 管理原則。後續層可能覆寫目前值。",
+      "launch": "啟動命令（{{shell}}）",
+      "saveFirst": "執行命令前請先儲存；終端讀取的是已儲存檔案。",
+      "runtimePathMismatch": "無法將設定路徑對應到所選執行環境。",
+      "origins": {
+        "file": "所選設定檔案",
+        "model": "模型設定",
+        "variant": "所選變體",
+        "inherited": "外部預設值（未知）"
+      },
+      "fields": {
+        "provider": "供應商",
+        "model": "預設模型",
+        "protocol": "協定",
+        "smallModel": "小模型",
+        "variant": "預設變體",
+        "reasoningEffort": "思考強度",
+        "thinkingMode": "思考模式",
+        "thinkingBudget": "思考預算",
+        "inputModalities": "輸入類型",
+        "outputModalities": "輸出類型",
+        "context": "上下文視窗",
+        "inputLimit": "最大輸入",
+        "outputLimit": "最大輸出"
+      }
     }
   },
   "update": {

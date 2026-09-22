@@ -1883,6 +1883,41 @@
       "yes": "支持",
       "no": "不支持",
       "hint": "声明不等于接口实测。流式输出和用量信息缺少能力元数据时，不会标记为完全兼容。"
+    },
+    "preview": {
+      "title": "配置值与来源预览",
+      "draft": "未保存",
+      "scope": "展示所选文件中已读取的受管理配置及所选变体覆盖。这是部分预览，不代表完整合并后的运行配置；凭据不会显示。",
+      "inherited": "继承 / 来源未读取",
+      "field": "配置项",
+      "value": "值",
+      "source": "来源",
+      "overrides": "覆盖：{{value}}",
+      "layers": "尚未计算的其他层：远程默认配置 → 全局配置 → 所选 OPENCODE_CONFIG → 项目配置 → 配置目录 → OPENCODE_CONFIG_CONTENT → 管理策略。后续层可能覆盖当前值。",
+      "launch": "启动命令（{{shell}}）",
+      "saveFirst": "执行命令前请先保存；终端读取的是已保存文件。",
+      "runtimePathMismatch": "无法将配置路径映射到所选运行环境。",
+      "origins": {
+        "file": "所选配置文件",
+        "model": "模型配置",
+        "variant": "所选变体",
+        "inherited": "外部默认值（未知）"
+      },
+      "fields": {
+        "provider": "提供商",
+        "model": "默认模型",
+        "protocol": "协议",
+        "smallModel": "小模型",
+        "variant": "默认变体",
+        "reasoningEffort": "思考强度",
+        "thinkingMode": "思考模式",
+        "thinkingBudget": "思考预算",
+        "inputModalities": "输入类型",
+        "outputModalities": "输出类型",
+        "context": "上下文窗口",
+        "inputLimit": "最大输入",
+        "outputLimit": "最大输出"
+      }
     }
   },
   "update": {

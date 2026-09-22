@@ -1,3 +1,5 @@
+import { EffectiveConfigPreview } from './EffectiveConfigPreview';
+import { launchCommand } from './effectiveConfig';
 import { ModelCapabilitySummary } from './ModelCapabilitySummary';
 import { ModelLimitsEditor } from './ModelLimitsEditor';
 import { parseModelLimits, type ModelLimitDraft } from './modelLimits';
@@ -283,26 +285,6 @@ function statusTone(compatibility: string): string {
     if (compatibility === 'supported') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
     if (compatibility === 'partial') return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300';
     return 'border-destructive/30 bg-destructive/10 text-destructive';
-}
-
-function computeLaunchCommand(profile: AgentProfileDocument): string {
-    if (profile.agent === 'opencode') {
-        return 'opencode';
-    }
-    if (profile.agent === 'claude_code') {
-        if (profile.source.scope === 'user') {
-            return 'claude';
-        }
-        return `claude --setting-sources "" --settings "${profile.source.path.native}"`;
-    }
-    if (profile.agent === 'codex') {
-        if (profile.default_state.is_default || profile.source.scope === 'user') {
-            return 'codex';
-        }
-        const profileName = profile.source.profile_name || profile.display_name;
-        return `codex --profile-v2 "${profileName}"`;
-    }
-    return profile.launch.executable || 'agent';
 }
 
 function defaultProtocol(agent: AgentKind): ProtocolCapability {
@@ -685,7 +667,8 @@ export function AgentProfilesPanel() {
 
     const copyLaunchCommand = async () => {
         if (!profileForEdit) return;
-        const command = computeLaunchCommand(profileForEdit);
+        const command = launchCommand(profileForEdit, selectedTarget).command;
+        if (!command) { setNotice({ kind: 'error', text: t('agentProfiles.preview.runtimePathMismatch') }); return; }
         try {
             await navigator.clipboard.writeText(command);
             setNotice({ kind: 'info', text: t('agentProfiles.notices.commandCopied', { command }) });
@@ -1264,6 +1247,8 @@ export function AgentProfilesPanel() {
                             <span className="flex items-center gap-1.5"><KeyRound className="h-3.5 w-3.5 text-primary" />{profileForEdit.managed.providers[0]?.credential.display || t('agentProfiles.credentials.notConfigured')}</span>
                             <span>{t('agentProfiles.models.count', { count: profileForEdit.managed.providers.reduce((count, provider) => count + provider.models.length, 0) })}</span>
                         </div>
+
+                        <EffectiveConfigPreview profile={profileForEdit} saved={profile} target={selectedTarget} dirty={dirty} />
 
                         <section className="mt-5" aria-labelledby="providers-title">
                             <div className="flex items-end justify-between gap-3 px-1 pb-3 sm:px-2"><div><h3 id="providers-title" className="text-base font-semibold">{t('agentProfiles.providers.title')}</h3><p className="mt-1 text-xs text-muted-foreground">{t('agentProfiles.providers.description')}</p></div><Button type="button" variant="outline" size="sm" onClick={() => openProviderEditor()} disabled={!canCreateProvider || busyAction !== null}><Plus className="mr-1.5 h-3.5 w-3.5" />{t('agentProfiles.providers.add')}</Button></div>
