@@ -1845,6 +1845,13 @@
       "disabled": "Disabled",
       "invalidBudget": "Enter a whole-number thinking budget of at least 1024 tokens.",
       "unsupportedEffort": "This model declares effort unsupported. Clear the value to inherit the default."
+    },
+    "variants": {
+      "disabled": "Disable this variant",
+      "temperature": "Temperature (empty inherits)",
+      "allParameters": "All parameters (JSON object)",
+      "jsonLabel": "Parameters for {{name}}",
+      "invalid": "Each variant must be a valid JSON object. Any thinking budget must be an integer of at least 1024."
     }
   },
   "update": {

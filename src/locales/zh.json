@@ -1842,6 +1842,13 @@
       "disabled": "关闭",
       "invalidBudget": "思考预算必须是至少 1024 的整数。",
       "unsupportedEffort": "此模型声明不支持思考强度。请清空该值以继承默认设置。"
+    },
+    "variants": {
+      "disabled": "禁用此变体",
+      "temperature": "温度（留空继承）",
+      "allParameters": "全部参数（JSON 对象）",
+      "jsonLabel": "{{name}} 的参数",
+      "invalid": "每个变体必须是有效的 JSON 对象。思考预算必须是至少 1024 的整数。"
     }
   },
   "update": {

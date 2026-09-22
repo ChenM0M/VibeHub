@@ -1,3 +1,5 @@
+import { VariantParametersEditor } from './VariantParametersEditor';
+import { parseVariantDrafts } from './variantValues';
 import { ThinkingParametersEditor, type ThinkingParameters } from './ThinkingParametersEditor';
 import { modelFromUpstream } from './upstreamModels';
 import type { UpstreamModelMetadata } from '@/services/tauri';
@@ -114,6 +116,7 @@ type ModelForm = ThinkingParameters & {
     options: string[];
     custom_allowed: boolean;
     variant_values: Record<string, unknown> | null;
+    variant_drafts: Record<string, string>;
 };
 
 function cloneProfile(profile: AgentProfileDocument): AgentProfileDocument {
@@ -350,6 +353,7 @@ function modelFormFrom(model: ModelProfile): ModelForm {
         selected: model.thinking.selected || '',
         options: [...model.thinking.options],
         custom_allowed: model.thinking.custom_allowed,
+        variant_drafts: {},
         variant_values: model.thinking.variant_values ? { ...model.thinking.variant_values } : null,
     };
 }
@@ -366,6 +370,7 @@ function emptyModelForm(_agent: AgentKind): ModelForm {
         options: [],
         custom_allowed: false,
         variant_values: null,
+        variant_drafts: {},
     };
 }
 
@@ -896,11 +901,14 @@ export function AgentProfilesPanel() {
             ? provider.models.find((model) => model.model_id === modelEditor.modelId)
             : undefined;
         const previousOptions = previousModel?.thinking.options || [];
-        const variantValuesChanged = agent === 'opencode'
-            && (previousModel === undefined || JSON.stringify(previousOptions) !== JSON.stringify(options));
-        const variantValues = modelForm.variant_values
-            ? Object.fromEntries(options.map((option) => [option, modelForm.variant_values?.[option] ?? {}]))
-            : null;
+        let variantValues = modelForm.variant_values;
+        if (agent === 'opencode') {
+            try { variantValues = parseVariantDrafts(options, modelForm.variant_drafts, modelForm.variant_values); }
+            catch { setModelError(t('agentProfiles.variants.invalid')); return; }
+        }
+        const variantValuesChanged = agent === 'opencode' && (previousModel?.thinking.variant_values_changed === true
+            || previousModel === undefined || JSON.stringify(previousOptions) !== JSON.stringify(options)
+            || JSON.stringify(variantValues) !== JSON.stringify(previousModel.thinking.variant_values || {}));
         const nextModel: ModelProfile = {
             model_id: modelId,
             display_name: displayName,
@@ -1490,6 +1498,10 @@ export function AgentProfilesPanel() {
                                     <div className="flex items-center gap-1"><Input value={variantInput} onChange={(event) => setVariantInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); } }} placeholder={t('agentProfiles.forms.addVariant')} className="h-8 w-32 text-xs" /><Button type="button" variant="outline" size="sm" onClick={() => { const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); }}>{t('agentProfiles.common.add')}</Button></div>
                                 </div>
                             </div>
+                            {agent === 'opencode' && modelForm.options.map(name => <VariantParametersEditor key={name} name={name}
+                                text={modelForm.variant_drafts[name] ?? JSON.stringify(modelForm.variant_values?.[name] ?? {}, null, 2)}
+                                protocol={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.protocol.native_protocol || 'unknown'}
+                                onChange={text => setModelForm({ ...modelForm, variant_drafts: { ...modelForm.variant_drafts, [name]: text } })} />)}
                             {agent === 'opencode' && <ThinkingParametersEditor value={modelForm} onChange={value => setModelForm({ ...modelForm, ...value })}
                                 protocol={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.protocol.native_protocol || 'unknown'}
                                 supportsEffort={modelForm.supports_effort} supportsReasoning={modelForm.supports_reasoning}

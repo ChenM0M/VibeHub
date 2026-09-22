@@ -68,3 +68,15 @@ assert.deepEqual(modelFromUpstream('codex', advertised).thinking.options, ['low'
 assert.equal(modelFromUpstream('codex', advertised).thinking.selected, null);
 assert.deepEqual(modelFromUpstream('opencode', advertised).thinking.options, [], 'effort levels must not turn into empty OpenCode variants');
 console.log('upstream capability unknown/false states, advertised options and no automatic selection checks passed');
+
+const variantsSource = await readFile(resolve(projectRoot, 'src/components/agent-profiles/variantValues.ts'), 'utf8');
+const variantsCode = ts.transpileModule(variantsSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
+const { parseVariantDrafts } = await import(`data:text/javascript;base64,${Buffer.from(variantsCode).toString('base64')}`);
+const previousVariants = { high: { reasoningEffort: 'high', extra: { keep: true } } };
+assert.deepEqual(parseVariantDrafts(['high'], {}, previousVariants), previousVariants);
+assert.equal(parseVariantDrafts(['high'], { high: '{"reasoningEffort":"medium","extra":{"keep":true}}' }, previousVariants).high.reasoningEffort, 'medium');
+for (const invalid of ['[]', 'null', '"high"', '{', '{"thinking":{"type":"enabled","budgetTokens":1023}}', '{"thinking":{"type":"enabled"}}']) {
+  assert.throws(() => parseVariantDrafts(['high'], { high: invalid }, previousVariants));
+}
+assert.deepEqual(parseVariantDrafts([], {}, previousVariants), {});
+console.log('Variant parameters: same-name edits, unknown fields, deletion and invalid object/budget checks passed');

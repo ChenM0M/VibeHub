@@ -1739,6 +1739,9 @@ fn patch_for_opencode(
             if !model.enabled {
                 continue;
             }
+            if model.thinking.variant_values_changed && model.thinking.variant_values.as_ref().is_some_and(|values| values.values().any(|value| !value.is_object())) {
+                return Err(AgentProfileCommandError::validation("AGENT_PROFILE_VARIANT_OBJECT_REQUIRED", "Each variant must contain a JSON object"));
+            }
             let variants = model.thinking.variant_values_changed.then(|| {
                 model
                     .thinking
@@ -4126,7 +4129,7 @@ mod tests {
             }),
         );
         variant_values.insert("low".to_owned(), json!({ "reasoningEffort": "low" }));
-        let managed = ManagedProfileInput {
+        let mut managed = ManagedProfileInput {
             providers: vec![ProviderProfileInput {
                 provider_id: "deepseek".to_owned(),
                 display_name: "DeepSeek".to_owned(),
@@ -4184,6 +4187,25 @@ mod tests {
             })
         );
         assert_eq!(variants["low"], json!({ "reasoningEffort": "low" }));
+        managed.providers[0].models[0].thinking.variant_values.as_mut().unwrap().insert("high".into(), json!({"reasoningEffort":"medium","extra":{"keep":true}}));
+        let edited = patch_for_opencode(&managed).unwrap();
+        assert_eq!(edited.providers["deepseek"].models["deepseek-chat"].variants.as_ref().unwrap()["high"]["reasoningEffort"], "medium");
+        let root = std::env::temp_dir().join(format!("vibehub-variant-edit-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(&path, r#"{"provider":{"deepseek":{"models":{"deepseek-chat":{"custom":"keep"}}}}}"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let before = v3::read_opencode_profile(&target, &path).unwrap();
+        v3::save_opencode_profile(&target, &path, Some(&before.revision), &edited).unwrap();
+        let after = v3::read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(after.providers[0].models[0].variant_values.as_ref().unwrap()["high"], json!({"reasoningEffort":"medium","extra":{"keep":true}}));
+        assert!(fs::read_to_string(&path).unwrap().contains("\"custom\":\"keep\""));
+        fs::remove_dir_all(root).unwrap();
+        for invalid in [json!([]), json!(null), json!("high"), json!(3)] {
+            managed.providers[0].models[0].thinking.variant_values.as_mut().unwrap().insert("high".into(), invalid);
+            assert!(patch_for_opencode(&managed).is_err());
+        }
+
     }
 
     #[test]

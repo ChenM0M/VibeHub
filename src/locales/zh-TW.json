@@ -1842,6 +1842,13 @@
       "disabled": "關閉",
       "invalidBudget": "思考預算必須是至少 1024 的整數。",
       "unsupportedEffort": "此模型宣告不支援思考強度。請清空該值以繼承預設設定。"
+    },
+    "variants": {
+      "disabled": "停用此變體",
+      "temperature": "溫度（留空繼承）",
+      "allParameters": "全部參數（JSON 物件）",
+      "jsonLabel": "{{name}} 的參數",
+      "invalid": "每個變體必須是有效的 JSON 物件。思考預算必須是至少 1024 的整數。"
     }
   },
   "update": {
