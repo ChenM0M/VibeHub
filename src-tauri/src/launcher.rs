@@ -28,6 +28,24 @@ $process = Start-Process @startParameters
 [Console]::Write($process.Id)
 "#;
 
+// A started bridge is not evidence that Start-Process accepted the Agent.
+#[cfg(any(target_os = "windows", test))]
+fn windows_agent_launch_result(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<u32> {
+    if !success {
+        let diagnostic = String::from_utf8_lossy(stderr);
+        return Err(anyhow!(
+            "Windows Agent launch failed: {}",
+            diagnostic.trim()
+        ));
+    }
+    String::from_utf8_lossy(stdout)
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|pid| *pid > 0)
+        .ok_or_else(|| anyhow!("Windows Agent launcher did not return a valid child process ID"))
+}
+
 pub struct Launcher;
 
 impl Launcher {
@@ -89,7 +107,12 @@ impl Launcher {
                 .env("VIBEHUB_AGENT_EXECUTABLE", executable)
                 .env("VIBEHUB_AGENT_WORKING_DIRECTORY", working_directory)
                 .env("VIBEHUB_AGENT_ARGUMENTS_JSON", arguments_json);
-            return Ok(command.spawn()?.id());
+            let output = command.output()?;
+            return windows_agent_launch_result(
+                output.status.success(),
+                &output.stdout,
+                &output.stderr,
+            );
         }
 
         #[cfg(target_os = "macos")]
@@ -652,6 +675,20 @@ mod tests {
         assert!(matches!("host", "host" | "wsl"));
         assert!(matches!("wsl", "host" | "wsl"));
         assert!(!matches!("shell", "host" | "wsl"));
+    }
+
+    #[test]
+    fn windows_launch_result_requires_success_and_a_real_child_id() {
+        assert_eq!(
+            windows_agent_launch_result(true, b" 421\r\n", b"").unwrap(),
+            421
+        );
+        let failure =
+            windows_agent_launch_result(false, b"123", b"executable was not found").unwrap_err();
+        assert!(failure.to_string().contains("executable was not found"));
+        for output in [b"".as_slice(), b"0", b"not a pid", b"1\n2"] {
+            assert!(windows_agent_launch_result(true, output, b"").is_err());
+        }
     }
 
     #[test]
