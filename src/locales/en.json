@@ -1720,7 +1720,10 @@
       "defaultThinking": "Default reasoning level",
       "deleteVariant": "Delete variant {{option}}",
       "addVariant": "Add variant",
-      "allowCustomEffort": "Allow custom reasoning levels"
+      "allowCustomEffort": "Allow custom reasoning levels",
+      "reasoningUnspecified": "Unspecified (use native defaults)",
+      "reasoningSupported": "Supported",
+      "reasoningUnsupported": "Not supported"
     },
     "dialogs": {
       "profile": {

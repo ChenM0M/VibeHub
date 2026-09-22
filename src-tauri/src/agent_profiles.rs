@@ -410,7 +410,7 @@ pub struct ModelProfileInput {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ThinkingProfileInput {
-    pub supports_reasoning: bool,
+    pub supports_reasoning: Option<bool>,
     pub supports_effort: bool,
     pub selected: Option<String>,
     pub options: Vec<String>,
@@ -1714,7 +1714,8 @@ fn patch_for_opencode(
                 OpenCodeModelPatch {
                     display_name: Some(model.display_name.clone()),
                     declared_id: None,
-                    reasoning: Some(model.thinking.supports_reasoning),
+                    reasoning: model.thinking.supports_reasoning,
+                    clear_reasoning: model.thinking.supports_reasoning.is_none(),
                     variants,
                 },
             );
@@ -2067,7 +2068,7 @@ fn opencode_document_parts(
                         "display_name":model.display_name,
                         "enabled":true,
                         "thinking":{
-                            "supports_reasoning":model.reasoning.unwrap_or(false),
+                            "supports_reasoning":model.reasoning,
                             "supports_effort":!model.variants.is_empty(),
                             "selected":view.default_variant,
                             "options":model.variants,
@@ -3171,6 +3172,47 @@ mod tests {
     }
 
     #[test]
+    fn opencode_reasoning_absent_true_false_and_clear_round_trip() {
+        let root = std::env::temp_dir().join(format!("vibehub-reasoning-state-{}", Uuid::new_v4()));
+        let path = opencode_config_dir(&root).join("opencode.jsonc");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{ // preserve this comment
+            "provider":{"p":{"npm":"@ai-sdk/openai-compatible","models":{"m":{"name":"Model","custom":42}}}}
+        }"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        for reasoning in [None, Some(true), Some(false), None] {
+            let located =
+                LocatedProfile::OpenCode(v3::read_opencode_profile(&target, &path).unwrap());
+            let document = profile_document(&target, &located).unwrap();
+            let mut input: AgentProfileDocumentInput = serde_json::from_value(document).unwrap();
+            input.managed.providers[0].models[0]
+                .thinking
+                .supports_reasoning = reasoning;
+            let result = save_on_target(
+                target.clone(),
+                AgentProfileSaveRequest {
+                    agent: AgentKind::Opencode,
+                    runtime_target_id: target.target_id.clone(),
+                    profile_id: input.profile_id.clone(),
+                    expected_revision: input.revision.revision,
+                    profile: input,
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                result.profile["managed"]["providers"][0]["models"][0]["thinking"]
+                    ["supports_reasoning"],
+                json!(reasoning)
+            );
+            let source = fs::read_to_string(&path).unwrap();
+            assert!(source.contains("preserve this comment"));
+            assert!(source.contains("\"custom\":42"));
+            assert_eq!(source.contains("\"reasoning\""), reasoning.is_some());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn profile_ids_for_opencode_are_stable_and_path_bound() {
         let a = opencode_profile_id(Path::new("/home/user/.config/opencode/opencode.jsonc"));
         let b = opencode_profile_id(Path::new("/home/user/.config/opencode/opencode.jsonc"));
@@ -3997,7 +4039,7 @@ mod tests {
                     display_name: "DeepSeek Chat".to_owned(),
                     enabled: true,
                     thinking: ThinkingProfileInput {
-                        supports_reasoning: true,
+                        supports_reasoning: Some(true),
                         supports_effort: true,
                         selected: Some("high".to_owned()),
                         options: vec!["high".to_owned(), "low".to_owned()],
@@ -4217,7 +4259,7 @@ mod tests {
                     display_name: "Water 18".to_owned(),
                     enabled: true,
                     thinking: ThinkingProfileInput {
-                        supports_reasoning: false,
+                        supports_reasoning: Some(false),
                         supports_effort: false,
                         selected: None,
                         options: Vec::new(),
@@ -4272,7 +4314,7 @@ mod tests {
                     display_name: "Water 18".to_owned(),
                     enabled: true,
                     thinking: ThinkingProfileInput {
-                        supports_reasoning: false,
+                        supports_reasoning: Some(false),
                         supports_effort: false,
                         selected: None,
                         options: Vec::new(),

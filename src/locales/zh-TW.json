@@ -1717,7 +1717,10 @@
       "defaultThinking": "預設思考層級",
       "deleteVariant": "刪除 variant {{option}}",
       "addVariant": "新增 variant",
-      "allowCustomEffort": "允許自訂思考層級"
+      "allowCustomEffort": "允許自訂思考層級",
+      "reasoningUnspecified": "未宣告（使用原生預設值）",
+      "reasoningSupported": "支援",
+      "reasoningUnsupported": "不支援"
     },
     "dialogs": {
       "profile": {

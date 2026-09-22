@@ -105,7 +105,7 @@ type ModelForm = {
     model_id: string;
     display_name: string;
     enabled: boolean;
-    supports_reasoning: boolean;
+    supports_reasoning: boolean | null;
     supports_effort: boolean;
     selected: string;
     options: string[];
@@ -369,7 +369,7 @@ function emptyModelForm(agent: AgentKind): ModelForm {
         model_id: '',
         display_name: '',
         enabled: true,
-        supports_reasoning: agent !== 'claude_code',
+        supports_reasoning: agent === 'opencode' ? null : agent !== 'claude_code',
         supports_effort: agent !== 'claude_code',
         selected: '',
         options: agent === 'codex' ? ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] : [],
@@ -1469,7 +1469,7 @@ export function AgentProfilesPanel() {
                             </div>
                             <div className="flex flex-wrap gap-5 py-2">
                                 <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.enabled} onCheckedChange={(checked) => setModelForm({ ...modelForm, enabled: checked })} />{t('agentProfiles.forms.enableModel')}</label>
-                                <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.supports_reasoning} onCheckedChange={(checked) => setModelForm({ ...modelForm, supports_reasoning: checked })} />{t('agentProfiles.forms.supportsReasoning')}</label>
+                                {agent === 'opencode' ? (<div><Label htmlFor="model-reasoning">{t('agentProfiles.forms.supportsReasoning')}</Label><select id="model-reasoning" value={modelForm.supports_reasoning === null ? 'unknown' : String(modelForm.supports_reasoning)} onChange={(event) => setModelForm({ ...modelForm, supports_reasoning: event.target.value === 'unknown' ? null : event.target.value === 'true' })} className={cn(fieldClass, 'mt-1.5')}><option value="unknown">{t('agentProfiles.forms.reasoningUnspecified')}</option><option value="true">{t('agentProfiles.forms.reasoningSupported')}</option><option value="false">{t('agentProfiles.forms.reasoningUnsupported')}</option></select></div>) : (<label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.supports_reasoning ?? false} onCheckedChange={(checked) => setModelForm({ ...modelForm, supports_reasoning: checked })} />{t('agentProfiles.forms.supportsReasoning')}</label>)}
                                 <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.supports_effort} onCheckedChange={(checked) => setModelForm({ ...modelForm, supports_effort: checked })} />{t('agentProfiles.forms.supportsEffort')}</label>
                             </div>
                             <div>

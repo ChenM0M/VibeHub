@@ -249,7 +249,7 @@ export interface ModelProfile {
   thinking: ThinkingProfile;
 }
 export interface ThinkingProfile {
-  supports_reasoning: boolean;
+  supports_reasoning: boolean | null;
   supports_effort: boolean;
   selected: string | null;
   options: string[];

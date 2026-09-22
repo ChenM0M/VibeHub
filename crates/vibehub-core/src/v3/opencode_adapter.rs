@@ -108,6 +108,8 @@ pub struct OpenCodeModelPatch {
     pub display_name: Option<String>,
     pub declared_id: Option<String>,
     pub reasoning: Option<bool>,
+    #[serde(default)]
+    pub clear_reasoning: bool,
     pub variants: Option<BTreeMap<String, Value>>,
 }
 
@@ -714,6 +716,13 @@ impl JsoncEditor {
                     self.set_path(
                         &[provider_key, provider_id, "models", model_id, "reasoning"],
                         reasoning.into(),
+                        &mut replacements,
+                    )?;
+                }
+                if model_patch.reasoning.is_none() && model_patch.clear_reasoning {
+                    self.remove_member(
+                        &[provider_key, provider_id, "models", model_id],
+                        "reasoning",
                         &mut replacements,
                     )?;
                 }
@@ -1396,6 +1405,7 @@ mod tests {
                 display_name: Some("DeepSeek Chat".to_owned()),
                 declared_id: Some("deepseek-chat".to_owned()),
                 reasoning: Some(true),
+                clear_reasoning: false,
                 variants: Some(variants),
             },
         );

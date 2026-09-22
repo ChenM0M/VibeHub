@@ -628,6 +628,9 @@ const agentProfileReadResult = {
   schema_capability: agentProfileDocument.schema_capability,
 };
 assert(agentProfileValidator(agentProfileReadResult), "agent profile read result validates: " + ajv.errorsText(agentProfileValidator.errors));
+const unknownReasoningProfile = structuredClone(agentProfileReadResult);
+unknownReasoningProfile.profile.managed.providers[0].models[0].thinking.supports_reasoning = null;
+assert(agentProfileValidator(unknownReasoningProfile), "model reasoning may remain undeclared: " + ajv.errorsText(agentProfileValidator.errors));
 const agentProfileDiscoverError = {
   code: "CONFIG_PATH_LINK_REJECTED",
   category: "validation",

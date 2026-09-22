@@ -218,7 +218,10 @@
       ],
       "properties": {
         "supports_reasoning": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "supports_effort": {
           "type": "boolean"

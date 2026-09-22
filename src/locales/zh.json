@@ -1717,7 +1717,10 @@
       "defaultThinking": "默认思考档位",
       "deleteVariant": "删除 variant {{option}}",
       "addVariant": "新增 variant",
-      "allowCustomEffort": "允许自定义思考档位"
+      "allowCustomEffort": "允许自定义思考档位",
+      "reasoningUnspecified": "未声明（使用原生默认值）",
+      "reasoningSupported": "支持",
+      "reasoningUnsupported": "不支持"
     },
     "dialogs": {
       "profile": {
