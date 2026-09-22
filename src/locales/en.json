@@ -1645,7 +1645,8 @@
     "actions": {
       "setDefault": "Set as default",
       "launchOnce": "Launch once",
-      "copyLaunchCommand": "Copy launch command"
+      "copyLaunchCommand": "Copy launch command",
+      "initializeOpenCode": "Initialize OpenCode configuration"
     },
     "route": {
       "adapter": "Automatic adaptation",

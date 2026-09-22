@@ -707,6 +707,20 @@ export function AgentProfilesPanel() {
         }
     };
 
+    const initializeOpenCode = async () => {
+        if (!targetId || busyAction !== null) return;
+        setBusyAction('crud');
+        setNotice(null);
+        try {
+            await tauriApi.v3AgentProfileCreate({ agent: 'opencode', runtime_target_id: targetId, profile_name: 'opencode.jsonc' });
+            refresh();
+        } catch (error) {
+            setNotice({ kind: 'error', text: formatError(error) });
+        } finally {
+            setBusyAction(null);
+        }
+    };
+
     const openProfileDialog = (kind: ProfileDialogKind) => {
         setProfileDialog(kind);
         setProfileDialogError(null);
@@ -1179,6 +1193,12 @@ export function AgentProfilesPanel() {
                     <FileCode2 className="mx-auto h-8 w-8 text-primary/70" />
                     <h2 className="mt-4 text-lg font-semibold">{t(targetId ? 'agentProfiles.empty.noProfilesTitle' : 'agentProfiles.empty.selectRuntimeTitle')}</h2>
                     <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{targetId ? t('agentProfiles.empty.noProfilesDescription', { agent: agentLabel(agent) }) : t('agentProfiles.empty.selectRuntimeDescription')}</p>
+                    {agent === 'opencode' && targetId && discovery?.profiles.length === 0 && (
+                        <Button className="mt-5" onClick={initializeOpenCode} disabled={busyAction !== null}>
+                            {busyAction === 'crud' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {t('agentProfiles.actions.initializeOpenCode')}
+                        </Button>
+                    )}
                 </div>
             ) : loadingProfiles ? (
                 <div className="flex items-center justify-center gap-3 py-20 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />{t('agentProfiles.loadingProfiles')}</div>

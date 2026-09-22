@@ -165,6 +165,31 @@ pub fn opencode_config_paths(target: &RuntimeTarget) -> Vec<PathBuf> {
         .collect()
 }
 
+pub fn initialize_opencode_profile(
+    target: &RuntimeTarget,
+) -> Result<(OpenCodeProfileView, WriteReport), StorageError> {
+    let discovery = discover_opencode_profiles_tolerant(target);
+    if let Some(error) = discovery.errors.first() {
+        return Err(StorageError::new("OPENCODE_INITIALIZE_DISCOVERY_INCOMPLETE", "an existing configuration could not be inspected; resolve its error before initializing").with_path(error.path.clone()));
+    }
+    if !discovery.profiles.is_empty() {
+        return Err(StorageError::new(
+            "OPENCODE_CONFIG_ALREADY_EXISTS",
+            "an OpenCode configuration already exists",
+        ));
+    }
+    let path = opencode_config_paths(target)
+        .into_iter()
+        .next()
+        .ok_or_else(|| {
+            StorageError::new("OPENCODE_CONFIG_PATH_MISSING", "no configuration path")
+        })?;
+    let content =
+        b"{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"provider\": {}\n}\n";
+    let write = super::agent_profile_storage::create_config_document(target, &path, content)?;
+    Ok((read_opencode_profile(target, &path)?, write))
+}
+
 pub fn discover_opencode_profiles(
     target: &RuntimeTarget,
 ) -> Result<Vec<OpenCodeProfileView>, StorageError> {

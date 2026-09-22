@@ -439,6 +439,122 @@ pub fn read_document(
     })
 }
 
+/// Create a validated config without replacing any existing destination.
+pub fn create_config_document(
+    target: &RuntimeTarget,
+    path: &Path,
+    content: &[u8],
+) -> Result<WriteReport, StorageError> {
+    let format = ConfigFormat::from_path(path)?;
+    format.validate(content)?;
+    if content.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(StorageError::new(
+            "CONFIG_TOO_LARGE",
+            "initial configuration exceeds the size limit",
+        ));
+    }
+    let home = target.home_path.as_path();
+    let parent = path
+        .parent()
+        .ok_or_else(|| StorageError::new("CONFIG_PARENT_INVALID", "missing parent"))?;
+    let relative = parent.strip_prefix(&home).map_err(|_| {
+        StorageError::new(
+            "CONFIG_PATH_OUTSIDE_RUNTIME_HOME",
+            path.display().to_string(),
+        )
+    })?;
+    let mut directory = home.clone();
+    validate_target_path(target, &directory.join(".vibehub-create-probe"), true)?;
+    for component in relative.components() {
+        if !matches!(component, std::path::Component::Normal(_)) {
+            return Err(StorageError::new(
+                "CONFIG_PATH_INVALID",
+                path.display().to_string(),
+            ));
+        }
+        directory.push(component);
+        validate_target_path(target, &directory, true)?;
+        match fs::create_dir(&directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => {
+                return Err(StorageError::new(
+                    "CONFIG_DIRECTORY_CREATE_FAILED",
+                    error.to_string(),
+                ))
+            }
+        }
+        validate_target_path(target, &directory.join(".vibehub-create-probe"), true)?;
+    }
+    let path = validate_target_path(target, path, true)?;
+    let temporary = temporary_path(&path);
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)
+            .map_err(|error| StorageError::new("CONFIG_TEMP_CREATE_FAILED", error.to_string()))?;
+        file.write_all(content)
+            .and_then(|_| file.sync_all())
+            .map_err(|error| StorageError::new("CONFIG_TEMP_WRITE_FAILED", error.to_string()))?;
+        drop(file);
+        publish_new_file(&temporary, &path)?;
+        sync_directory(parent)?;
+        Ok(WriteReport {
+            path: NativeConfigPath::from_path(&path, target.platform),
+            before_revision: None,
+            after_revision: revision_for(content),
+            backup_path: None,
+            rollback_available: false,
+        })
+    })();
+    let _ = fs::remove_file(&temporary);
+    result
+}
+
+#[cfg(not(windows))]
+fn publish_new_file(source: &Path, destination: &Path) -> Result<(), StorageError> {
+    // hard_link fails atomically if another writer created the destination.
+    fs::hard_link(source, destination).map_err(|error| {
+        StorageError::new(
+            if error.kind() == io::ErrorKind::AlreadyExists {
+                "CONFIG_CREATE_CONFLICT"
+            } else {
+                "CONFIG_CREATE_FAILED"
+            },
+            error.to_string(),
+        )
+    })
+}
+
+#[cfg(windows)]
+fn publish_new_file(source: &Path, destination: &Path) -> Result<(), StorageError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_WRITE_THROUGH};
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain([0]).collect();
+    let destination: Vec<u16> = destination.as_os_str().encode_wide().chain([0]).collect();
+    // Deliberately omit MOVEFILE_REPLACE_EXISTING.
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        let error = io::Error::last_os_error();
+        return Err(StorageError::new(
+            if error.kind() == io::ErrorKind::AlreadyExists {
+                "CONFIG_CREATE_CONFLICT"
+            } else {
+                "CONFIG_CREATE_FAILED"
+            },
+            error.to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn write_document(
     target: &RuntimeTarget,
     path: impl AsRef<Path>,
