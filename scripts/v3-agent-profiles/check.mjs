@@ -51,3 +51,27 @@ const capability = backend.slice(backend.indexOf('fn claude_schema_capability(')
 assert.ok(capability.includes('claude_native_resolution'));
 assert.ok(!capability.includes('managed.default_model_id'));
 console.log('v3-agent-profiles: selection normalization, unknown models, canonical Haiku editor, three locales and capability declarations passed');
+
+const defaultSource = await readFile(resolve(projectRoot, 'src/components/agent-profiles/modelDefaults.ts'), 'utf8');
+const defaultCode = ts.transpileModule(defaultSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
+const { modelIsDefault, updateDefaultAfterModelEdit } = await import(`data:text/javascript;base64,${Buffer.from(defaultCode).toString('base64')}`);
+const profile = { agent: 'codex', managed: { default_provider_id: 'primary', default_model_id: 'same', providers: [
+    { provider_id: 'primary', models: [{ model_id: 'same', enabled: true }] },
+    { provider_id: 'secondary', models: [{ model_id: 'same', enabled: true }] },
+] } };
+assert.equal(modelIsDefault(profile, 'secondary', 'same'), false, 'same model ID in another provider is not default');
+for (const enabled of [true, false]) {
+    const draft = structuredClone(profile);
+    updateDefaultAfterModelEdit(draft, 'secondary', 'same', enabled, false);
+    assert.equal(draft.managed.default_provider_id, 'primary');
+    assert.equal(draft.managed.default_model_id, 'same', 'editing or disabling non-default model preserves choice');
+}
+const renamed = structuredClone(profile);
+updateDefaultAfterModelEdit(renamed, 'primary', 'renamed', true, true);
+assert.equal(renamed.managed.default_model_id, 'renamed');
+const disabled = structuredClone(profile);
+disabled.managed.providers[0].models[0].enabled = false;
+updateDefaultAfterModelEdit(disabled, 'primary', 'same', false, true);
+assert.equal(disabled.managed.default_provider_id, 'secondary');
+assert.equal(disabled.managed.default_model_id, 'same', 'Codex replacement remains a bare model ID');
+console.log('model edit default preservation, duplicate provider IDs, rename and disable checks passed');
