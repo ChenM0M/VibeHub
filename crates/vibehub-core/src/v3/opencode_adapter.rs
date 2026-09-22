@@ -542,14 +542,52 @@ fn model_view(model_id: &str, value: &Value) -> Result<OpenCodeModelView, Storag
             .and_then(Value::as_str)
             .map(str::to_owned),
         reasoning: object.get("reasoning").and_then(Value::as_bool),
-        reasoning_effort: object.get("options").and_then(|v| v.get("reasoningEffort").or_else(|| v.get("effort"))).and_then(Value::as_str).map(str::to_owned),
-        thinking_mode: object.get("options").and_then(|v| v.pointer("/thinking/type")).and_then(Value::as_str).map(str::to_owned),
-        thinking_budget: object.get("options").and_then(|v| v.pointer("/thinking/budgetTokens")).and_then(Value::as_u64),
-        limit_context: object.get("limit").and_then(|v| v.get("context")).and_then(Value::as_u64),
-        limit_input: object.get("limit").and_then(|v| v.get("input")).and_then(Value::as_u64),
-        limit_output: object.get("limit").and_then(|v| v.get("output")).and_then(Value::as_u64),
-        input_modalities: object.get("modalities").and_then(|v| v.get("input")).and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).map(str::to_owned).collect()),
-        output_modalities: object.get("modalities").and_then(|v| v.get("output")).and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).map(str::to_owned).collect()),
+        reasoning_effort: object
+            .get("options")
+            .and_then(|v| v.get("reasoningEffort").or_else(|| v.get("effort")))
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        thinking_mode: object
+            .get("options")
+            .and_then(|v| v.pointer("/thinking/type"))
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        thinking_budget: object
+            .get("options")
+            .and_then(|v| v.pointer("/thinking/budgetTokens"))
+            .and_then(Value::as_u64),
+        limit_context: object
+            .get("limit")
+            .and_then(|v| v.get("context"))
+            .and_then(Value::as_u64),
+        limit_input: object
+            .get("limit")
+            .and_then(|v| v.get("input"))
+            .and_then(Value::as_u64),
+        limit_output: object
+            .get("limit")
+            .and_then(|v| v.get("output"))
+            .and_then(Value::as_u64),
+        input_modalities: object
+            .get("modalities")
+            .and_then(|v| v.get("input"))
+            .and_then(Value::as_array)
+            .map(|v| {
+                v.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            }),
+        output_modalities: object
+            .get("modalities")
+            .and_then(|v| v.get("output"))
+            .and_then(Value::as_array)
+            .map(|v| {
+                v.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            }),
         variants,
         variant_values,
         unknown_fields: object
@@ -753,23 +791,46 @@ impl JsoncEditor {
                     )?;
                 }
                 for field in &model_patch.field_patches {
-                    if field.path.is_empty() { continue; }
-                    let mut path = vec![provider_key, provider_id.as_str(), "models", model_id.as_str()];
+                    if field.path.is_empty() {
+                        continue;
+                    }
+                    let mut path = vec![
+                        provider_key,
+                        provider_id.as_str(),
+                        "models",
+                        model_id.as_str(),
+                    ];
                     path.extend(field.path.iter().map(String::as_str));
                     if let Some(value) = &field.value {
                         self.set_path(&path, value.clone(), &mut replacements)?;
                     } else {
-                        self.remove_member(&path[..path.len() - 1], path[path.len() - 1], &mut replacements)?;
+                        self.remove_member(
+                            &path[..path.len() - 1],
+                            path[path.len() - 1],
+                            &mut replacements,
+                        )?;
                     }
                 }
                 for option in &model_patch.option_patches {
-                    if option.path.is_empty() { continue; }
-                    let mut path = vec![provider_key, provider_id.as_str(), "models", model_id.as_str(), "options"];
+                    if option.path.is_empty() {
+                        continue;
+                    }
+                    let mut path = vec![
+                        provider_key,
+                        provider_id.as_str(),
+                        "models",
+                        model_id.as_str(),
+                        "options",
+                    ];
                     path.extend(option.path.iter().map(String::as_str));
                     if let Some(value) = &option.value {
                         self.set_path(&path, value.clone(), &mut replacements)?;
                     } else {
-                        self.remove_member(&path[..path.len() - 1], path[path.len() - 1], &mut replacements)?;
+                        self.remove_member(
+                            &path[..path.len() - 1],
+                            path[path.len() - 1],
+                            &mut replacements,
+                        )?;
                     }
                 }
                 if let Some(variants) = &model_patch.variants {
