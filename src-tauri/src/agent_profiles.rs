@@ -2877,16 +2877,47 @@ fn parse_upstream_models(value: &Value) -> Vec<UpstreamModelWire> {
         if !seen.insert(model_id.clone()) {
             continue;
         }
-        let supports_reasoning = item.get("reasoning").and_then(Value::as_bool)
-            .or_else(|| item.pointer("/capabilities/thinking/supported").and_then(Value::as_bool));
-        let supports_effort = item.pointer("/capabilities/effort/supported").and_then(Value::as_bool);
+        let supports_reasoning = item.get("reasoning").and_then(Value::as_bool).or_else(|| {
+            item.pointer("/capabilities/thinking/supported")
+                .and_then(Value::as_bool)
+        });
+        let supports_effort = item
+            .pointer("/capabilities/effort/supported")
+            .and_then(Value::as_bool);
         let effort_options = if supports_effort == Some(true) {
-            ["low", "medium", "high", "max"].into_iter().filter(|level| item.pointer(&format!("/capabilities/effort/{level}/supported")).and_then(Value::as_bool) == Some(true)).map(str::to_owned).collect()
-        } else { Vec::new() };
+            ["low", "medium", "high", "max"]
+                .into_iter()
+                .filter(|level| {
+                    item.pointer(&format!("/capabilities/effort/{level}/supported"))
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                })
+                .map(str::to_owned)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let thinking_types = if supports_reasoning == Some(true) {
-            ["enabled", "adaptive"].into_iter().filter(|kind| item.pointer(&format!("/capabilities/thinking/types/{kind}/supported")).and_then(Value::as_bool) == Some(true)).map(str::to_owned).collect()
-        } else { Vec::new() };
-        models.push(UpstreamModelWire { model_id, display_name, supports_reasoning, supports_effort, effort_options, thinking_types });
+            ["enabled", "adaptive"]
+                .into_iter()
+                .filter(|kind| {
+                    item.pointer(&format!("/capabilities/thinking/types/{kind}/supported"))
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                })
+                .map(str::to_owned)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        models.push(UpstreamModelWire {
+            model_id,
+            display_name,
+            supports_reasoning,
+            supports_effort,
+            effort_options,
+            thinking_types,
+        });
     }
     models.sort_by(|left, right| left.model_id.cmp(&right.model_id));
     models.truncate(UPSTREAM_MODEL_LIMIT);
@@ -3769,12 +3800,18 @@ mod tests {
                 UpstreamModelWire {
                     model_id: "gpt-4o".to_owned(),
                     display_name: "gpt-4o".to_owned(),
-                    supports_reasoning: None, supports_effort: None, effort_options: vec![], thinking_types: vec![],
+                    supports_reasoning: None,
+                    supports_effort: None,
+                    effort_options: vec![],
+                    thinking_types: vec![],
                 },
                 UpstreamModelWire {
                     model_id: "o3".to_owned(),
                     display_name: "o3".to_owned(),
-                    supports_reasoning: None, supports_effort: None, effort_options: vec![], thinking_types: vec![],
+                    supports_reasoning: None,
+                    supports_effort: None,
+                    effort_options: vec![],
+                    thinking_types: vec![],
                 },
             ]
         );
@@ -3791,7 +3828,10 @@ mod tests {
             vec![UpstreamModelWire {
                 model_id: "claude-sonnet-4-20250514".to_owned(),
                 display_name: "Claude Sonnet 4".to_owned(),
-                    supports_reasoning: None, supports_effort: None, effort_options: vec![], thinking_types: vec![],
+                supports_reasoning: None,
+                supports_effort: None,
+                effort_options: vec![],
+                thinking_types: vec![],
             }]
         );
 
