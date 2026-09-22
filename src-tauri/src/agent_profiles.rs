@@ -1577,7 +1577,6 @@ fn save_managed(
                     .map(|item| {
                         item.models
                             .iter()
-                            .filter(|model| model.enabled)
                             .map(|model| model.model_id.as_str())
                             .collect::<std::collections::BTreeSet<_>>()
                     })
@@ -1591,6 +1590,27 @@ fn save_managed(
                             .push(model.model_id.clone());
                     }
                 }
+            }
+            for provider in &managed.providers {
+                let previous = view.providers.iter().find(|item| item.provider_id == provider.provider_id);
+                let mut blacklist = previous.map(|item| item.blacklist.clone()).unwrap_or_default();
+                let mut whitelist = previous.and_then(|item| item.whitelist.clone());
+                let original_blacklist = blacklist.clone();
+                let original_whitelist = whitelist.clone();
+                for model in &provider.models {
+                    if model.enabled {
+                        blacklist.retain(|id| id != &model.model_id);
+                        if let Some(items) = &mut whitelist {
+                            if !items.contains(&model.model_id) { items.push(model.model_id.clone()); }
+                        }
+                    } else if !blacklist.contains(&model.model_id)
+                        && whitelist.as_ref().is_none_or(|items| items.contains(&model.model_id)) {
+                        blacklist.push(model.model_id.clone());
+                    }
+                }
+                let provider_patch = patch.providers.get_mut(&provider.provider_id).expect("managed provider patch");
+                if blacklist != original_blacklist { provider_patch.blacklist = Some(blacklist); }
+                if whitelist != original_whitelist { provider_patch.whitelist = whitelist; }
             }
             Ok(Some(v3::save_opencode_profile(
                 target,
@@ -1689,9 +1709,6 @@ fn patch_for_opencode(
         };
         let mut models = BTreeMap::new();
         for model in &provider.models {
-            if !model.enabled {
-                continue;
-            }
             let variants = model.thinking.variant_values_changed.then(|| {
                 model
                     .thinking
@@ -1729,6 +1746,8 @@ fn patch_for_opencode(
                 api_key: secret,
                 clear_api_key,
                 models,
+                blacklist: None,
+                whitelist: None,
             },
         );
     }
@@ -2065,7 +2084,7 @@ fn opencode_document_parts(
                     json!({
                         "model_id":model.model_id,
                         "display_name":model.display_name,
-                        "enabled":true,
+                        "enabled":model.enabled,
                         "thinking":{
                             "supports_reasoning":model.reasoning.unwrap_or(false),
                             "supports_effort":!model.variants.is_empty(),
@@ -3130,6 +3149,49 @@ mod tests {
         } else {
             root.join(".config").join("opencode")
         }
+    }
+
+    #[test]
+    fn opencode_disable_preserves_model_and_reenable_updates_native_filters() {
+        let root = std::env::temp_dir().join(format!("vibehub-disable-{}", Uuid::new_v4()));
+        let target = RuntimeTarget::host(root.clone());
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{
+            // keep model detail
+            "provider":{"custom":{"blacklist":["external-blocked"],"whitelist":["one","external-allowed"],
+                "models":{"one":{"reasoning":true,"variants":{"deep":{"budget":1234}},"custom":{"keep":true}},
+                          "two":{"reasoning":false}}}}
+        }"#).unwrap();
+        let read = || {
+            let view = v3::read_opencode_profile(&target, &path).unwrap();
+            let located = LocatedProfile::OpenCode(view);
+            let input: AgentProfileDocumentInput = serde_json::from_value(profile_document(&target, &located).unwrap()).unwrap();
+            (located, input.managed)
+        };
+        let (located, mut managed) = read();
+        assert!(managed.providers[0].models[0].enabled);
+        assert!(!managed.providers[0].models[1].enabled);
+        managed.providers[0].models[0].enabled = false;
+        save_managed(&target, &located, &managed).unwrap();
+        let (located, mut managed) = read();
+        assert_eq!(managed.providers[0].models.len(), 2);
+        assert!(!managed.providers[0].models[0].enabled);
+        assert!(fs::read_to_string(&path).unwrap().contains("// keep model detail"));
+        let view = v3::read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(view.providers[0].models[0].variant_values.as_ref().unwrap()["deep"]["budget"], 1234);
+        assert!(view.providers[0].models[0].unknown_fields.contains(&"custom".to_owned()));
+        for model in &mut managed.providers[0].models { model.enabled = true; }
+        save_managed(&target, &located, &managed).unwrap();
+        let view = v3::read_opencode_profile(&target, &path).unwrap();
+        assert!(view.providers[0].models.iter().all(|model| model.enabled));
+        assert_eq!(view.providers[0].blacklist, vec!["external-blocked"]);
+        assert_eq!(view.providers[0].whitelist.as_ref().unwrap(), &vec!["one", "external-allowed", "two"]);
+        let (located, mut managed) = read();
+        managed.providers[0].models.remove(0);
+        save_managed(&target, &located, &managed).unwrap();
+        assert_eq!(v3::read_opencode_profile(&target, &path).unwrap().providers[0].models.len(), 1);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

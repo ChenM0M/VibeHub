@@ -28,6 +28,7 @@ pub struct OpenCodeCredentialReference {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenCodeModelView {
+    pub enabled: bool,
     pub model_id: String,
     pub display_name: String,
     pub declared_id: Option<String>,
@@ -51,6 +52,8 @@ pub struct OpenCodeProviderView {
     /// unambiguous protocol.
     pub protocol: ProtocolKind,
     pub models: Vec<OpenCodeModelView>,
+    pub blacklist: Vec<String>,
+    pub whitelist: Option<Vec<String>>,
     pub unknown_fields: Vec<String>,
 }
 
@@ -86,6 +89,8 @@ pub struct OpenCodeProviderPatch {
     #[serde(default)]
     pub clear_api_key: bool,
     pub models: BTreeMap<String, OpenCodeModelPatch>,
+    pub blacklist: Option<Vec<String>>,
+    pub whitelist: Option<Vec<String>>,
 }
 
 impl std::fmt::Debug for OpenCodeProviderPatch {
@@ -388,7 +393,9 @@ fn provider_view(
         .or_else(|| object.get("baseURL").and_then(Value::as_str))
         .map(str::to_owned);
     let credential = credential_reference(object, options, warnings);
-    let models = object
+    let blacklist = model_filter(object, "blacklist")?.unwrap_or_default();
+    let whitelist = model_filter(object, "whitelist")?;
+    let mut models = object
         .get("models")
         .and_then(Value::as_object)
         .map(|models| {
@@ -399,6 +406,12 @@ fn provider_view(
         })
         .transpose()?
         .unwrap_or_default();
+    for model in &mut models {
+        model.enabled = !blacklist.contains(&model.model_id)
+            && whitelist
+                .as_ref()
+                .is_none_or(|items| items.contains(&model.model_id));
+    }
     let known = [
         "api",
         "env",
@@ -426,8 +439,35 @@ fn provider_view(
         credential,
         protocol: protocol_from_npm(object.get("npm").and_then(Value::as_str)),
         models,
+        blacklist,
+        whitelist,
         unknown_fields,
     })
+}
+
+fn model_filter(
+    object: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<Vec<String>>, StorageError> {
+    object
+        .get(key)
+        .map(|value| {
+            value
+                .as_array()
+                .and_then(|items| {
+                    items
+                        .iter()
+                        .map(|item| item.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .ok_or_else(|| {
+                    StorageError::new(
+                        "OPENCODE_MODEL_FILTER_INVALID",
+                        format!("{key} must be an array of model IDs"),
+                    )
+                })
+        })
+        .transpose()
 }
 
 fn credential_reference(
@@ -510,6 +550,7 @@ fn model_view(model_id: &str, value: &Value) -> Result<OpenCodeModelView, Storag
         "variants",
     ];
     Ok(OpenCodeModelView {
+        enabled: true,
         model_id: model_id.to_owned(),
         display_name: object
             .get("name")
@@ -689,6 +730,18 @@ impl JsoncEditor {
                             .collect(),
                     );
                     self.set_path(&[provider_key, provider_id, "env"], env, &mut replacements)?;
+                }
+            }
+            for (key, values) in [
+                ("blacklist", &provider_patch.blacklist),
+                ("whitelist", &provider_patch.whitelist),
+            ] {
+                if let Some(values) = values {
+                    self.set_path(
+                        &[provider_key, provider_id, key],
+                        Value::Array(values.iter().cloned().map(Value::String).collect()),
+                        &mut replacements,
+                    )?;
                 }
             }
             for (model_id, model_patch) in &provider_patch.models {
