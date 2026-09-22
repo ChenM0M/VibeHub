@@ -1827,6 +1827,13 @@
       "customOptionsUnavailable": "Unavailable; automatic fallback remains available.",
       "fallbackPriority": "Fallback priority",
       "unknownOption": "unknown configured value"
+    },
+    "navigation": {
+      "title": "Unsaved changes",
+      "description": "Save your changes before continuing, or discard them.",
+      "applyAdvancedFirst": "Cancel and apply your advanced JSON changes to the draft before saving.",
+      "discard": "Discard and continue",
+      "save": "Save and continue"
     }
   },
   "update": {

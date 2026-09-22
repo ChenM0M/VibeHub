@@ -1824,6 +1824,13 @@
       "customOptionsUnavailable": "不可用；仍可使用自動回落。",
       "fallbackPriority": "回落優先權",
       "unknownOption": "未知的已設定值"
+    },
+    "navigation": {
+      "title": "有未儲存的修改",
+      "description": "請先儲存修改，或放棄修改後繼續。",
+      "applyAdvancedFirst": "請取消操作，先將進階 JSON 修改套用至草稿，再儲存。",
+      "discard": "放棄修改並繼續",
+      "save": "儲存並繼續"
     }
   },
   "update": {

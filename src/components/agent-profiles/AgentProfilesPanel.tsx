@@ -440,6 +440,8 @@ export function AgentProfilesPanel() {
     const [lastSave, setLastSave] = useState<AgentProfileSaveResult | null>(null);
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [advancedText, setAdvancedText] = useState('');
+    const [advancedEdited, setAdvancedEdited] = useState(false);
+    const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
     const [advancedError, setAdvancedError] = useState<string | null>(null);
     const [compatOpen, setCompatOpen] = useState(false);
     const [profileDialog, setProfileDialog] = useState<ProfileDialogKind | null>(null);
@@ -482,6 +484,8 @@ export function AgentProfilesPanel() {
         pendingSecrets.current = {};
         pendingClears.current = {};
         setHasPendingCredentialWrite(false);
+        setAdvancedEdited(false);
+        setAdvancedOpen(false);
     }, [agent, targetId, selectedProfileId]);
 
     useEffect(() => {
@@ -629,6 +633,28 @@ export function AgentProfilesPanel() {
         } finally {
             setBusyAction(null);
         }
+    };
+
+    const requestNavigation = (action: () => void) => {
+        if (busyAction !== null) return;
+        if (dirty || advancedEdited) setPendingNavigation(() => action);
+        else action();
+    };
+
+    const continueNavigation = async (save: boolean) => {
+        if (!pendingNavigation || busyAction !== null) return;
+        if (save && (advancedEdited || !await profileForAction(profile, dirty, saveDraft))) return;
+        const action = pendingNavigation;
+        pendingSecrets.current = {};
+        pendingClears.current = {};
+        setHasPendingCredentialWrite(false);
+        if (!save) setDraft(profile ? cloneProfile(profile) : null);
+        setAdvancedEdited(false);
+        setAdvancedOpen(false);
+        setAdvancedText('');
+        setAdvancedError(null);
+        setPendingNavigation(null);
+        action();
     };
 
     const activateDraft = async () => {
@@ -1090,7 +1116,7 @@ export function AgentProfilesPanel() {
     const toggleAdvanced = () => {
         setAdvancedOpen((current) => {
             const next = !current;
-            if (next && profileForEdit) {
+            if (next && profileForEdit && !advancedEdited) {
                 setAdvancedText(JSON.stringify(profileForEdit, null, 2));
                 setAdvancedError(null);
             }
@@ -1107,6 +1133,7 @@ export function AgentProfilesPanel() {
             }
             if (!parsed.managed || !Array.isArray(parsed.managed.providers)) throw new Error(t('agentProfiles.errors.advancedProvidersMissing'));
             setDraft(parsed);
+            setAdvancedEdited(false);
             setAdvancedError(null);
             setNotice({ kind: 'info', text: t('agentProfiles.notices.advancedApplied') });
         } catch (error) {
@@ -1144,7 +1171,8 @@ export function AgentProfilesPanel() {
                             role="tab"
                             aria-selected={selected}
                             title={t(item.descriptionKey)}
-                            onClick={() => setAgent(item.id)}
+                            onClick={() => item.id !== agent && requestNavigation(() => setAgent(item.id))}
+                            disabled={busyAction !== null}
                             whileTap={{ scale: 0.97 }}
                             className={cn('relative flex items-center gap-2 px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', selected ? 'font-medium text-foreground' : 'text-muted-foreground hover:text-foreground')}
                         >
@@ -1166,14 +1194,14 @@ export function AgentProfilesPanel() {
             <div className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-end sm:justify-between">
                 <div className="min-w-0 flex-1">
                     <Label htmlFor="agent-runtime-target" className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground"><Server className="h-3.5 w-3.5" />{t('agentProfiles.runtimeTarget')}</Label>
-                    <select id="agent-runtime-target" aria-label={t('agentProfiles.selectRuntimeTarget')} value={targetId} onChange={(event) => setTargetId(event.target.value)} disabled={loadingTargets} className={fieldClass}>
+                    <select id="agent-runtime-target" aria-label={t('agentProfiles.selectRuntimeTarget')} value={targetId} onChange={(event) => { const next = event.target.value; if (next !== targetId) requestNavigation(() => setTargetId(next)); }} disabled={loadingTargets || busyAction !== null} className={fieldClass}>
                         <option value="">{loadingTargets ? t('agentProfiles.discoveringRuntimes') : t('agentProfiles.selectRuntime')}</option>
                         {targets.map((target) => <option key={target.target_id} value={target.target_id}>{target.display_name} · {target.home_path.display}</option>)}
                     </select>
                 </div>
                 <div className="flex items-center gap-2">
                     {selectedTarget && <span className="hidden max-w-xs items-center gap-1.5 truncate text-xs text-muted-foreground lg:flex">{selectedTarget.kind === 'wsl' ? <Cloud className="h-3.5 w-3.5 shrink-0" /> : <Laptop className="h-3.5 w-3.5 shrink-0" />}{selectedTarget.home_path.native}</span>}
-                    <Button type="button" variant="outline" onClick={refresh} disabled={!targetId || loadingProfiles} aria-label={t('agentProfiles.refreshProfiles')}><RefreshCw className={cn('mr-2 h-4 w-4', loadingProfiles && 'animate-spin')} />{t('agentProfiles.common.refresh')}</Button>
+                    <Button type="button" variant="outline" onClick={() => requestNavigation(refresh)} disabled={!targetId || loadingProfiles || busyAction !== null} aria-label={t('agentProfiles.refreshProfiles')}><RefreshCw className={cn('mr-2 h-4 w-4', loadingProfiles && 'animate-spin')} />{t('agentProfiles.common.refresh')}</Button>
                 </div>
             </div>
 
@@ -1198,7 +1226,7 @@ export function AgentProfilesPanel() {
                             </div>
                         </div>
                         <div className="space-y-1">
-                            {discovery.profiles.map((summary) => <ProfileSummaryRow key={summary.profile_id} summary={summary} selected={summary.profile_id === selectedProfileId} onClick={() => setSelectedProfileId(summary.profile_id)} />)}
+                            {discovery.profiles.map((summary) => <ProfileSummaryRow key={summary.profile_id} summary={summary} selected={summary.profile_id === selectedProfileId} onClick={() => summary.profile_id !== selectedProfileId && requestNavigation(() => setSelectedProfileId(summary.profile_id))} />)}
                         </div>
                         <div className="flex items-center justify-end gap-1 pt-2">
                             <Button type="button" variant="ghost" size="sm" onClick={() => openProfileDialog('rename')} disabled={!canCreateProfile || !selectedProfileId || busyAction !== null}><Pencil className="mr-1.5 h-3.5 w-3.5" />{t('agentProfiles.common.rename')}</Button>
@@ -1207,6 +1235,7 @@ export function AgentProfilesPanel() {
                     </aside>
 
                     <motion.article key={`${agent}:${selectedProfileId}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }} className="min-w-0 rounded-xl bg-muted/[0.18] p-3 shadow-sm ring-1 ring-border/25 sm:p-4">
+                        <fieldset disabled={busyAction !== null} className="min-w-0">
                         <header className="flex flex-col gap-4 px-1 pb-3 pt-1 sm:px-2 xl:flex-row xl:items-start xl:justify-between">
                             <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
@@ -1218,10 +1247,10 @@ export function AgentProfilesPanel() {
                                 <div className="mt-2 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"><FileCode2 className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{profileForEdit.source.path.display}</span></div>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <Button type="button" variant="outline" onClick={activateDraft} disabled={!profile || busyAction !== null || selectedSummary?.is_default}>{busyAction === 'activate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{t(dirty && !selectedSummary?.is_default ? 'agentProfiles.actions.saveAndSetDefault' : 'agentProfiles.actions.setDefault')}</Button>
+                                <Button type="button" variant="outline" onClick={activateDraft} disabled={!profile || advancedEdited || busyAction !== null || selectedSummary?.is_default}>{busyAction === 'activate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{t(dirty && !selectedSummary?.is_default ? 'agentProfiles.actions.saveAndSetDefault' : 'agentProfiles.actions.setDefault')}</Button>
                                 <Button type="button" variant="outline" onClick={copyLaunchCommand} disabled={!profileForEdit || busyAction !== null} title={t('agentProfiles.actions.copyLaunchCommand')} aria-label={t('agentProfiles.actions.copyLaunchCommand')}><Copy className="mr-2 h-4 w-4" />{t('agentProfiles.actions.copyLaunchCommand')}</Button>
-                                <Button type="button" variant="outline" onClick={prepareLaunch} disabled={!profile || busyAction !== null}>{busyAction === 'launch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Terminal className="mr-2 h-4 w-4" />}{t(dirty ? 'agentProfiles.actions.saveAndLaunch' : 'agentProfiles.actions.launchOnce')}</Button>
-                                <Button type="button" onClick={saveDraft} disabled={!dirty || busyAction !== null}>{busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t('agentProfiles.common.save')}</Button>
+                                <Button type="button" variant="outline" onClick={prepareLaunch} disabled={!profile || advancedEdited || busyAction !== null}>{busyAction === 'launch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Terminal className="mr-2 h-4 w-4" />}{t(dirty ? 'agentProfiles.actions.saveAndLaunch' : 'agentProfiles.actions.launchOnce')}</Button>
+                                <Button type="button" onClick={saveDraft} disabled={!dirty || advancedEdited || busyAction !== null}>{busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t('agentProfiles.common.save')}</Button>
                             </div>
                         </header>
 
@@ -1413,7 +1442,7 @@ export function AgentProfilesPanel() {
                                 <div className="grid gap-4 pb-4 pt-2 text-xs md:grid-cols-2">
                                     <div className="md:col-span-2">
                                         <div className="mb-1.5 flex items-center justify-between gap-2"><span className="text-muted-foreground">{t('agentProfiles.advanced.managedProjection')}</span><Button type="button" size="sm" variant="outline" onClick={applyAdvanced}>{t('agentProfiles.common.applyToDraft')}</Button></div>
-                                        <textarea value={advancedText} onChange={(event) => setAdvancedText(event.target.value)} aria-label={t('agentProfiles.advanced.editorLabel')} spellCheck={false} className="min-h-48 w-full resize-y rounded-md border bg-background p-3 font-mono text-[11px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                                        <textarea value={advancedText} onChange={(event) => { setAdvancedText(event.target.value); setAdvancedEdited(true); }} aria-label={t('agentProfiles.advanced.editorLabel')} spellCheck={false} className="min-h-48 w-full resize-y rounded-md border bg-background p-3 font-mono text-[11px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring" />
                                         {advancedError && <div className="mt-2 flex items-start gap-2 text-destructive" role="alert"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{advancedError}</div>}
                                     </div>
                                     <div><div className="mb-1 text-muted-foreground">{t('agentProfiles.advanced.nativeSource')}</div><pre className="overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 font-mono leading-5">{JSON.stringify({ path: profileForEdit.source.path.native, format: profileForEdit.source.format, scope: profileForEdit.source.scope }, null, 2)}</pre></div>
@@ -1424,9 +1453,23 @@ export function AgentProfilesPanel() {
                         </section>
 
                         {lastSave?.backup_path && <div className="flex flex-col gap-3 py-3 text-sm text-emerald-700 dark:text-emerald-300 md:flex-row md:items-center md:justify-between"><div className="min-w-0"><div className="font-medium">{t('agentProfiles.backup.available')}</div><div className="mt-1 truncate font-mono text-xs">{lastSave.backup_path.display}</div></div><Button type="button" size="sm" variant="outline" onClick={restoreLastSave} disabled={busyAction !== null}><RefreshCw className="mr-2 h-3.5 w-3.5" />{t('agentProfiles.backup.restore')}</Button></div>}
+                        </fieldset>
                     </motion.article>
                 </div>
             ) : null}
+
+            <Dialog open={pendingNavigation !== null} onOpenChange={(open) => { if (!open && busyAction === null) setPendingNavigation(null); }}>
+                <DialogContent className={cn('max-w-lg', interactionGroupClass)}>
+                    <DialogHeader><DialogTitle>{t('agentProfiles.navigation.title')}</DialogTitle><DialogDescription>{t('agentProfiles.navigation.description')}</DialogDescription></DialogHeader>
+                    {advancedEdited && <p className="text-sm text-muted-foreground">{t('agentProfiles.navigation.applyAdvancedFirst')}</p>}
+                    {notice?.kind === 'error' && <p role="alert" className="text-sm text-destructive">{notice.text}</p>}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPendingNavigation(null)} disabled={busyAction !== null}>{t('agentProfiles.common.cancel')}</Button>
+                        <Button variant="outline" onClick={() => continueNavigation(false)} disabled={busyAction !== null}>{t('agentProfiles.navigation.discard')}</Button>
+                        <Button onClick={() => continueNavigation(true)} disabled={advancedEdited || busyAction !== null}>{t('agentProfiles.navigation.save')}</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <Dialog open={profileDialog !== null} onOpenChange={(open) => !open && closeProfileDialog()}>
                 <DialogContent className={cn('max-w-md', interactionGroupClass)}>
