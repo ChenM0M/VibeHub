@@ -2,12 +2,13 @@ use crate::models::{Project, TagCategory, TagConfig};
 #[cfg(target_os = "windows")]
 use crate::process_util::silent_command;
 use anyhow::{anyhow, Result};
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::process::Command;
 #[cfg(target_os = "macos")]
 use std::{fs, os::unix::fs::PermissionsExt, thread, time::Duration};
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 const WINDOWS_AGENT_LAUNCH_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 $arguments = @()
@@ -18,7 +19,7 @@ $startParameters = @{
     FilePath = $env:VIBEHUB_AGENT_EXECUTABLE
     WorkingDirectory = $env:VIBEHUB_AGENT_WORKING_DIRECTORY
     PassThru = $true
-    WindowStyle = 'Hidden'
+    WindowStyle = 'Normal'
 }
 if ($arguments.Count -gt 0) {
     $startParameters.ArgumentList = [string[]]$arguments
@@ -61,7 +62,10 @@ impl Launcher {
                 let distribution = distribution
                     .filter(|value| !value.trim().is_empty())
                     .ok_or_else(|| anyhow!("WSL Agent launch requires a distribution"))?;
-                let mut command = silent_command("wsl.exe");
+                // Interactive sessions need their own visible console.
+                // silent_command is reserved for background probes.
+                let mut command = Command::new("wsl.exe");
+                command.creation_flags(0x00000010); // CREATE_NEW_CONSOLE
                 command
                     .arg("-d")
                     .arg(distribution)
@@ -650,13 +654,10 @@ mod tests {
         assert!(!matches!("shell", "host" | "wsl"));
     }
 
-    #[cfg(target_os = "windows")]
     #[test]
-    fn windows_agent_launch_runs_hidden_without_a_visible_console() {
-        // Agent CLIs must launch silently in the background on Windows; a
-        // visible console window is a regression.
-        assert!(WINDOWS_AGENT_LAUNCH_SCRIPT.contains("WindowStyle = 'Hidden'"));
-        assert!(!WINDOWS_AGENT_LAUNCH_SCRIPT.contains("WindowStyle = 'Normal'"));
+    fn windows_interactive_agent_launch_requests_a_visible_console() {
+        assert!(WINDOWS_AGENT_LAUNCH_SCRIPT.contains("WindowStyle = 'Normal'"));
+        assert!(!WINDOWS_AGENT_LAUNCH_SCRIPT.contains("WindowStyle = 'Hidden'"));
     }
 
     #[test]
