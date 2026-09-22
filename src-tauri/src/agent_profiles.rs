@@ -1670,32 +1670,74 @@ fn patch_for(
     })
 }
 
-fn opencode_thinking_patches(protocol: Option<ProtocolKind>, thinking: &ThinkingProfileInput) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
+fn opencode_thinking_patches(
+    protocol: Option<ProtocolKind>,
+    thinking: &ThinkingProfileInput,
+) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
     let mut patches = Vec::new();
-    let invalid = |message| AgentProfileCommandError::validation("AGENT_PROFILE_THINKING_INVALID", message);
+    let invalid =
+        |message| AgentProfileCommandError::validation("AGENT_PROFILE_THINKING_INVALID", message);
     if thinking.effort_changed {
         let key = match protocol {
-            Some(ProtocolKind::OpenaiChatCompletions | ProtocolKind::OpenaiResponses) => "reasoningEffort",
+            Some(ProtocolKind::OpenaiChatCompletions | ProtocolKind::OpenaiResponses) => {
+                "reasoningEffort"
+            }
             Some(ProtocolKind::AnthropicMessages) => "effort",
-            _ => return Err(invalid("Select a supported provider protocol before editing effort")),
+            _ => {
+                return Err(invalid(
+                    "Select a supported provider protocol before editing effort",
+                ))
+            }
         };
-        let value = thinking.reasoning_effort.as_ref().filter(|v| !v.trim().is_empty()).map(|v| Value::String(v.trim().to_owned()));
-        if value.is_some() && thinking.supports_effort == Some(false) { return Err(invalid("Model declares effort unsupported")); }
-        patches.push(v3::OpenCodeOptionPatch { path: vec![key.into()], value });
+        let value = thinking
+            .reasoning_effort
+            .as_ref()
+            .filter(|v| !v.trim().is_empty())
+            .map(|v| Value::String(v.trim().to_owned()));
+        if value.is_some() && thinking.supports_effort == Some(false) {
+            return Err(invalid("Model declares effort unsupported"));
+        }
+        patches.push(v3::OpenCodeOptionPatch {
+            path: vec![key.into()],
+            value,
+        });
     }
     if thinking.thinking_changed {
-        if protocol != Some(ProtocolKind::AnthropicMessages) { return Err(invalid("Thinking mode and budget require Anthropic Messages")); }
+        if protocol != Some(ProtocolKind::AnthropicMessages) {
+            return Err(invalid(
+                "Thinking mode and budget require Anthropic Messages",
+            ));
+        }
         match thinking.thinking_mode.as_deref().filter(|v| !v.is_empty()) {
-            None => patches.push(v3::OpenCodeOptionPatch { path: vec!["thinking".into()], value: None }),
+            None => patches.push(v3::OpenCodeOptionPatch {
+                path: vec!["thinking".into()],
+                value: None,
+            }),
             Some(mode @ ("enabled" | "adaptive" | "disabled")) => {
-                if mode != "disabled" && thinking.supports_reasoning == Some(false) { return Err(invalid("Model declares reasoning unsupported")); }
+                if mode != "disabled" && thinking.supports_reasoning == Some(false) {
+                    return Err(invalid("Model declares reasoning unsupported"));
+                }
                 let budget = if mode == "enabled" {
-                    let budget = thinking.thinking_budget.ok_or_else(|| invalid("Manual thinking requires a token budget"))?;
-                    if !(1024..=9_007_199_254_740_991).contains(&budget) { return Err(invalid("Thinking budget must be an integer of at least 1024 tokens")); }
+                    let budget = thinking
+                        .thinking_budget
+                        .ok_or_else(|| invalid("Manual thinking requires a token budget"))?;
+                    if !(1024..=9_007_199_254_740_991).contains(&budget) {
+                        return Err(invalid(
+                            "Thinking budget must be an integer of at least 1024 tokens",
+                        ));
+                    }
                     Some(Value::from(budget))
-                } else { None };
-                patches.push(v3::OpenCodeOptionPatch { path: vec!["thinking".into(), "type".into()], value: Some(mode.into()) });
-                patches.push(v3::OpenCodeOptionPatch { path: vec!["thinking".into(), "budgetTokens".into()], value: budget });
+                } else {
+                    None
+                };
+                patches.push(v3::OpenCodeOptionPatch {
+                    path: vec!["thinking".into(), "type".into()],
+                    value: Some(mode.into()),
+                });
+                patches.push(v3::OpenCodeOptionPatch {
+                    path: vec!["thinking".into(), "budgetTokens".into()],
+                    value: budget,
+                });
             }
             Some(_) => return Err(invalid("Unknown thinking mode")),
         }
@@ -1739,8 +1781,17 @@ fn patch_for_opencode(
             if !model.enabled {
                 continue;
             }
-            if model.thinking.variant_values_changed && model.thinking.variant_values.as_ref().is_some_and(|values| values.values().any(|value| !value.is_object())) {
-                return Err(AgentProfileCommandError::validation("AGENT_PROFILE_VARIANT_OBJECT_REQUIRED", "Each variant must contain a JSON object"));
+            if model.thinking.variant_values_changed
+                && model
+                    .thinking
+                    .variant_values
+                    .as_ref()
+                    .is_some_and(|values| values.values().any(|value| !value.is_object()))
+            {
+                return Err(AgentProfileCommandError::validation(
+                    "AGENT_PROFILE_VARIANT_OBJECT_REQUIRED",
+                    "Each variant must contain a JSON object",
+                ));
             }
             let variants = model.thinking.variant_values_changed.then(|| {
                 model
@@ -2929,16 +2980,47 @@ fn parse_upstream_models(value: &Value) -> Vec<UpstreamModelWire> {
         if !seen.insert(model_id.clone()) {
             continue;
         }
-        let supports_reasoning = item.get("reasoning").and_then(Value::as_bool)
-            .or_else(|| item.pointer("/capabilities/thinking/supported").and_then(Value::as_bool));
-        let supports_effort = item.pointer("/capabilities/effort/supported").and_then(Value::as_bool);
+        let supports_reasoning = item.get("reasoning").and_then(Value::as_bool).or_else(|| {
+            item.pointer("/capabilities/thinking/supported")
+                .and_then(Value::as_bool)
+        });
+        let supports_effort = item
+            .pointer("/capabilities/effort/supported")
+            .and_then(Value::as_bool);
         let effort_options = if supports_effort == Some(true) {
-            ["low", "medium", "high", "max"].into_iter().filter(|level| item.pointer(&format!("/capabilities/effort/{level}/supported")).and_then(Value::as_bool) == Some(true)).map(str::to_owned).collect()
-        } else { Vec::new() };
+            ["low", "medium", "high", "max"]
+                .into_iter()
+                .filter(|level| {
+                    item.pointer(&format!("/capabilities/effort/{level}/supported"))
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                })
+                .map(str::to_owned)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let thinking_types = if supports_reasoning == Some(true) {
-            ["enabled", "adaptive"].into_iter().filter(|kind| item.pointer(&format!("/capabilities/thinking/types/{kind}/supported")).and_then(Value::as_bool) == Some(true)).map(str::to_owned).collect()
-        } else { Vec::new() };
-        models.push(UpstreamModelWire { model_id, display_name, supports_reasoning, supports_effort, effort_options, thinking_types });
+            ["enabled", "adaptive"]
+                .into_iter()
+                .filter(|kind| {
+                    item.pointer(&format!("/capabilities/thinking/types/{kind}/supported"))
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                })
+                .map(str::to_owned)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        models.push(UpstreamModelWire {
+            model_id,
+            display_name,
+            supports_reasoning,
+            supports_effort,
+            effort_options,
+            thinking_types,
+        });
     }
     models.sort_by(|left, right| left.model_id.cmp(&right.model_id));
     models.truncate(UPSTREAM_MODEL_LIMIT);
@@ -3821,12 +3903,18 @@ mod tests {
                 UpstreamModelWire {
                     model_id: "gpt-4o".to_owned(),
                     display_name: "gpt-4o".to_owned(),
-                    supports_reasoning: None, supports_effort: None, effort_options: vec![], thinking_types: vec![],
+                    supports_reasoning: None,
+                    supports_effort: None,
+                    effort_options: vec![],
+                    thinking_types: vec![],
                 },
                 UpstreamModelWire {
                     model_id: "o3".to_owned(),
                     display_name: "o3".to_owned(),
-                    supports_reasoning: None, supports_effort: None, effort_options: vec![], thinking_types: vec![],
+                    supports_reasoning: None,
+                    supports_effort: None,
+                    effort_options: vec![],
+                    thinking_types: vec![],
                 },
             ]
         );
@@ -3843,7 +3931,10 @@ mod tests {
             vec![UpstreamModelWire {
                 model_id: "claude-sonnet-4-20250514".to_owned(),
                 display_name: "Claude Sonnet 4".to_owned(),
-                    supports_reasoning: None, supports_effort: None, effort_options: vec![], thinking_types: vec![],
+                supports_reasoning: None,
+                supports_effort: None,
+                effort_options: vec![],
+                thinking_types: vec![],
             }]
         );
 
@@ -4092,28 +4183,75 @@ mod tests {
         let path = root.join(".config/opencode/opencode.jsonc");
         fs::write(&path, r#"{"provider":{"p":{"npm":"@ai-sdk/anthropic","models":{"m":{"options":{"temperature":0.3,"thinking":{"type":"enabled","budgetTokens":2048,"display":"keep"}}}}}}}"#).unwrap();
         let target = RuntimeTarget::host(root.clone());
-        let mut thinking = ThinkingProfileInput { reasoning_effort: Some("high".into()), effort_changed: true, thinking_changed: true, thinking_mode: Some("enabled".into()), thinking_budget: Some(4096), ..Default::default() };
-        for (mode, budget) in [(Some("enabled"), Some(4096)), (Some("adaptive"), None), (None, None)] {
+        let mut thinking = ThinkingProfileInput {
+            reasoning_effort: Some("high".into()),
+            effort_changed: true,
+            thinking_changed: true,
+            thinking_mode: Some("enabled".into()),
+            thinking_budget: Some(4096),
+            ..Default::default()
+        };
+        for (mode, budget) in [
+            (Some("enabled"), Some(4096)),
+            (Some("adaptive"), None),
+            (None, None),
+        ] {
             thinking.thinking_mode = mode.map(str::to_owned);
             thinking.thinking_budget = budget;
             let before = v3::read_opencode_profile(&target, &path).unwrap();
             let mut patch = OpenCodeConfigPatch::default();
-            patch.providers.insert("p".into(), OpenCodeProviderPatch { models: BTreeMap::from([("m".into(), OpenCodeModelPatch { option_patches: opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).unwrap(), ..Default::default() })]), ..Default::default() });
+            patch.providers.insert(
+                "p".into(),
+                OpenCodeProviderPatch {
+                    models: BTreeMap::from([(
+                        "m".into(),
+                        OpenCodeModelPatch {
+                            option_patches: opencode_thinking_patches(
+                                Some(ProtocolKind::AnthropicMessages),
+                                &thinking,
+                            )
+                            .unwrap(),
+                            ..Default::default()
+                        },
+                    )]),
+                    ..Default::default()
+                },
+            );
             v3::save_opencode_profile(&target, &path, Some(&before.revision), &patch).unwrap();
             let after = v3::read_opencode_profile(&target, &path).unwrap();
             assert_eq!(after.providers[0].models[0].thinking_mode.as_deref(), mode);
             assert_eq!(after.providers[0].models[0].thinking_budget, budget);
-            assert_eq!(after.providers[0].models[0].reasoning_effort.as_deref(), Some("high"));
+            assert_eq!(
+                after.providers[0].models[0].reasoning_effort.as_deref(),
+                Some("high")
+            );
             let value: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-            assert_eq!(value.pointer("/provider/p/models/m/options/temperature"), Some(&json!(0.3)));
-            if mode.is_some() { assert_eq!(value.pointer("/provider/p/models/m/options/thinking/display"), Some(&json!("keep"))); }
+            assert_eq!(
+                value.pointer("/provider/p/models/m/options/temperature"),
+                Some(&json!(0.3))
+            );
+            if mode.is_some() {
+                assert_eq!(
+                    value.pointer("/provider/p/models/m/options/thinking/display"),
+                    Some(&json!("keep"))
+                );
+            }
         }
         thinking.reasoning_effort = None;
-        assert_eq!(opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).unwrap()[0].value, None);
+        assert_eq!(
+            opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).unwrap()[0]
+                .value,
+            None
+        );
         thinking.thinking_mode = Some("enabled".into());
         thinking.thinking_budget = Some(1023);
-        assert!(opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).is_err());
-        assert!(opencode_thinking_patches(Some(ProtocolKind::OpenaiChatCompletions), &thinking).is_err());
+        assert!(
+            opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).is_err()
+        );
+        assert!(
+            opencode_thinking_patches(Some(ProtocolKind::OpenaiChatCompletions), &thinking)
+                .is_err()
+        );
         assert!(opencode_thinking_patches(None, &thinking).is_err());
         fs::remove_dir_all(root).unwrap();
     }
@@ -4187,25 +4325,55 @@ mod tests {
             })
         );
         assert_eq!(variants["low"], json!({ "reasoningEffort": "low" }));
-        managed.providers[0].models[0].thinking.variant_values.as_mut().unwrap().insert("high".into(), json!({"reasoningEffort":"medium","extra":{"keep":true}}));
+        managed.providers[0].models[0]
+            .thinking
+            .variant_values
+            .as_mut()
+            .unwrap()
+            .insert(
+                "high".into(),
+                json!({"reasoningEffort":"medium","extra":{"keep":true}}),
+            );
         let edited = patch_for_opencode(&managed).unwrap();
-        assert_eq!(edited.providers["deepseek"].models["deepseek-chat"].variants.as_ref().unwrap()["high"]["reasoningEffort"], "medium");
+        assert_eq!(
+            edited.providers["deepseek"].models["deepseek-chat"]
+                .variants
+                .as_ref()
+                .unwrap()["high"]["reasoningEffort"],
+            "medium"
+        );
         let root = std::env::temp_dir().join(format!("vibehub-variant-edit-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join(".config/opencode")).unwrap();
         let path = root.join(".config/opencode/opencode.jsonc");
-        fs::write(&path, r#"{"provider":{"deepseek":{"models":{"deepseek-chat":{"custom":"keep"}}}}}"#).unwrap();
+        fs::write(
+            &path,
+            r#"{"provider":{"deepseek":{"models":{"deepseek-chat":{"custom":"keep"}}}}}"#,
+        )
+        .unwrap();
         let target = RuntimeTarget::host(root.clone());
         let before = v3::read_opencode_profile(&target, &path).unwrap();
         v3::save_opencode_profile(&target, &path, Some(&before.revision), &edited).unwrap();
         let after = v3::read_opencode_profile(&target, &path).unwrap();
-        assert_eq!(after.providers[0].models[0].variant_values.as_ref().unwrap()["high"], json!({"reasoningEffort":"medium","extra":{"keep":true}}));
-        assert!(fs::read_to_string(&path).unwrap().contains("\"custom\":\"keep\""));
+        assert_eq!(
+            after.providers[0].models[0]
+                .variant_values
+                .as_ref()
+                .unwrap()["high"],
+            json!({"reasoningEffort":"medium","extra":{"keep":true}})
+        );
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("\"custom\":\"keep\""));
         fs::remove_dir_all(root).unwrap();
         for invalid in [json!([]), json!(null), json!("high"), json!(3)] {
-            managed.providers[0].models[0].thinking.variant_values.as_mut().unwrap().insert("high".into(), invalid);
+            managed.providers[0].models[0]
+                .thinking
+                .variant_values
+                .as_mut()
+                .unwrap()
+                .insert("high".into(), invalid);
             assert!(patch_for_opencode(&managed).is_err());
         }
-
     }
 
     #[test]
