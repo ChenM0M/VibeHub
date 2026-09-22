@@ -1645,7 +1645,8 @@
       "setDefault": "Set as default",
       "launchOnce": "Launch once",
       "copyLaunchCommand": "Copy launch command",
-      "saveAndLaunch": "Save and launch"
+      "saveAndLaunch": "Save and launch",
+      "saveAndSetDefault": "Save and set as default"
     },
     "route": {
       "adapter": "Automatic adaptation",

@@ -1642,7 +1642,8 @@
       "setDefault": "設為預設",
       "launchOnce": "僅此次啟動",
       "copyLaunchCommand": "複製啟動指令",
-      "saveAndLaunch": "儲存並啟動"
+      "saveAndLaunch": "儲存並啟動",
+      "saveAndSetDefault": "儲存並設為預設"
     },
     "route": {
       "adapter": "自動轉接",

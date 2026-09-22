@@ -633,14 +633,16 @@ export function AgentProfilesPanel() {
 
     const activateDraft = async () => {
         if (!profile || !targetId) return;
+        const saved = await profileForAction(profile, dirty, saveDraft);
+        if (!saved) return;
         setBusyAction('activate');
         setNotice(null);
         try {
             const result = await tauriApi.v3AgentProfileActivate({
                 agent,
                 runtime_target_id: targetId,
-                profile_id: profile.profile_id,
-                expected_revision: profile.revision.revision,
+                profile_id: saved.profile_id,
+                expected_revision: saved.revision.revision,
             });
             setProfile(result.profile);
             setDraft(cloneProfile(result.profile));
@@ -1216,7 +1218,7 @@ export function AgentProfilesPanel() {
                                 <div className="mt-2 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"><FileCode2 className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{profileForEdit.source.path.display}</span></div>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <Button type="button" variant="outline" onClick={activateDraft} disabled={!profile || busyAction !== null || selectedSummary?.is_default}>{busyAction === 'activate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{t('agentProfiles.actions.setDefault')}</Button>
+                                <Button type="button" variant="outline" onClick={activateDraft} disabled={!profile || busyAction !== null || selectedSummary?.is_default}>{busyAction === 'activate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{t(dirty && !selectedSummary?.is_default ? 'agentProfiles.actions.saveAndSetDefault' : 'agentProfiles.actions.setDefault')}</Button>
                                 <Button type="button" variant="outline" onClick={copyLaunchCommand} disabled={!profileForEdit || busyAction !== null} title={t('agentProfiles.actions.copyLaunchCommand')} aria-label={t('agentProfiles.actions.copyLaunchCommand')}><Copy className="mr-2 h-4 w-4" />{t('agentProfiles.actions.copyLaunchCommand')}</Button>
                                 <Button type="button" variant="outline" onClick={prepareLaunch} disabled={!profile || busyAction !== null}>{busyAction === 'launch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Terminal className="mr-2 h-4 w-4" />}{t(dirty ? 'agentProfiles.actions.saveAndLaunch' : 'agentProfiles.actions.launchOnce')}</Button>
                                 <Button type="button" onClick={saveDraft} disabled={!dirty || busyAction !== null}>{busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t('agentProfiles.common.save')}</Button>
