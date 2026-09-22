@@ -1795,7 +1795,8 @@
       "detectUnavailable": "Could not list models from the upstream.",
       "detectInvalidResponse": "The upstream did not return a parseable model list.",
       "advancedIdentityImmutable": "Profile ID and runtime target cannot be changed in the advanced editor.",
-      "advancedProvidersMissing": "The advanced configuration is missing managed.providers."
+      "advancedProvidersMissing": "The advanced configuration is missing managed.providers.",
+      "commandCopyFailed": "Could not copy to the clipboard. Select and copy the command manually:\n{{command}}"
     },
     "claudeCompatibility": {
       "sectionLabel": "Claude Code compatibility",
