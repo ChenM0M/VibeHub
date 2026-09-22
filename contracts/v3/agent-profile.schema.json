@@ -268,6 +268,32 @@
           "items": {
             "type": "string"
           }
+        },
+        "reasoning_effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking_mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking_budget": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1024,
+          "maximum": 9007199254740991
+        },
+        "effort_changed": {
+          "type": "boolean"
+        },
+        "thinking_changed": {
+          "type": "boolean"
         }
       }
     },

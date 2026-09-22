@@ -1828,6 +1828,20 @@
     },
     "capabilities": {
       "unknownHint": "未提供的能力信息保持未知。仅导入上游明确声明的思考档位，不自动选择档位。"
+    },
+    "thinkingParameters": {
+      "title": "思考参数",
+      "hint": "留空即继承 OpenCode / 提供商默认值。建议值来自上游声明（如有）；自定义值请核对模型支持情况。",
+      "protocolRequired": "请先选择受支持的提供商协议，再编辑这些参数。",
+      "effort": "思考强度",
+      "mode": "思考模式",
+      "budget": "思考预算（Token，至少 1024）",
+      "inherit": "继承默认值",
+      "enabled": "手动预算",
+      "adaptive": "自适应",
+      "disabled": "关闭",
+      "invalidBudget": "思考预算必须是至少 1024 的整数。",
+      "unsupportedEffort": "此模型声明不支持思考强度。请清空该值以继承默认设置。"
     }
   },
   "update": {

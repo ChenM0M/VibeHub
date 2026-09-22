@@ -1,3 +1,4 @@
+import { ThinkingParametersEditor, type ThinkingParameters } from './ThinkingParametersEditor';
 import { modelFromUpstream } from './upstreamModels';
 import type { UpstreamModelMetadata } from '@/services/tauri';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -103,7 +104,7 @@ type ProviderForm = {
     protocol: ProtocolCapability;
 };
 
-type ModelForm = {
+type ModelForm = ThinkingParameters & {
     model_id: string;
     display_name: string;
     enabled: boolean;
@@ -336,6 +337,11 @@ function emptyProviderForm(agent: AgentKind, profile: AgentProfileDocument, notC
 
 function modelFormFrom(model: ModelProfile): ModelForm {
     return {
+        reasoning_effort: model.thinking.reasoning_effort || '',
+        thinking_mode: model.thinking.thinking_mode || '',
+        thinking_budget: model.thinking.thinking_budget?.toString() || '',
+        effort_changed: model.thinking.effort_changed || false,
+        thinking_changed: model.thinking.thinking_changed || false,
         model_id: model.model_id,
         display_name: model.display_name,
         enabled: model.enabled,
@@ -350,6 +356,7 @@ function modelFormFrom(model: ModelProfile): ModelForm {
 
 function emptyModelForm(_agent: AgentKind): ModelForm {
     return {
+        reasoning_effort: '', thinking_mode: '', thinking_budget: '', effort_changed: false, thinking_changed: false,
         model_id: '',
         display_name: '',
         enabled: true,
@@ -874,6 +881,15 @@ export function AgentProfilesPanel() {
             setModelError(t('agentProfiles.errors.modelExists'));
             return;
         }
+        if (modelForm.thinking_changed && modelForm.thinking_mode === 'enabled'
+            && (!Number.isSafeInteger(Number(modelForm.thinking_budget)) || Number(modelForm.thinking_budget) < 1024)) {
+            setModelError(t('agentProfiles.thinkingParameters.invalidBudget'));
+            return;
+        }
+        if (modelForm.effort_changed && modelForm.reasoning_effort.trim() && modelForm.supports_effort === false) {
+            setModelError(t('agentProfiles.thinkingParameters.unsupportedEffort'));
+            return;
+        }
         const options = Array.from(new Set(modelForm.options.map((option) => option.trim()).filter(Boolean)));
         const selected = modelForm.selected && options.includes(modelForm.selected) ? modelForm.selected : null;
         const previousModel = modelEditor.modelId
@@ -897,6 +913,11 @@ export function AgentProfilesPanel() {
                 custom_allowed: modelForm.custom_allowed,
                 variant_values: variantValues,
                 variant_values_changed: variantValuesChanged,
+                reasoning_effort: modelForm.reasoning_effort.trim() || null,
+                thinking_mode: modelForm.thinking_mode || null,
+                thinking_budget: modelForm.thinking_mode === 'enabled' && modelForm.thinking_budget ? Number(modelForm.thinking_budget) : null,
+                effort_changed: modelForm.effort_changed,
+                thinking_changed: modelForm.thinking_changed,
                 effort_options: previousModel?.thinking.effort_options,
                 thinking_types: previousModel?.thinking.thinking_types,
             },
@@ -1469,6 +1490,11 @@ export function AgentProfilesPanel() {
                                     <div className="flex items-center gap-1"><Input value={variantInput} onChange={(event) => setVariantInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); } }} placeholder={t('agentProfiles.forms.addVariant')} className="h-8 w-32 text-xs" /><Button type="button" variant="outline" size="sm" onClick={() => { const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); }}>{t('agentProfiles.common.add')}</Button></div>
                                 </div>
                             </div>
+                            {agent === 'opencode' && <ThinkingParametersEditor value={modelForm} onChange={value => setModelForm({ ...modelForm, ...value })}
+                                protocol={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.protocol.native_protocol || 'unknown'}
+                                supportsEffort={modelForm.supports_effort} supportsReasoning={modelForm.supports_reasoning}
+                                effortOptions={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.models.find(m => m.model_id === modelEditor?.modelId)?.thinking.effort_options}
+                                thinkingTypes={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.models.find(m => m.model_id === modelEditor?.modelId)?.thinking.thinking_types} />}
                             <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.custom_allowed} onCheckedChange={(checked) => setModelForm({ ...modelForm, custom_allowed: checked })} />{t('agentProfiles.forms.allowCustomEffort')}</label>
                             <p className="text-xs leading-5 text-muted-foreground">{t('agentProfiles.dialogs.model.capabilityNote')} {t('agentProfiles.capabilities.unknownHint')}</p>
                         </div>

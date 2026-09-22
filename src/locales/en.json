@@ -1831,6 +1831,20 @@
     },
     "capabilities": {
       "unknownHint": "Missing capability metadata stays unknown. Available effort levels are only imported when explicitly advertised; no level is selected automatically."
+    },
+    "thinkingParameters": {
+      "title": "Thinking parameters",
+      "hint": "Empty values inherit OpenCode/provider defaults. Suggestions use advertised capabilities when available; verify custom values with your model provider.",
+      "protocolRequired": "Select a supported provider protocol to edit these parameters.",
+      "effort": "Reasoning effort",
+      "mode": "Thinking mode",
+      "budget": "Thinking budget (tokens, at least 1024)",
+      "inherit": "Inherit default",
+      "enabled": "Manual budget",
+      "adaptive": "Adaptive",
+      "disabled": "Disabled",
+      "invalidBudget": "Enter a whole-number thinking budget of at least 1024 tokens.",
+      "unsupportedEffort": "This model declares effort unsupported. Clear the value to inherit the default."
     }
   },
   "update": {

@@ -1828,6 +1828,20 @@
     },
     "capabilities": {
       "unknownHint": "未提供的能力資訊保持未知。僅匯入上游明確宣告的思考等級，不自動選取等級。"
+    },
+    "thinkingParameters": {
+      "title": "思考參數",
+      "hint": "留空即繼承 OpenCode / 供應商預設值。建議值來自上游宣告（如有）；自訂值請核對模型支援情況。",
+      "protocolRequired": "請先選擇支援的供應商協定，再編輯這些參數。",
+      "effort": "思考強度",
+      "mode": "思考模式",
+      "budget": "思考預算（Token，至少 1024）",
+      "inherit": "繼承預設值",
+      "enabled": "手動預算",
+      "adaptive": "自適應",
+      "disabled": "關閉",
+      "invalidBudget": "思考預算必須是至少 1024 的整數。",
+      "unsupportedEffort": "此模型宣告不支援思考強度。請清空該值以繼承預設設定。"
     }
   },
   "update": {

@@ -412,8 +412,18 @@ pub struct ModelProfileInput {
     pub thinking: ThinkingProfileInput,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ThinkingProfileInput {
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub thinking_mode: Option<String>,
+    #[serde(default)]
+    pub thinking_budget: Option<u64>,
+    #[serde(default)]
+    pub effort_changed: bool,
+    #[serde(default)]
+    pub thinking_changed: bool,
     pub supports_reasoning: Option<bool>,
     pub supports_effort: Option<bool>,
     pub selected: Option<String>,
@@ -1660,6 +1670,39 @@ fn patch_for(
     })
 }
 
+fn opencode_thinking_patches(protocol: Option<ProtocolKind>, thinking: &ThinkingProfileInput) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
+    let mut patches = Vec::new();
+    let invalid = |message| AgentProfileCommandError::validation("AGENT_PROFILE_THINKING_INVALID", message);
+    if thinking.effort_changed {
+        let key = match protocol {
+            Some(ProtocolKind::OpenaiChatCompletions | ProtocolKind::OpenaiResponses) => "reasoningEffort",
+            Some(ProtocolKind::AnthropicMessages) => "effort",
+            _ => return Err(invalid("Select a supported provider protocol before editing effort")),
+        };
+        let value = thinking.reasoning_effort.as_ref().filter(|v| !v.trim().is_empty()).map(|v| Value::String(v.trim().to_owned()));
+        if value.is_some() && thinking.supports_effort == Some(false) { return Err(invalid("Model declares effort unsupported")); }
+        patches.push(v3::OpenCodeOptionPatch { path: vec![key.into()], value });
+    }
+    if thinking.thinking_changed {
+        if protocol != Some(ProtocolKind::AnthropicMessages) { return Err(invalid("Thinking mode and budget require Anthropic Messages")); }
+        match thinking.thinking_mode.as_deref().filter(|v| !v.is_empty()) {
+            None => patches.push(v3::OpenCodeOptionPatch { path: vec!["thinking".into()], value: None }),
+            Some(mode @ ("enabled" | "adaptive" | "disabled")) => {
+                if mode != "disabled" && thinking.supports_reasoning == Some(false) { return Err(invalid("Model declares reasoning unsupported")); }
+                let budget = if mode == "enabled" {
+                    let budget = thinking.thinking_budget.ok_or_else(|| invalid("Manual thinking requires a token budget"))?;
+                    if !(1024..=9_007_199_254_740_991).contains(&budget) { return Err(invalid("Thinking budget must be an integer of at least 1024 tokens")); }
+                    Some(Value::from(budget))
+                } else { None };
+                patches.push(v3::OpenCodeOptionPatch { path: vec!["thinking".into(), "type".into()], value: Some(mode.into()) });
+                patches.push(v3::OpenCodeOptionPatch { path: vec!["thinking".into(), "budgetTokens".into()], value: budget });
+            }
+            Some(_) => return Err(invalid("Unknown thinking mode")),
+        }
+    }
+    Ok(patches)
+}
+
 fn patch_for_opencode(
     managed: &ManagedProfileInput,
 ) -> Result<OpenCodeConfigPatch, AgentProfileCommandError> {
@@ -1721,6 +1764,7 @@ fn patch_for_opencode(
                     reasoning: model.thinking.supports_reasoning,
                     clear_reasoning: model.thinking.supports_reasoning.is_none(),
                     variants,
+                    option_patches: opencode_thinking_patches(protocol, &model.thinking)?,
                 },
             );
         }
@@ -2078,7 +2122,12 @@ fn opencode_document_parts(
                             "options":model.variants,
                             "custom_allowed":false,
                             "variant_values":model.variant_values,
-                            "variant_values_changed":false
+                            "variant_values_changed":false,
+                            "reasoning_effort":model.reasoning_effort,
+                            "thinking_mode":model.thinking_mode,
+                            "thinking_budget":model.thinking_budget,
+                            "effort_changed":false,
+                            "thinking_changed":false
                         }
                     })
                 })
@@ -4034,6 +4083,39 @@ mod tests {
     }
 
     #[test]
+    fn thinking_parameters_round_trip_without_replacing_unmanaged_options() {
+        let root = std::env::temp_dir().join(format!("vibehub-thinking-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(&path, r#"{"provider":{"p":{"npm":"@ai-sdk/anthropic","models":{"m":{"options":{"temperature":0.3,"thinking":{"type":"enabled","budgetTokens":2048,"display":"keep"}}}}}}}"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let mut thinking = ThinkingProfileInput { reasoning_effort: Some("high".into()), effort_changed: true, thinking_changed: true, thinking_mode: Some("enabled".into()), thinking_budget: Some(4096), ..Default::default() };
+        for (mode, budget) in [(Some("enabled"), Some(4096)), (Some("adaptive"), None), (None, None)] {
+            thinking.thinking_mode = mode.map(str::to_owned);
+            thinking.thinking_budget = budget;
+            let before = v3::read_opencode_profile(&target, &path).unwrap();
+            let mut patch = OpenCodeConfigPatch::default();
+            patch.providers.insert("p".into(), OpenCodeProviderPatch { models: BTreeMap::from([("m".into(), OpenCodeModelPatch { option_patches: opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).unwrap(), ..Default::default() })]), ..Default::default() });
+            v3::save_opencode_profile(&target, &path, Some(&before.revision), &patch).unwrap();
+            let after = v3::read_opencode_profile(&target, &path).unwrap();
+            assert_eq!(after.providers[0].models[0].thinking_mode.as_deref(), mode);
+            assert_eq!(after.providers[0].models[0].thinking_budget, budget);
+            assert_eq!(after.providers[0].models[0].reasoning_effort.as_deref(), Some("high"));
+            let value: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(value.pointer("/provider/p/models/m/options/temperature"), Some(&json!(0.3)));
+            if mode.is_some() { assert_eq!(value.pointer("/provider/p/models/m/options/thinking/display"), Some(&json!("keep"))); }
+        }
+        thinking.reasoning_effort = None;
+        assert_eq!(opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).unwrap()[0].value, None);
+        thinking.thinking_mode = Some("enabled".into());
+        thinking.thinking_budget = Some(1023);
+        assert!(opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).is_err());
+        assert!(opencode_thinking_patches(Some(ProtocolKind::OpenaiChatCompletions), &thinking).is_err());
+        assert!(opencode_thinking_patches(None, &thinking).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn opencode_patch_preserves_complex_variant_values_across_tauri_boundary() {
         let mut variant_values = BTreeMap::new();
         variant_values.insert(
@@ -4079,6 +4161,7 @@ mod tests {
                         custom_allowed: false,
                         variant_values: Some(variant_values),
                         variant_values_changed: true,
+                        ..Default::default()
                     },
                 }],
             }],
@@ -4299,6 +4382,7 @@ mod tests {
                         custom_allowed: false,
                         variant_values: None,
                         variant_values_changed: false,
+                        ..Default::default()
                     },
                 }],
             }],
@@ -4354,6 +4438,7 @@ mod tests {
                         custom_allowed: false,
                         variant_values: None,
                         variant_values_changed: false,
+                        ..Default::default()
                     },
                 }],
             }],

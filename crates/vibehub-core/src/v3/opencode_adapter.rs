@@ -32,6 +32,9 @@ pub struct OpenCodeModelView {
     pub display_name: String,
     pub declared_id: Option<String>,
     pub reasoning: Option<bool>,
+    pub reasoning_effort: Option<String>,
+    pub thinking_mode: Option<String>,
+    pub thinking_budget: Option<u64>,
     pub variants: Vec<String>,
     /// Full variant values retained for the Tauri/UI round-trip. The editor
     /// displays only the names, but saving an unrelated field must not rebuild
@@ -103,6 +106,12 @@ impl std::fmt::Debug for OpenCodeProviderPatch {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenCodeOptionPatch {
+    pub path: Vec<String>,
+    pub value: Option<Value>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct OpenCodeModelPatch {
     pub display_name: Option<String>,
@@ -111,6 +120,8 @@ pub struct OpenCodeModelPatch {
     #[serde(default)]
     pub clear_reasoning: bool,
     pub variants: Option<BTreeMap<String, Value>>,
+    #[serde(default)]
+    pub option_patches: Vec<OpenCodeOptionPatch>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -524,6 +535,9 @@ fn model_view(model_id: &str, value: &Value) -> Result<OpenCodeModelView, Storag
             .and_then(Value::as_str)
             .map(str::to_owned),
         reasoning: object.get("reasoning").and_then(Value::as_bool),
+        reasoning_effort: object.get("options").and_then(|v| v.get("reasoningEffort").or_else(|| v.get("effort"))).and_then(Value::as_str).map(str::to_owned),
+        thinking_mode: object.get("options").and_then(|v| v.pointer("/thinking/type")).and_then(Value::as_str).map(str::to_owned),
+        thinking_budget: object.get("options").and_then(|v| v.pointer("/thinking/budgetTokens")).and_then(Value::as_u64),
         variants,
         variant_values,
         unknown_fields: object
@@ -725,6 +739,16 @@ impl JsoncEditor {
                         "reasoning",
                         &mut replacements,
                     )?;
+                }
+                for option in &model_patch.option_patches {
+                    if option.path.is_empty() { continue; }
+                    let mut path = vec![provider_key, provider_id.as_str(), "models", model_id.as_str(), "options"];
+                    path.extend(option.path.iter().map(String::as_str));
+                    if let Some(value) = &option.value {
+                        self.set_path(&path, value.clone(), &mut replacements)?;
+                    } else {
+                        self.remove_member(&path[..path.len() - 1], path[path.len() - 1], &mut replacements)?;
+                    }
                 }
                 if let Some(variants) = &model_patch.variants {
                     // None means variants were not edited. Some(empty) is an
@@ -1407,6 +1431,7 @@ mod tests {
                 reasoning: Some(true),
                 clear_reasoning: false,
                 variants: Some(variants),
+                ..Default::default()
             },
         );
         let mut providers = BTreeMap::new();
