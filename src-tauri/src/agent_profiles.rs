@@ -279,6 +279,10 @@ pub struct AgentProfileListModelsResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UpstreamModelWire {
+    pub supports_reasoning: Option<bool>,
+    pub supports_effort: Option<bool>,
+    pub effort_options: Vec<String>,
+    pub thinking_types: Vec<String>,
     pub model_id: String,
     pub display_name: String,
 }
@@ -411,7 +415,7 @@ pub struct ModelProfileInput {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ThinkingProfileInput {
     pub supports_reasoning: Option<bool>,
-    pub supports_effort: bool,
+    pub supports_effort: Option<bool>,
     pub selected: Option<String>,
     pub options: Vec<String>,
     pub custom_allowed: bool,
@@ -2069,7 +2073,7 @@ fn opencode_document_parts(
                         "enabled":true,
                         "thinking":{
                             "supports_reasoning":model.reasoning,
-                            "supports_effort":!model.variants.is_empty(),
+                            "supports_effort":Value::Null,
                             "selected":view.default_variant,
                             "options":model.variants,
                             "custom_allowed":false,
@@ -2175,8 +2179,8 @@ fn claude_document_parts(
             "display_name":model,
             "enabled":true,
             "thinking":{
-                "supports_reasoning":true,
-                "supports_effort":!view.thinking.options.is_empty(),
+                "supports_reasoning":Value::Null,
+                "supports_effort":Value::Null,
                 "selected":view.thinking.selected,
                 "options":view.thinking.options,
                 "custom_allowed":false
@@ -2267,10 +2271,10 @@ fn codex_document_parts(
                     "display_name":model,
                     "enabled":true,
                     "thinking":{
-                        "supports_reasoning":view.reasoning_effort.is_some(),
-                        "supports_effort":view.reasoning_effort.is_some(),
+                        "supports_reasoning":Value::Null,
+                        "supports_effort":Value::Null,
                         "selected":view.reasoning_effort,
-                        "options":["none","minimal","low","medium","high","xhigh","max","ultra"],
+                        "options":view.reasoning_effort.iter().collect::<Vec<_>>(),
                         "custom_allowed":false
                     }
                 })]).unwrap_or_default()
@@ -2873,10 +2877,16 @@ fn parse_upstream_models(value: &Value) -> Vec<UpstreamModelWire> {
         if !seen.insert(model_id.clone()) {
             continue;
         }
-        models.push(UpstreamModelWire {
-            model_id,
-            display_name,
-        });
+        let supports_reasoning = item.get("reasoning").and_then(Value::as_bool)
+            .or_else(|| item.pointer("/capabilities/thinking/supported").and_then(Value::as_bool));
+        let supports_effort = item.pointer("/capabilities/effort/supported").and_then(Value::as_bool);
+        let effort_options = if supports_effort == Some(true) {
+            ["low", "medium", "high", "max"].into_iter().filter(|level| item.pointer(&format!("/capabilities/effort/{level}/supported")).and_then(Value::as_bool) == Some(true)).map(str::to_owned).collect()
+        } else { Vec::new() };
+        let thinking_types = if supports_reasoning == Some(true) {
+            ["enabled", "adaptive"].into_iter().filter(|kind| item.pointer(&format!("/capabilities/thinking/types/{kind}/supported")).and_then(Value::as_bool) == Some(true)).map(str::to_owned).collect()
+        } else { Vec::new() };
+        models.push(UpstreamModelWire { model_id, display_name, supports_reasoning, supports_effort, effort_options, thinking_types });
     }
     models.sort_by(|left, right| left.model_id.cmp(&right.model_id));
     models.truncate(UPSTREAM_MODEL_LIMIT);
@@ -3131,6 +3141,26 @@ mod tests {
         } else {
             root.join(".config").join("opencode")
         }
+    }
+
+    #[test]
+    fn upstream_capabilities_do_not_guess_from_names_or_missing_fields() {
+        let models = parse_upstream_models(&json!({"data":[
+            {"id":"a-thinking-ultra"},
+            {"id":"b","reasoning":false},
+            {"id":"c","capabilities":{"thinking":{"supported":true,"types":{"adaptive":{"supported":true},"enabled":{"supported":false}}},"effort":{"supported":true,"low":{"supported":true},"medium":{"supported":false},"high":{"supported":true},"max":{"supported":false}}}},
+            {"id":"d","reasoning":"true","capabilities":{"effort":{"supported":false,"max":{"supported":true}}}}
+        ]}));
+        assert_eq!(models[0].supports_reasoning, None);
+        assert_eq!(models[0].supports_effort, None);
+        assert!(models[0].effort_options.is_empty());
+        assert_eq!(models[1].supports_reasoning, Some(false));
+        assert_eq!(models[2].supports_reasoning, Some(true));
+        assert_eq!(models[2].effort_options, vec!["low", "high"]);
+        assert_eq!(models[2].thinking_types, vec!["adaptive"]);
+        assert_eq!(models[3].supports_reasoning, None);
+        assert_eq!(models[3].supports_effort, Some(false));
+        assert!(models[3].effort_options.is_empty());
     }
 
     #[test]
@@ -3739,10 +3769,12 @@ mod tests {
                 UpstreamModelWire {
                     model_id: "gpt-4o".to_owned(),
                     display_name: "gpt-4o".to_owned(),
+                    supports_reasoning: None, supports_effort: None, effort_options: vec![], thinking_types: vec![],
                 },
                 UpstreamModelWire {
                     model_id: "o3".to_owned(),
                     display_name: "o3".to_owned(),
+                    supports_reasoning: None, supports_effort: None, effort_options: vec![], thinking_types: vec![],
                 },
             ]
         );
@@ -3759,6 +3791,7 @@ mod tests {
             vec![UpstreamModelWire {
                 model_id: "claude-sonnet-4-20250514".to_owned(),
                 display_name: "Claude Sonnet 4".to_owned(),
+                    supports_reasoning: None, supports_effort: None, effort_options: vec![], thinking_types: vec![],
             }]
         );
 
@@ -4040,7 +4073,7 @@ mod tests {
                     enabled: true,
                     thinking: ThinkingProfileInput {
                         supports_reasoning: Some(true),
-                        supports_effort: true,
+                        supports_effort: Some(true),
                         selected: Some("high".to_owned()),
                         options: vec!["high".to_owned(), "low".to_owned()],
                         custom_allowed: false,
@@ -4260,7 +4293,7 @@ mod tests {
                     enabled: true,
                     thinking: ThinkingProfileInput {
                         supports_reasoning: Some(false),
-                        supports_effort: false,
+                        supports_effort: Some(false),
                         selected: None,
                         options: Vec::new(),
                         custom_allowed: false,
@@ -4315,7 +4348,7 @@ mod tests {
                     enabled: true,
                     thinking: ThinkingProfileInput {
                         supports_reasoning: Some(false),
-                        supports_effort: false,
+                        supports_effort: Some(false),
                         selected: None,
                         options: Vec::new(),
                         custom_allowed: false,

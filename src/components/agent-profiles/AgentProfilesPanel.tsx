@@ -1,3 +1,5 @@
+import { modelFromUpstream } from './upstreamModels';
+import type { UpstreamModelMetadata } from '@/services/tauri';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -78,7 +80,7 @@ type ProfileDialogKind = 'create' | 'clone' | 'rename' | 'delete';
 type EntityDelete = { kind: 'provider' | 'model'; providerId: string; modelId?: string; label: string };
 type ProviderEditor = { mode: 'create' | 'edit'; providerId?: string };
 type ModelEditor = { mode: 'create' | 'edit'; providerId: string; modelId?: string };
-type ModelImportItem = { model_id: string; display_name: string; imported: boolean };
+type ModelImportItem = UpstreamModelMetadata & { imported: boolean };
 type ModelImportState = {
     providerId: string;
     loading: boolean;
@@ -106,7 +108,7 @@ type ModelForm = {
     display_name: string;
     enabled: boolean;
     supports_reasoning: boolean | null;
-    supports_effort: boolean;
+    supports_effort: boolean | null;
     selected: string;
     options: string[];
     custom_allowed: boolean;
@@ -211,28 +213,10 @@ function listModelsProtocol(agent: AgentKind, provider: ProviderProfile): string
     return agent === 'claude_code' ? 'anthropic_messages' : 'openai_responses';
 }
 
-function modelFromUpstream(agent: AgentKind, modelId: string, displayName: string): ModelProfile {
-    const defaults = emptyModelForm(agent);
-    return {
-        model_id: modelId,
-        display_name: displayName || modelId,
-        enabled: true,
-        thinking: {
-            supports_reasoning: defaults.supports_reasoning,
-            supports_effort: defaults.supports_effort,
-            selected: defaults.options[0] || null,
-            options: [...defaults.options],
-            custom_allowed: defaults.custom_allowed,
-            variant_values: null,
-            variant_values_changed: agent === 'opencode' && defaults.options.length > 0,
-        },
-    };
-}
-
 function importUpstreamModelsIntoDraft(
     profile: AgentProfileDocument,
     providerId: string,
-    models: Array<{ model_id: string; display_name: string }>,
+    models: UpstreamModelMetadata[],
 ): AgentProfileDocument {
     const next = cloneProfile(profile);
     const provider = next.managed.providers.find((item) => item.provider_id === providerId);
@@ -243,7 +227,7 @@ function importUpstreamModelsIntoDraft(
         const modelId = model.model_id.trim();
         if (!modelId || existing.has(modelId)) continue;
         existing.add(modelId);
-        added.push(modelFromUpstream(next.agent, modelId, model.display_name.trim() || modelId));
+        added.push(modelFromUpstream(next.agent, { ...model, model_id: modelId, display_name: model.display_name.trim() || modelId }));
     }
     if (added.length === 0) return profile;
     provider.models.push(...added);
@@ -364,15 +348,15 @@ function modelFormFrom(model: ModelProfile): ModelForm {
     };
 }
 
-function emptyModelForm(agent: AgentKind): ModelForm {
+function emptyModelForm(_agent: AgentKind): ModelForm {
     return {
         model_id: '',
         display_name: '',
         enabled: true,
-        supports_reasoning: agent === 'opencode' ? null : agent !== 'claude_code',
-        supports_effort: agent !== 'claude_code',
+        supports_reasoning: null,
+        supports_effort: null,
         selected: '',
-        options: agent === 'codex' ? ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] : [],
+        options: [],
         custom_allowed: false,
         variant_values: null,
     };
@@ -891,7 +875,7 @@ export function AgentProfilesPanel() {
             return;
         }
         const options = Array.from(new Set(modelForm.options.map((option) => option.trim()).filter(Boolean)));
-        const selected = modelForm.selected && options.includes(modelForm.selected) ? modelForm.selected : options[0] || null;
+        const selected = modelForm.selected && options.includes(modelForm.selected) ? modelForm.selected : null;
         const previousModel = modelEditor.modelId
             ? provider.models.find((model) => model.model_id === modelEditor.modelId)
             : undefined;
@@ -913,6 +897,8 @@ export function AgentProfilesPanel() {
                 custom_allowed: modelForm.custom_allowed,
                 variant_values: variantValues,
                 variant_values_changed: variantValuesChanged,
+                effort_options: previousModel?.thinking.effort_options,
+                thinking_types: previousModel?.thinking.thinking_types,
             },
         };
         setDraft((current) => {
@@ -992,6 +978,7 @@ export function AgentProfilesPanel() {
             if (requestId !== modelImportRequest.current) return;
             const existing = new Set(provider.models.map((model) => model.model_id));
             const items = result.models.map((model) => ({
+                ...model,
                 model_id: model.model_id,
                 display_name: model.display_name || model.model_id,
                 imported: existing.has(model.model_id),
@@ -1469,8 +1456,8 @@ export function AgentProfilesPanel() {
                             </div>
                             <div className="flex flex-wrap gap-5 py-2">
                                 <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.enabled} onCheckedChange={(checked) => setModelForm({ ...modelForm, enabled: checked })} />{t('agentProfiles.forms.enableModel')}</label>
-                                {agent === 'opencode' ? (<div><Label htmlFor="model-reasoning">{t('agentProfiles.forms.supportsReasoning')}</Label><select id="model-reasoning" value={modelForm.supports_reasoning === null ? 'unknown' : String(modelForm.supports_reasoning)} onChange={(event) => setModelForm({ ...modelForm, supports_reasoning: event.target.value === 'unknown' ? null : event.target.value === 'true' })} className={cn(fieldClass, 'mt-1.5')}><option value="unknown">{t('agentProfiles.forms.reasoningUnspecified')}</option><option value="true">{t('agentProfiles.forms.reasoningSupported')}</option><option value="false">{t('agentProfiles.forms.reasoningUnsupported')}</option></select></div>) : (<label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.supports_reasoning ?? false} onCheckedChange={(checked) => setModelForm({ ...modelForm, supports_reasoning: checked })} />{t('agentProfiles.forms.supportsReasoning')}</label>)}
-                                <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.supports_effort} onCheckedChange={(checked) => setModelForm({ ...modelForm, supports_effort: checked })} />{t('agentProfiles.forms.supportsEffort')}</label>
+                                <div><Label htmlFor="model-reasoning">{t('agentProfiles.forms.supportsReasoning')}</Label><select id="model-reasoning" value={modelForm.supports_reasoning === null ? 'unknown' : String(modelForm.supports_reasoning)} onChange={(event) => setModelForm({ ...modelForm, supports_reasoning: event.target.value === 'unknown' ? null : event.target.value === 'true' })} className={cn(fieldClass, 'mt-1.5')}><option value="unknown">{t('agentProfiles.forms.reasoningUnspecified')}</option><option value="true">{t('agentProfiles.forms.reasoningSupported')}</option><option value="false">{t('agentProfiles.forms.reasoningUnsupported')}</option></select></div>
+                                <div><Label htmlFor="model-effort-support">{t('agentProfiles.forms.supportsEffort')}</Label><select id="model-effort-support" value={modelForm.supports_effort === null ? 'unknown' : String(modelForm.supports_effort)} onChange={(event) => setModelForm({ ...modelForm, supports_effort: event.target.value === 'unknown' ? null : event.target.value === 'true' })} className={cn(fieldClass, 'mt-1.5')}><option value="unknown">{t('agentProfiles.forms.reasoningUnspecified')}</option><option value="true">{t('agentProfiles.forms.reasoningSupported')}</option><option value="false">{t('agentProfiles.forms.reasoningUnsupported')}</option></select></div>
                             </div>
                             <div>
                                 <div className="flex items-center justify-between gap-2">
@@ -1483,7 +1470,7 @@ export function AgentProfilesPanel() {
                                 </div>
                             </div>
                             <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.custom_allowed} onCheckedChange={(checked) => setModelForm({ ...modelForm, custom_allowed: checked })} />{t('agentProfiles.forms.allowCustomEffort')}</label>
-                            <p className="text-xs leading-5 text-muted-foreground">{t('agentProfiles.dialogs.model.capabilityNote')}</p>
+                            <p className="text-xs leading-5 text-muted-foreground">{t('agentProfiles.dialogs.model.capabilityNote')} {t('agentProfiles.capabilities.unknownHint')}</p>
                         </div>
                     )}
                     {modelError && <div className="flex items-start gap-2 text-sm text-destructive" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{modelError}</div>}

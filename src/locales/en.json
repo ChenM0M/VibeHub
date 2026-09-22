@@ -1828,6 +1828,9 @@
       "customOptionsUnavailable": "Unavailable; automatic fallback remains available.",
       "fallbackPriority": "Fallback priority",
       "unknownOption": "unknown configured value"
+    },
+    "capabilities": {
+      "unknownHint": "Missing capability metadata stays unknown. Available effort levels are only imported when explicitly advertised; no level is selected automatically."
     }
   },
   "update": {

@@ -631,6 +631,11 @@ assert(agentProfileValidator(agentProfileReadResult), "agent profile read result
 const unknownReasoningProfile = structuredClone(agentProfileReadResult);
 unknownReasoningProfile.profile.managed.providers[0].models[0].thinking.supports_reasoning = null;
 assert(agentProfileValidator(unknownReasoningProfile), "model reasoning may remain undeclared: " + ajv.errorsText(agentProfileValidator.errors));
+const unknownEffortProfile = structuredClone(unknownReasoningProfile);
+unknownEffortProfile.profile.managed.providers[0].models[0].thinking.supports_effort = null;
+assert(agentProfileValidator(unknownEffortProfile), "model effort may remain unknown");
+unknownEffortProfile.profile.managed.providers[0].models[0].thinking.supports_effort = "yes";
+assert(!agentProfileValidator(unknownEffortProfile), "effort declaration must be boolean or null");
 const agentProfileDiscoverError = {
   code: "CONFIG_PATH_LINK_REJECTED",
   category: "validation",

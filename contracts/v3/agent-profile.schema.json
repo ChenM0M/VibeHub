@@ -224,7 +224,10 @@
           ]
         },
         "supports_effort": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "selected": {
           "type": [
@@ -253,6 +256,18 @@
         },
         "variant_values_changed": {
           "type": "boolean"
+        },
+        "effort_options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "thinking_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

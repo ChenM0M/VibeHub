@@ -1825,6 +1825,9 @@
       "customOptionsUnavailable": "不可用；仍可使用自动回落。",
       "fallbackPriority": "回落优先级",
       "unknownOption": "未知的已配置值"
+    },
+    "capabilities": {
+      "unknownHint": "未提供的能力信息保持未知。仅导入上游明确声明的思考档位，不自动选择档位。"
     }
   },
   "update": {

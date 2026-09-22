@@ -51,3 +51,20 @@ const capability = backend.slice(backend.indexOf('fn claude_schema_capability(')
 assert.ok(capability.includes('claude_native_resolution'));
 assert.ok(!capability.includes('managed.default_model_id'));
 console.log('v3-agent-profiles: selection normalization, unknown models, canonical Haiku editor, three locales and capability declarations passed');
+
+const upstreamSource = await readFile(resolve(projectRoot, 'src/components/agent-profiles/upstreamModels.ts'), 'utf8');
+const upstreamCode = ts.transpileModule(upstreamSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
+const { modelFromUpstream } = await import(`data:text/javascript;base64,${Buffer.from(upstreamCode).toString('base64')}`);
+for (const agent of ['codex', 'opencode', 'claude_code']) {
+  const model = modelFromUpstream(agent, { model_id: 'thinking-ultra', display_name: '' });
+  assert.equal(model.thinking.supports_reasoning, null);
+  assert.equal(model.thinking.supports_effort, null);
+  assert.equal(model.thinking.selected, null);
+  assert.deepEqual(model.thinking.options, []);
+}
+const advertised = { model_id: 'model', display_name: 'Model', supports_reasoning: false, supports_effort: true, effort_options: ['low', 'high'] };
+assert.equal(modelFromUpstream('codex', advertised).thinking.supports_reasoning, false);
+assert.deepEqual(modelFromUpstream('codex', advertised).thinking.options, ['low', 'high']);
+assert.equal(modelFromUpstream('codex', advertised).thinking.selected, null);
+assert.deepEqual(modelFromUpstream('opencode', advertised).thinking.options, [], 'effort levels must not turn into empty OpenCode variants');
+console.log('upstream capability unknown/false states, advertised options and no automatic selection checks passed');

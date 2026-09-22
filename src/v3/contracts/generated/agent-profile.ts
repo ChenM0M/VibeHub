@@ -250,7 +250,7 @@ export interface ModelProfile {
 }
 export interface ThinkingProfile {
   supports_reasoning: boolean | null;
-  supports_effort: boolean;
+  supports_effort: boolean | null;
   selected: string | null;
   options: string[];
   custom_allowed: boolean;
@@ -258,6 +258,8 @@ export interface ThinkingProfile {
     [k: string]: unknown;
   } | null;
   variant_values_changed?: boolean;
+  effort_options?: string[];
+  thinking_types?: string[];
 }
 /**
  * Claude Code only. Optional explicit overrides for subagent, tier-alias, and small/fast model selection. When a field is null/absent, VibeHub removes that override and lets Claude Code apply its native settings and model precedence.
