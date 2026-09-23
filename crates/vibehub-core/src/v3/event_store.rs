@@ -1512,7 +1512,22 @@ mod tests {
                         }
                     }
                     barrier.wait();
-                    store.append_with_rebuild(event)
+                    // Index catch-up can exceed one deadline while the other 23
+                    // writers advance the source. Retry only this pre-append,
+                    // explicitly retryable error with the same idempotency key.
+                    let mut retries = 0;
+                    loop {
+                        match store.append_with_rebuild(event.clone()) {
+                            Err(error)
+                                if error.code == "V3_INDEX_SYNC_TIMEOUT"
+                                    && error.retryable
+                                    && retries < 2 =>
+                            {
+                                retries += 1;
+                            }
+                            result => break result,
+                        }
+                    }
                 })
             })
             .collect::<Vec<_>>();
