@@ -1646,7 +1646,9 @@
       "setDefault": "Set as default",
       "launchOnce": "Launch once",
       "copyLaunchCommand": "Copy launch command",
-      "initializeOpenCode": "Initialize OpenCode configuration"
+      "initializeOpenCode": "Initialize OpenCode configuration",
+      "saveAndLaunch": "Save and launch",
+      "saveAndSetDefault": "Save and set as default"
     },
     "route": {
       "adapter": "Automatic adaptation",
@@ -1924,7 +1926,14 @@
         "outputLimit": "Maximum output"
       }
     },
-    "configPathsHint": "Detects XDG_CONFIG_HOME, OPENCODE_CONFIG and OPENCODE_CONFIG_DIR. Use absolute custom paths. Restart VibeHub after changing host environment variables; WSL uses the selected distribution."
+    "configPathsHint": "Detects XDG_CONFIG_HOME, OPENCODE_CONFIG and OPENCODE_CONFIG_DIR. Use absolute custom paths. Restart VibeHub after changing host environment variables; WSL uses the selected distribution.",
+    "navigation": {
+      "title": "Unsaved changes",
+      "description": "Save your changes before continuing, or discard them.",
+      "applyAdvancedFirst": "Cancel and apply your advanced JSON changes to the draft before saving.",
+      "discard": "Discard and continue",
+      "save": "Save and continue"
+    }
   },
   "update": {
     "newVersion": "New Version Available",

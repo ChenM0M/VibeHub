@@ -1643,7 +1643,9 @@
       "setDefault": "設為預設",
       "launchOnce": "僅此次啟動",
       "copyLaunchCommand": "複製啟動指令",
-      "initializeOpenCode": "初始化 OpenCode 設定"
+      "initializeOpenCode": "初始化 OpenCode 設定",
+      "saveAndLaunch": "儲存並啟動",
+      "saveAndSetDefault": "儲存並設為預設"
     },
     "route": {
       "adapter": "自動轉接",
@@ -1921,7 +1923,14 @@
         "outputLimit": "最大輸出"
       }
     },
-    "configPathsHint": "識別 XDG_CONFIG_HOME、OPENCODE_CONFIG 和 OPENCODE_CONFIG_DIR。自訂路徑請使用絕對路徑；修改主機環境變數後請重新啟動 VibeHub。WSL 使用所選發行版的環境。"
+    "configPathsHint": "識別 XDG_CONFIG_HOME、OPENCODE_CONFIG 和 OPENCODE_CONFIG_DIR。自訂路徑請使用絕對路徑；修改主機環境變數後請重新啟動 VibeHub。WSL 使用所選發行版的環境。",
+    "navigation": {
+      "title": "有未儲存的修改",
+      "description": "請先儲存修改，或放棄修改後繼續。",
+      "applyAdvancedFirst": "請取消操作，先將進階 JSON 修改套用至草稿，再儲存。",
+      "discard": "放棄修改並繼續",
+      "save": "儲存並繼續"
+    }
   },
   "update": {
     "newVersion": "發現新版本",
