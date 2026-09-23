@@ -137,7 +137,11 @@ pub struct OpenCodeModelPatch {
 pub struct OpenCodeConfigPatch {
     pub default_model: Option<String>,
     pub small_model: Option<String>,
+    #[serde(default)]
+    pub clear_small_model: bool,
     pub default_variant: Option<String>,
+    #[serde(default)]
+    pub clear_default_variant: bool,
     pub deleted_providers: Vec<String>,
     pub deleted_models: BTreeMap<String, Vec<String>>,
     pub providers: BTreeMap<String, OpenCodeProviderPatch>,
@@ -735,6 +739,12 @@ impl JsoncEditor {
         }
         if let Some(model) = &patch.small_model {
             self.set_path(&["small_model"], model.clone().into(), &mut replacements)?;
+        }
+        if patch.small_model.is_none() && patch.clear_small_model {
+            self.remove_member(&[], "small_model", &mut replacements)?;
+        }
+        if patch.default_variant.is_none() && patch.clear_default_variant {
+            self.remove_member(&["agent", "build"], "variant", &mut replacements)?;
         }
         if let Some(variant) = &patch.default_variant {
             self.set_path(
