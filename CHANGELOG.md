@@ -2,6 +2,17 @@
 
 本文件记录 VibeHub 的版本更新。版本号遵循 `MAJOR.MINOR.PATCH`。
 
+## v3.3.12
+
+- Agent Profiles 配置中心整合上线：OpenCode `.json` 支持 JSONC 注释，修改受管字段时保留注释与未管理字段；发现配置但解析失败时保留文件与结构化错误，不再只显示路径。
+- 新增 OpenCode 配置路径发现：支持 `XDG_CONFIG_HOME`、`OPENCODE_CONFIG`、`OPENCODE_CONFIG_DIR`（强制绝对路径），并按所选运行时（含 WSL 发行版）读取环境；空配置可一键初始化；启动时绑定所选配置文件，避免启动到另一个文件。
+- 脏草稿保护：切换 Agent、运行环境、Profile、刷新或关闭编辑上下文时提供保存、放弃与取消；保存失败不会继续切换；带草稿启动或设置默认项前先保存。
+- 模型能力与编辑：未声明的 reasoning、工具与模态能力保持“未知”而不猜测；可编辑输入/输出模态、上下文与输出 Token 上限、变体 JSON 参数与原生思考参数（上限全空时继承）；生效配置预览显示所选文件与变体的受管值、未知来源与未保存提示，并排除凭据内容。
+- 模型默认项包含 Provider 身份，编辑其他模型不再改变默认模型；禁用 OpenCode 模型保留其配置，通过原生过滤列表控制可用性；Codex 默认模型在编辑后保留。
+- Windows launcher：保留原生 argv 参数边界（npm `.cmd` shim 不再被静默破坏），返回真实启动结果，交互式 Agent 使用可见控制台而后台探针保持静音；复制启动指令失败时显示错误与可手动复制的指令。
+- CI：对依赖分支/栈式分支上的 PR 执行完整门禁；MCP 契约测试区分冷启动与温请求预算，温请求 2 秒门禁不变。
+- Windows/WSL 同 artifact 原生验收（A07、E07、F07–F10、G05）仍需在发布后使用本版本 Windows artifact 与 `SHA256SUMS-windows-x64.txt` 手测；macOS/CI 证据不替代。
+
 ## v3.3.11
 
 - 修复 Claude Code Agent Profile 的配置串线与漂移：Profile 激活改为仅写激活索引，不再把一个 Profile 的 provider、凭据、主模型/高级模型覆盖到另一个 Profile 或共享用户配置；`__auto__`/空值保存后不再生成模型 override，明确选择的模型才写入对应环境变量，并保留未知模型可见。
