@@ -900,6 +900,44 @@ fn revision_for(raw: &[u8]) -> DocumentRevision {
 }
 
 fn strip_jsonc_comments_and_trailing_commas(input: &str) -> Result<String, StorageError> {
+    // Remove comments first so a comma followed by comments and then a closing
+    // delimiter is recognized as trailing. Keep both passes string-aware.
+    let uncommented = strip_jsonc_comments(input)?;
+    let chars: Vec<char> = uncommented.chars().collect();
+    let mut output = String::with_capacity(uncommented.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, current) in chars.iter().copied().enumerate() {
+        if in_string {
+            output.push(current);
+            if escaped {
+                escaped = false;
+            } else if current == '\\' {
+                escaped = true;
+            } else if current == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if current == '"' {
+            in_string = true;
+        } else if current == ',' {
+            let next = chars[index + 1..].iter().find(|ch| !ch.is_whitespace());
+            let previous = chars[..index].iter().rev().find(|ch| !ch.is_whitespace());
+            if matches!(next, Some(']') | Some('}'))
+                && !matches!(previous, None | Some('[') | Some('{') | Some(','))
+            {
+                // Preserve columns in subsequent parser diagnostics.
+                output.push(' ');
+                continue;
+            }
+        }
+        output.push(current);
+    }
+    Ok(output)
+}
+
+fn strip_jsonc_comments(input: &str) -> Result<String, StorageError> {
     let chars: Vec<char> = input.chars().collect();
     let mut output = String::with_capacity(input.len());
     let mut in_string = false;
@@ -958,16 +996,6 @@ fn strip_jsonc_comments_and_trailing_commas(input: &str) -> Result<String, Stora
                 ));
             }
             continue;
-        }
-        if current == ',' {
-            let mut lookahead = index + 1;
-            while lookahead < chars.len() && chars[lookahead].is_whitespace() {
-                lookahead += 1;
-            }
-            if matches!(chars.get(lookahead), Some(']') | Some('}')) {
-                index += 1;
-                continue;
-            }
         }
         output.push(current);
         index += 1;
@@ -1057,6 +1085,47 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let target = RuntimeTarget::host(root.clone());
         (target, root)
+    }
+
+    #[test]
+    fn jsonc_accepts_comments_after_trailing_commas() {
+        for (source, expected) in [
+            (
+                "{\"value\":1, // trailing comment\r\n}",
+                serde_json::json!({"value":1}),
+            ),
+            (
+                "{\"value\":1, /* trailing comment */}",
+                serde_json::json!({"value":1}),
+            ),
+            ("[1, // first\n /* second */]", serde_json::json!([1])),
+            (
+                r#"{"value":["https://example.com/},",2,/* inner */],/* outer */}"#,
+                serde_json::json!({"value":["https://example.com/},",2]}),
+            ),
+        ] {
+            assert_eq!(
+                ConfigFormat::Jsonc.validate(source.as_bytes()).unwrap(),
+                ParsedConfig::Json(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn jsonc_does_not_repair_missing_values_or_unterminated_comments() {
+        for source in [
+            "{,/* empty object */}",
+            "[,/* empty array */]",
+            "{\"value\":1,,/* duplicate comma */}",
+            "[1,,/* duplicate comma */]",
+            "{\"value\":1,/* unterminated}",
+            "{\"value\":1 /* missing comma */ \"other\":2}",
+        ] {
+            assert!(
+                ConfigFormat::Jsonc.validate(source.as_bytes()).is_err(),
+                "unexpectedly accepted {source}"
+            );
+        }
     }
 
     #[test]
