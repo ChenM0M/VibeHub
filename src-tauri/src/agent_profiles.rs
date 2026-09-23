@@ -888,7 +888,8 @@ fn launch(
     let arguments = launch_arguments_for(&located, &request.launch_mode)?;
     let working_directory = launch_working_directory(&target)?;
     let executable = executable_for_agent(&request.agent);
-    let process_id = crate::launcher::Launcher::launch_agent(
+    let environment = launch_environment_for(&target, &located)?;
+    let process_id = crate::launcher::Launcher::launch_agent_with_environment(
         executable,
         &arguments,
         &working_directory,
@@ -897,6 +898,7 @@ fn launch(
             RuntimeTargetKind::Wsl => "wsl",
         },
         target.distribution.as_deref(),
+        &environment,
     )
     .map_err(|error| {
         AgentProfileCommandError::new(
@@ -960,36 +962,61 @@ fn launch_arguments_for(
     })
 }
 
+fn launch_environment_for(
+    target: &RuntimeTarget,
+    profile: &LocatedProfile,
+) -> Result<BTreeMap<String, String>, AgentProfileCommandError> {
+    let mut environment = BTreeMap::new();
+    if let LocatedProfile::OpenCode(view) = profile {
+        environment.insert(
+            "OPENCODE_CONFIG".to_owned(),
+            runtime_launch_path(target, &view.source_path)?,
+        );
+    }
+    Ok(environment)
+}
+
 fn launch_working_directory(target: &RuntimeTarget) -> Result<String, AgentProfileCommandError> {
-    if !matches!(target.kind, RuntimeTargetKind::Wsl) {
-        return Ok(target.home_path.native.clone());
-    }
+    runtime_launch_path(target, &target.home_path.as_path())
+}
 
-    #[cfg(target_os = "windows")]
-    {
-        let distribution = target.distribution.as_deref().ok_or_else(|| {
-            AgentProfileCommandError::validation(
-                "RUNTIME_WSL_DISTRIBUTION_MISSING",
-                "WSL runtime target is missing its distribution",
-            )
-        })?;
-        let native = target.home_path.native.replace('\\', "/");
-        let prefix = format!("//wsl$/{}", distribution.to_ascii_lowercase());
-        let lower = native.to_ascii_lowercase();
-        let Some(suffix) = lower.strip_prefix(&prefix) else {
-            return Err(AgentProfileCommandError::validation(
-                "RUNTIME_WSL_HOME_PATH_INVALID",
-                "WSL home path is not inside the observed distribution",
-            ));
-        };
-        let suffix = suffix.trim_start_matches('/');
-        return Ok(format!("/{suffix}"));
+fn runtime_launch_path(
+    target: &RuntimeTarget,
+    path: &Path,
+) -> Result<String, AgentProfileCommandError> {
+    let native = path.to_string_lossy();
+    if target.kind != RuntimeTargetKind::Wsl {
+        return Ok(native.into_owned());
     }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        Ok(target.home_path.native.clone())
+    // A VibeHub process running inside WSL already has Linux paths.
+    if native.starts_with('/') && !native.starts_with("//") {
+        return Ok(native.into_owned());
     }
+    let distribution = target.distribution.as_deref().ok_or_else(|| {
+        AgentProfileCommandError::validation(
+            "RUNTIME_WSL_DISTRIBUTION_MISSING",
+            "WSL runtime target is missing its distribution",
+        )
+    })?;
+    let mut native = native.replace('\\', "/");
+    if native.starts_with("//?/UNC/") {
+        native = format!("//{}", &native[8..]);
+    }
+    for server in ["wsl$", "wsl.localhost"] {
+        let prefix = format!("//{server}/{distribution}/");
+        if native
+            .get(..prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(&prefix))
+        {
+            // Only compare the UNC prefix without case sensitivity. Linux paths
+            // are case sensitive and must retain the original suffix.
+            return Ok(format!("/{}", &native[prefix.len()..]));
+        }
+    }
+    Err(AgentProfileCommandError::validation(
+        "RUNTIME_WSL_LAUNCH_PATH_INVALID",
+        "launch path is not inside the observed WSL distribution",
+    ))
 }
 
 fn restore(
@@ -3782,6 +3809,54 @@ mod tests {
             assert_eq!(source.contains("\"reasoning\""), reasoning.is_some());
         }
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn selected_opencode_file_is_bound_to_child_environment() {
+        let root = std::env::temp_dir().join(format!("vibehub-launch-config-{}", Uuid::new_v4()));
+        let dir = opencode_config_dir(&root);
+        fs::create_dir_all(&dir).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        for name in ["opencode.json", "opencode.jsonc"] {
+            let path = dir.join(name);
+            fs::write(&path, "{}").unwrap();
+            let view = v3::read_opencode_profile(&target, &path).unwrap();
+            let selected = LocatedProfile::OpenCode(view.clone());
+            let environment = launch_environment_for(&target, &selected).unwrap();
+            assert_eq!(
+                environment["OPENCODE_CONFIG"],
+                view.source_path.to_string_lossy()
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn wsl_launch_paths_preserve_case_and_reject_other_distributions() {
+        let target = RuntimeTarget::wsl("Ubuntu", "/home/User Name");
+        for path in [
+            r"\\wsl$\Ubuntu\home\User Name\中文\opencode.jsonc",
+            r"\\wsl.localhost\Ubuntu\home\User Name\中文\opencode.jsonc",
+            r"\\?\UNC\wsl$\Ubuntu\home\User Name\中文\opencode.jsonc",
+        ] {
+            assert_eq!(
+                runtime_launch_path(&target, Path::new(path)).unwrap(),
+                "/home/User Name/中文/opencode.jsonc"
+            );
+        }
+        assert!(runtime_launch_path(
+            &target,
+            Path::new(r"\\wsl$\Ubuntu-other\home\User\config.json")
+        )
+        .is_err());
+        assert_eq!(
+            runtime_launch_path(
+                &target,
+                Path::new("/home/User/.config/opencode/opencode.json")
+            )
+            .unwrap(),
+            "/home/User/.config/opencode/opencode.json"
+        );
     }
 
     #[test]
