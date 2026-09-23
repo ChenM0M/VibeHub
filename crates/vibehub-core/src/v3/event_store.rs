@@ -1135,11 +1135,11 @@ mod tests {
         )
         .unwrap();
         let started = Instant::now();
-        store.append(draft(0, "key.recovered")).unwrap();
-        // The bound proves recovery did not wait for STALE_LOCK_AGE; the
-        // budget is generous because a cold first append also initializes
-        // the derived index, which is slow on throttled CI runners.
+        let lease = LockLease::acquire(&paths.lock).unwrap();
+        // Measure lock recovery itself, excluding unrelated cold SQLite migration.
         assert!(started.elapsed() < Duration::from_secs(5));
+        drop(lease);
+        store.append(draft(0, "key.recovered")).unwrap();
         assert!(!paths.lock.exists());
         fs::remove_dir_all(root).unwrap();
     }
@@ -1547,6 +1547,9 @@ mod tests {
         const CONTENDERS: usize = 16;
         let root = root();
         let store = Arc::new(V3EventStore::open(&root).unwrap());
+        // Test hot aggregate contention against an initialized index. Cold migration
+        // has separate coverage and must not consume the writers' lock deadlines.
+        store.indexed_projection("project.test").unwrap();
         let barrier = Arc::new(Barrier::new(CONTENDERS));
         let handles = (0..CONTENDERS)
             .map(|index| {
