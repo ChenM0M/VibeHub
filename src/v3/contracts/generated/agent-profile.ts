@@ -391,9 +391,10 @@ export interface AgentProfileSummary {
   agent: AgentKind;
   runtime_target_id: string;
   source_path: NativePath;
-  revision: ConfigRevision;
+  revision: ConfigRevision | null;
   is_default: boolean;
   compatibility: "supported" | "partial" | "unknown" | "unsupported";
+  read_error?: AgentProfileDiscoverError;
 }
 export interface AgentProfileDiscoverError {
   code: string;

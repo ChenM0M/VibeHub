@@ -13,6 +13,7 @@ pub mod host_mcp_config;
 pub(crate) mod indexed_store;
 pub mod lifecycle;
 pub mod opencode_adapter;
+pub mod opencode_paths;
 pub mod orchestration;
 pub mod project_identity;
 pub mod project_intelligence;
@@ -46,6 +47,7 @@ pub use lifecycle::{
     TaskLifecycleProjection, PLAN_NODE_ORIGIN_CONTRACT_VERSION, TASK_BOOTSTRAP_ACTOR,
 };
 pub use opencode_adapter::*;
+pub use opencode_paths::*;
 pub use orchestration::{
     fold_task as fold_worktree_orchestration, LeaseProjection, LeaseState, OrchestrationCommand,
     OrchestrationProjection, WorktreeProjection,

@@ -470,7 +470,9 @@ pub struct AgentProfileSummaryWire {
     pub agent: AgentKind,
     pub runtime_target_id: String,
     pub source_path: NativeConfigPath,
-    pub revision: ConfigRevisionWire,
+    pub revision: Option<ConfigRevisionWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_error: Option<AgentProfileCommandError>,
     pub is_default: bool,
     pub compatibility: String,
 }
@@ -664,11 +666,18 @@ fn discover(
     request: AgentProfileTargetRequest,
 ) -> Result<AgentProfileDiscoverResult, AgentProfileCommandError> {
     let target = resolve_runtime_target(&request.runtime_target_id)?;
+    discover_on_target(request.agent, target)
+}
+
+fn discover_on_target(
+    agent: AgentKind,
+    target: RuntimeTarget,
+) -> Result<AgentProfileDiscoverResult, AgentProfileCommandError> {
     // OpenCode discovery is fault-tolerant: each candidate (XDG first, then the
     // legacy Roaming fallback) is checked independently, so a single
     // unreadable/invalid candidate is recorded as a structured error instead of
     // aborting the scan of the remaining candidates.
-    let (profiles, candidate_errors) = match request.agent {
+    let (profiles, candidate_errors) = match agent {
         AgentKind::Opencode => {
             let outcome = v3::discover_opencode_profiles_tolerant(&target);
             let profiles = outcome
@@ -679,10 +688,10 @@ fn discover(
             (profiles, outcome.errors)
         }
         AgentKind::ClaudeCode | AgentKind::Codex => {
-            (discover_locations(&request.agent, &target)?, Vec::new())
+            (discover_locations(&agent, &target)?, Vec::new())
         }
     };
-    let summaries = profiles
+    let mut summaries = profiles
         .iter()
         .map(|profile| summary_for(&target, profile))
         .collect::<Result<Vec<_>, _>>()?;
@@ -690,38 +699,62 @@ fn discover(
         .iter()
         .find(|summary| summary.is_default)
         .map(|summary| summary.profile_id.clone());
-    let errors = candidate_errors
+    let errors: Vec<_> = candidate_errors
         .into_iter()
-        .map(|error: OpenCodeDiscoveryError| {
-            json!({
-                "code": error.code,
-                "category": discovery_error_category(&error.code),
-                "recoverable": true,
-                "message_key": "agent_profile.discovery_error",
-                "details": {
-                    "message": error.message,
-                    "path": error.path,
-                    "recovery_hint": error.recovery_hint,
-                },
-                "evidence_refs": [],
-            })
-        })
+        .map(discovery_command_error)
         .collect();
+    for error in &errors {
+        let path = Path::new(error.details["path"].as_str().unwrap_or_default());
+        summaries.push(AgentProfileSummaryWire {
+            profile_id: opencode_profile_id(path),
+            display_name: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("OpenCode")
+                .to_owned(),
+            agent: AgentKind::Opencode,
+            runtime_target_id: target.target_id.clone(),
+            source_path: NativeConfigPath::from_path(path, target.platform),
+            revision: None,
+            read_error: Some(error.clone()),
+            is_default: false,
+            compatibility: "unknown".to_owned(),
+        });
+    }
     Ok(AgentProfileDiscoverResult {
         kind: "agent_profile_discover_result",
         schema_version: SCHEMA_VERSION,
         generated_at: now(),
         model_version: MODEL_VERSION,
         freshness: "fresh",
-        completeness: "complete",
+        completeness: if errors.is_empty() {
+            "complete"
+        } else {
+            "partial"
+        },
         evidence_refs: Vec::new(),
         warnings: Vec::new(),
-        errors,
-        agent: request.agent,
+        errors: errors.into_iter().map(|error| json!(error)).collect(),
+        agent,
         runtime_targets: vec![target],
         profiles: summaries,
         default_profile_id,
     })
+}
+
+fn discovery_command_error(error: OpenCodeDiscoveryError) -> AgentProfileCommandError {
+    let mut result = AgentProfileCommandError::new(
+        &error.code,
+        discovery_error_category(&error.code),
+        true,
+        safe_storage_message(&error.message),
+    );
+    result.message_key = "agent_profile.discovery_error".to_owned();
+    result.details.insert("path".to_owned(), json!(error.path));
+    result
+        .details
+        .insert("recovery_hint".to_owned(), json!(error.recovery_hint));
+    result
 }
 
 fn discovery_error_category(code: &str) -> &'static str {
@@ -1054,10 +1087,17 @@ fn create_profile_on_target(
         .transpose()?;
     let operation = match request.agent {
         AgentKind::Opencode => {
-            return Err(AgentProfileCommandError::unsupported(
-                "OPENCODE_PROFILE_CRUD_UNSUPPORTED",
-                "OpenCode is managed as its native user configuration, not named Profiles",
-            ))
+            if template.is_some() || request.profile_name != "opencode.jsonc" {
+                return Err(AgentProfileCommandError::unsupported(
+                    "OPENCODE_PROFILE_CRUD_UNSUPPORTED",
+                    "OpenCode supports initialization of its native config, not named Profiles",
+                ));
+            }
+            let (profile, write) = v3::initialize_opencode_profile(&target)?;
+            OperationWrite {
+                profile: LocatedProfile::OpenCode(profile),
+                write: Some(write),
+            }
         }
         AgentKind::ClaudeCode => {
             let operation = v3::create_claude_profile(
@@ -1355,6 +1395,23 @@ fn locate_profile(
             "AGENT_PROFILE_ID_REQUIRED",
             "profile_id is required",
         ));
+    }
+    if *agent == AgentKind::Opencode {
+        let outcome = v3::discover_opencode_profiles_tolerant(target);
+        if let Some(profile) = outcome
+            .profiles
+            .into_iter()
+            .find(|view| opencode_profile_id(&view.source_path) == profile_id)
+        {
+            return Ok(LocatedProfile::OpenCode(profile));
+        }
+        if let Some(error) = outcome
+            .errors
+            .into_iter()
+            .find(|error| opencode_profile_id(Path::new(&error.path)) == profile_id)
+        {
+            return Err(discovery_command_error(error));
+        }
     }
     discover_locations(agent, target)?
         .into_iter()
@@ -2213,7 +2270,8 @@ fn summary_for(
         agent: profile.agent(),
         runtime_target_id: target.target_id.clone(),
         source_path: NativeConfigPath::from_path(profile.source_path(), target.platform),
-        revision: revision_wire(profile.document_revision()),
+        revision: Some(revision_wire(profile.document_revision())),
+        read_error: None,
         is_default: profile.is_default(),
         compatibility: profile.compatibility().to_owned(),
     })
@@ -3504,6 +3562,150 @@ mod tests {
     }
 
     #[test]
+    fn opencode_environment_paths_are_runtime_specific_and_external_scope_is_exact() {
+        if let Ok(root) = std::env::var("VIBEHUB_EXTERNAL_PATH_TEST") {
+            let root = PathBuf::from(root);
+            let target = RuntimeTarget::host(root.join("home"));
+            let paths = v3::opencode_config_paths(&target).unwrap();
+            assert_eq!(paths[0], root.join("external/custom.jsonc"));
+            let (view, _) = v3::initialize_opencode_profile(&target).unwrap();
+            assert_eq!(view.source_path, paths[0].canonicalize().unwrap());
+            let document = v3::read_document(&target, &paths[0]).unwrap();
+            let saved = v3::write_document(
+                &target,
+                &paths[0],
+                Some(&document.revision),
+                b"{\"provider\":{},\"model\":\"demo/test\"}",
+            )
+            .unwrap();
+            v3::restore_document(
+                &target,
+                &paths[0],
+                saved.backup_path.unwrap().as_path(),
+                &saved.after_revision,
+            )
+            .unwrap();
+            fs::write(root.join("external/other.json"), b"{}").unwrap();
+            assert_eq!(
+                v3::read_document(&target, root.join("external/other.json"))
+                    .unwrap_err()
+                    .code,
+                "CONFIG_PATH_OUTSIDE_RUNTIME_HOME"
+            );
+            #[cfg(unix)]
+            {
+                fs::remove_file(&paths[0]).unwrap();
+                std::os::unix::fs::symlink(root.join("external/other.json"), &paths[0]).unwrap();
+                assert_eq!(
+                    v3::read_document(&target, &paths[0]).unwrap_err().code,
+                    "CONFIG_PATH_LINK_REJECTED"
+                );
+            }
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("vibehub-external-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("home")).unwrap();
+        // Resolve OS temp aliases before defining the exact external scope.
+        // Keep the storage layer's symlink and junction protection enabled.
+        let root = root.canonicalize().unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "agent_profiles::tests::opencode_environment_paths_are_runtime_specific_and_external_scope_is_exact"])
+            .env("VIBEHUB_EXTERNAL_PATH_TEST", &root).env("OPENCODE_CONFIG", root.join("external/custom.jsonc"))
+            .env_remove("OPENCODE_CONFIG_DIR").env_remove("XDG_CONFIG_HOME").env_remove("WSL_DISTRO_NAME")
+            .status().unwrap();
+        assert!(status.success());
+        let target = RuntimeTarget::host(root.join("home"));
+        let values = v3::OpenCodeConfigEnvironment {
+            xdg_config_home: Some(root.join("xdg").to_string_lossy().into_owned()),
+            config_file: Some(root.join("custom.json").to_string_lossy().into_owned()),
+            config_directory: None,
+        };
+        let paths = v3::opencode_config_paths_with_environment(&target, &values).unwrap();
+        assert_eq!(paths[0], root.join("custom.json"));
+        assert_eq!(paths[1], root.join("xdg/opencode/opencode.jsonc"));
+        let mut invalid = values;
+        invalid.config_file = Some("relative.json".to_owned());
+        assert_eq!(
+            v3::opencode_config_paths_with_environment(&target, &invalid)
+                .unwrap_err()
+                .code,
+            "OPENCODE_CONFIG_PATH_NOT_ABSOLUTE"
+        );
+        let wsl = RuntimeTarget::wsl("Ubuntu", "/home/Alice");
+        let values = v3::OpenCodeConfigEnvironment {
+            xdg_config_home: None,
+            config_file: Some("/opt/KeepCase/opencode.jsonc".to_owned()),
+            config_directory: Some("/opt/KeepCase".to_owned()),
+        };
+        let paths = v3::opencode_config_paths_with_environment(&wsl, &values).unwrap();
+        assert_eq!(
+            paths.len(),
+            5,
+            "custom file duplicated in custom directory is listed once"
+        );
+        assert!(paths[0].to_string_lossy().contains("KeepCase"));
+        let values = v3::OpenCodeConfigEnvironment {
+            config_file: Some(r"C:\Users\Alice\opencode.json".to_owned()),
+            ..Default::default()
+        };
+        assert!(
+            v3::opencode_config_paths_with_environment(&wsl, &values).is_err(),
+            "Windows paths cannot become WSL config paths"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn opencode_initialization_creates_once_and_preserves_existing_invalid_files() {
+        let root = std::env::temp_dir().join(format!("vibehub-initialize-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let created = create_profile_on_target(
+            target.clone(),
+            AgentProfileCreateRequest {
+                agent: AgentKind::Opencode,
+                runtime_target_id: target.target_id.clone(),
+                profile_name: "opencode.jsonc".to_owned(),
+                template_profile_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(created.profile["managed"]["providers"], json!([]));
+        let path = v3::opencode_config_paths(&target).unwrap()[0].clone();
+        let original = fs::read(&path).unwrap();
+        assert!(v3::initialize_opencode_profile(&target).is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        fs::write(&path, b"{broken").unwrap();
+        assert_eq!(
+            v3::initialize_opencode_profile(&target).unwrap_err().code,
+            "OPENCODE_INITIALIZE_DISCOVERY_INCOMPLETE"
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"{broken");
+        let destination = root.join("race.json");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let threads: Vec<_> = (0..2)
+            .map(|_| {
+                let target = target.clone();
+                let destination = destination.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    v3::create_config_document(&target, &destination, b"{}").is_ok()
+                })
+            })
+            .collect();
+        assert_eq!(
+            threads
+                .into_iter()
+                .map(|thread| thread.join().unwrap() as usize)
+                .sum::<usize>(),
+            1
+        );
+        assert_eq!(fs::read(destination).unwrap(), b"{}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn secret_like_error_text_is_redacted_without_touching_paths() {
         let message = safe_storage_message("path /tmp/config api_key=sk-secret-value");
         assert_eq!(message, "path /tmp/config [redacted]");
@@ -3613,6 +3815,46 @@ mod tests {
         assert_eq!(revision_number(&min_revision), 1);
         assert!(revision_number(&sample_revision) <= JS_MAX_SAFE_INTEGER);
         assert_eq!(revision_number(&max_revision), 0xFFFFFFFFFFFF);
+    }
+
+    #[test]
+    fn invalid_opencode_candidate_remains_discoverable_and_read_reports_original_error() {
+        let root = std::env::temp_dir().join(format!("vibehub-discovery-error-{}", Uuid::new_v4()));
+        let dir = opencode_config_dir(&root);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("opencode.jsonc"), "{ invalid").unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let result = discover_on_target(AgentKind::Opencode, target.clone()).unwrap();
+        assert_eq!(result.completeness, "partial");
+        assert_eq!(result.profiles.len(), 1);
+        let failed = &result.profiles[0];
+        assert!(failed.revision.is_none());
+        let diagnostic = failed.read_error.as_ref().unwrap();
+        assert_eq!(diagnostic.code, "CONFIG_JSONC_INVALID");
+        assert!(diagnostic.details["message"]
+            .as_str()
+            .unwrap()
+            .contains("line"));
+        let error = locate_profile(&target, &AgentKind::Opencode, &failed.profile_id).unwrap_err();
+        assert_eq!(error.code, diagnostic.code);
+        assert_eq!(error.details, diagnostic.details);
+        fs::write(dir.join("opencode.json"), "{}").unwrap();
+        let mixed = discover_on_target(AgentKind::Opencode, target.clone()).unwrap();
+        assert_eq!(mixed.profiles.len(), 2);
+        assert_eq!(
+            mixed
+                .profiles
+                .iter()
+                .filter(|p| p.read_error.is_some())
+                .count(),
+            1
+        );
+        fs::write(dir.join("opencode.jsonc"), "{}").unwrap();
+        assert!(locate_profile(&target, &AgentKind::Opencode, &failed.profile_id).is_ok());
+        let repaired = discover_on_target(AgentKind::Opencode, target).unwrap();
+        assert_eq!(repaired.completeness, "complete");
+        assert!(repaired.errors.is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

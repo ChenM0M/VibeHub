@@ -1148,7 +1148,14 @@
           "$ref": "common.schema.json#/$defs/NativePath"
         },
         "revision": {
-          "$ref": "#/$defs/ConfigRevision"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigRevision"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "is_default": {
           "type": "boolean"
@@ -1160,6 +1167,9 @@
             "unknown",
             "unsupported"
           ]
+        },
+        "read_error": {
+          "$ref": "#/$defs/AgentProfileDiscoverError"
         }
       }
     },

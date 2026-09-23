@@ -1636,12 +1636,14 @@
       "count": "{{count}} 个配置",
       "create": "新建 Profile",
       "cloneCurrent": "复制当前 Profile",
-      "openCodeSingle": "OpenCode 使用单一配置"
+      "openCodeSingle": "OpenCode 使用单一配置",
+      "readError": "无法读取此配置"
     },
     "actions": {
       "setDefault": "设为默认",
       "launchOnce": "仅此次启动",
-      "copyLaunchCommand": "复制启动指令"
+      "copyLaunchCommand": "复制启动指令",
+      "initializeOpenCode": "初始化 OpenCode 配置"
     },
     "route": {
       "adapter": "自动适配",
@@ -1918,7 +1920,8 @@
         "inputLimit": "最大输入",
         "outputLimit": "最大输出"
       }
-    }
+    },
+    "configPathsHint": "识别 XDG_CONFIG_HOME、OPENCODE_CONFIG 和 OPENCODE_CONFIG_DIR。自定义路径请使用绝对路径；修改主机环境变量后请重启 VibeHub。WSL 使用所选发行版的环境。"
   },
   "update": {
     "newVersion": "发现新版本",

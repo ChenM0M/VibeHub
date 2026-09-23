@@ -670,6 +670,15 @@ assert(agentProfileValidator({
   profiles: [],
   default_profile_id: null,
 }), "agent profile discovery result preserves structured per-candidate errors: " + ajv.errorsText(agentProfileValidator.errors));
+const failedCandidate = {
+  profile_id: "opencode.profile.invalid", display_name: "opencode.jsonc",
+  agent: "opencode", runtime_target_id: agentProfileTarget.target_id,
+  source_path: agentProfileSource.path, revision: null, is_default: false,
+  compatibility: "unknown", read_error: agentProfileDiscoverError,
+};
+const summaryValidator = ajv.compile({ $ref: "https://schemas.vibehub.dev/v3/1.0/agent-profile.schema.json#/$defs/AgentProfileSummary" });
+assert(summaryValidator(failedCandidate), "failed candidate has a diagnostic and no invented revision: " + ajv.errorsText(summaryValidator.errors));
+assert(!summaryValidator({ ...failedCandidate, read_error: { code: "CONFIG_JSONC_INVALID" } }), "incomplete candidate diagnostics are rejected");
 assert(agentProfileSchemaCapabilityValidator({
   schema_id: "claude-code.settings",
   schema_version: "1.0",

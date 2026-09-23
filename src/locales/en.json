@@ -1639,12 +1639,14 @@
       "count": "{{count}} Profiles",
       "create": "Create Profile",
       "cloneCurrent": "Clone current Profile",
-      "openCodeSingle": "OpenCode uses one configuration"
+      "openCodeSingle": "OpenCode uses one configuration",
+      "readError": "Configuration could not be read"
     },
     "actions": {
       "setDefault": "Set as default",
       "launchOnce": "Launch once",
-      "copyLaunchCommand": "Copy launch command"
+      "copyLaunchCommand": "Copy launch command",
+      "initializeOpenCode": "Initialize OpenCode configuration"
     },
     "route": {
       "adapter": "Automatic adaptation",
@@ -1921,7 +1923,8 @@
         "inputLimit": "Maximum input",
         "outputLimit": "Maximum output"
       }
-    }
+    },
+    "configPathsHint": "Detects XDG_CONFIG_HOME, OPENCODE_CONFIG and OPENCODE_CONFIG_DIR. Use absolute custom paths. Restart VibeHub after changing host environment variables; WSL uses the selected distribution."
   },
   "update": {
     "newVersion": "New Version Available",
