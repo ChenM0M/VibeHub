@@ -397,10 +397,21 @@ pub fn read_document(
     target: &RuntimeTarget,
     path: impl AsRef<Path>,
 ) -> Result<ConfigDocument, StorageError> {
+    let format = ConfigFormat::from_path(path.as_ref())
+        .map_err(|error| error.with_path_context(path.as_ref()))?;
+    read_document_with_format(target, path, format)
+}
+
+/// Use an adapter's syntax rules while retaining all path and revision checks.
+/// OpenCode uses JSONC even for files whose extension is `.json`.
+pub fn read_document_with_format(
+    target: &RuntimeTarget,
+    path: impl AsRef<Path>,
+    format: ConfigFormat,
+) -> Result<ConfigDocument, StorageError> {
     let requested_path = path.as_ref().to_path_buf();
     let path = validate_target_path(target, &requested_path, false)
         .map_err(|error| error.with_path_context(&requested_path))?;
-    let format = ConfigFormat::from_path(&path).map_err(|error| error.with_path_context(&path))?;
     let metadata = fs::symlink_metadata(&path).map_err(|error| {
         let code = if error.kind() == io::ErrorKind::NotFound {
             "CONFIG_NOT_FOUND"
@@ -439,16 +450,146 @@ pub fn read_document(
     })
 }
 
+/// Create a validated config without replacing any existing destination.
+pub fn create_config_document(
+    target: &RuntimeTarget,
+    path: &Path,
+    content: &[u8],
+) -> Result<WriteReport, StorageError> {
+    let format = ConfigFormat::from_path(path)?;
+    format.validate(content)?;
+    if content.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(StorageError::new(
+            "CONFIG_TOO_LARGE",
+            "initial configuration exceeds the size limit",
+        ));
+    }
+    let home = storage_scope_home(target, path)?;
+    let mut scoped_target = target.clone();
+    scoped_target.home_path = NativeConfigPath::from_path(&home, target.platform);
+    let target = &scoped_target;
+    let parent = path
+        .parent()
+        .ok_or_else(|| StorageError::new("CONFIG_PARENT_INVALID", "missing parent"))?;
+    let relative = parent.strip_prefix(&home).map_err(|_| {
+        StorageError::new(
+            "CONFIG_PATH_OUTSIDE_RUNTIME_HOME",
+            path.display().to_string(),
+        )
+    })?;
+    let mut directory = home.clone();
+    validate_target_path(target, &directory.join(".vibehub-create-probe"), true)?;
+    for component in relative.components() {
+        if !matches!(component, std::path::Component::Normal(_)) {
+            return Err(StorageError::new(
+                "CONFIG_PATH_INVALID",
+                path.display().to_string(),
+            ));
+        }
+        directory.push(component);
+        validate_target_path(target, &directory, true)?;
+        match fs::create_dir(&directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => {
+                return Err(StorageError::new(
+                    "CONFIG_DIRECTORY_CREATE_FAILED",
+                    error.to_string(),
+                ))
+            }
+        }
+        validate_target_path(target, &directory.join(".vibehub-create-probe"), true)?;
+    }
+    let path = validate_target_path(target, path, true)?;
+    let temporary = temporary_path(&path);
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)
+            .map_err(|error| StorageError::new("CONFIG_TEMP_CREATE_FAILED", error.to_string()))?;
+        file.write_all(content)
+            .and_then(|_| file.sync_all())
+            .map_err(|error| StorageError::new("CONFIG_TEMP_WRITE_FAILED", error.to_string()))?;
+        drop(file);
+        publish_new_file(&temporary, &path)?;
+        sync_directory(parent)?;
+        Ok(WriteReport {
+            path: NativeConfigPath::from_path(&path, target.platform),
+            before_revision: None,
+            after_revision: revision_for(content),
+            backup_path: None,
+            rollback_available: false,
+        })
+    })();
+    let _ = fs::remove_file(&temporary);
+    result
+}
+
+#[cfg(not(windows))]
+fn publish_new_file(source: &Path, destination: &Path) -> Result<(), StorageError> {
+    // hard_link fails atomically if another writer created the destination.
+    fs::hard_link(source, destination).map_err(|error| {
+        StorageError::new(
+            if error.kind() == io::ErrorKind::AlreadyExists {
+                "CONFIG_CREATE_CONFLICT"
+            } else {
+                "CONFIG_CREATE_FAILED"
+            },
+            error.to_string(),
+        )
+    })
+}
+
+#[cfg(windows)]
+fn publish_new_file(source: &Path, destination: &Path) -> Result<(), StorageError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_WRITE_THROUGH};
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain([0]).collect();
+    let destination: Vec<u16> = destination.as_os_str().encode_wide().chain([0]).collect();
+    // Deliberately omit MOVEFILE_REPLACE_EXISTING.
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        let error = io::Error::last_os_error();
+        return Err(StorageError::new(
+            if error.kind() == io::ErrorKind::AlreadyExists {
+                "CONFIG_CREATE_CONFLICT"
+            } else {
+                "CONFIG_CREATE_FAILED"
+            },
+            error.to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn write_document(
     target: &RuntimeTarget,
     path: impl AsRef<Path>,
     expected_revision: Option<&DocumentRevision>,
     content: &[u8],
 ) -> Result<WriteReport, StorageError> {
+    let format = ConfigFormat::from_path(path.as_ref())
+        .map_err(|error| error.with_path_context(path.as_ref()))?;
+    write_document_with_format(target, path, expected_revision, content, format)
+}
+
+pub fn write_document_with_format(
+    target: &RuntimeTarget,
+    path: impl AsRef<Path>,
+    expected_revision: Option<&DocumentRevision>,
+    content: &[u8],
+    format: ConfigFormat,
+) -> Result<WriteReport, StorageError> {
     let requested_path = path.as_ref().to_path_buf();
     let path = validate_target_path(target, &requested_path, true)
         .map_err(|error| error.with_path_context(&requested_path))?;
-    let format = ConfigFormat::from_path(&path).map_err(|error| error.with_path_context(&path))?;
     if content.len() as u64 > MAX_CONFIG_BYTES {
         return Err(StorageError::new(
             "CONFIG_TOO_LARGE",
@@ -460,7 +601,7 @@ pub fn write_document(
         .validate(content)
         .map_err(|error| error.with_path_context(&path))?;
 
-    let current = match read_document(target, &path) {
+    let current = match read_document_with_format(target, &path, format) {
         Ok(document) => Some(document),
         Err(error) if error.code == "CONFIG_NOT_FOUND" => None,
         Err(error) => return Err(error),
@@ -509,6 +650,18 @@ pub fn restore_document(
     backup_path: impl AsRef<Path>,
     expected_current_revision: &DocumentRevision,
 ) -> Result<WriteReport, StorageError> {
+    let format = ConfigFormat::from_path(path.as_ref())
+        .map_err(|error| error.with_path_context(path.as_ref()))?;
+    restore_document_with_format(target, path, backup_path, expected_current_revision, format)
+}
+
+pub fn restore_document_with_format(
+    target: &RuntimeTarget,
+    path: impl AsRef<Path>,
+    backup_path: impl AsRef<Path>,
+    expected_current_revision: &DocumentRevision,
+    format: ConfigFormat,
+) -> Result<WriteReport, StorageError> {
     let requested_path = path.as_ref().to_path_buf();
     let requested_backup_path = backup_path.as_ref().to_path_buf();
     let path = validate_target_path(target, &requested_path, false)
@@ -516,14 +669,14 @@ pub fn restore_document(
     let backup_path = validate_target_path(target, &requested_backup_path, false)
         .map_err(|error| error.with_path_context(&requested_backup_path))?;
     let backup = read_raw_regular_file(&backup_path)?;
-    let current = read_document(target, &path)?;
+    let current = read_document_with_format(target, &path, format)?;
     if current.revision != *expected_current_revision {
         return Err(StorageError::new(
             "CONFIG_REVISION_CONFLICT",
             "the file changed after the failed save; refusing to restore an old backup",
         ));
     }
-    write_document(target, &path, Some(&current.revision), &backup)
+    write_document_with_format(target, &path, Some(&current.revision), &backup, format)
 }
 
 fn same_revision(expected: Option<&DocumentRevision>, actual: Option<&DocumentRevision>) -> bool {
@@ -673,6 +826,36 @@ fn temporary_path(path: &Path) -> PathBuf {
         .join(format!(".{file_name}.vibehub.{}.tmp", Uuid::new_v4()))
 }
 
+fn storage_scope_home(target: &RuntimeTarget, path: &Path) -> Result<PathBuf, StorageError> {
+    let home = target.home_path.as_path();
+    if path.starts_with(&home) || home.canonicalize().is_ok_and(|home| path.starts_with(home)) {
+        return Ok(home);
+    }
+    let Some(mut parent) = super::opencode_paths::observed_external_config_parent(target, path)?
+    else {
+        return Ok(home);
+    };
+    // Check every existing component of the external path; a configured path
+    // does not grant permission to follow a symlink/junction outside its scope.
+    while !parent.exists() {
+        if !parent.pop() {
+            return Err(StorageError::new(
+                "CONFIG_PARENT_INVALID",
+                path.display().to_string(),
+            ));
+        }
+    }
+    let canonical = parent
+        .canonicalize()
+        .map_err(|error| StorageError::new("CONFIG_PARENT_INVALID", error.to_string()))?;
+    let anchor = parent
+        .ancestors()
+        .last()
+        .ok_or_else(|| StorageError::new("CONFIG_PARENT_INVALID", path.display().to_string()))?;
+    reject_path_components(anchor, &parent, false, &canonical)?;
+    Ok(parent)
+}
+
 fn validate_target_path(
     target: &RuntimeTarget,
     path: &Path,
@@ -684,7 +867,7 @@ fn validate_target_path(
             path.display().to_string(),
         ));
     }
-    let raw_home = target.home_path.as_path();
+    let raw_home = storage_scope_home(target, path)?;
     let home_metadata = fs::symlink_metadata(&raw_home)
         .map_err(|error| StorageError::new("RUNTIME_HOME_INVALID", error.to_string()))?;
     if !home_metadata.is_dir() {
@@ -866,6 +1049,44 @@ fn revision_for(raw: &[u8]) -> DocumentRevision {
 }
 
 fn strip_jsonc_comments_and_trailing_commas(input: &str) -> Result<String, StorageError> {
+    // Remove comments first so a comma followed by comments and then a closing
+    // delimiter is recognized as trailing. Keep both passes string-aware.
+    let uncommented = strip_jsonc_comments(input)?;
+    let chars: Vec<char> = uncommented.chars().collect();
+    let mut output = String::with_capacity(uncommented.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, current) in chars.iter().copied().enumerate() {
+        if in_string {
+            output.push(current);
+            if escaped {
+                escaped = false;
+            } else if current == '\\' {
+                escaped = true;
+            } else if current == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if current == '"' {
+            in_string = true;
+        } else if current == ',' {
+            let next = chars[index + 1..].iter().find(|ch| !ch.is_whitespace());
+            let previous = chars[..index].iter().rev().find(|ch| !ch.is_whitespace());
+            if matches!(next, Some(']') | Some('}'))
+                && !matches!(previous, None | Some('[') | Some('{') | Some(','))
+            {
+                // Preserve columns in subsequent parser diagnostics.
+                output.push(' ');
+                continue;
+            }
+        }
+        output.push(current);
+    }
+    Ok(output)
+}
+
+fn strip_jsonc_comments(input: &str) -> Result<String, StorageError> {
     let chars: Vec<char> = input.chars().collect();
     let mut output = String::with_capacity(input.len());
     let mut in_string = false;
@@ -924,16 +1145,6 @@ fn strip_jsonc_comments_and_trailing_commas(input: &str) -> Result<String, Stora
                 ));
             }
             continue;
-        }
-        if current == ',' {
-            let mut lookahead = index + 1;
-            while lookahead < chars.len() && chars[lookahead].is_whitespace() {
-                lookahead += 1;
-            }
-            if matches!(chars.get(lookahead), Some(']') | Some('}')) {
-                index += 1;
-                continue;
-            }
         }
         output.push(current);
         index += 1;
@@ -1023,6 +1234,47 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let target = RuntimeTarget::host(root.clone());
         (target, root)
+    }
+
+    #[test]
+    fn jsonc_accepts_comments_after_trailing_commas() {
+        for (source, expected) in [
+            (
+                "{\"value\":1, // trailing comment\r\n}",
+                serde_json::json!({"value":1}),
+            ),
+            (
+                "{\"value\":1, /* trailing comment */}",
+                serde_json::json!({"value":1}),
+            ),
+            ("[1, // first\n /* second */]", serde_json::json!([1])),
+            (
+                r#"{"value":["https://example.com/},",2,/* inner */],/* outer */}"#,
+                serde_json::json!({"value":["https://example.com/},",2]}),
+            ),
+        ] {
+            assert_eq!(
+                ConfigFormat::Jsonc.validate(source.as_bytes()).unwrap(),
+                ParsedConfig::Json(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn jsonc_does_not_repair_missing_values_or_unterminated_comments() {
+        for source in [
+            "{,/* empty object */}",
+            "[,/* empty array */]",
+            "{\"value\":1,,/* duplicate comma */}",
+            "[1,,/* duplicate comma */]",
+            "{\"value\":1,/* unterminated}",
+            "{\"value\":1 /* missing comma */ \"other\":2}",
+        ] {
+            assert!(
+                ConfigFormat::Jsonc.validate(source.as_bytes()).is_err(),
+                "unexpectedly accepted {source}"
+            );
+        }
     }
 
     #[test]

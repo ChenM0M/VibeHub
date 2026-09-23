@@ -247,10 +247,15 @@ export interface ModelProfile {
   display_name: string;
   enabled: boolean;
   thinking: ThinkingProfile;
+  modalities?: ModelModalities | null;
+  modalities_changed?: boolean;
+  limits?: ModelLimits | null;
+  limits_changed?: boolean;
+  supports_tools?: boolean | null;
 }
 export interface ThinkingProfile {
-  supports_reasoning: boolean;
-  supports_effort: boolean;
+  supports_reasoning: boolean | null;
+  supports_effort: boolean | null;
   selected: string | null;
   options: string[];
   custom_allowed: boolean;
@@ -258,6 +263,22 @@ export interface ThinkingProfile {
     [k: string]: unknown;
   } | null;
   variant_values_changed?: boolean;
+  effort_options?: string[];
+  thinking_types?: string[];
+  reasoning_effort?: string | null;
+  thinking_mode?: string | null;
+  thinking_budget?: number | null;
+  effort_changed?: boolean;
+  thinking_changed?: boolean;
+}
+export interface ModelModalities {
+  input: string[] | null;
+  output: string[] | null;
+}
+export interface ModelLimits {
+  context: number | null;
+  input: number | null;
+  output: number | null;
 }
 /**
  * Claude Code only. Optional explicit overrides for subagent, tier-alias, and small/fast model selection. When a field is null/absent, VibeHub removes that override and lets Claude Code apply its native settings and model precedence.
@@ -370,9 +391,10 @@ export interface AgentProfileSummary {
   agent: AgentKind;
   runtime_target_id: string;
   source_path: NativePath;
-  revision: ConfigRevision;
+  revision: ConfigRevision | null;
   is_default: boolean;
   compatibility: "supported" | "partial" | "unknown" | "unsupported";
+  read_error?: AgentProfileDiscoverError;
 }
 export interface AgentProfileDiscoverError {
   code: string;

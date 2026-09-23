@@ -279,6 +279,10 @@ pub struct AgentProfileListModelsResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UpstreamModelWire {
+    pub supports_reasoning: Option<bool>,
+    pub supports_effort: Option<bool>,
+    pub effort_options: Vec<String>,
+    pub thinking_types: Vec<String>,
     pub model_id: String,
     pub display_name: String,
 }
@@ -400,18 +404,49 @@ pub struct ProtocolCapabilityInput {
     pub limitations: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ModelProfileInput {
     pub model_id: String,
     pub display_name: String,
     pub enabled: bool,
     pub thinking: ThinkingProfileInput,
+    #[serde(default)]
+    pub modalities: Option<ModelModalitiesInput>,
+    #[serde(default)]
+    pub modalities_changed: bool,
+    #[serde(default)]
+    pub limits: Option<ModelLimitsInput>,
+    #[serde(default)]
+    pub limits_changed: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ModelLimitsInput {
+    pub context: Option<u64>,
+    pub input: Option<u64>,
+    pub output: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModelModalitiesInput {
+    pub input: Option<Vec<String>>,
+    pub output: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ThinkingProfileInput {
-    pub supports_reasoning: bool,
-    pub supports_effort: bool,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub thinking_mode: Option<String>,
+    #[serde(default)]
+    pub thinking_budget: Option<u64>,
+    #[serde(default)]
+    pub effort_changed: bool,
+    #[serde(default)]
+    pub thinking_changed: bool,
+    pub supports_reasoning: Option<bool>,
+    pub supports_effort: Option<bool>,
     pub selected: Option<String>,
     pub options: Vec<String>,
     pub custom_allowed: bool,
@@ -435,7 +470,9 @@ pub struct AgentProfileSummaryWire {
     pub agent: AgentKind,
     pub runtime_target_id: String,
     pub source_path: NativeConfigPath,
-    pub revision: ConfigRevisionWire,
+    pub revision: Option<ConfigRevisionWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_error: Option<AgentProfileCommandError>,
     pub is_default: bool,
     pub compatibility: String,
 }
@@ -629,11 +666,18 @@ fn discover(
     request: AgentProfileTargetRequest,
 ) -> Result<AgentProfileDiscoverResult, AgentProfileCommandError> {
     let target = resolve_runtime_target(&request.runtime_target_id)?;
+    discover_on_target(request.agent, target)
+}
+
+fn discover_on_target(
+    agent: AgentKind,
+    target: RuntimeTarget,
+) -> Result<AgentProfileDiscoverResult, AgentProfileCommandError> {
     // OpenCode discovery is fault-tolerant: each candidate (XDG first, then the
     // legacy Roaming fallback) is checked independently, so a single
     // unreadable/invalid candidate is recorded as a structured error instead of
     // aborting the scan of the remaining candidates.
-    let (profiles, candidate_errors) = match request.agent {
+    let (profiles, candidate_errors) = match agent {
         AgentKind::Opencode => {
             let outcome = v3::discover_opencode_profiles_tolerant(&target);
             let profiles = outcome
@@ -644,10 +688,10 @@ fn discover(
             (profiles, outcome.errors)
         }
         AgentKind::ClaudeCode | AgentKind::Codex => {
-            (discover_locations(&request.agent, &target)?, Vec::new())
+            (discover_locations(&agent, &target)?, Vec::new())
         }
     };
-    let summaries = profiles
+    let mut summaries = profiles
         .iter()
         .map(|profile| summary_for(&target, profile))
         .collect::<Result<Vec<_>, _>>()?;
@@ -655,38 +699,62 @@ fn discover(
         .iter()
         .find(|summary| summary.is_default)
         .map(|summary| summary.profile_id.clone());
-    let errors = candidate_errors
+    let errors: Vec<_> = candidate_errors
         .into_iter()
-        .map(|error: OpenCodeDiscoveryError| {
-            json!({
-                "code": error.code,
-                "category": discovery_error_category(&error.code),
-                "recoverable": true,
-                "message_key": "agent_profile.discovery_error",
-                "details": {
-                    "message": error.message,
-                    "path": error.path,
-                    "recovery_hint": error.recovery_hint,
-                },
-                "evidence_refs": [],
-            })
-        })
+        .map(discovery_command_error)
         .collect();
+    for error in &errors {
+        let path = Path::new(error.details["path"].as_str().unwrap_or_default());
+        summaries.push(AgentProfileSummaryWire {
+            profile_id: opencode_profile_id(path),
+            display_name: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("OpenCode")
+                .to_owned(),
+            agent: AgentKind::Opencode,
+            runtime_target_id: target.target_id.clone(),
+            source_path: NativeConfigPath::from_path(path, target.platform),
+            revision: None,
+            read_error: Some(error.clone()),
+            is_default: false,
+            compatibility: "unknown".to_owned(),
+        });
+    }
     Ok(AgentProfileDiscoverResult {
         kind: "agent_profile_discover_result",
         schema_version: SCHEMA_VERSION,
         generated_at: now(),
         model_version: MODEL_VERSION,
         freshness: "fresh",
-        completeness: "complete",
+        completeness: if errors.is_empty() {
+            "complete"
+        } else {
+            "partial"
+        },
         evidence_refs: Vec::new(),
         warnings: Vec::new(),
-        errors,
-        agent: request.agent,
+        errors: errors.into_iter().map(|error| json!(error)).collect(),
+        agent,
         runtime_targets: vec![target],
         profiles: summaries,
         default_profile_id,
     })
+}
+
+fn discovery_command_error(error: OpenCodeDiscoveryError) -> AgentProfileCommandError {
+    let mut result = AgentProfileCommandError::new(
+        &error.code,
+        discovery_error_category(&error.code),
+        true,
+        safe_storage_message(&error.message),
+    );
+    result.message_key = "agent_profile.discovery_error".to_owned();
+    result.details.insert("path".to_owned(), json!(error.path));
+    result
+        .details
+        .insert("recovery_hint".to_owned(), json!(error.recovery_hint));
+    result
 }
 
 fn discovery_error_category(code: &str) -> &'static str {
@@ -820,7 +888,8 @@ fn launch(
     let arguments = launch_arguments_for(&located, &request.launch_mode)?;
     let working_directory = launch_working_directory(&target)?;
     let executable = executable_for_agent(&request.agent);
-    let process_id = crate::launcher::Launcher::launch_agent(
+    let environment = launch_environment_for(&target, &located)?;
+    let process_id = crate::launcher::Launcher::launch_agent_with_environment(
         executable,
         &arguments,
         &working_directory,
@@ -829,6 +898,7 @@ fn launch(
             RuntimeTargetKind::Wsl => "wsl",
         },
         target.distribution.as_deref(),
+        &environment,
     )
     .map_err(|error| {
         AgentProfileCommandError::new(
@@ -892,36 +962,61 @@ fn launch_arguments_for(
     })
 }
 
+fn launch_environment_for(
+    target: &RuntimeTarget,
+    profile: &LocatedProfile,
+) -> Result<BTreeMap<String, String>, AgentProfileCommandError> {
+    let mut environment = BTreeMap::new();
+    if let LocatedProfile::OpenCode(view) = profile {
+        environment.insert(
+            "OPENCODE_CONFIG".to_owned(),
+            runtime_launch_path(target, &view.source_path)?,
+        );
+    }
+    Ok(environment)
+}
+
 fn launch_working_directory(target: &RuntimeTarget) -> Result<String, AgentProfileCommandError> {
-    if !matches!(target.kind, RuntimeTargetKind::Wsl) {
-        return Ok(target.home_path.native.clone());
-    }
+    runtime_launch_path(target, &target.home_path.as_path())
+}
 
-    #[cfg(target_os = "windows")]
-    {
-        let distribution = target.distribution.as_deref().ok_or_else(|| {
-            AgentProfileCommandError::validation(
-                "RUNTIME_WSL_DISTRIBUTION_MISSING",
-                "WSL runtime target is missing its distribution",
-            )
-        })?;
-        let native = target.home_path.native.replace('\\', "/");
-        let prefix = format!("//wsl$/{}", distribution.to_ascii_lowercase());
-        let lower = native.to_ascii_lowercase();
-        let Some(suffix) = lower.strip_prefix(&prefix) else {
-            return Err(AgentProfileCommandError::validation(
-                "RUNTIME_WSL_HOME_PATH_INVALID",
-                "WSL home path is not inside the observed distribution",
-            ));
-        };
-        let suffix = suffix.trim_start_matches('/');
-        return Ok(format!("/{suffix}"));
+fn runtime_launch_path(
+    target: &RuntimeTarget,
+    path: &Path,
+) -> Result<String, AgentProfileCommandError> {
+    let native = path.to_string_lossy();
+    if target.kind != RuntimeTargetKind::Wsl {
+        return Ok(native.into_owned());
     }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        Ok(target.home_path.native.clone())
+    // A VibeHub process running inside WSL already has Linux paths.
+    if native.starts_with('/') && !native.starts_with("//") {
+        return Ok(native.into_owned());
     }
+    let distribution = target.distribution.as_deref().ok_or_else(|| {
+        AgentProfileCommandError::validation(
+            "RUNTIME_WSL_DISTRIBUTION_MISSING",
+            "WSL runtime target is missing its distribution",
+        )
+    })?;
+    let mut native = native.replace('\\', "/");
+    if native.starts_with("//?/UNC/") {
+        native = format!("//{}", &native[8..]);
+    }
+    for server in ["wsl$", "wsl.localhost"] {
+        let prefix = format!("//{server}/{distribution}/");
+        if native
+            .get(..prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(&prefix))
+        {
+            // Only compare the UNC prefix without case sensitivity. Linux paths
+            // are case sensitive and must retain the original suffix.
+            return Ok(format!("/{}", &native[prefix.len()..]));
+        }
+    }
+    Err(AgentProfileCommandError::validation(
+        "RUNTIME_WSL_LAUNCH_PATH_INVALID",
+        "launch path is not inside the observed WSL distribution",
+    ))
 }
 
 fn restore(
@@ -938,12 +1033,14 @@ fn restore_on_target(
     let located = locate_profile(&target, &request.agent, &request.profile_id)?;
     ensure_revision(&located, request.expected_revision)?;
     let current_path = located.source_path().to_path_buf();
-    let backup_path = validate_backup_path(&target, &current_path, &request.backup_path)?;
-    let restored = v3::restore_document(
+    let format = profile_document_format(&located)?;
+    let backup_path = validate_backup_path(&target, &current_path, &request.backup_path, format)?;
+    let restored = v3::restore_document_with_format(
         &target,
         &current_path,
         backup_path,
         located.document_revision(),
+        format,
     )?;
     let refreshed = locate_profile(&target, &request.agent, &request.profile_id)?;
     save_result("restore", &target, &refreshed, Some(restored))
@@ -1017,10 +1114,17 @@ fn create_profile_on_target(
         .transpose()?;
     let operation = match request.agent {
         AgentKind::Opencode => {
-            return Err(AgentProfileCommandError::unsupported(
-                "OPENCODE_PROFILE_CRUD_UNSUPPORTED",
-                "OpenCode is managed as its native user configuration, not named Profiles",
-            ))
+            if template.is_some() || request.profile_name != "opencode.jsonc" {
+                return Err(AgentProfileCommandError::unsupported(
+                    "OPENCODE_PROFILE_CRUD_UNSUPPORTED",
+                    "OpenCode supports initialization of its native config, not named Profiles",
+                ));
+            }
+            let (profile, write) = v3::initialize_opencode_profile(&target)?;
+            OperationWrite {
+                profile: LocatedProfile::OpenCode(profile),
+                write: Some(write),
+            }
         }
         AgentKind::ClaudeCode => {
             let operation = v3::create_claude_profile(
@@ -1319,6 +1423,23 @@ fn locate_profile(
             "profile_id is required",
         ));
     }
+    if *agent == AgentKind::Opencode {
+        let outcome = v3::discover_opencode_profiles_tolerant(target);
+        if let Some(profile) = outcome
+            .profiles
+            .into_iter()
+            .find(|view| opencode_profile_id(&view.source_path) == profile_id)
+        {
+            return Ok(LocatedProfile::OpenCode(profile));
+        }
+        if let Some(error) = outcome
+            .errors
+            .into_iter()
+            .find(|error| opencode_profile_id(Path::new(&error.path)) == profile_id)
+        {
+            return Err(discovery_command_error(error));
+        }
+    }
     discover_locations(agent, target)?
         .into_iter()
         .find(|profile| profile.profile_id() == profile_id)
@@ -1577,7 +1698,6 @@ fn save_managed(
                     .map(|item| {
                         item.models
                             .iter()
-                            .filter(|model| model.enabled)
                             .map(|model| model.model_id.as_str())
                             .collect::<std::collections::BTreeSet<_>>()
                     })
@@ -1590,6 +1710,44 @@ fn save_managed(
                             .or_default()
                             .push(model.model_id.clone());
                     }
+                }
+            }
+            for provider in &managed.providers {
+                let previous = view
+                    .providers
+                    .iter()
+                    .find(|item| item.provider_id == provider.provider_id);
+                let mut blacklist = previous
+                    .map(|item| item.blacklist.clone())
+                    .unwrap_or_default();
+                let mut whitelist = previous.and_then(|item| item.whitelist.clone());
+                let original_blacklist = blacklist.clone();
+                let original_whitelist = whitelist.clone();
+                for model in &provider.models {
+                    if model.enabled {
+                        blacklist.retain(|id| id != &model.model_id);
+                        if let Some(items) = &mut whitelist {
+                            if !items.contains(&model.model_id) {
+                                items.push(model.model_id.clone());
+                            }
+                        }
+                    } else if !blacklist.contains(&model.model_id)
+                        && whitelist
+                            .as_ref()
+                            .is_none_or(|items| items.contains(&model.model_id))
+                    {
+                        blacklist.push(model.model_id.clone());
+                    }
+                }
+                let provider_patch = patch
+                    .providers
+                    .get_mut(&provider.provider_id)
+                    .expect("managed provider patch");
+                if blacklist != original_blacklist {
+                    provider_patch.blacklist = Some(blacklist);
+                }
+                if whitelist != original_whitelist {
+                    provider_patch.whitelist = whitelist;
                 }
             }
             Ok(Some(v3::save_opencode_profile(
@@ -1656,12 +1814,163 @@ fn patch_for(
     })
 }
 
+fn opencode_limit_patches(
+    model: &ModelProfileInput,
+) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
+    if !model.limits_changed {
+        return Ok(Vec::new());
+    }
+    let values = model.limits.as_ref();
+    let context = values.and_then(|v| v.context);
+    let input = values.and_then(|v| v.input);
+    let output = values.and_then(|v| v.output);
+    if context.is_none() && input.is_none() && output.is_none() {
+        return Ok(vec![v3::OpenCodeOptionPatch {
+            path: vec!["limit".into()],
+            value: None,
+        }]);
+    }
+    if context.is_none()
+        || output.is_none()
+        || [context, input, output]
+            .iter()
+            .flatten()
+            .any(|v| !(1..=9_007_199_254_740_991).contains(v))
+    {
+        return Err(AgentProfileCommandError::validation(
+            "AGENT_PROFILE_LIMIT_INVALID",
+            "Limits require positive integer context and output values; input is optional",
+        ));
+    }
+    Ok([("context", context), ("input", input), ("output", output)]
+        .into_iter()
+        .map(|(key, value)| v3::OpenCodeOptionPatch {
+            path: vec!["limit".into(), key.into()],
+            value: value.map(Value::from),
+        })
+        .collect())
+}
+
+fn opencode_modality_patches(
+    model: &ModelProfileInput,
+) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
+    if !model.modalities_changed {
+        return Ok(Vec::new());
+    }
+    let mut patches = Vec::new();
+    for (direction, values) in [
+        (
+            "input",
+            model.modalities.as_ref().and_then(|m| m.input.as_ref()),
+        ),
+        (
+            "output",
+            model.modalities.as_ref().and_then(|m| m.output.as_ref()),
+        ),
+    ] {
+        if let Some(values) = values {
+            if values
+                .iter()
+                .any(|v| !["text", "image", "audio", "video", "pdf"].contains(&v.as_str()))
+            {
+                return Err(AgentProfileCommandError::validation(
+                    "AGENT_PROFILE_MODALITY_INVALID",
+                    "Supported declarations: text, image, audio, video, pdf",
+                ));
+            }
+        }
+        patches.push(v3::OpenCodeOptionPatch {
+            path: vec!["modalities".into(), direction.into()],
+            value: values.map(|v| json!(v)),
+        });
+    }
+    Ok(patches)
+}
+
+fn opencode_thinking_patches(
+    protocol: Option<ProtocolKind>,
+    thinking: &ThinkingProfileInput,
+) -> Result<Vec<v3::OpenCodeOptionPatch>, AgentProfileCommandError> {
+    let mut patches = Vec::new();
+    let invalid =
+        |message| AgentProfileCommandError::validation("AGENT_PROFILE_THINKING_INVALID", message);
+    if thinking.effort_changed {
+        let key = match protocol {
+            Some(ProtocolKind::OpenaiChatCompletions | ProtocolKind::OpenaiResponses) => {
+                "reasoningEffort"
+            }
+            Some(ProtocolKind::AnthropicMessages) => "effort",
+            _ => {
+                return Err(invalid(
+                    "Select a supported provider protocol before editing effort",
+                ))
+            }
+        };
+        let value = thinking
+            .reasoning_effort
+            .as_ref()
+            .filter(|v| !v.trim().is_empty())
+            .map(|v| Value::String(v.trim().to_owned()));
+        if value.is_some() && thinking.supports_effort == Some(false) {
+            return Err(invalid("Model declares effort unsupported"));
+        }
+        patches.push(v3::OpenCodeOptionPatch {
+            path: vec![key.into()],
+            value,
+        });
+    }
+    if thinking.thinking_changed {
+        if protocol != Some(ProtocolKind::AnthropicMessages) {
+            return Err(invalid(
+                "Thinking mode and budget require Anthropic Messages",
+            ));
+        }
+        match thinking.thinking_mode.as_deref().filter(|v| !v.is_empty()) {
+            None => patches.push(v3::OpenCodeOptionPatch {
+                path: vec!["thinking".into()],
+                value: None,
+            }),
+            Some(mode @ ("enabled" | "adaptive" | "disabled")) => {
+                if mode != "disabled" && thinking.supports_reasoning == Some(false) {
+                    return Err(invalid("Model declares reasoning unsupported"));
+                }
+                let budget = if mode == "enabled" {
+                    let budget = thinking
+                        .thinking_budget
+                        .ok_or_else(|| invalid("Manual thinking requires a token budget"))?;
+                    if !(1024..=9_007_199_254_740_991).contains(&budget) {
+                        return Err(invalid(
+                            "Thinking budget must be an integer of at least 1024 tokens",
+                        ));
+                    }
+                    Some(Value::from(budget))
+                } else {
+                    None
+                };
+                patches.push(v3::OpenCodeOptionPatch {
+                    path: vec!["thinking".into(), "type".into()],
+                    value: Some(mode.into()),
+                });
+                patches.push(v3::OpenCodeOptionPatch {
+                    path: vec!["thinking".into(), "budgetTokens".into()],
+                    value: budget,
+                });
+            }
+            Some(_) => return Err(invalid("Unknown thinking mode")),
+        }
+    }
+    Ok(patches)
+}
+
 fn patch_for_opencode(
     managed: &ManagedProfileInput,
 ) -> Result<OpenCodeConfigPatch, AgentProfileCommandError> {
     let mut patch = OpenCodeConfigPatch {
         default_model: managed.default_model_id.clone(),
         small_model: managed.small_model_id.clone(),
+        clear_small_model: managed.small_model_id.is_none(),
+        clear_default_variant: selected_model(managed)
+            .is_some_and(|model| model.thinking.selected.is_none()),
         default_variant: selected_default_variant(managed),
         deleted_providers: Vec::new(),
         deleted_models: BTreeMap::new(),
@@ -1670,15 +1979,7 @@ fn patch_for_opencode(
     for provider in &managed.providers {
         let protocol = match provider.protocol.native_protocol.trim() {
             "unknown" | "" => None,
-            wire => match protocol_from_wire(wire)? {
-                ProtocolKind::OpenaiResponses => {
-                    return Err(AgentProfileCommandError::unsupported(
-                        "AGENT_PROFILE_OPENCODE_PROTOCOL_UNSUPPORTED",
-                        "OpenCode providers cannot persist the OpenAI Responses wire API; select Chat Completions or Anthropic Messages",
-                    ));
-                }
-                persisted => Some(persisted),
-            },
+            wire => Some(protocol_from_wire(wire)?),
         };
         let secret = credential_secret(&provider.credential);
         let clear_api_key = provider.credential.clear_secret && secret.is_none();
@@ -1689,8 +1990,17 @@ fn patch_for_opencode(
         };
         let mut models = BTreeMap::new();
         for model in &provider.models {
-            if !model.enabled {
-                continue;
+            if model.thinking.variant_values_changed
+                && model
+                    .thinking
+                    .variant_values
+                    .as_ref()
+                    .is_some_and(|values| values.values().any(|value| !value.is_object()))
+            {
+                return Err(AgentProfileCommandError::validation(
+                    "AGENT_PROFILE_VARIANT_OBJECT_REQUIRED",
+                    "Each variant must contain a JSON object",
+                ));
             }
             let variants = model.thinking.variant_values_changed.then(|| {
                 model
@@ -1714,8 +2024,14 @@ fn patch_for_opencode(
                 OpenCodeModelPatch {
                     display_name: Some(model.display_name.clone()),
                     declared_id: None,
-                    reasoning: Some(model.thinking.supports_reasoning),
+                    reasoning: model.thinking.supports_reasoning,
+                    clear_reasoning: model.thinking.supports_reasoning.is_none(),
                     variants,
+                    option_patches: opencode_thinking_patches(protocol, &model.thinking)?,
+                    field_patches: opencode_modality_patches(model)?
+                        .into_iter()
+                        .chain(opencode_limit_patches(model)?)
+                        .collect(),
                 },
             );
         }
@@ -1729,6 +2045,8 @@ fn patch_for_opencode(
                 api_key: secret,
                 clear_api_key,
                 models,
+                blacklist: None,
+                whitelist: None,
             },
         );
     }
@@ -1919,14 +2237,30 @@ fn selected_provider<'a>(managed: &'a ManagedProfileInput) -> Option<&'a Provide
         .or_else(|| managed.providers.first())
 }
 
-fn selected_thinking(managed: &ManagedProfileInput) -> Option<String> {
-    let provider = selected_provider(managed)?;
+fn selected_model(managed: &ManagedProfileInput) -> Option<&ModelProfileInput> {
     let model_id = managed.default_model_id.as_deref()?;
-    provider
-        .models
+    // OpenCode persists provider/model, while the provider's model map uses
+    // the bare ID (which may itself contain '/'). Resolve the qualified ID
+    // first so duplicate model names cannot select another provider's effort.
+    managed
+        .providers
         .iter()
-        .find(|model| model.model_id == model_id)
-        .and_then(|model| model.thinking.selected.clone())
+        .find_map(|provider| {
+            provider
+                .models
+                .iter()
+                .find(|model| format!("{}/{}", provider.provider_id, model.model_id) == model_id)
+        })
+        .or_else(|| {
+            selected_provider(managed)?
+                .models
+                .iter()
+                .find(|model| model.model_id == model_id)
+        })
+}
+
+fn selected_thinking(managed: &ManagedProfileInput) -> Option<String> {
+    selected_model(managed).and_then(|model| model.thinking.selected.clone())
 }
 
 fn selected_default_variant(managed: &ManagedProfileInput) -> Option<String> {
@@ -2010,7 +2344,8 @@ fn summary_for(
         agent: profile.agent(),
         runtime_target_id: target.target_id.clone(),
         source_path: NativeConfigPath::from_path(profile.source_path(), target.platform),
-        revision: revision_wire(profile.document_revision()),
+        revision: Some(revision_wire(profile.document_revision())),
+        read_error: None,
         is_default: profile.is_default(),
         compatibility: profile.compatibility().to_owned(),
     })
@@ -2065,15 +2400,25 @@ fn opencode_document_parts(
                     json!({
                         "model_id":model.model_id,
                         "display_name":model.display_name,
-                        "enabled":true,
+                        "enabled":model.enabled,
+                        "modalities":{"input":model.input_modalities,"output":model.output_modalities},
+                        "supports_tools":model.tool_call,
+                        "modalities_changed":false,
+                        "limits":{"context":model.limit_context,"input":model.limit_input,"output":model.limit_output},
+                        "limits_changed":false,
                         "thinking":{
-                            "supports_reasoning":model.reasoning.unwrap_or(false),
-                            "supports_effort":!model.variants.is_empty(),
+                            "supports_reasoning":model.reasoning,
+                            "supports_effort":Value::Null,
                             "selected":view.default_variant,
                             "options":model.variants,
                             "custom_allowed":false,
                             "variant_values":model.variant_values,
-                            "variant_values_changed":false
+                            "variant_values_changed":false,
+                            "reasoning_effort":model.reasoning_effort,
+                            "thinking_mode":model.thinking_mode,
+                            "thinking_budget":model.thinking_budget,
+                            "effort_changed":false,
+                            "thinking_changed":false
                         }
                     })
                 })
@@ -2083,7 +2428,7 @@ fn opencode_document_parts(
                 "display_name":provider.display_name,
                 "base_url":provider.base_url.clone().unwrap_or_default(),
                 "credential":credential_value(&provider.credential),
-                "protocol":protocol_value(protocol_resolution(native_protocol, native_protocol)),
+                "protocol":protocol_value(opencode_protocol_resolution(native_protocol, native_protocol, selected_opencode_model(view, provider))),
                 "models":models
             })
         })
@@ -2101,8 +2446,15 @@ fn opencode_document_parts(
     });
     let protocol = view
         .providers
-        .first()
-        .map(|provider| protocol_value(protocol_resolution(provider.protocol, provider.protocol)))
+        .iter()
+        .find(|provider| selected_opencode_model(view, provider).is_some())
+        .map(|provider| {
+            protocol_value(opencode_protocol_resolution(
+                provider.protocol,
+                provider.protocol,
+                selected_opencode_model(view, provider),
+            ))
+        })
         .unwrap_or_else(|| {
             protocol_value(protocol_resolution(
                 ProtocolKind::Unknown,
@@ -2174,8 +2526,8 @@ fn claude_document_parts(
             "display_name":model,
             "enabled":true,
             "thinking":{
-                "supports_reasoning":true,
-                "supports_effort":!view.thinking.options.is_empty(),
+                "supports_reasoning":Value::Null,
+                "supports_effort":Value::Null,
                 "selected":view.thinking.selected,
                 "options":view.thinking.options,
                 "custom_allowed":false
@@ -2266,10 +2618,10 @@ fn codex_document_parts(
                     "display_name":model,
                     "enabled":true,
                     "thinking":{
-                        "supports_reasoning":view.reasoning_effort.is_some(),
-                        "supports_effort":view.reasoning_effort.is_some(),
+                        "supports_reasoning":Value::Null,
+                        "supports_effort":Value::Null,
                         "selected":view.reasoning_effort,
-                        "options":["none","minimal","low","medium","high","xhigh","max","ultra"],
+                        "options":view.reasoning_effort.iter().collect::<Vec<_>>(),
                         "custom_allowed":false
                     }
                 })]).unwrap_or_default()
@@ -2468,8 +2820,90 @@ fn credential_parts_codex(
     }
 }
 
+fn selected_opencode_model<'a>(
+    view: &OpenCodeProfileView,
+    provider: &'a v3::OpenCodeProviderView,
+) -> Option<&'a v3::OpenCodeModelView> {
+    let (provider_id, model_id) = view.default_model.as_deref()?.split_once('/')?;
+    if provider_id != provider.provider_id {
+        return None;
+    }
+    provider
+        .models
+        .iter()
+        .find(|model| model.model_id == model_id)
+}
+
 fn protocol_resolution(native: ProtocolKind, upstream: ProtocolKind) -> ProtocolResolution {
-    v3::resolve_protocol(native, upstream, &Default::default())
+    opencode_protocol_resolution(native, upstream, None)
+}
+
+fn opencode_protocol_resolution(
+    native: ProtocolKind,
+    upstream: ProtocolKind,
+    model: Option<&v3::OpenCodeModelView>,
+) -> ProtocolResolution {
+    let tools = model.and_then(|m| m.tool_call);
+    let images = model
+        .and_then(|m| m.input_modalities.as_ref())
+        .map(|values| values.iter().any(|v| v == "image"));
+    let reasoning = model.and_then(|m| m.reasoning);
+    // No native declaration supplies streaming or usage capability here.
+    let capabilities = v3::ModelProtocolCapabilities {
+        tools: tools == Some(true),
+        images: images == Some(true),
+        reasoning: reasoning == Some(true),
+        streaming: false,
+        usage: false,
+    };
+    let mut result = v3::resolve_protocol(native, upstream, &capabilities);
+    if native == ProtocolKind::Unknown || upstream == ProtocolKind::Unknown {
+        return result;
+    }
+    result.limitations.clear();
+    for (name, state) in [
+        ("tool calling", tools),
+        ("image input", images),
+        ("reasoning", reasoning),
+        ("streaming", None),
+        ("usage reporting", None),
+    ] {
+        match state {
+            Some(true) => {}
+            Some(false) => result
+                .limitations
+                .push(format!("model declares {name} unsupported")),
+            None => result
+                .limitations
+                .push(format!("model {name} capability is unknown")),
+        }
+    }
+    if native != upstream {
+        for modality in ["audio", "video", "pdf"] {
+            if model.is_some_and(|m| {
+                [&m.input_modalities, &m.output_modalities]
+                    .iter()
+                    .any(|values| {
+                        values
+                            .as_ref()
+                            .is_some_and(|v| v.iter().any(|v| v == modality))
+                    })
+            }) {
+                result
+                    .limitations
+                    .push(format!("adapter does not convert {modality} content"));
+            }
+        }
+    }
+    result.compatibility = if [tools, images, reasoning].iter().all(Option::is_none) {
+        v3::ProtocolCompatibility::Unknown
+    } else {
+        v3::ProtocolCompatibility::Partial
+    };
+    result
+        .diagnostics
+        .push("protocol.capability.from_observed_model_declarations".into());
+    result
 }
 
 fn protocol_value(resolution: ProtocolResolution) -> Value {
@@ -2655,6 +3089,7 @@ fn validate_backup_path(
     target: &RuntimeTarget,
     current_path: &Path,
     backup_path: &str,
+    format: ConfigFormat,
 ) -> Result<PathBuf, AgentProfileCommandError> {
     let backup = PathBuf::from(backup_path);
     if !backup.is_absolute() {
@@ -2694,7 +3129,7 @@ fn validate_backup_path(
             "only VibeHub backups for the selected profile can be restored",
         ));
     }
-    let _ = v3::read_document(target, current_path)?;
+    let _ = v3::read_document_with_format(target, current_path, format)?;
     Ok(backup)
 }
 
@@ -2872,9 +3307,46 @@ fn parse_upstream_models(value: &Value) -> Vec<UpstreamModelWire> {
         if !seen.insert(model_id.clone()) {
             continue;
         }
+        let supports_reasoning = item.get("reasoning").and_then(Value::as_bool).or_else(|| {
+            item.pointer("/capabilities/thinking/supported")
+                .and_then(Value::as_bool)
+        });
+        let supports_effort = item
+            .pointer("/capabilities/effort/supported")
+            .and_then(Value::as_bool);
+        let effort_options = if supports_effort == Some(true) {
+            ["low", "medium", "high", "max"]
+                .into_iter()
+                .filter(|level| {
+                    item.pointer(&format!("/capabilities/effort/{level}/supported"))
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                })
+                .map(str::to_owned)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let thinking_types = if supports_reasoning == Some(true) {
+            ["enabled", "adaptive"]
+                .into_iter()
+                .filter(|kind| {
+                    item.pointer(&format!("/capabilities/thinking/types/{kind}/supported"))
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                })
+                .map(str::to_owned)
+                .collect()
+        } else {
+            Vec::new()
+        };
         models.push(UpstreamModelWire {
             model_id,
             display_name,
+            supports_reasoning,
+            supports_effort,
+            effort_options,
+            thinking_types,
         });
     }
     models.sort_by(|left, right| left.model_id.cmp(&right.model_id));
@@ -2913,12 +3385,23 @@ fn upstream_model_parts(item: &Value) -> Option<(String, String)> {
     }
 }
 
+fn profile_document_format(profile: &LocatedProfile) -> Result<ConfigFormat, StorageError> {
+    match profile {
+        LocatedProfile::OpenCode(_) => Ok(ConfigFormat::Jsonc),
+        _ => ConfigFormat::from_path(profile.source_path()),
+    }
+}
+
 fn stored_provider_secret(
     target: &RuntimeTarget,
     profile: &LocatedProfile,
     provider_id: &str,
 ) -> Result<Option<String>, AgentProfileCommandError> {
-    let document = v3::read_document(target, profile.source_path())?;
+    let document = v3::read_document_with_format(
+        target,
+        profile.source_path(),
+        profile_document_format(profile)?,
+    )?;
     let parsed = document.parse()?;
     let secret = match parsed {
         ParsedConfig::Json(value) => match profile {
@@ -3133,6 +3616,231 @@ mod tests {
     }
 
     #[test]
+    fn upstream_capabilities_do_not_guess_from_names_or_missing_fields() {
+        let models = parse_upstream_models(&json!({"data":[
+            {"id":"a-thinking-ultra"},
+            {"id":"b","reasoning":false},
+            {"id":"c","capabilities":{"thinking":{"supported":true,"types":{"adaptive":{"supported":true},"enabled":{"supported":false}}},"effort":{"supported":true,"low":{"supported":true},"medium":{"supported":false},"high":{"supported":true},"max":{"supported":false}}}},
+            {"id":"d","reasoning":"true","capabilities":{"effort":{"supported":false,"max":{"supported":true}}}}
+        ]}));
+        assert_eq!(models[0].supports_reasoning, None);
+        assert_eq!(models[0].supports_effort, None);
+        assert!(models[0].effort_options.is_empty());
+        assert_eq!(models[1].supports_reasoning, Some(false));
+        assert_eq!(models[2].supports_reasoning, Some(true));
+        assert_eq!(models[2].effort_options, vec!["low", "high"]);
+        assert_eq!(models[2].thinking_types, vec!["adaptive"]);
+        assert_eq!(models[3].supports_reasoning, None);
+        assert_eq!(models[3].supports_effort, Some(false));
+        assert!(models[3].effort_options.is_empty());
+    }
+
+    #[test]
+    fn opencode_environment_paths_are_runtime_specific_and_external_scope_is_exact() {
+        if let Ok(root) = std::env::var("VIBEHUB_EXTERNAL_PATH_TEST") {
+            let root = PathBuf::from(root);
+            let target = RuntimeTarget::host(root.join("home"));
+            let paths = v3::opencode_config_paths(&target).unwrap();
+            assert_eq!(paths[0], root.join("external/custom.jsonc"));
+            let (view, _) = v3::initialize_opencode_profile(&target).unwrap();
+            assert_eq!(view.source_path, paths[0].canonicalize().unwrap());
+            let document = v3::read_document(&target, &paths[0]).unwrap();
+            let saved = v3::write_document(
+                &target,
+                &paths[0],
+                Some(&document.revision),
+                b"{\"provider\":{},\"model\":\"demo/test\"}",
+            )
+            .unwrap();
+            v3::restore_document(
+                &target,
+                &paths[0],
+                saved.backup_path.unwrap().as_path(),
+                &saved.after_revision,
+            )
+            .unwrap();
+            fs::write(root.join("external/other.json"), b"{}").unwrap();
+            assert_eq!(
+                v3::read_document(&target, root.join("external/other.json"))
+                    .unwrap_err()
+                    .code,
+                "CONFIG_PATH_OUTSIDE_RUNTIME_HOME"
+            );
+            #[cfg(unix)]
+            {
+                fs::remove_file(&paths[0]).unwrap();
+                std::os::unix::fs::symlink(root.join("external/other.json"), &paths[0]).unwrap();
+                assert_eq!(
+                    v3::read_document(&target, &paths[0]).unwrap_err().code,
+                    "CONFIG_PATH_LINK_REJECTED"
+                );
+            }
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("vibehub-external-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("home")).unwrap();
+        // Resolve OS temp aliases before defining the exact external scope.
+        // Keep the storage layer's symlink and junction protection enabled.
+        let root = root.canonicalize().unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "agent_profiles::tests::opencode_environment_paths_are_runtime_specific_and_external_scope_is_exact"])
+            .env("VIBEHUB_EXTERNAL_PATH_TEST", &root).env("OPENCODE_CONFIG", root.join("external/custom.jsonc"))
+            .env_remove("OPENCODE_CONFIG_DIR").env_remove("XDG_CONFIG_HOME").env_remove("WSL_DISTRO_NAME")
+            .status().unwrap();
+        assert!(status.success());
+        let target = RuntimeTarget::host(root.join("home"));
+        let values = v3::OpenCodeConfigEnvironment {
+            xdg_config_home: Some(root.join("xdg").to_string_lossy().into_owned()),
+            config_file: Some(root.join("custom.json").to_string_lossy().into_owned()),
+            config_directory: None,
+        };
+        let paths = v3::opencode_config_paths_with_environment(&target, &values).unwrap();
+        assert_eq!(paths[0], root.join("custom.json"));
+        assert_eq!(paths[1], root.join("xdg/opencode/opencode.jsonc"));
+        let mut invalid = values;
+        invalid.config_file = Some("relative.json".to_owned());
+        assert_eq!(
+            v3::opencode_config_paths_with_environment(&target, &invalid)
+                .unwrap_err()
+                .code,
+            "OPENCODE_CONFIG_PATH_NOT_ABSOLUTE"
+        );
+        let wsl = RuntimeTarget::wsl("Ubuntu", "/home/Alice");
+        let values = v3::OpenCodeConfigEnvironment {
+            xdg_config_home: None,
+            config_file: Some("/opt/KeepCase/opencode.jsonc".to_owned()),
+            config_directory: Some("/opt/KeepCase".to_owned()),
+        };
+        let paths = v3::opencode_config_paths_with_environment(&wsl, &values).unwrap();
+        assert_eq!(
+            paths.len(),
+            5,
+            "custom file duplicated in custom directory is listed once"
+        );
+        assert!(paths[0].to_string_lossy().contains("KeepCase"));
+        let values = v3::OpenCodeConfigEnvironment {
+            config_file: Some(r"C:\Users\Alice\opencode.json".to_owned()),
+            ..Default::default()
+        };
+        assert!(
+            v3::opencode_config_paths_with_environment(&wsl, &values).is_err(),
+            "Windows paths cannot become WSL config paths"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn opencode_initialization_creates_once_and_preserves_existing_invalid_files() {
+        let root = std::env::temp_dir().join(format!("vibehub-initialize-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let created = create_profile_on_target(
+            target.clone(),
+            AgentProfileCreateRequest {
+                agent: AgentKind::Opencode,
+                runtime_target_id: target.target_id.clone(),
+                profile_name: "opencode.jsonc".to_owned(),
+                template_profile_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(created.profile["managed"]["providers"], json!([]));
+        let path = v3::opencode_config_paths(&target).unwrap()[0].clone();
+        let original = fs::read(&path).unwrap();
+        assert!(v3::initialize_opencode_profile(&target).is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        fs::write(&path, b"{broken").unwrap();
+        assert_eq!(
+            v3::initialize_opencode_profile(&target).unwrap_err().code,
+            "OPENCODE_INITIALIZE_DISCOVERY_INCOMPLETE"
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"{broken");
+        let destination = root.join("race.json");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let threads: Vec<_> = (0..2)
+            .map(|_| {
+                let target = target.clone();
+                let destination = destination.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    v3::create_config_document(&target, &destination, b"{}").is_ok()
+                })
+            })
+            .collect();
+        assert_eq!(
+            threads
+                .into_iter()
+                .map(|thread| thread.join().unwrap() as usize)
+                .sum::<usize>(),
+            1
+        );
+        assert_eq!(fs::read(destination).unwrap(), b"{}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn opencode_disable_preserves_model_and_reenable_updates_native_filters() {
+        let root = std::env::temp_dir().join(format!("vibehub-disable-{}", Uuid::new_v4()));
+        let target = RuntimeTarget::host(root.clone());
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{
+            // keep model detail
+            "provider":{"custom":{"blacklist":["external-blocked"],"whitelist":["one","external-allowed"],
+                "models":{"one":{"reasoning":true,"variants":{"deep":{"budget":1234}},"custom":{"keep":true}},
+                          "two":{"reasoning":false}}}}
+        }"#).unwrap();
+        let read = || {
+            let view = v3::read_opencode_profile(&target, &path).unwrap();
+            let located = LocatedProfile::OpenCode(view);
+            let input: AgentProfileDocumentInput =
+                serde_json::from_value(profile_document(&target, &located).unwrap()).unwrap();
+            (located, input.managed)
+        };
+        let (located, mut managed) = read();
+        assert!(managed.providers[0].models[0].enabled);
+        assert!(!managed.providers[0].models[1].enabled);
+        managed.providers[0].models[0].enabled = false;
+        save_managed(&target, &located, &managed).unwrap();
+        let (located, mut managed) = read();
+        assert_eq!(managed.providers[0].models.len(), 2);
+        assert!(!managed.providers[0].models[0].enabled);
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("// keep model detail"));
+        let view = v3::read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(
+            view.providers[0].models[0].variant_values.as_ref().unwrap()["deep"]["budget"],
+            1234
+        );
+        assert!(view.providers[0].models[0]
+            .unknown_fields
+            .contains(&"custom".to_owned()));
+        for model in &mut managed.providers[0].models {
+            model.enabled = true;
+        }
+        save_managed(&target, &located, &managed).unwrap();
+        let view = v3::read_opencode_profile(&target, &path).unwrap();
+        assert!(view.providers[0].models.iter().all(|model| model.enabled));
+        assert_eq!(view.providers[0].blacklist, vec!["external-blocked"]);
+        assert_eq!(
+            view.providers[0].whitelist.as_ref().unwrap(),
+            &vec!["one", "external-allowed", "two"]
+        );
+        let (located, mut managed) = read();
+        managed.providers[0].models.remove(0);
+        save_managed(&target, &located, &managed).unwrap();
+        assert_eq!(
+            v3::read_opencode_profile(&target, &path).unwrap().providers[0]
+                .models
+                .len(),
+            1
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn secret_like_error_text_is_redacted_without_touching_paths() {
         let message = safe_storage_message("path /tmp/config api_key=sk-secret-value");
         assert_eq!(message, "path /tmp/config [redacted]");
@@ -3171,6 +3879,164 @@ mod tests {
     }
 
     #[test]
+    fn opencode_reasoning_absent_true_false_and_clear_round_trip() {
+        let root = std::env::temp_dir().join(format!("vibehub-reasoning-state-{}", Uuid::new_v4()));
+        let path = opencode_config_dir(&root).join("opencode.jsonc");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{ // preserve this comment
+            "provider":{"p":{"npm":"@ai-sdk/openai-compatible","models":{"m":{"name":"Model","custom":42}}}}
+        }"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        for reasoning in [None, Some(true), Some(false), None] {
+            let located =
+                LocatedProfile::OpenCode(v3::read_opencode_profile(&target, &path).unwrap());
+            let document = profile_document(&target, &located).unwrap();
+            let mut input: AgentProfileDocumentInput = serde_json::from_value(document).unwrap();
+            input.managed.providers[0].models[0]
+                .thinking
+                .supports_reasoning = reasoning;
+            let result = save_on_target(
+                target.clone(),
+                AgentProfileSaveRequest {
+                    agent: AgentKind::Opencode,
+                    runtime_target_id: target.target_id.clone(),
+                    profile_id: input.profile_id.clone(),
+                    expected_revision: input.revision.revision,
+                    profile: input,
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                result.profile["managed"]["providers"][0]["models"][0]["thinking"]
+                    ["supports_reasoning"],
+                json!(reasoning)
+            );
+            let source = fs::read_to_string(&path).unwrap();
+            assert!(source.contains("preserve this comment"));
+            assert!(source.contains("\"custom\":42"));
+            assert_eq!(source.contains("\"reasoning\""), reasoning.is_some());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn selected_opencode_file_is_bound_to_child_environment() {
+        let root = std::env::temp_dir().join(format!("vibehub-launch-config-{}", Uuid::new_v4()));
+        let dir = opencode_config_dir(&root);
+        fs::create_dir_all(&dir).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        for name in ["opencode.json", "opencode.jsonc"] {
+            let path = dir.join(name);
+            fs::write(&path, "{}").unwrap();
+            let view = v3::read_opencode_profile(&target, &path).unwrap();
+            let selected = LocatedProfile::OpenCode(view.clone());
+            let environment = launch_environment_for(&target, &selected).unwrap();
+            assert_eq!(
+                environment["OPENCODE_CONFIG"],
+                view.source_path.to_string_lossy()
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn wsl_launch_paths_preserve_case_and_reject_other_distributions() {
+        let target = RuntimeTarget::wsl("Ubuntu", "/home/User Name");
+        for path in [
+            r"\\wsl$\Ubuntu\home\User Name\中文\opencode.jsonc",
+            r"\\wsl.localhost\Ubuntu\home\User Name\中文\opencode.jsonc",
+            r"\\?\UNC\wsl$\Ubuntu\home\User Name\中文\opencode.jsonc",
+        ] {
+            assert_eq!(
+                runtime_launch_path(&target, Path::new(path)).unwrap(),
+                "/home/User Name/中文/opencode.jsonc"
+            );
+        }
+        assert!(runtime_launch_path(
+            &target,
+            Path::new(r"\\wsl$\Ubuntu-other\home\User\config.json")
+        )
+        .is_err());
+        assert_eq!(
+            runtime_launch_path(
+                &target,
+                Path::new("/home/User/.config/opencode/opencode.json")
+            )
+            .unwrap(),
+            "/home/User/.config/opencode/opencode.json"
+        );
+    }
+
+    #[test]
+    fn selected_thinking_resolves_qualified_and_bare_model_ids() {
+        let mut managed: ManagedProfileInput = serde_json::from_value(json!({
+            "default_provider_id":"second", "default_model_id":"first/org/model", "small_model_id":null,
+            "providers":(["first", "second"].iter().map(|id| json!({
+                "provider_id":id, "display_name":id, "base_url":"",
+                "credential":{"kind":"none","reference":"","display":"","secret_state":"missing","persisted_in_config":false},
+                "protocol":{"native_protocol":"unknown","upstream_protocol":"unknown","route":"unsupported","compatibility":"unknown","adapter_id":null,"adapter_version":null,"limitations":[]},
+                "models":[{"model_id":"org/model", "display_name":"Model", "enabled":true,
+                    "thinking":{"supports_reasoning":true,"supports_effort":true,"selected":if *id == "first" {"high"} else {"low"},"options":["high","low"],"custom_allowed":false}}]
+            })).collect::<Vec<_>>())
+        })).unwrap();
+        assert_eq!(selected_thinking(&managed).as_deref(), Some("high"));
+        managed.default_model_id = Some("org/model".to_owned());
+        assert_eq!(selected_thinking(&managed).as_deref(), Some("low"));
+        managed.default_model_id = Some("missing/org/model".to_owned());
+        assert_eq!(selected_thinking(&managed), None);
+        managed.default_model_id = None;
+        assert_eq!(selected_thinking(&managed), None);
+    }
+
+    #[test]
+    fn opencode_small_model_and_variant_can_be_kept_set_and_cleared() {
+        let root = std::env::temp_dir().join(format!("vibehub-clear-defaults-{}", Uuid::new_v4()));
+        let path = opencode_config_dir(&root).join("opencode.jsonc");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = r#"{ // keep comment
+            "model":"p/m","small_model":"p/small","agent":{"build":{"variant":"high","temperature":0.5}},
+            "provider":{"p":{"npm":"@ai-sdk/openai-compatible","models":{"m":{"reasoning":true,"variants":{"high":{},"low":{}}}}}}
+        }"#;
+        fs::write(&path, original).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let view = v3::read_opencode_profile(&target, &path).unwrap();
+        v3::save_opencode_profile(
+            &target,
+            &path,
+            Some(&view.revision),
+            &OpenCodeConfigPatch::default(),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        for (small, variant) in [(None, None), (Some("p/new-small"), Some("low"))] {
+            let located =
+                LocatedProfile::OpenCode(v3::read_opencode_profile(&target, &path).unwrap());
+            let mut input: AgentProfileDocumentInput =
+                serde_json::from_value(profile_document(&target, &located).unwrap()).unwrap();
+            input.managed.small_model_id = small.map(str::to_owned);
+            input.managed.providers[0].models[0].thinking.selected = variant.map(str::to_owned);
+            save_on_target(
+                target.clone(),
+                AgentProfileSaveRequest {
+                    agent: AgentKind::Opencode,
+                    runtime_target_id: target.target_id.clone(),
+                    profile_id: input.profile_id.clone(),
+                    expected_revision: input.revision.revision,
+                    profile: input,
+                },
+            )
+            .unwrap();
+            let saved = v3::read_opencode_profile(&target, &path).unwrap();
+            assert_eq!(saved.small_model.as_deref(), small);
+            assert_eq!(saved.default_variant.as_deref(), variant);
+            let source = fs::read_to_string(&path).unwrap();
+            assert!(source.contains("keep comment"));
+            assert!(source.contains("\"temperature\":0.5"));
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn profile_ids_for_opencode_are_stable_and_path_bound() {
         let a = opencode_profile_id(Path::new("/home/user/.config/opencode/opencode.jsonc"));
         let b = opencode_profile_id(Path::new("/home/user/.config/opencode/opencode.jsonc"));
@@ -3201,6 +4067,46 @@ mod tests {
         assert_eq!(revision_number(&min_revision), 1);
         assert!(revision_number(&sample_revision) <= JS_MAX_SAFE_INTEGER);
         assert_eq!(revision_number(&max_revision), 0xFFFFFFFFFFFF);
+    }
+
+    #[test]
+    fn invalid_opencode_candidate_remains_discoverable_and_read_reports_original_error() {
+        let root = std::env::temp_dir().join(format!("vibehub-discovery-error-{}", Uuid::new_v4()));
+        let dir = opencode_config_dir(&root);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("opencode.jsonc"), "{ invalid").unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let result = discover_on_target(AgentKind::Opencode, target.clone()).unwrap();
+        assert_eq!(result.completeness, "partial");
+        assert_eq!(result.profiles.len(), 1);
+        let failed = &result.profiles[0];
+        assert!(failed.revision.is_none());
+        let diagnostic = failed.read_error.as_ref().unwrap();
+        assert_eq!(diagnostic.code, "CONFIG_JSONC_INVALID");
+        assert!(diagnostic.details["message"]
+            .as_str()
+            .unwrap()
+            .contains("line"));
+        let error = locate_profile(&target, &AgentKind::Opencode, &failed.profile_id).unwrap_err();
+        assert_eq!(error.code, diagnostic.code);
+        assert_eq!(error.details, diagnostic.details);
+        fs::write(dir.join("opencode.json"), "{}").unwrap();
+        let mixed = discover_on_target(AgentKind::Opencode, target.clone()).unwrap();
+        assert_eq!(mixed.profiles.len(), 2);
+        assert_eq!(
+            mixed
+                .profiles
+                .iter()
+                .filter(|p| p.read_error.is_some())
+                .count(),
+            1
+        );
+        fs::write(dir.join("opencode.jsonc"), "{}").unwrap();
+        assert!(locate_profile(&target, &AgentKind::Opencode, &failed.profile_id).is_ok());
+        let repaired = discover_on_target(AgentKind::Opencode, target).unwrap();
+        assert_eq!(repaired.completeness, "complete");
+        assert!(repaired.errors.is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -3324,7 +4230,7 @@ mod tests {
 
         let mut input: AgentProfileDocumentInput = serde_json::from_value(document).unwrap();
         input.managed.providers[0].protocol.native_protocol = "openai_responses".to_owned();
-        let responses_error = save_on_target(
+        let responses_result = save_on_target(
             target.clone(),
             AgentProfileSaveRequest {
                 agent: AgentKind::Opencode,
@@ -3334,11 +4240,17 @@ mod tests {
                 profile: input.clone(),
             },
         )
-        .unwrap_err();
+        .unwrap();
         assert_eq!(
-            responses_error.code,
-            "AGENT_PROFILE_OPENCODE_PROTOCOL_UNSUPPORTED"
+            responses_result.profile["managed"]["providers"][0]["protocol"]["native_protocol"],
+            "openai_responses"
         );
+        assert!(
+            fs::read_to_string(opencode_config_dir(&root).join("opencode.jsonc"))
+                .unwrap()
+                .contains("@ai-sdk/openai")
+        );
+        input = serde_json::from_value(responses_result.profile).unwrap();
 
         input.managed.providers[0].protocol.native_protocol = "openai_chat_completions".to_owned();
         input
@@ -3697,10 +4609,18 @@ mod tests {
                 UpstreamModelWire {
                     model_id: "gpt-4o".to_owned(),
                     display_name: "gpt-4o".to_owned(),
+                    supports_reasoning: None,
+                    supports_effort: None,
+                    effort_options: vec![],
+                    thinking_types: vec![],
                 },
                 UpstreamModelWire {
                     model_id: "o3".to_owned(),
                     display_name: "o3".to_owned(),
+                    supports_reasoning: None,
+                    supports_effort: None,
+                    effort_options: vec![],
+                    thinking_types: vec![],
                 },
             ]
         );
@@ -3717,6 +4637,10 @@ mod tests {
             vec![UpstreamModelWire {
                 model_id: "claude-sonnet-4-20250514".to_owned(),
                 display_name: "Claude Sonnet 4".to_owned(),
+                supports_reasoning: None,
+                supports_effort: None,
+                effort_options: vec![],
+                thinking_types: vec![],
             }]
         );
 
@@ -3813,7 +4737,7 @@ mod tests {
         fs::create_dir_all(root.join(".codex")).unwrap();
         fs::write(
             opencode_config_dir(&root).join("opencode.json"),
-            r#"{"$schema":"https://opencode.ai/config.json","model":"openai/gpt-5","provider":{"openai":{"options":{"baseURL":"https://api.openai.com/v1","apiKey":"opencode-list-secret"},"models":{"gpt-5":{"reasoning":true}}}}}"#,
+            r#"{/* JSONC syntax is valid in OpenCode's .json files. */"$schema":"https://opencode.ai/config.json","model":"openai/gpt-5","provider":{"openai":{"options":{"baseURL":"https://api.openai.com/v1","apiKey":"opencode-list-secret"},"models":{"gpt-5":{"reasoning":true}}}},}"#,
         )
         .unwrap();
         fs::write(
@@ -3959,6 +4883,269 @@ mod tests {
     }
 
     #[test]
+    fn compatibility_uses_selected_model_and_distinguishes_unknown_capabilities() {
+        let root = std::env::temp_dir().join(format!("vibehub-capability-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(&path, r#"{"model":"z/org/m","provider":{"a":{"npm":"@ai-sdk/openai-compatible","models":{"m":{}}},"z":{"npm":"@ai-sdk/anthropic","models":{"org/m":{"reasoning":false,"tool_call":true,"modalities":{"input":["text","audio","pdf"],"output":["video"]}}}}}}"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let view = v3::read_opencode_profile(&target, &path).unwrap();
+        let provider = view
+            .providers
+            .iter()
+            .find(|p| p.provider_id == "z")
+            .unwrap();
+        let model = selected_opencode_model(&view, provider).unwrap();
+        assert_eq!(model.model_id, "org/m");
+        let direct =
+            opencode_protocol_resolution(provider.protocol, provider.protocol, Some(model));
+        assert_eq!(direct.compatibility, v3::ProtocolCompatibility::Partial);
+        assert!(direct
+            .limitations
+            .iter()
+            .any(|v| v == "model declares reasoning unsupported"));
+        assert!(direct
+            .limitations
+            .iter()
+            .any(|v| v == "model declares image input unsupported"));
+        assert!(!direct
+            .limitations
+            .iter()
+            .any(|v| v.contains("tool calling")));
+        assert!(!direct.limitations.iter().any(|v| v.contains("convert")));
+        let adapted = opencode_protocol_resolution(
+            ProtocolKind::OpenaiResponses,
+            provider.protocol,
+            Some(model),
+        );
+        for modality in ["audio", "video", "pdf"] {
+            assert!(adapted
+                .limitations
+                .contains(&format!("adapter does not convert {modality} content")));
+        }
+        let unknown = protocol_resolution(provider.protocol, provider.protocol);
+        assert_eq!(unknown.compatibility, v3::ProtocolCompatibility::Unknown);
+        assert!(unknown.limitations.iter().all(|v| v.contains("unknown")));
+        let parts = opencode_document_parts(&target, &view).unwrap();
+        assert_eq!(parts.3["native_protocol"], "anthropic_messages");
+        assert_eq!(parts.3["compatibility"], "partial");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn token_limits_validate_and_round_trip_without_losing_other_model_fields() {
+        let root = std::env::temp_dir().join(format!("vibehub-limits-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(&path, r#"{"provider":{"p":{"models":{"m":{"limit":{"context":32000,"output":4096,"custom":"keep"},"modalities":{"input":["text","image"]}}}}}}"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let mut model = ModelProfileInput {
+            limits_changed: true,
+            ..Default::default()
+        };
+        for input in [Some(96000), None] {
+            model.limits = Some(ModelLimitsInput {
+                context: Some(128000),
+                input,
+                output: Some(8192),
+            });
+            let mut patch = OpenCodeConfigPatch::default();
+            patch.providers.insert(
+                "p".into(),
+                OpenCodeProviderPatch {
+                    models: BTreeMap::from([(
+                        "m".into(),
+                        OpenCodeModelPatch {
+                            field_patches: opencode_limit_patches(&model).unwrap(),
+                            ..Default::default()
+                        },
+                    )]),
+                    ..Default::default()
+                },
+            );
+            let before = v3::read_opencode_profile(&target, &path).unwrap();
+            v3::save_opencode_profile(&target, &path, Some(&before.revision), &patch).unwrap();
+            let after = v3::read_opencode_profile(&target, &path).unwrap();
+            let actual = &after.providers[0].models[0];
+            assert_eq!(actual.limit_context, Some(128000));
+            assert_eq!(actual.limit_input, input);
+            assert_eq!(actual.limit_output, Some(8192));
+            assert_eq!(
+                actual.input_modalities,
+                Some(vec!["text".into(), "image".into()])
+            );
+            assert!(fs::read_to_string(&path)
+                .unwrap()
+                .contains("\"custom\":\"keep\""));
+        }
+        for invalid in [None, Some(0), Some(9_007_199_254_740_992)] {
+            model.limits.as_mut().unwrap().context = invalid;
+            assert!(opencode_limit_patches(&model).is_err());
+        }
+        model.limits = None;
+        let before = v3::read_opencode_profile(&target, &path).unwrap();
+        let patch = OpenCodeConfigPatch {
+            providers: BTreeMap::from([(
+                "p".into(),
+                OpenCodeProviderPatch {
+                    models: BTreeMap::from([(
+                        "m".into(),
+                        OpenCodeModelPatch {
+                            field_patches: opencode_limit_patches(&model).unwrap(),
+                            ..Default::default()
+                        },
+                    )]),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        v3::save_opencode_profile(&target, &path, Some(&before.revision), &patch).unwrap();
+        let after = v3::read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(after.providers[0].models[0].limit_context, None);
+        assert_eq!(after.providers[0].models[0].limit_output, None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn modalities_round_trip_preserves_unknown_empty_and_declared_states() {
+        let root = std::env::temp_dir().join(format!("vibehub-modalities-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(&path, r#"{"provider":{"p":{"models":{"m":{"limit":{"context":32000,"output":4096},"custom":"keep"}}}}}"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let mut model = ModelProfileInput::default();
+        model.modalities_changed = true;
+        for input in [
+            Some(vec!["text", "image", "audio", "video", "pdf"]),
+            Some(vec![]),
+            None,
+        ] {
+            let input = input.map(|v| v.into_iter().map(str::to_owned).collect::<Vec<_>>());
+            model.modalities = Some(ModelModalitiesInput {
+                input: input.clone(),
+                output: Some(vec!["text".into()]),
+            });
+            let mut patch = OpenCodeConfigPatch::default();
+            patch.providers.insert(
+                "p".into(),
+                OpenCodeProviderPatch {
+                    models: BTreeMap::from([(
+                        "m".into(),
+                        OpenCodeModelPatch {
+                            field_patches: opencode_modality_patches(&model).unwrap(),
+                            ..Default::default()
+                        },
+                    )]),
+                    ..Default::default()
+                },
+            );
+            let before = v3::read_opencode_profile(&target, &path).unwrap();
+            v3::save_opencode_profile(&target, &path, Some(&before.revision), &patch).unwrap();
+            let after = v3::read_opencode_profile(&target, &path).unwrap();
+            assert_eq!(after.providers[0].models[0].input_modalities, input);
+            assert_eq!(
+                after.providers[0].models[0].output_modalities,
+                Some(vec!["text".into()])
+            );
+            let value: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(
+                value.pointer("/provider/p/models/m/limit/context"),
+                Some(&json!(32000))
+            );
+            assert_eq!(
+                value.pointer("/provider/p/models/m/custom"),
+                Some(&json!("keep"))
+            );
+        }
+        model.modalities.as_mut().unwrap().input = Some(vec!["invalid".into()]);
+        assert!(opencode_modality_patches(&model).is_err());
+        model.modalities_changed = false;
+        assert!(opencode_modality_patches(&model).unwrap().is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn thinking_parameters_round_trip_without_replacing_unmanaged_options() {
+        let root = std::env::temp_dir().join(format!("vibehub-thinking-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(&path, r#"{"provider":{"p":{"npm":"@ai-sdk/anthropic","models":{"m":{"options":{"temperature":0.3,"thinking":{"type":"enabled","budgetTokens":2048,"display":"keep"}}}}}}}"#).unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let mut thinking = ThinkingProfileInput {
+            reasoning_effort: Some("high".into()),
+            effort_changed: true,
+            thinking_changed: true,
+            thinking_mode: Some("enabled".into()),
+            thinking_budget: Some(4096),
+            ..Default::default()
+        };
+        for (mode, budget) in [
+            (Some("enabled"), Some(4096)),
+            (Some("adaptive"), None),
+            (None, None),
+        ] {
+            thinking.thinking_mode = mode.map(str::to_owned);
+            thinking.thinking_budget = budget;
+            let before = v3::read_opencode_profile(&target, &path).unwrap();
+            let mut patch = OpenCodeConfigPatch::default();
+            patch.providers.insert(
+                "p".into(),
+                OpenCodeProviderPatch {
+                    models: BTreeMap::from([(
+                        "m".into(),
+                        OpenCodeModelPatch {
+                            option_patches: opencode_thinking_patches(
+                                Some(ProtocolKind::AnthropicMessages),
+                                &thinking,
+                            )
+                            .unwrap(),
+                            ..Default::default()
+                        },
+                    )]),
+                    ..Default::default()
+                },
+            );
+            v3::save_opencode_profile(&target, &path, Some(&before.revision), &patch).unwrap();
+            let after = v3::read_opencode_profile(&target, &path).unwrap();
+            assert_eq!(after.providers[0].models[0].thinking_mode.as_deref(), mode);
+            assert_eq!(after.providers[0].models[0].thinking_budget, budget);
+            assert_eq!(
+                after.providers[0].models[0].reasoning_effort.as_deref(),
+                Some("high")
+            );
+            let value: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(
+                value.pointer("/provider/p/models/m/options/temperature"),
+                Some(&json!(0.3))
+            );
+            if mode.is_some() {
+                assert_eq!(
+                    value.pointer("/provider/p/models/m/options/thinking/display"),
+                    Some(&json!("keep"))
+                );
+            }
+        }
+        thinking.reasoning_effort = None;
+        assert_eq!(
+            opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).unwrap()[0]
+                .value,
+            None
+        );
+        thinking.thinking_mode = Some("enabled".into());
+        thinking.thinking_budget = Some(1023);
+        assert!(
+            opencode_thinking_patches(Some(ProtocolKind::AnthropicMessages), &thinking).is_err()
+        );
+        assert!(
+            opencode_thinking_patches(Some(ProtocolKind::OpenaiChatCompletions), &thinking)
+                .is_err()
+        );
+        assert!(opencode_thinking_patches(None, &thinking).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn opencode_patch_preserves_complex_variant_values_across_tauri_boundary() {
         let mut variant_values = BTreeMap::new();
         variant_values.insert(
@@ -3969,7 +5156,7 @@ mod tests {
             }),
         );
         variant_values.insert("low".to_owned(), json!({ "reasoningEffort": "low" }));
-        let managed = ManagedProfileInput {
+        let mut managed = ManagedProfileInput {
             providers: vec![ProviderProfileInput {
                 provider_id: "deepseek".to_owned(),
                 display_name: "DeepSeek".to_owned(),
@@ -3997,14 +5184,16 @@ mod tests {
                     display_name: "DeepSeek Chat".to_owned(),
                     enabled: true,
                     thinking: ThinkingProfileInput {
-                        supports_reasoning: true,
-                        supports_effort: true,
+                        supports_reasoning: Some(true),
+                        supports_effort: Some(true),
                         selected: Some("high".to_owned()),
                         options: vec!["high".to_owned(), "low".to_owned()],
                         custom_allowed: false,
                         variant_values: Some(variant_values),
                         variant_values_changed: true,
+                        ..Default::default()
                     },
+                    ..Default::default()
                 }],
             }],
             default_provider_id: Some("deepseek".to_owned()),
@@ -4026,6 +5215,55 @@ mod tests {
             })
         );
         assert_eq!(variants["low"], json!({ "reasoningEffort": "low" }));
+        managed.providers[0].models[0]
+            .thinking
+            .variant_values
+            .as_mut()
+            .unwrap()
+            .insert(
+                "high".into(),
+                json!({"reasoningEffort":"medium","extra":{"keep":true}}),
+            );
+        let edited = patch_for_opencode(&managed).unwrap();
+        assert_eq!(
+            edited.providers["deepseek"].models["deepseek-chat"]
+                .variants
+                .as_ref()
+                .unwrap()["high"]["reasoningEffort"],
+            "medium"
+        );
+        let root = std::env::temp_dir().join(format!("vibehub-variant-edit-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join(".config/opencode")).unwrap();
+        let path = root.join(".config/opencode/opencode.jsonc");
+        fs::write(
+            &path,
+            r#"{"provider":{"deepseek":{"models":{"deepseek-chat":{"custom":"keep"}}}}}"#,
+        )
+        .unwrap();
+        let target = RuntimeTarget::host(root.clone());
+        let before = v3::read_opencode_profile(&target, &path).unwrap();
+        v3::save_opencode_profile(&target, &path, Some(&before.revision), &edited).unwrap();
+        let after = v3::read_opencode_profile(&target, &path).unwrap();
+        assert_eq!(
+            after.providers[0].models[0]
+                .variant_values
+                .as_ref()
+                .unwrap()["high"],
+            json!({"reasoningEffort":"medium","extra":{"keep":true}})
+        );
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("\"custom\":\"keep\""));
+        fs::remove_dir_all(root).unwrap();
+        for invalid in [json!([]), json!(null), json!("high"), json!(3)] {
+            managed.providers[0].models[0]
+                .thinking
+                .variant_values
+                .as_mut()
+                .unwrap()
+                .insert("high".into(), invalid);
+            assert!(patch_for_opencode(&managed).is_err());
+        }
     }
 
     #[test]
@@ -4217,14 +5455,16 @@ mod tests {
                     display_name: "Water 18".to_owned(),
                     enabled: true,
                     thinking: ThinkingProfileInput {
-                        supports_reasoning: false,
-                        supports_effort: false,
+                        supports_reasoning: Some(false),
+                        supports_effort: Some(false),
                         selected: None,
                         options: Vec::new(),
                         custom_allowed: false,
                         variant_values: None,
                         variant_values_changed: false,
+                        ..Default::default()
                     },
+                    ..Default::default()
                 }],
             }],
             default_provider_id: Some("anthropic".to_owned()),
@@ -4272,14 +5512,16 @@ mod tests {
                     display_name: "Water 18".to_owned(),
                     enabled: true,
                     thinking: ThinkingProfileInput {
-                        supports_reasoning: false,
-                        supports_effort: false,
+                        supports_reasoning: Some(false),
+                        supports_effort: Some(false),
                         selected: None,
                         options: Vec::new(),
                         custom_allowed: false,
                         variant_values: None,
                         variant_values_changed: false,
+                        ..Default::default()
                     },
+                    ..Default::default()
                 }],
             }],
             default_provider_id: Some("anthropic".to_owned()),

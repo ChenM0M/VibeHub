@@ -1,7 +1,8 @@
 use super::agent_profile_storage::{
-    read_document, write_document, AgentKind, ConfigDocument, ConfigFormat, DocumentRevision,
-    ParsedConfig, RuntimePlatform, RuntimeTarget, StorageError, WriteReport,
+    read_document_with_format, write_document_with_format, AgentKind, ConfigDocument, ConfigFormat,
+    DocumentRevision, ParsedConfig, RuntimeTarget, StorageError, WriteReport,
 };
+use super::opencode_paths::opencode_config_paths;
 use super::protocol_runtime::ProtocolKind;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -28,10 +29,20 @@ pub struct OpenCodeCredentialReference {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenCodeModelView {
+    pub enabled: bool,
     pub model_id: String,
     pub display_name: String,
     pub declared_id: Option<String>,
     pub reasoning: Option<bool>,
+    pub tool_call: Option<bool>,
+    pub reasoning_effort: Option<String>,
+    pub thinking_mode: Option<String>,
+    pub thinking_budget: Option<u64>,
+    pub limit_context: Option<u64>,
+    pub limit_input: Option<u64>,
+    pub limit_output: Option<u64>,
+    pub input_modalities: Option<Vec<String>>,
+    pub output_modalities: Option<Vec<String>>,
     pub variants: Vec<String>,
     /// Full variant values retained for the Tauri/UI round-trip. The editor
     /// displays only the names, but saving an unrelated field must not rebuild
@@ -51,6 +62,8 @@ pub struct OpenCodeProviderView {
     /// unambiguous protocol.
     pub protocol: ProtocolKind,
     pub models: Vec<OpenCodeModelView>,
+    pub blacklist: Vec<String>,
+    pub whitelist: Option<Vec<String>>,
     pub unknown_fields: Vec<String>,
 }
 
@@ -86,6 +99,8 @@ pub struct OpenCodeProviderPatch {
     #[serde(default)]
     pub clear_api_key: bool,
     pub models: BTreeMap<String, OpenCodeModelPatch>,
+    pub blacklist: Option<Vec<String>>,
+    pub whitelist: Option<Vec<String>>,
 }
 
 impl std::fmt::Debug for OpenCodeProviderPatch {
@@ -103,19 +118,35 @@ impl std::fmt::Debug for OpenCodeProviderPatch {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenCodeOptionPatch {
+    pub path: Vec<String>,
+    pub value: Option<Value>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct OpenCodeModelPatch {
     pub display_name: Option<String>,
     pub declared_id: Option<String>,
     pub reasoning: Option<bool>,
+    #[serde(default)]
+    pub clear_reasoning: bool,
     pub variants: Option<BTreeMap<String, Value>>,
+    #[serde(default)]
+    pub option_patches: Vec<OpenCodeOptionPatch>,
+    #[serde(default)]
+    pub field_patches: Vec<OpenCodeOptionPatch>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct OpenCodeConfigPatch {
     pub default_model: Option<String>,
     pub small_model: Option<String>,
+    #[serde(default)]
+    pub clear_small_model: bool,
     pub default_variant: Option<String>,
+    #[serde(default)]
+    pub clear_default_variant: bool,
     pub deleted_providers: Vec<String>,
     pub deleted_models: BTreeMap<String, Vec<String>>,
     pub providers: BTreeMap<String, OpenCodeProviderPatch>,
@@ -143,26 +174,29 @@ pub struct OpenCodeDiscoveryOutcome {
     pub errors: Vec<OpenCodeDiscoveryError>,
 }
 
-pub fn opencode_config_paths(target: &RuntimeTarget) -> Vec<PathBuf> {
-    let home = target.home_path.as_path();
-    // opencode follows the XDG convention on every platform, including
-    // Windows, where it stores configuration under `~/.config/opencode`
-    // rather than `%APPDATA%\\opencode`. Prefer the XDG location first and
-    // keep the legacy Roaming path as a backward-compatible fallback for
-    // users whose config was written by an older VibeHub build.
-    let roots: Vec<PathBuf> = match target.platform {
-        RuntimePlatform::Windows => vec![
-            home.join(".config").join("opencode"),
-            home.join("AppData").join("Roaming").join("opencode"),
-        ],
-        RuntimePlatform::Macos | RuntimePlatform::Linux => {
-            vec![home.join(".config").join("opencode")]
-        }
-    };
-    roots
+pub fn initialize_opencode_profile(
+    target: &RuntimeTarget,
+) -> Result<(OpenCodeProfileView, WriteReport), StorageError> {
+    let discovery = discover_opencode_profiles_tolerant(target);
+    if let Some(error) = discovery.errors.first() {
+        return Err(StorageError::new("OPENCODE_INITIALIZE_DISCOVERY_INCOMPLETE", "an existing configuration could not be inspected; resolve its error before initializing").with_path(error.path.clone()));
+    }
+    if !discovery.profiles.is_empty() {
+        return Err(StorageError::new(
+            "OPENCODE_CONFIG_ALREADY_EXISTS",
+            "an OpenCode configuration already exists",
+        ));
+    }
+    let path = opencode_config_paths(target)?
         .into_iter()
-        .flat_map(|root| [root.join("opencode.jsonc"), root.join("opencode.json")])
-        .collect()
+        .next()
+        .ok_or_else(|| {
+            StorageError::new("OPENCODE_CONFIG_PATH_MISSING", "no configuration path")
+        })?;
+    let content =
+        b"{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"provider\": {}\n}\n";
+    let write = super::agent_profile_storage::create_config_document(target, &path, content)?;
+    Ok((read_opencode_profile(target, &path)?, write))
 }
 
 pub fn discover_opencode_profiles(
@@ -180,7 +214,14 @@ pub fn discover_opencode_profiles(
 /// failures are surfaced as candidate errors.
 pub fn discover_opencode_profiles_tolerant(target: &RuntimeTarget) -> OpenCodeDiscoveryOutcome {
     let mut outcome = OpenCodeDiscoveryOutcome::default();
-    for path in opencode_config_paths(target) {
+    let paths = match opencode_config_paths(target) {
+        Ok(paths) => paths,
+        Err(error) => {
+            outcome.errors.push(OpenCodeDiscoveryError { code: error.code.to_owned(), message: error.message, path: target.home_path.native.clone(), recovery_hint: "Check XDG_CONFIG_HOME, OPENCODE_CONFIG and OPENCODE_CONFIG_DIR in the selected runtime; custom paths must be absolute.".to_owned() });
+            return outcome;
+        }
+    };
+    for path in paths {
         match std::fs::symlink_metadata(&path) {
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
@@ -239,8 +280,25 @@ pub fn read_opencode_profile(
     target: &RuntimeTarget,
     path: impl AsRef<Path>,
 ) -> Result<OpenCodeProfileView, StorageError> {
-    let document = read_document(target, path)?;
+    let document = read_opencode_document(target, path)?;
     profile_from_document(&document)
+}
+
+pub fn read_opencode_document(
+    target: &RuntimeTarget,
+    path: impl AsRef<Path>,
+) -> Result<ConfigDocument, StorageError> {
+    if !matches!(
+        ConfigFormat::from_path(path.as_ref())?,
+        ConfigFormat::Json | ConfigFormat::Jsonc
+    ) {
+        return Err(StorageError::new(
+            "OPENCODE_CONFIG_FORMAT_UNSUPPORTED",
+            "OpenCode accepts JSON or JSONC configuration",
+        )
+        .with_path_context(path.as_ref()));
+    }
+    read_document_with_format(target, path, ConfigFormat::Jsonc)
 }
 
 pub fn save_opencode_profile(
@@ -249,7 +307,7 @@ pub fn save_opencode_profile(
     expected_revision: Option<&DocumentRevision>,
     patch: &OpenCodeConfigPatch,
 ) -> Result<WriteReport, StorageError> {
-    let document = read_document(target, path)?;
+    let document = read_opencode_document(target, path)?;
     if !matches!(document.format, ConfigFormat::Json | ConfigFormat::Jsonc) {
         return Err(StorageError::new(
             "OPENCODE_CONFIG_FORMAT_UNSUPPORTED",
@@ -257,7 +315,13 @@ pub fn save_opencode_profile(
         ));
     }
     let edited = JsoncEditor::new(&document.raw)?.apply_patch(patch)?;
-    write_document(target, document.path, expected_revision, &edited)
+    write_document_with_format(
+        target,
+        document.path,
+        expected_revision,
+        &edited,
+        ConfigFormat::Jsonc,
+    )
 }
 
 fn profile_from_document(document: &ConfigDocument) -> Result<OpenCodeProfileView, StorageError> {
@@ -343,18 +407,16 @@ fn profile_from_document(document: &ConfigDocument) -> Result<OpenCodeProfileVie
     })
 }
 
-/// The npm package that actually carries the upstream wire protocol inside
-/// `opencode.json`. `@ai-sdk/openai-compatible` speaks Chat Completions and
-/// `@ai-sdk/anthropic` speaks Anthropic Messages; the AI SDK packages exposed
-/// by OpenCode have no member that faithfully speaks the Responses API, so
-/// that protocol cannot be persisted.
+/// SDK package for the configured upstream protocol. OpenCode loads the
+/// OpenAI SDK, whose default language model uses the Responses API.
 fn protocol_npm_package(protocol: ProtocolKind) -> Result<&'static str, StorageError> {
     match protocol {
         ProtocolKind::OpenaiChatCompletions => Ok("@ai-sdk/openai-compatible"),
         ProtocolKind::AnthropicMessages => Ok("@ai-sdk/anthropic"),
-        ProtocolKind::OpenaiResponses | ProtocolKind::Unknown => Err(StorageError::new(
+        ProtocolKind::OpenaiResponses => Ok("@ai-sdk/openai"),
+        ProtocolKind::Unknown => Err(StorageError::new(
             "OPENCODE_PROTOCOL_UNSUPPORTED",
-            "OpenCode provider protocol must be Chat Completions or Anthropic Messages to persist",
+            "Unknown OpenCode provider protocols cannot be persisted",
         )),
     }
 }
@@ -366,6 +428,7 @@ fn protocol_from_npm(npm: Option<&str>) -> ProtocolKind {
     match npm {
         Some("@ai-sdk/openai-compatible") => ProtocolKind::OpenaiChatCompletions,
         Some("@ai-sdk/anthropic") => ProtocolKind::AnthropicMessages,
+        Some("@ai-sdk/openai") => ProtocolKind::OpenaiResponses,
         _ => ProtocolKind::Unknown,
     }
 }
@@ -388,7 +451,9 @@ fn provider_view(
         .or_else(|| object.get("baseURL").and_then(Value::as_str))
         .map(str::to_owned);
     let credential = credential_reference(object, options, warnings);
-    let models = object
+    let blacklist = model_filter(object, "blacklist")?.unwrap_or_default();
+    let whitelist = model_filter(object, "whitelist")?;
+    let mut models = object
         .get("models")
         .and_then(Value::as_object)
         .map(|models| {
@@ -399,6 +464,12 @@ fn provider_view(
         })
         .transpose()?
         .unwrap_or_default();
+    for model in &mut models {
+        model.enabled = !blacklist.contains(&model.model_id)
+            && whitelist
+                .as_ref()
+                .is_none_or(|items| items.contains(&model.model_id));
+    }
     let known = [
         "api",
         "env",
@@ -426,8 +497,35 @@ fn provider_view(
         credential,
         protocol: protocol_from_npm(object.get("npm").and_then(Value::as_str)),
         models,
+        blacklist,
+        whitelist,
         unknown_fields,
     })
+}
+
+fn model_filter(
+    object: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<Vec<String>>, StorageError> {
+    object
+        .get(key)
+        .map(|value| {
+            value
+                .as_array()
+                .and_then(|items| {
+                    items
+                        .iter()
+                        .map(|item| item.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .ok_or_else(|| {
+                    StorageError::new(
+                        "OPENCODE_MODEL_FILTER_INVALID",
+                        format!("{key} must be an array of model IDs"),
+                    )
+                })
+        })
+        .transpose()
 }
 
 fn credential_reference(
@@ -510,6 +608,7 @@ fn model_view(model_id: &str, value: &Value) -> Result<OpenCodeModelView, Storag
         "variants",
     ];
     Ok(OpenCodeModelView {
+        enabled: true,
         model_id: model_id.to_owned(),
         display_name: object
             .get("name")
@@ -522,6 +621,53 @@ fn model_view(model_id: &str, value: &Value) -> Result<OpenCodeModelView, Storag
             .and_then(Value::as_str)
             .map(str::to_owned),
         reasoning: object.get("reasoning").and_then(Value::as_bool),
+        tool_call: object.get("tool_call").and_then(Value::as_bool),
+        reasoning_effort: object
+            .get("options")
+            .and_then(|v| v.get("reasoningEffort").or_else(|| v.get("effort")))
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        thinking_mode: object
+            .get("options")
+            .and_then(|v| v.pointer("/thinking/type"))
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        thinking_budget: object
+            .get("options")
+            .and_then(|v| v.pointer("/thinking/budgetTokens"))
+            .and_then(Value::as_u64),
+        limit_context: object
+            .get("limit")
+            .and_then(|v| v.get("context"))
+            .and_then(Value::as_u64),
+        limit_input: object
+            .get("limit")
+            .and_then(|v| v.get("input"))
+            .and_then(Value::as_u64),
+        limit_output: object
+            .get("limit")
+            .and_then(|v| v.get("output"))
+            .and_then(Value::as_u64),
+        input_modalities: object
+            .get("modalities")
+            .and_then(|v| v.get("input"))
+            .and_then(Value::as_array)
+            .map(|v| {
+                v.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            }),
+        output_modalities: object
+            .get("modalities")
+            .and_then(|v| v.get("output"))
+            .and_then(Value::as_array)
+            .map(|v| {
+                v.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            }),
         variants,
         variant_values,
         unknown_fields: object
@@ -634,6 +780,12 @@ impl JsoncEditor {
         if let Some(model) = &patch.small_model {
             self.set_path(&["small_model"], model.clone().into(), &mut replacements)?;
         }
+        if patch.small_model.is_none() && patch.clear_small_model {
+            self.remove_member(&[], "small_model", &mut replacements)?;
+        }
+        if patch.default_variant.is_none() && patch.clear_default_variant {
+            self.remove_member(&["agent", "build"], "variant", &mut replacements)?;
+        }
         if let Some(variant) = &patch.default_variant {
             self.set_path(
                 &["agent", "build", "variant"],
@@ -691,6 +843,18 @@ impl JsoncEditor {
                     self.set_path(&[provider_key, provider_id, "env"], env, &mut replacements)?;
                 }
             }
+            for (key, values) in [
+                ("blacklist", &provider_patch.blacklist),
+                ("whitelist", &provider_patch.whitelist),
+            ] {
+                if let Some(values) = values {
+                    self.set_path(
+                        &[provider_key, provider_id, key],
+                        Value::Array(values.iter().cloned().map(Value::String).collect()),
+                        &mut replacements,
+                    )?;
+                }
+            }
             for (model_id, model_patch) in &provider_patch.models {
                 self.ensure_object_path(
                     &[provider_key, provider_id, "models", model_id],
@@ -716,6 +880,56 @@ impl JsoncEditor {
                         reasoning.into(),
                         &mut replacements,
                     )?;
+                }
+                if model_patch.reasoning.is_none() && model_patch.clear_reasoning {
+                    self.remove_member(
+                        &[provider_key, provider_id, "models", model_id],
+                        "reasoning",
+                        &mut replacements,
+                    )?;
+                }
+                for field in &model_patch.field_patches {
+                    if field.path.is_empty() {
+                        continue;
+                    }
+                    let mut path = vec![
+                        provider_key,
+                        provider_id.as_str(),
+                        "models",
+                        model_id.as_str(),
+                    ];
+                    path.extend(field.path.iter().map(String::as_str));
+                    if let Some(value) = &field.value {
+                        self.set_path(&path, value.clone(), &mut replacements)?;
+                    } else {
+                        self.remove_member(
+                            &path[..path.len() - 1],
+                            path[path.len() - 1],
+                            &mut replacements,
+                        )?;
+                    }
+                }
+                for option in &model_patch.option_patches {
+                    if option.path.is_empty() {
+                        continue;
+                    }
+                    let mut path = vec![
+                        provider_key,
+                        provider_id.as_str(),
+                        "models",
+                        model_id.as_str(),
+                        "options",
+                    ];
+                    path.extend(option.path.iter().map(String::as_str));
+                    if let Some(value) = &option.value {
+                        self.set_path(&path, value.clone(), &mut replacements)?;
+                    } else {
+                        self.remove_member(
+                            &path[..path.len() - 1],
+                            path[path.len() - 1],
+                            &mut replacements,
+                        )?;
+                    }
                 }
                 if let Some(variants) = &model_patch.variants {
                     // None means variants were not edited. Some(empty) is an
@@ -1224,7 +1438,8 @@ impl<'a> JsoncSpanParser<'a> {
 mod tests {
     use super::*;
     use crate::v3::agent_profile_storage::{
-        NativeConfigPath, RuntimePlatform, RuntimeTarget, RuntimeTargetKind, RuntimeTargetSource,
+        read_document, restore_document_with_format, NativeConfigPath, RuntimePlatform,
+        RuntimeTarget, RuntimeTargetKind, RuntimeTargetSource,
     };
     use std::env;
     use std::fs;
@@ -1341,6 +1556,52 @@ mod tests {
     }
 
     #[test]
+    fn json_extension_accepts_jsonc_and_preserves_comments_on_save() {
+        let (target, root) = temp_target();
+        let path = root.join("opencode.json");
+        let original = "{\r\n  // user configuration\r\n  \"model\": \"local/old\",\r\n}\r\n";
+        fs::write(&path, original).unwrap();
+        let profile = read_opencode_profile(&target, &path).unwrap();
+        let report = save_opencode_profile(
+            &target,
+            &path,
+            Some(&profile.revision),
+            &OpenCodeConfigPatch {
+                default_model: Some("local/new".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            read_opencode_profile(&target, &path)
+                .unwrap()
+                .default_model
+                .as_deref(),
+            Some("local/new")
+        );
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("// user configuration\r\n"));
+        let backup = report.backup_path.unwrap().as_path();
+        assert_eq!(fs::read(&backup).unwrap(), original.as_bytes());
+        // Generic JSON consumers must keep strict JSON validation.
+        assert_eq!(
+            read_document(&target, &path).unwrap_err().code,
+            "CONFIG_JSON_INVALID"
+        );
+        restore_document_with_format(
+            &target,
+            &path,
+            backup,
+            &report.after_revision,
+            ConfigFormat::Jsonc,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), original.as_bytes());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn legacy_providers_key_is_patched_in_place() {
         let (target, root) = temp_target();
         let path = root.join("opencode.json");
@@ -1396,7 +1657,9 @@ mod tests {
                 display_name: Some("DeepSeek Chat".to_owned()),
                 declared_id: Some("deepseek-chat".to_owned()),
                 reasoning: Some(true),
+                clear_reasoning: false,
                 variants: Some(variants),
+                ..Default::default()
             },
         );
         let mut providers = BTreeMap::new();
@@ -1629,7 +1892,7 @@ mod tests {
         let path = root.join("opencode.json");
         fs::write(
             &path,
-            br#"{"provider":{"openai":{"npm":"@ai-sdk/openai","models":{"gpt-5":{}}},"custom":{"models":{"m":{}}}}}"#,
+            br#"{"provider":{"openai":{"npm":"@example/custom-sdk","models":{"gpt-5":{}}},"custom":{"models":{"m":{}}}}}"#,
         )
         .unwrap();
         let view = read_opencode_profile(&target, &path).unwrap();
@@ -1655,7 +1918,7 @@ mod tests {
         )
         .unwrap();
         let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
-        assert!(raw.contains("\"npm\":\"@ai-sdk/openai\""));
+        assert!(raw.contains("\"npm\":\"@example/custom-sdk\""));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1680,7 +1943,11 @@ mod tests {
         fs::create_dir_all(&home).unwrap();
         let target = windows_target(home.clone());
 
-        let paths = opencode_config_paths(&target);
+        let paths = super::super::opencode_paths::opencode_config_paths_with_environment(
+            &target,
+            &Default::default(),
+        )
+        .unwrap();
 
         let xdg_jsonc = home.join(".config").join("opencode").join("opencode.jsonc");
         let xdg_json = home.join(".config").join("opencode").join("opencode.json");
@@ -1697,7 +1964,13 @@ mod tests {
 
         assert_eq!(
             paths,
-            vec![xdg_jsonc.clone(), xdg_json, roaming_jsonc, roaming_json]
+            vec![
+                xdg_jsonc.clone(),
+                xdg_json,
+                home.join(".config/opencode/config.json"),
+                roaming_jsonc,
+                roaming_json
+            ]
         );
         // XDG location must win over the legacy Roaming location so detection
         // no longer reports an empty environment for real Windows installs.

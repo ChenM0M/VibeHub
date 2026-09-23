@@ -99,12 +99,18 @@ export interface V3AgentProfileListModelsRequest extends V3AgentProfileReadReque
     api_key?: string;
 }
 
+export interface UpstreamModelMetadata {
+    model_id: string;
+    display_name: string;
+    supports_reasoning?: boolean | null;
+    supports_effort?: boolean | null;
+    effort_options?: string[];
+    thinking_types?: string[];
+}
+
 export interface V3AgentProfileListModelsResult {
     endpoint: string;
-    models: Array<{
-        model_id: string;
-        display_name: string;
-    }>;
+    models: UpstreamModelMetadata[];
 }
 
 export interface V3SessionTaskBindRequest {

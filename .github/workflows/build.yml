@@ -3,8 +3,8 @@ name: Build and Test
 on:
   push:
     branches: [ main, dev, 'feature/**', 'release/**' ]
+  # Stacked PRs target feature branches and need the same gates as main/dev.
   pull_request:
-    branches: [ main, dev ]
 
 concurrency:
   group: build-${{ github.ref }}
@@ -57,6 +57,11 @@ jobs:
       - name: Validate V3 contracts
         run: npm run v3:contracts:check
 
+      - name: Validate Agent profile behavior and locale parity
+        run: |
+          npm run v3:agent-profiles:check
+          npm run v3:i18n:check
+
       - name: Format Rust code
         run: cargo fmt --all -- --check
 
@@ -78,7 +83,9 @@ jobs:
         run: |
           set -o pipefail
           log="$RUNNER_TEMP/cargo-test.log"
-          if cargo test --locked --workspace 2>&1 | tee "$log"; then
+          # Synthetic homes must not inherit the runner's OpenCode paths.
+          # Discovery regressions set explicit values in isolated child processes.
+          if env -u XDG_CONFIG_HOME -u OPENCODE_CONFIG -u OPENCODE_CONFIG_DIR cargo test --locked --workspace 2>&1 | tee "$log"; then
             exit 0
           fi
 

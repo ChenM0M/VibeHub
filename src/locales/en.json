@@ -1639,12 +1639,16 @@
       "count": "{{count}} Profiles",
       "create": "Create Profile",
       "cloneCurrent": "Clone current Profile",
-      "openCodeSingle": "OpenCode uses one configuration"
+      "openCodeSingle": "OpenCode uses one configuration",
+      "readError": "Configuration could not be read"
     },
     "actions": {
       "setDefault": "Set as default",
       "launchOnce": "Launch once",
-      "copyLaunchCommand": "Copy launch command"
+      "copyLaunchCommand": "Copy launch command",
+      "initializeOpenCode": "Initialize OpenCode configuration",
+      "saveAndLaunch": "Save and launch",
+      "saveAndSetDefault": "Save and set as default"
     },
     "route": {
       "adapter": "Automatic adaptation",
@@ -1720,7 +1724,10 @@
       "defaultThinking": "Default reasoning level",
       "deleteVariant": "Delete variant {{option}}",
       "addVariant": "Add variant",
-      "allowCustomEffort": "Allow custom reasoning levels"
+      "allowCustomEffort": "Allow custom reasoning levels",
+      "reasoningUnspecified": "Unspecified (use native defaults)",
+      "reasoningSupported": "Supported",
+      "reasoningUnsupported": "Not supported"
     },
     "dialogs": {
       "profile": {
@@ -1795,7 +1802,8 @@
       "detectUnavailable": "Could not list models from the upstream.",
       "detectInvalidResponse": "The upstream did not return a parseable model list.",
       "advancedIdentityImmutable": "Profile ID and runtime target cannot be changed in the advanced editor.",
-      "advancedProvidersMissing": "The advanced configuration is missing managed.providers."
+      "advancedProvidersMissing": "The advanced configuration is missing managed.providers.",
+      "commandCopyFailed": "Could not copy to the clipboard. Select and copy the command manually:\n{{command}}"
     },
     "claudeCompatibility": {
       "sectionLabel": "Claude Code compatibility",
@@ -1825,6 +1833,107 @@
       "customOptionsUnavailable": "Unavailable; automatic fallback remains available.",
       "fallbackPriority": "Fallback priority",
       "unknownOption": "unknown configured value"
+    },
+    "capabilities": {
+      "unknownHint": "Missing capability metadata stays unknown. Available effort levels are only imported when explicitly advertised; no level is selected automatically."
+    },
+    "thinkingParameters": {
+      "title": "Thinking parameters",
+      "hint": "Empty values inherit OpenCode/provider defaults. Suggestions use advertised capabilities when available; verify custom values with your model provider.",
+      "protocolRequired": "Select a supported provider protocol to edit these parameters.",
+      "effort": "Reasoning effort",
+      "mode": "Thinking mode",
+      "budget": "Thinking budget (tokens, at least 1024)",
+      "inherit": "Inherit default",
+      "enabled": "Manual budget",
+      "adaptive": "Adaptive",
+      "disabled": "Disabled",
+      "invalidBudget": "Enter a whole-number thinking budget of at least 1024 tokens.",
+      "unsupportedEffort": "This model declares effort unsupported. Clear the value to inherit the default."
+    },
+    "variants": {
+      "disabled": "Disable this variant",
+      "temperature": "Temperature (empty inherits)",
+      "allParameters": "All parameters (JSON object)",
+      "jsonLabel": "Parameters for {{name}}",
+      "invalid": "Each variant must be a valid JSON object. Any thinking budget must be an integer of at least 1024."
+    },
+    "modalities": {
+      "title": "Model modalities",
+      "hint": "Declarations saved to OpenCode. Actual support depends on the model and provider. VibeHub does not convert audio, video or PDF requests between protocols.",
+      "input": "Inputs",
+      "output": "Outputs",
+      "inherit": "Unspecified / inherit",
+      "declare": "Declare supported types",
+      "empty": "No supported types declared",
+      "text": "Text",
+      "image": "Image",
+      "audio": "Audio",
+      "video": "Video",
+      "pdf": "PDF"
+    },
+    "limits": {
+      "title": "Token limits",
+      "hint": "Leave all fields empty to inherit defaults. An explicit override requires context and output limits; the input limit is optional. Verify limits with the provider.",
+      "context": "Context window",
+      "input": "Maximum input",
+      "output": "Maximum output",
+      "inherit": "Inherit",
+      "invalid": "Enter positive whole numbers for context and output, or clear all limits to inherit defaults.",
+      "reset": "Inherit all limits"
+    },
+    "capabilityAssessment": {
+      "title": "Declared capabilities",
+      "tools": "Tools",
+      "images": "Image input",
+      "reasoning": "Reasoning",
+      "unknown": "Unknown",
+      "yes": "Supported",
+      "no": "Unsupported",
+      "hint": "Declarations are not an API test. Missing streaming/usage metadata prevents a complete compatibility claim."
+    },
+    "preview": {
+      "title": "Configuration values and sources",
+      "draft": "Unsaved",
+      "scope": "Known managed values in the selected file, with selected variant overrides. This is a partial preview, not the complete merged runtime configuration. Credentials are excluded.",
+      "inherited": "Inherited / source not read",
+      "field": "Setting",
+      "value": "Value",
+      "source": "Source",
+      "overrides": "Overrides: {{value}}",
+      "layers": "Other layers not evaluated: remote defaults → global configuration → selected OPENCODE_CONFIG → project configuration → configuration directories → OPENCODE_CONFIG_CONTENT → managed policy. Later layers may override these values.",
+      "launch": "Launch command ({{shell}})",
+      "saveFirst": "Save before running this command; terminal commands read the saved file.",
+      "runtimePathMismatch": "The configuration path cannot be mapped to the selected runtime.",
+      "origins": {
+        "file": "Selected file",
+        "model": "Model configuration",
+        "variant": "Selected variant",
+        "inherited": "External defaults (unknown)"
+      },
+      "fields": {
+        "provider": "Provider",
+        "model": "Default model",
+        "protocol": "Protocol",
+        "smallModel": "Small model",
+        "variant": "Default variant",
+        "reasoningEffort": "Reasoning effort",
+        "thinkingMode": "Thinking mode",
+        "thinkingBudget": "Thinking budget",
+        "inputModalities": "Input types",
+        "outputModalities": "Output types",
+        "context": "Context window",
+        "inputLimit": "Maximum input",
+        "outputLimit": "Maximum output"
+      }
+    },
+    "configPathsHint": "Detects XDG_CONFIG_HOME, OPENCODE_CONFIG and OPENCODE_CONFIG_DIR. Use absolute custom paths. Restart VibeHub after changing host environment variables; WSL uses the selected distribution.",
+    "navigation": {
+      "title": "Unsaved changes",
+      "description": "Save your changes before continuing, or discard them.",
+      "applyAdvancedFirst": "Cancel and apply your advanced JSON changes to the draft before saving.",
+      "discard": "Discard and continue",
+      "save": "Save and continue"
     }
   },
   "update": {

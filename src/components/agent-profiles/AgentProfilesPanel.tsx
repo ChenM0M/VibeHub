@@ -1,3 +1,16 @@
+import { EffectiveConfigPreview } from './EffectiveConfigPreview';
+import { launchCommand } from './effectiveConfig';
+import { ModelCapabilitySummary } from './ModelCapabilitySummary';
+import { ModelLimitsEditor } from './ModelLimitsEditor';
+import { parseModelLimits, type ModelLimitDraft } from './modelLimits';
+import { ModelModalitiesEditor } from './ModelModalitiesEditor';
+import { VariantParametersEditor } from './VariantParametersEditor';
+import { parseVariantDrafts } from './variantValues';
+import { ThinkingParametersEditor, type ThinkingParameters } from './ThinkingParametersEditor';
+import { modelFromUpstream } from './upstreamModels';
+import type { UpstreamModelMetadata } from '@/services/tauri';
+import { profileForAction } from './profileActions';
+import { modelIsDefault, updateDefaultAfterModelEdit } from './modelDefaults';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -78,7 +91,7 @@ type ProfileDialogKind = 'create' | 'clone' | 'rename' | 'delete';
 type EntityDelete = { kind: 'provider' | 'model'; providerId: string; modelId?: string; label: string };
 type ProviderEditor = { mode: 'create' | 'edit'; providerId?: string };
 type ModelEditor = { mode: 'create' | 'edit'; providerId: string; modelId?: string };
-type ModelImportItem = { model_id: string; display_name: string; imported: boolean };
+type ModelImportItem = UpstreamModelMetadata & { imported: boolean };
 type ModelImportState = {
     providerId: string;
     loading: boolean;
@@ -101,16 +114,22 @@ type ProviderForm = {
     protocol: ProtocolCapability;
 };
 
-type ModelForm = {
+type ModelForm = ThinkingParameters & {
+    limit_draft: ModelLimitDraft;
+    limits_changed: boolean;
+    input_modalities: string[] | null;
+    output_modalities: string[] | null;
+    modalities_changed: boolean;
     model_id: string;
     display_name: string;
     enabled: boolean;
-    supports_reasoning: boolean;
-    supports_effort: boolean;
+    supports_reasoning: boolean | null;
+    supports_effort: boolean | null;
     selected: string;
     options: string[];
     custom_allowed: boolean;
     variant_values: Record<string, unknown> | null;
+    variant_drafts: Record<string, string>;
 };
 
 function cloneProfile(profile: AgentProfileDocument): AgentProfileDocument {
@@ -211,28 +230,10 @@ function listModelsProtocol(agent: AgentKind, provider: ProviderProfile): string
     return agent === 'claude_code' ? 'anthropic_messages' : 'openai_responses';
 }
 
-function modelFromUpstream(agent: AgentKind, modelId: string, displayName: string): ModelProfile {
-    const defaults = emptyModelForm(agent);
-    return {
-        model_id: modelId,
-        display_name: displayName || modelId,
-        enabled: true,
-        thinking: {
-            supports_reasoning: defaults.supports_reasoning,
-            supports_effort: defaults.supports_effort,
-            selected: defaults.options[0] || null,
-            options: [...defaults.options],
-            custom_allowed: defaults.custom_allowed,
-            variant_values: null,
-            variant_values_changed: agent === 'opencode' && defaults.options.length > 0,
-        },
-    };
-}
-
 function importUpstreamModelsIntoDraft(
     profile: AgentProfileDocument,
     providerId: string,
-    models: Array<{ model_id: string; display_name: string }>,
+    models: UpstreamModelMetadata[],
 ): AgentProfileDocument {
     const next = cloneProfile(profile);
     const provider = next.managed.providers.find((item) => item.provider_id === providerId);
@@ -243,7 +244,7 @@ function importUpstreamModelsIntoDraft(
         const modelId = model.model_id.trim();
         if (!modelId || existing.has(modelId)) continue;
         existing.add(modelId);
-        added.push(modelFromUpstream(next.agent, modelId, model.display_name.trim() || modelId));
+        added.push(modelFromUpstream(next.agent, { ...model, model_id: modelId, display_name: model.display_name.trim() || modelId }));
     }
     if (added.length === 0) return profile;
     provider.models.push(...added);
@@ -260,11 +261,6 @@ function agentLabel(agent: AgentKind): string {
 
 function profileModelKey(providerId: string, modelId: string): string {
     return `${providerId}/${modelId}`;
-}
-
-function modelIsDefault(profile: AgentProfileDocument, providerId: string, modelId: string): boolean {
-    const current = profile.managed.default_model_id;
-    return current === modelId || current === profileModelKey(providerId, modelId);
 }
 
 function updateManagedModel(profile: AgentProfileDocument, providerId: string, modelId: string): AgentProfileDocument {
@@ -288,36 +284,16 @@ function statusTone(compatibility: string): string {
     return 'border-destructive/30 bg-destructive/10 text-destructive';
 }
 
-function computeLaunchCommand(profile: AgentProfileDocument): string {
-    if (profile.agent === 'opencode') {
-        return 'opencode';
-    }
-    if (profile.agent === 'claude_code') {
-        if (profile.source.scope === 'user') {
-            return 'claude';
-        }
-        return `claude --setting-sources "" --settings "${profile.source.path.native}"`;
-    }
-    if (profile.agent === 'codex') {
-        if (profile.default_state.is_default || profile.source.scope === 'user') {
-            return 'codex';
-        }
-        const profileName = profile.source.profile_name || profile.display_name;
-        return `codex --profile-v2 "${profileName}"`;
-    }
-    return profile.launch.executable || 'agent';
-}
-
 function defaultProtocol(agent: AgentKind): ProtocolCapability {
     const protocol = agent === 'claude_code' ? 'anthropic_messages' : 'openai_responses';
     return {
         native_protocol: protocol,
         upstream_protocol: protocol,
         route: agent === 'claude_code' ? 'direct' : 'adapter',
-        compatibility: 'supported',
+        compatibility: 'unknown',
         adapter_id: null,
         adapter_version: null,
-        limitations: [],
+        limitations: ['Model capability metadata has not been supplied'],
     };
 }
 
@@ -352,6 +328,16 @@ function emptyProviderForm(agent: AgentKind, profile: AgentProfileDocument, notC
 
 function modelFormFrom(model: ModelProfile): ModelForm {
     return {
+        limit_draft: { context: model.limits?.context?.toString() || '', input: model.limits?.input?.toString() || '', output: model.limits?.output?.toString() || '' },
+        limits_changed: model.limits_changed || false,
+        input_modalities: model.modalities?.input ?? null,
+        output_modalities: model.modalities?.output ?? null,
+        modalities_changed: model.modalities_changed || false,
+        reasoning_effort: model.thinking.reasoning_effort || '',
+        thinking_mode: model.thinking.thinking_mode || '',
+        thinking_budget: model.thinking.thinking_budget?.toString() || '',
+        effort_changed: model.thinking.effort_changed || false,
+        thinking_changed: model.thinking.thinking_changed || false,
         model_id: model.model_id,
         display_name: model.display_name,
         enabled: model.enabled,
@@ -360,27 +346,32 @@ function modelFormFrom(model: ModelProfile): ModelForm {
         selected: model.thinking.selected || '',
         options: [...model.thinking.options],
         custom_allowed: model.thinking.custom_allowed,
+        variant_drafts: {},
         variant_values: model.thinking.variant_values ? { ...model.thinking.variant_values } : null,
     };
 }
 
-function emptyModelForm(agent: AgentKind): ModelForm {
+function emptyModelForm(_agent: AgentKind): ModelForm {
     return {
+        limit_draft: { context: '', input: '', output: '' }, limits_changed: false,
+        input_modalities: null, output_modalities: null, modalities_changed: false,
+        reasoning_effort: '', thinking_mode: '', thinking_budget: '', effort_changed: false, thinking_changed: false,
         model_id: '',
         display_name: '',
         enabled: true,
-        supports_reasoning: agent !== 'claude_code',
-        supports_effort: agent !== 'claude_code',
+        supports_reasoning: null,
+        supports_effort: null,
         selected: '',
-        options: agent === 'codex' ? ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] : [],
+        options: [],
         custom_allowed: false,
         variant_values: null,
+        variant_drafts: {},
     };
 }
 
 function ProfileSummaryRow({ summary, selected, onClick }: { summary: AgentProfileSummary; selected: boolean; onClick: () => void }) {
     const { t } = useTranslation();
-    const compatibility = summary.compatibility === 'supported'
+    const compatibility = summary.read_error ? t('agentProfiles.profiles.readError') : summary.compatibility === 'supported'
         ? t('agentProfiles.compatibility.editable')
         : summary.compatibility === 'partial'
             ? t('agentProfiles.compatibility.partialShort')
@@ -439,6 +430,8 @@ export function AgentProfilesPanel() {
     const [lastSave, setLastSave] = useState<AgentProfileSaveResult | null>(null);
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [advancedText, setAdvancedText] = useState('');
+    const [advancedEdited, setAdvancedEdited] = useState(false);
+    const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
     const [advancedError, setAdvancedError] = useState<string | null>(null);
     const [compatOpen, setCompatOpen] = useState(false);
     const [profileDialog, setProfileDialog] = useState<ProfileDialogKind | null>(null);
@@ -481,6 +474,8 @@ export function AgentProfilesPanel() {
         pendingSecrets.current = {};
         pendingClears.current = {};
         setHasPendingCredentialWrite(false);
+        setAdvancedEdited(false);
+        setAdvancedOpen(false);
     }, [agent, targetId, selectedProfileId]);
 
     useEffect(() => {
@@ -562,6 +557,8 @@ export function AgentProfilesPanel() {
         const requestId = ++profileRequest.current;
         const requestContextSnapshot = requestContextRef.current;
         setLoadingProfile(true);
+        setProfile(null);
+        setDraft(null);
         tauriApi.v3AgentProfileRead({ agent, runtime_target_id: targetId, profile_id: selectedProfileId })
             .then((result) => {
                 if (requestId !== profileRequest.current || requestContextRef.current !== requestContextSnapshot) return;
@@ -601,8 +598,8 @@ export function AgentProfilesPanel() {
             .finally(() => requestId === discoveryRequest.current && requestContextRef.current === requestContextSnapshot && setLoadingProfiles(false));
     };
 
-    const saveDraft = async () => {
-        if (!draft || !profile || !targetId) return;
+    const saveDraft = async (): Promise<AgentProfileDocument | null> => {
+        if (!draft || !profile || !targetId) return null;
         setBusyAction('save');
         setNotice(null);
         try {
@@ -621,23 +618,49 @@ export function AgentProfilesPanel() {
             setDraft(cloneProfile(result.profile));
             setLastSave(result);
             setNotice({ kind: 'success', text: t('agentProfiles.notices.saved') });
+            return result.profile;
         } catch (error) {
             setNotice({ kind: 'error', text: t('agentProfiles.errors.saveFailed', { message: formatError(error) }) });
+            return null;
         } finally {
             setBusyAction(null);
         }
     };
 
+    const requestNavigation = (action: () => void) => {
+        if (busyAction !== null) return;
+        if (dirty || advancedEdited) setPendingNavigation(() => action);
+        else action();
+    };
+
+    const continueNavigation = async (save: boolean) => {
+        if (!pendingNavigation || busyAction !== null) return;
+        if (save && (advancedEdited || !await profileForAction(profile, dirty, saveDraft))) return;
+        const action = pendingNavigation;
+        pendingSecrets.current = {};
+        pendingClears.current = {};
+        setHasPendingCredentialWrite(false);
+        if (!save) setDraft(profile ? cloneProfile(profile) : null);
+        setAdvancedEdited(false);
+        setAdvancedOpen(false);
+        setAdvancedText('');
+        setAdvancedError(null);
+        setPendingNavigation(null);
+        action();
+    };
+
     const activateDraft = async () => {
         if (!profile || !targetId) return;
+        const saved = await profileForAction(profile, dirty, saveDraft);
+        if (!saved) return;
         setBusyAction('activate');
         setNotice(null);
         try {
             const result = await tauriApi.v3AgentProfileActivate({
                 agent,
                 runtime_target_id: targetId,
-                profile_id: profile.profile_id,
-                expected_revision: profile.revision.revision,
+                profile_id: saved.profile_id,
+                expected_revision: saved.revision.revision,
             });
             setProfile(result.profile);
             setDraft(cloneProfile(result.profile));
@@ -653,13 +676,15 @@ export function AgentProfilesPanel() {
 
     const prepareLaunch = async () => {
         if (!profile || !targetId) return;
+        const saved = await profileForAction(profile, dirty, saveDraft);
+        if (!saved) return;
         setBusyAction('launch');
         setNotice(null);
         try {
             const result = await tauriApi.v3AgentProfileLaunch({
                 agent,
                 runtime_target_id: targetId,
-                profile_id: profile.profile_id,
+                profile_id: saved.profile_id,
                 launch_mode: 'temporary',
             });
             setLastSave(result);
@@ -673,12 +698,13 @@ export function AgentProfilesPanel() {
 
     const copyLaunchCommand = async () => {
         if (!profileForEdit) return;
-        const command = computeLaunchCommand(profileForEdit);
+        const command = launchCommand(profileForEdit, selectedTarget).command;
+        if (!command) { setNotice({ kind: 'error', text: t('agentProfiles.preview.runtimePathMismatch') }); return; }
         try {
             await navigator.clipboard.writeText(command);
             setNotice({ kind: 'info', text: t('agentProfiles.notices.commandCopied', { command }) });
         } catch {
-            setNotice({ kind: 'info', text: t('agentProfiles.notices.commandCopied', { command }) });
+            setNotice({ kind: 'error', text: t('agentProfiles.errors.commandCopyFailed', { command }) });
         }
     };
 
@@ -700,6 +726,20 @@ export function AgentProfilesPanel() {
             setNotice({ kind: 'success', text: t('agentProfiles.notices.restored') });
         } catch (error) {
             setNotice({ kind: 'error', text: t('agentProfiles.errors.restoreFailed', { message: formatError(error) }) });
+        } finally {
+            setBusyAction(null);
+        }
+    };
+
+    const initializeOpenCode = async () => {
+        if (!targetId || busyAction !== null) return;
+        setBusyAction('crud');
+        setNotice(null);
+        try {
+            await tauriApi.v3AgentProfileCreate({ agent: 'opencode', runtime_target_id: targetId, profile_name: 'opencode.jsonc' });
+            refresh();
+        } catch (error) {
+            setNotice({ kind: 'error', text: formatError(error) });
         } finally {
             setBusyAction(null);
         }
@@ -890,21 +930,42 @@ export function AgentProfilesPanel() {
             setModelError(t('agentProfiles.errors.modelExists'));
             return;
         }
+        if (modelForm.thinking_changed && modelForm.thinking_mode === 'enabled'
+            && (!Number.isSafeInteger(Number(modelForm.thinking_budget)) || Number(modelForm.thinking_budget) < 1024)) {
+            setModelError(t('agentProfiles.thinkingParameters.invalidBudget'));
+            return;
+        }
+        if (modelForm.effort_changed && modelForm.reasoning_effort.trim() && modelForm.supports_effort === false) {
+            setModelError(t('agentProfiles.thinkingParameters.unsupportedEffort'));
+            return;
+        }
         const options = Array.from(new Set(modelForm.options.map((option) => option.trim()).filter(Boolean)));
-        const selected = modelForm.selected && options.includes(modelForm.selected) ? modelForm.selected : options[0] || null;
+        const selected = modelForm.selected && options.includes(modelForm.selected) ? modelForm.selected : null;
         const previousModel = modelEditor.modelId
             ? provider.models.find((model) => model.model_id === modelEditor.modelId)
             : undefined;
         const previousOptions = previousModel?.thinking.options || [];
-        const variantValuesChanged = agent === 'opencode'
-            && (previousModel === undefined || JSON.stringify(previousOptions) !== JSON.stringify(options));
-        const variantValues = modelForm.variant_values
-            ? Object.fromEntries(options.map((option) => [option, modelForm.variant_values?.[option] ?? {}]))
-            : null;
+        let variantValues = modelForm.variant_values;
+        if (agent === 'opencode') {
+            try { variantValues = parseVariantDrafts(options, modelForm.variant_drafts, modelForm.variant_values); }
+            catch { setModelError(t('agentProfiles.variants.invalid')); return; }
+        }
+        const variantValuesChanged = agent === 'opencode' && (previousModel?.thinking.variant_values_changed === true
+            || previousModel === undefined || JSON.stringify(previousOptions) !== JSON.stringify(options)
+            || JSON.stringify(variantValues) !== JSON.stringify(previousModel.thinking.variant_values || {}));
+        let limits = previousModel?.limits;
+        if (modelForm.limits_changed) {
+            try { limits = parseModelLimits(modelForm.limit_draft); }
+            catch { setModelError(t('agentProfiles.limits.invalid')); return; }
+        }
         const nextModel: ModelProfile = {
             model_id: modelId,
             display_name: displayName,
             enabled: modelForm.enabled,
+            modalities: { input: modelForm.input_modalities, output: modelForm.output_modalities },
+            modalities_changed: modelForm.modalities_changed,
+            supports_tools: previousModel?.supports_tools,
+            limits, limits_changed: modelForm.limits_changed,
             thinking: {
                 supports_reasoning: modelForm.supports_reasoning,
                 supports_effort: modelForm.supports_effort,
@@ -913,6 +974,13 @@ export function AgentProfilesPanel() {
                 custom_allowed: modelForm.custom_allowed,
                 variant_values: variantValues,
                 variant_values_changed: variantValuesChanged,
+                reasoning_effort: modelForm.reasoning_effort.trim() || null,
+                thinking_mode: modelForm.thinking_mode || null,
+                thinking_budget: modelForm.thinking_mode === 'enabled' && modelForm.thinking_budget ? Number(modelForm.thinking_budget) : null,
+                effort_changed: modelForm.effort_changed,
+                thinking_changed: modelForm.thinking_changed,
+                effort_options: previousModel?.thinking.effort_options,
+                thinking_types: previousModel?.thinking.thinking_types,
             },
         };
         setDraft((current) => {
@@ -924,18 +992,7 @@ export function AgentProfilesPanel() {
             if (index >= 0) target.models[index] = nextModel;
             else target.models.push(nextModel);
             const wasDefault = modelEditor.modelId ? modelIsDefault(current, modelEditor.providerId, modelEditor.modelId) : !current.managed.default_model_id;
-            const replacementProvider = next.managed.providers.find((item) => item.models.some((model) => model.enabled));
-            const replacement = replacementProvider?.models.find((model) => model.enabled);
-            if (current.agent !== 'opencode') {
-                next.managed.default_provider_id = nextModel.enabled ? modelEditor.providerId : null;
-                next.managed.default_model_id = nextModel.enabled ? modelId : null;
-            } else if (nextModel.enabled && (wasDefault || !next.managed.default_model_id)) {
-                next.managed.default_provider_id = modelEditor.providerId;
-                next.managed.default_model_id = profileModelKey(modelEditor.providerId, modelId);
-            } else if (!nextModel.enabled && wasDefault) {
-                next.managed.default_provider_id = replacementProvider?.provider_id || null;
-                next.managed.default_model_id = replacement && replacementProvider ? profileModelKey(replacementProvider.provider_id, replacement.model_id) : null;
-            }
+            updateDefaultAfterModelEdit(next, modelEditor.providerId, modelId, nextModel.enabled, wasDefault);
             return next;
         });
         closeModelEditor();
@@ -992,6 +1049,7 @@ export function AgentProfilesPanel() {
             if (requestId !== modelImportRequest.current) return;
             const existing = new Set(provider.models.map((model) => model.model_id));
             const items = result.models.map((model) => ({
+                ...model,
                 model_id: model.model_id,
                 display_name: model.display_name || model.model_id,
                 imported: existing.has(model.model_id),
@@ -1083,7 +1141,7 @@ export function AgentProfilesPanel() {
     const toggleAdvanced = () => {
         setAdvancedOpen((current) => {
             const next = !current;
-            if (next && profileForEdit) {
+            if (next && profileForEdit && !advancedEdited) {
                 setAdvancedText(JSON.stringify(profileForEdit, null, 2));
                 setAdvancedError(null);
             }
@@ -1100,6 +1158,7 @@ export function AgentProfilesPanel() {
             }
             if (!parsed.managed || !Array.isArray(parsed.managed.providers)) throw new Error(t('agentProfiles.errors.advancedProvidersMissing'));
             setDraft(parsed);
+            setAdvancedEdited(false);
             setAdvancedError(null);
             setNotice({ kind: 'info', text: t('agentProfiles.notices.advancedApplied') });
         } catch (error) {
@@ -1137,7 +1196,8 @@ export function AgentProfilesPanel() {
                             role="tab"
                             aria-selected={selected}
                             title={t(item.descriptionKey)}
-                            onClick={() => setAgent(item.id)}
+                            onClick={() => item.id !== agent && requestNavigation(() => setAgent(item.id))}
+                            disabled={busyAction !== null}
                             whileTap={{ scale: 0.97 }}
                             className={cn('relative flex items-center gap-2 px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', selected ? 'font-medium text-foreground' : 'text-muted-foreground hover:text-foreground')}
                         >
@@ -1159,28 +1219,36 @@ export function AgentProfilesPanel() {
             <div className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-end sm:justify-between">
                 <div className="min-w-0 flex-1">
                     <Label htmlFor="agent-runtime-target" className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground"><Server className="h-3.5 w-3.5" />{t('agentProfiles.runtimeTarget')}</Label>
-                    <select id="agent-runtime-target" aria-label={t('agentProfiles.selectRuntimeTarget')} value={targetId} onChange={(event) => setTargetId(event.target.value)} disabled={loadingTargets} className={fieldClass}>
+                    <select id="agent-runtime-target" aria-label={t('agentProfiles.selectRuntimeTarget')} value={targetId} onChange={(event) => { const next = event.target.value; if (next !== targetId) requestNavigation(() => setTargetId(next)); }} disabled={loadingTargets || busyAction !== null} className={fieldClass}>
                         <option value="">{loadingTargets ? t('agentProfiles.discoveringRuntimes') : t('agentProfiles.selectRuntime')}</option>
                         {targets.map((target) => <option key={target.target_id} value={target.target_id}>{target.display_name} · {target.home_path.display}</option>)}
                     </select>
                 </div>
                 <div className="flex items-center gap-2">
                     {selectedTarget && <span className="hidden max-w-xs items-center gap-1.5 truncate text-xs text-muted-foreground lg:flex">{selectedTarget.kind === 'wsl' ? <Cloud className="h-3.5 w-3.5 shrink-0" /> : <Laptop className="h-3.5 w-3.5 shrink-0" />}{selectedTarget.home_path.native}</span>}
-                    <Button type="button" variant="outline" onClick={refresh} disabled={!targetId || loadingProfiles} aria-label={t('agentProfiles.refreshProfiles')}><RefreshCw className={cn('mr-2 h-4 w-4', loadingProfiles && 'animate-spin')} />{t('agentProfiles.common.refresh')}</Button>
+                    <Button type="button" variant="outline" onClick={() => requestNavigation(refresh)} disabled={!targetId || loadingProfiles || busyAction !== null} aria-label={t('agentProfiles.refreshProfiles')}><RefreshCw className={cn('mr-2 h-4 w-4', loadingProfiles && 'animate-spin')} />{t('agentProfiles.common.refresh')}</Button>
                 </div>
             </div>
 
-            {notice && <div className={cn('flex items-start gap-2 rounded-md border px-3 py-2 text-xs shadow-sm', notice.kind === 'success' && 'border-emerald-500/25 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300', notice.kind === 'error' && 'border-destructive/25 bg-destructive/5 text-destructive', notice.kind === 'info' && 'border-primary/20 bg-primary/5 text-primary')} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.kind === 'error' ? <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />}<span className="leading-5">{notice.text}</span></div>}
+            {agent === 'opencode' && <p className="text-xs text-muted-foreground">{t('agentProfiles.configPathsHint')}</p>}
+
+            {notice && <div className={cn('flex items-start gap-2 rounded-md border px-3 py-2 text-xs shadow-sm', notice.kind === 'success' && 'border-emerald-500/25 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300', notice.kind === 'error' && 'border-destructive/25 bg-destructive/5 text-destructive', notice.kind === 'info' && 'border-primary/20 bg-primary/5 text-primary')} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.kind === 'error' ? <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />}<span className="select-text whitespace-pre-wrap break-all leading-5">{notice.text}</span></div>}
 
             {!targetId || (!loadingProfiles && discovery && discovery.profiles.length === 0) ? (
                 <div className="py-16 text-center">
                     <FileCode2 className="mx-auto h-8 w-8 text-primary/70" />
                     <h2 className="mt-4 text-lg font-semibold">{t(targetId ? 'agentProfiles.empty.noProfilesTitle' : 'agentProfiles.empty.selectRuntimeTitle')}</h2>
                     <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{targetId ? t('agentProfiles.empty.noProfilesDescription', { agent: agentLabel(agent) }) : t('agentProfiles.empty.selectRuntimeDescription')}</p>
+                    {agent === 'opencode' && targetId && discovery?.profiles.length === 0 && (
+                        <Button className="mt-5" onClick={initializeOpenCode} disabled={busyAction !== null}>
+                            {busyAction === 'crud' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {t('agentProfiles.actions.initializeOpenCode')}
+                        </Button>
+                    )}
                 </div>
-            ) : loadingProfiles || loadingProfile ? (
+            ) : loadingProfiles ? (
                 <div className="flex items-center justify-center gap-3 py-20 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />{t('agentProfiles.loadingProfiles')}</div>
-            ) : discovery && profileForEdit ? (
+            ) : discovery ? (
                 <div className="grid gap-4 xl:grid-cols-[15rem_minmax(0,1fr)]">
                     <aside className="min-w-0" aria-label={t('agentProfiles.profiles.listLabel')}>
                         <div className="flex items-center justify-between gap-2 pb-2">
@@ -1191,7 +1259,7 @@ export function AgentProfilesPanel() {
                             </div>
                         </div>
                         <div className="space-y-1">
-                            {discovery.profiles.map((summary) => <ProfileSummaryRow key={summary.profile_id} summary={summary} selected={summary.profile_id === selectedProfileId} onClick={() => setSelectedProfileId(summary.profile_id)} />)}
+                            {discovery.profiles.map((summary) => <ProfileSummaryRow key={summary.profile_id} summary={summary} selected={summary.profile_id === selectedProfileId} onClick={() => summary.profile_id !== selectedProfileId && requestNavigation(() => setSelectedProfileId(summary.profile_id))} />)}
                         </div>
                         <div className="flex items-center justify-end gap-1 pt-2">
                             <Button type="button" variant="ghost" size="sm" onClick={() => openProfileDialog('rename')} disabled={!canCreateProfile || !selectedProfileId || busyAction !== null}><Pencil className="mr-1.5 h-3.5 w-3.5" />{t('agentProfiles.common.rename')}</Button>
@@ -1199,7 +1267,10 @@ export function AgentProfilesPanel() {
                         </div>
                     </aside>
 
-                    <motion.article key={`${agent}:${selectedProfileId}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }} className="min-w-0 rounded-xl bg-muted/[0.18] p-3 shadow-sm ring-1 ring-border/25 sm:p-4">
+                    {loadingProfile ? (
+                        <div role="status" className="p-6">{t('agentProfiles.loadingProfiles')}</div>
+                    ) : profileForEdit ? <motion.article key={`${agent}:${selectedProfileId}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }} className="min-w-0 rounded-xl bg-muted/[0.18] p-3 shadow-sm ring-1 ring-border/25 sm:p-4">
+                        <fieldset disabled={busyAction !== null} className="min-w-0">
                         <header className="flex flex-col gap-4 px-1 pb-3 pt-1 sm:px-2 xl:flex-row xl:items-start xl:justify-between">
                             <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
@@ -1211,10 +1282,10 @@ export function AgentProfilesPanel() {
                                 <div className="mt-2 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"><FileCode2 className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{profileForEdit.source.path.display}</span></div>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <Button type="button" variant="outline" onClick={activateDraft} disabled={!profile || busyAction !== null || selectedSummary?.is_default}>{busyAction === 'activate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{t('agentProfiles.actions.setDefault')}</Button>
+                                <Button type="button" variant="outline" onClick={activateDraft} disabled={!profile || advancedEdited || busyAction !== null || selectedSummary?.is_default}>{busyAction === 'activate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{t(dirty && !selectedSummary?.is_default ? 'agentProfiles.actions.saveAndSetDefault' : 'agentProfiles.actions.setDefault')}</Button>
                                 <Button type="button" variant="outline" onClick={copyLaunchCommand} disabled={!profileForEdit || busyAction !== null} title={t('agentProfiles.actions.copyLaunchCommand')} aria-label={t('agentProfiles.actions.copyLaunchCommand')}><Copy className="mr-2 h-4 w-4" />{t('agentProfiles.actions.copyLaunchCommand')}</Button>
-                                <Button type="button" variant="outline" onClick={prepareLaunch} disabled={!profile || busyAction !== null}>{busyAction === 'launch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Terminal className="mr-2 h-4 w-4" />}{t('agentProfiles.actions.launchOnce')}</Button>
-                                <Button type="button" onClick={saveDraft} disabled={!dirty || busyAction !== null}>{busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t('agentProfiles.common.save')}</Button>
+                                <Button type="button" variant="outline" onClick={prepareLaunch} disabled={!profile || advancedEdited || busyAction !== null}>{busyAction === 'launch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Terminal className="mr-2 h-4 w-4" />}{t(dirty ? 'agentProfiles.actions.saveAndLaunch' : 'agentProfiles.actions.launchOnce')}</Button>
+                                <Button type="button" onClick={saveDraft} disabled={!dirty || advancedEdited || busyAction !== null}>{busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t('agentProfiles.common.save')}</Button>
                             </div>
                         </header>
 
@@ -1223,6 +1294,8 @@ export function AgentProfilesPanel() {
                             <span className="flex items-center gap-1.5"><KeyRound className="h-3.5 w-3.5 text-primary" />{profileForEdit.managed.providers[0]?.credential.display || t('agentProfiles.credentials.notConfigured')}</span>
                             <span>{t('agentProfiles.models.count', { count: profileForEdit.managed.providers.reduce((count, provider) => count + provider.models.length, 0) })}</span>
                         </div>
+
+                        <EffectiveConfigPreview profile={profileForEdit} saved={profile} target={selectedTarget} dirty={dirty} />
 
                         <section className="mt-5" aria-labelledby="providers-title">
                             <div className="flex items-end justify-between gap-3 px-1 pb-3 sm:px-2"><div><h3 id="providers-title" className="text-base font-semibold">{t('agentProfiles.providers.title')}</h3><p className="mt-1 text-xs text-muted-foreground">{t('agentProfiles.providers.description')}</p></div><Button type="button" variant="outline" size="sm" onClick={() => openProviderEditor()} disabled={!canCreateProvider || busyAction !== null}><Plus className="mr-1.5 h-3.5 w-3.5" />{t('agentProfiles.providers.add')}</Button></div>
@@ -1247,6 +1320,7 @@ export function AgentProfilesPanel() {
                                                             {isDefault && <Badge variant="secondary" className="gap-1 text-[10px]"><Check className="h-3 w-3" />{t('agentProfiles.common.default')}</Badge>}
                                                         </div>
                                                         <div className="mt-1 truncate pl-6 font-mono text-[11px] text-muted-foreground">{model.model_id}</div>
+                                                        <ModelCapabilitySummary model={model} />
                                                         <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
                                                             {model.thinking.options.length > 0 ? model.thinking.options.map((option) => (
                                                                 <motion.button key={option} type="button" aria-pressed={model.thinking.selected === option} whileTap={{ scale: 0.93 }} onClick={() => setDraft((current) => current ? updateThinking(current, provider.provider_id, model.model_id, option) : current)} className={cn('rounded-full border px-2.5 py-0.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', model.thinking.selected === option ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-border/70 text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground')}>
@@ -1406,7 +1480,7 @@ export function AgentProfilesPanel() {
                                 <div className="grid gap-4 pb-4 pt-2 text-xs md:grid-cols-2">
                                     <div className="md:col-span-2">
                                         <div className="mb-1.5 flex items-center justify-between gap-2"><span className="text-muted-foreground">{t('agentProfiles.advanced.managedProjection')}</span><Button type="button" size="sm" variant="outline" onClick={applyAdvanced}>{t('agentProfiles.common.applyToDraft')}</Button></div>
-                                        <textarea value={advancedText} onChange={(event) => setAdvancedText(event.target.value)} aria-label={t('agentProfiles.advanced.editorLabel')} spellCheck={false} className="min-h-48 w-full resize-y rounded-md border bg-background p-3 font-mono text-[11px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                                        <textarea value={advancedText} onChange={(event) => { setAdvancedText(event.target.value); setAdvancedEdited(true); }} aria-label={t('agentProfiles.advanced.editorLabel')} spellCheck={false} className="min-h-48 w-full resize-y rounded-md border bg-background p-3 font-mono text-[11px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring" />
                                         {advancedError && <div className="mt-2 flex items-start gap-2 text-destructive" role="alert"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{advancedError}</div>}
                                     </div>
                                     <div><div className="mb-1 text-muted-foreground">{t('agentProfiles.advanced.nativeSource')}</div><pre className="overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 font-mono leading-5">{JSON.stringify({ path: profileForEdit.source.path.native, format: profileForEdit.source.format, scope: profileForEdit.source.scope }, null, 2)}</pre></div>
@@ -1417,9 +1491,30 @@ export function AgentProfilesPanel() {
                         </section>
 
                         {lastSave?.backup_path && <div className="flex flex-col gap-3 py-3 text-sm text-emerald-700 dark:text-emerald-300 md:flex-row md:items-center md:justify-between"><div className="min-w-0"><div className="font-medium">{t('agentProfiles.backup.available')}</div><div className="mt-1 truncate font-mono text-xs">{lastSave.backup_path.display}</div></div><Button type="button" size="sm" variant="outline" onClick={restoreLastSave} disabled={busyAction !== null}><RefreshCw className="mr-2 h-3.5 w-3.5" />{t('agentProfiles.backup.restore')}</Button></div>}
-                    </motion.article>
+                        </fieldset>
+                    </motion.article> : (
+                        <div role="alert" className="min-w-0 rounded-lg border border-destructive/25 p-5">
+                            <h2 className="font-semibold">{t('agentProfiles.profiles.readError')}</h2>
+                            <p className="mt-2 break-all font-mono text-xs">{selectedSummary?.source_path.display}</p>
+                            <p className="mt-3 whitespace-pre-wrap text-sm">{selectedSummary?.read_error ? formatError(selectedSummary.read_error) : notice?.text}</p>
+                            <Button type="button" variant="outline" className="mt-4" onClick={refresh}>{t('agentProfiles.common.refresh')}</Button>
+                        </div>
+                    )}
                 </div>
             ) : null}
+
+            <Dialog open={pendingNavigation !== null} onOpenChange={(open) => { if (!open && busyAction === null) setPendingNavigation(null); }}>
+                <DialogContent className={cn('max-w-lg', interactionGroupClass)}>
+                    <DialogHeader><DialogTitle>{t('agentProfiles.navigation.title')}</DialogTitle><DialogDescription>{t('agentProfiles.navigation.description')}</DialogDescription></DialogHeader>
+                    {advancedEdited && <p className="text-sm text-muted-foreground">{t('agentProfiles.navigation.applyAdvancedFirst')}</p>}
+                    {notice?.kind === 'error' && <p role="alert" className="text-sm text-destructive">{notice.text}</p>}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPendingNavigation(null)} disabled={busyAction !== null}>{t('agentProfiles.common.cancel')}</Button>
+                        <Button variant="outline" onClick={() => continueNavigation(false)} disabled={busyAction !== null}>{t('agentProfiles.navigation.discard')}</Button>
+                        <Button onClick={() => continueNavigation(true)} disabled={advancedEdited || busyAction !== null}>{t('agentProfiles.navigation.save')}</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <Dialog open={profileDialog !== null} onOpenChange={(open) => !open && closeProfileDialog()}>
                 <DialogContent className={cn('max-w-md', interactionGroupClass)}>
@@ -1459,7 +1554,7 @@ export function AgentProfilesPanel() {
             </Dialog>
 
             <Dialog open={modelEditor !== null} onOpenChange={(open) => !open && closeModelEditor()}>
-                <DialogContent className={cn('max-w-2xl', interactionGroupClass)}>
+                <DialogContent className={cn('max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto', interactionGroupClass)}>
                     <DialogHeader><DialogTitle>{t(modelEditor?.mode === 'create' ? 'agentProfiles.dialogs.model.createTitle' : 'agentProfiles.dialogs.model.editTitle')}</DialogTitle><DialogDescription>{t('agentProfiles.dialogs.model.description')}</DialogDescription></DialogHeader>
                     {modelForm && (
                         <div className="space-y-4">
@@ -1469,8 +1564,8 @@ export function AgentProfilesPanel() {
                             </div>
                             <div className="flex flex-wrap gap-5 py-2">
                                 <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.enabled} onCheckedChange={(checked) => setModelForm({ ...modelForm, enabled: checked })} />{t('agentProfiles.forms.enableModel')}</label>
-                                <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.supports_reasoning} onCheckedChange={(checked) => setModelForm({ ...modelForm, supports_reasoning: checked })} />{t('agentProfiles.forms.supportsReasoning')}</label>
-                                <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.supports_effort} onCheckedChange={(checked) => setModelForm({ ...modelForm, supports_effort: checked })} />{t('agentProfiles.forms.supportsEffort')}</label>
+                                <div><Label htmlFor="model-reasoning">{t('agentProfiles.forms.supportsReasoning')}</Label><select id="model-reasoning" value={modelForm.supports_reasoning === null ? 'unknown' : String(modelForm.supports_reasoning)} onChange={(event) => setModelForm({ ...modelForm, supports_reasoning: event.target.value === 'unknown' ? null : event.target.value === 'true' })} className={cn(fieldClass, 'mt-1.5')}><option value="unknown">{t('agentProfiles.forms.reasoningUnspecified')}</option><option value="true">{t('agentProfiles.forms.reasoningSupported')}</option><option value="false">{t('agentProfiles.forms.reasoningUnsupported')}</option></select></div>
+                                <div><Label htmlFor="model-effort-support">{t('agentProfiles.forms.supportsEffort')}</Label><select id="model-effort-support" value={modelForm.supports_effort === null ? 'unknown' : String(modelForm.supports_effort)} onChange={(event) => setModelForm({ ...modelForm, supports_effort: event.target.value === 'unknown' ? null : event.target.value === 'true' })} className={cn(fieldClass, 'mt-1.5')}><option value="unknown">{t('agentProfiles.forms.reasoningUnspecified')}</option><option value="true">{t('agentProfiles.forms.reasoningSupported')}</option><option value="false">{t('agentProfiles.forms.reasoningUnsupported')}</option></select></div>
                             </div>
                             <div>
                                 <div className="flex items-center justify-between gap-2">
@@ -1482,8 +1577,20 @@ export function AgentProfilesPanel() {
                                     <div className="flex items-center gap-1"><Input value={variantInput} onChange={(event) => setVariantInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); } }} placeholder={t('agentProfiles.forms.addVariant')} className="h-8 w-32 text-xs" /><Button type="button" variant="outline" size="sm" onClick={() => { const value = variantInput.trim(); if (value && !modelForm.options.includes(value)) setModelForm({ ...modelForm, options: [...modelForm.options, value], selected: modelForm.selected || value }); setVariantInput(''); }}>{t('agentProfiles.common.add')}</Button></div>
                                 </div>
                             </div>
+                            {agent === 'opencode' && <ModelLimitsEditor value={modelForm.limit_draft} onChange={value => setModelForm({ ...modelForm, limit_draft: value, limits_changed: true })} />}
+                            {agent === 'opencode' && <ModelModalitiesEditor input={modelForm.input_modalities} output={modelForm.output_modalities}
+                                onChange={(direction, values) => setModelForm({ ...modelForm, [`${direction}_modalities`]: values, modalities_changed: true })} />}
+                            {agent === 'opencode' && modelForm.options.map(name => <VariantParametersEditor key={name} name={name}
+                                text={modelForm.variant_drafts[name] ?? JSON.stringify(modelForm.variant_values?.[name] ?? {}, null, 2)}
+                                protocol={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.protocol.native_protocol || 'unknown'}
+                                onChange={text => setModelForm({ ...modelForm, variant_drafts: { ...modelForm.variant_drafts, [name]: text } })} />)}
+                            {agent === 'opencode' && <ThinkingParametersEditor value={modelForm} onChange={value => setModelForm({ ...modelForm, ...value })}
+                                protocol={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.protocol.native_protocol || 'unknown'}
+                                supportsEffort={modelForm.supports_effort} supportsReasoning={modelForm.supports_reasoning}
+                                effortOptions={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.models.find(m => m.model_id === modelEditor?.modelId)?.thinking.effort_options}
+                                thinkingTypes={profileForEdit?.managed.providers.find(p => p.provider_id === modelEditor?.providerId)?.models.find(m => m.model_id === modelEditor?.modelId)?.thinking.thinking_types} />}
                             <label className="flex items-center gap-2 text-sm"><Switch checked={modelForm.custom_allowed} onCheckedChange={(checked) => setModelForm({ ...modelForm, custom_allowed: checked })} />{t('agentProfiles.forms.allowCustomEffort')}</label>
-                            <p className="text-xs leading-5 text-muted-foreground">{t('agentProfiles.dialogs.model.capabilityNote')}</p>
+                            <p className="text-xs leading-5 text-muted-foreground">{t('agentProfiles.dialogs.model.capabilityNote')} {t('agentProfiles.capabilities.unknownHint')}</p>
                         </div>
                     )}
                     {modelError && <div className="flex items-start gap-2 text-sm text-destructive" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{modelError}</div>}

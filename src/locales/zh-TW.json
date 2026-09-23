@@ -1636,12 +1636,16 @@
       "count": "{{count}} 個設定",
       "create": "新增 Profile",
       "cloneCurrent": "複製目前 Profile",
-      "openCodeSingle": "OpenCode 使用單一設定"
+      "openCodeSingle": "OpenCode 使用單一設定",
+      "readError": "無法讀取此設定"
     },
     "actions": {
       "setDefault": "設為預設",
       "launchOnce": "僅此次啟動",
-      "copyLaunchCommand": "複製啟動指令"
+      "copyLaunchCommand": "複製啟動指令",
+      "initializeOpenCode": "初始化 OpenCode 設定",
+      "saveAndLaunch": "儲存並啟動",
+      "saveAndSetDefault": "儲存並設為預設"
     },
     "route": {
       "adapter": "自動轉接",
@@ -1717,7 +1721,10 @@
       "defaultThinking": "預設思考層級",
       "deleteVariant": "刪除 variant {{option}}",
       "addVariant": "新增 variant",
-      "allowCustomEffort": "允許自訂思考層級"
+      "allowCustomEffort": "允許自訂思考層級",
+      "reasoningUnspecified": "未宣告（使用原生預設值）",
+      "reasoningSupported": "支援",
+      "reasoningUnsupported": "不支援"
     },
     "dialogs": {
       "profile": {
@@ -1792,7 +1799,8 @@
       "detectUnavailable": "無法從上游列出模型。",
       "detectInvalidResponse": "上游沒有回傳可解析的模型列表。",
       "advancedIdentityImmutable": "Profile ID 或執行環境不能在進階編輯器中修改。",
-      "advancedProvidersMissing": "進階設定缺少 managed.providers。"
+      "advancedProvidersMissing": "進階設定缺少 managed.providers。",
+      "commandCopyFailed": "無法複製到剪貼簿，請選取以下命令手動複製：\n{{command}}"
     },
     "claudeCompatibility": {
       "sectionLabel": "Claude Code 相容設定",
@@ -1822,6 +1830,107 @@
       "customOptionsUnavailable": "不可用；仍可使用自動回落。",
       "fallbackPriority": "回落優先權",
       "unknownOption": "未知的已設定值"
+    },
+    "capabilities": {
+      "unknownHint": "未提供的能力資訊保持未知。僅匯入上游明確宣告的思考等級，不自動選取等級。"
+    },
+    "thinkingParameters": {
+      "title": "思考參數",
+      "hint": "留空即繼承 OpenCode / 供應商預設值。建議值來自上游宣告（如有）；自訂值請核對模型支援情況。",
+      "protocolRequired": "請先選擇支援的供應商協定，再編輯這些參數。",
+      "effort": "思考強度",
+      "mode": "思考模式",
+      "budget": "思考預算（Token，至少 1024）",
+      "inherit": "繼承預設值",
+      "enabled": "手動預算",
+      "adaptive": "自適應",
+      "disabled": "關閉",
+      "invalidBudget": "思考預算必須是至少 1024 的整數。",
+      "unsupportedEffort": "此模型宣告不支援思考強度。請清空該值以繼承預設設定。"
+    },
+    "variants": {
+      "disabled": "停用此變體",
+      "temperature": "溫度（留空繼承）",
+      "allParameters": "全部參數（JSON 物件）",
+      "jsonLabel": "{{name}} 的參數",
+      "invalid": "每個變體必須是有效的 JSON 物件。思考預算必須是至少 1024 的整數。"
+    },
+    "modalities": {
+      "title": "模型多模態能力",
+      "hint": "宣告將儲存到 OpenCode。實際支援情況由模型和供應商決定；VibeHub 不進行音訊、影片或 PDF 的跨協定轉換。",
+      "input": "輸入",
+      "output": "輸出",
+      "inherit": "未宣告 / 繼承",
+      "declare": "宣告支援的類型",
+      "empty": "已宣告不支援任何類型",
+      "text": "文字",
+      "image": "圖片",
+      "audio": "音訊",
+      "video": "影片",
+      "pdf": "PDF"
+    },
+    "limits": {
+      "title": "Token 限制",
+      "hint": "全部留空即繼承預設值。明確覆寫需要同時填寫上下文和輸出上限，輸入上限可選。請核對供應商公布的限制。",
+      "context": "上下文視窗",
+      "input": "最大輸入",
+      "output": "最大輸出",
+      "inherit": "繼承",
+      "invalid": "上下文和輸出上限必須同時填寫正整數，或清空全部限制以繼承預設值。",
+      "reset": "全部繼承預設值"
+    },
+    "capabilityAssessment": {
+      "title": "已宣告的能力",
+      "tools": "工具呼叫",
+      "images": "圖片輸入",
+      "reasoning": "思考",
+      "unknown": "未知",
+      "yes": "支援",
+      "no": "不支援",
+      "hint": "宣告不等於介面實測。串流輸出和用量資訊缺少能力中繼資料時，不會標記為完全相容。"
+    },
+    "preview": {
+      "title": "設定值與來源預覽",
+      "draft": "未儲存",
+      "scope": "顯示所選檔案中已讀取的受管理設定及所選變體覆寫。這是部分預覽，不代表完整合併後的執行設定；憑證不會顯示。",
+      "inherited": "繼承 / 來源未讀取",
+      "field": "設定項目",
+      "value": "值",
+      "source": "來源",
+      "overrides": "覆寫：{{value}}",
+      "layers": "尚未計算的其他層：遠端預設設定 → 全域設定 → 所選 OPENCODE_CONFIG → 專案設定 → 設定目錄 → OPENCODE_CONFIG_CONTENT → 管理原則。後續層可能覆寫目前值。",
+      "launch": "啟動命令（{{shell}}）",
+      "saveFirst": "執行命令前請先儲存；終端讀取的是已儲存檔案。",
+      "runtimePathMismatch": "無法將設定路徑對應到所選執行環境。",
+      "origins": {
+        "file": "所選設定檔案",
+        "model": "模型設定",
+        "variant": "所選變體",
+        "inherited": "外部預設值（未知）"
+      },
+      "fields": {
+        "provider": "供應商",
+        "model": "預設模型",
+        "protocol": "協定",
+        "smallModel": "小模型",
+        "variant": "預設變體",
+        "reasoningEffort": "思考強度",
+        "thinkingMode": "思考模式",
+        "thinkingBudget": "思考預算",
+        "inputModalities": "輸入類型",
+        "outputModalities": "輸出類型",
+        "context": "上下文視窗",
+        "inputLimit": "最大輸入",
+        "outputLimit": "最大輸出"
+      }
+    },
+    "configPathsHint": "識別 XDG_CONFIG_HOME、OPENCODE_CONFIG 和 OPENCODE_CONFIG_DIR。自訂路徑請使用絕對路徑；修改主機環境變數後請重新啟動 VibeHub。WSL 使用所選發行版的環境。",
+    "navigation": {
+      "title": "有未儲存的修改",
+      "description": "請先儲存修改，或放棄修改後繼續。",
+      "applyAdvancedFirst": "請取消操作，先將進階 JSON 修改套用至草稿，再儲存。",
+      "discard": "放棄修改並繼續",
+      "save": "儲存並繼續"
     }
   },
   "update": {

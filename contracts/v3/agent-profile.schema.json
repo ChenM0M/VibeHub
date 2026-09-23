@@ -218,10 +218,16 @@
       ],
       "properties": {
         "supports_reasoning": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "supports_effort": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "selected": {
           "type": [
@@ -250,6 +256,44 @@
         },
         "variant_values_changed": {
           "type": "boolean"
+        },
+        "effort_options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "thinking_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reasoning_effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking_mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking_budget": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1024,
+          "maximum": 9007199254740991
+        },
+        "effort_changed": {
+          "type": "boolean"
+        },
+        "thinking_changed": {
+          "type": "boolean"
         }
       }
     },
@@ -276,6 +320,38 @@
         },
         "thinking": {
           "$ref": "#/$defs/ThinkingProfile"
+        },
+        "modalities": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelModalities"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modalities_changed": {
+          "type": "boolean"
+        },
+        "limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelLimits"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limits_changed": {
+          "type": "boolean"
+        },
+        "supports_tools": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       }
     },
@@ -1072,7 +1148,14 @@
           "$ref": "common.schema.json#/$defs/NativePath"
         },
         "revision": {
-          "$ref": "#/$defs/ConfigRevision"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigRevision"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "is_default": {
           "type": "boolean"
@@ -1084,6 +1167,9 @@
             "unknown",
             "unsupported"
           ]
+        },
+        "read_error": {
+          "$ref": "#/$defs/AgentProfileDiscoverError"
         }
       }
     },
@@ -1705,6 +1791,71 @@
         },
         "evidence_refs": {
           "$ref": "common.schema.json#/$defs/EvidenceRefs"
+        }
+      }
+    },
+    "ModelModalities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "output"
+      ],
+      "properties": {
+        "input": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "output": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "ModelLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "input",
+        "output"
+      ],
+      "properties": {
+        "context": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "input": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "output": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       }
     }

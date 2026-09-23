@@ -628,6 +628,21 @@ const agentProfileReadResult = {
   schema_capability: agentProfileDocument.schema_capability,
 };
 assert(agentProfileValidator(agentProfileReadResult), "agent profile read result validates: " + ajv.errorsText(agentProfileValidator.errors));
+const unknownReasoningProfile = structuredClone(agentProfileReadResult);
+unknownReasoningProfile.profile.managed.providers[0].models[0].thinking.supports_reasoning = null;
+assert(agentProfileValidator(unknownReasoningProfile), "model reasoning may remain undeclared: " + ajv.errorsText(agentProfileValidator.errors));
+const unknownEffortProfile = structuredClone(unknownReasoningProfile);
+unknownEffortProfile.profile.managed.providers[0].models[0].thinking.supports_effort = null;
+assert(agentProfileValidator(unknownEffortProfile), "model effort may remain unknown");
+unknownEffortProfile.profile.managed.providers[0].models[0].thinking.supports_effort = "yes";
+assert(!agentProfileValidator(unknownEffortProfile), "effort declaration must be boolean or null");
+const modalityProfile = structuredClone(agentProfileReadResult);
+for (const input of [null, [], ['text', 'image', 'audio', 'video', 'pdf']]) {
+  modalityProfile.profile.managed.providers[0].models[0].modalities = { input, output: ['text'] };
+  assert(agentProfileValidator(modalityProfile), 'modality unknown/empty/multimodal states validate');
+}
+modalityProfile.profile.managed.providers[0].models[0].modalities.input = 'image';
+assert(!agentProfileValidator(modalityProfile), 'modalities must be a list or null');
 const agentProfileDiscoverError = {
   code: "CONFIG_PATH_LINK_REJECTED",
   category: "validation",
@@ -655,6 +670,15 @@ assert(agentProfileValidator({
   profiles: [],
   default_profile_id: null,
 }), "agent profile discovery result preserves structured per-candidate errors: " + ajv.errorsText(agentProfileValidator.errors));
+const failedCandidate = {
+  profile_id: "opencode.profile.invalid", display_name: "opencode.jsonc",
+  agent: "opencode", runtime_target_id: agentProfileTarget.target_id,
+  source_path: agentProfileSource.path, revision: null, is_default: false,
+  compatibility: "unknown", read_error: agentProfileDiscoverError,
+};
+const summaryValidator = ajv.compile({ $ref: "https://schemas.vibehub.dev/v3/1.0/agent-profile.schema.json#/$defs/AgentProfileSummary" });
+assert(summaryValidator(failedCandidate), "failed candidate has a diagnostic and no invented revision: " + ajv.errorsText(summaryValidator.errors));
+assert(!summaryValidator({ ...failedCandidate, read_error: { code: "CONFIG_JSONC_INVALID" } }), "incomplete candidate diagnostics are rejected");
 assert(agentProfileSchemaCapabilityValidator({
   schema_id: "claude-code.settings",
   schema_version: "1.0",
