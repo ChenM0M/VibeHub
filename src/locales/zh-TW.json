@@ -1799,7 +1799,8 @@
       "detectUnavailable": "無法從上游列出模型。",
       "detectInvalidResponse": "上游沒有回傳可解析的模型列表。",
       "advancedIdentityImmutable": "Profile ID 或執行環境不能在進階編輯器中修改。",
-      "advancedProvidersMissing": "進階設定缺少 managed.providers。"
+      "advancedProvidersMissing": "進階設定缺少 managed.providers。",
+      "commandCopyFailed": "無法複製到剪貼簿，請選取以下命令手動複製：\n{{command}}"
     },
     "claudeCompatibility": {
       "sectionLabel": "Claude Code 相容設定",
