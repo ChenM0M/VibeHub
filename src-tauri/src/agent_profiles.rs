@@ -3198,7 +3198,7 @@ mod tests {
             let paths = v3::opencode_config_paths(&target).unwrap();
             assert_eq!(paths[0], root.join("external/custom.jsonc"));
             let (view, _) = v3::initialize_opencode_profile(&target).unwrap();
-            assert_eq!(view.source_path, paths[0]);
+            assert_eq!(view.source_path, paths[0].canonicalize().unwrap());
             let document = v3::read_document(&target, &paths[0]).unwrap();
             let saved = v3::write_document(
                 &target,
@@ -3234,6 +3234,9 @@ mod tests {
         }
         let root = std::env::temp_dir().join(format!("vibehub-external-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join("home")).unwrap();
+        // Resolve OS temp aliases before defining the exact external scope.
+        // Keep the storage layer's symlink and junction protection enabled.
+        let root = root.canonicalize().unwrap();
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "agent_profiles::tests::opencode_environment_paths_are_runtime_specific_and_external_scope_is_exact"])
             .env("VIBEHUB_EXTERNAL_PATH_TEST", &root).env("OPENCODE_CONFIG", root.join("external/custom.jsonc"))
