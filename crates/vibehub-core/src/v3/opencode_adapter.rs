@@ -407,18 +407,16 @@ fn profile_from_document(document: &ConfigDocument) -> Result<OpenCodeProfileVie
     })
 }
 
-/// The npm package that actually carries the upstream wire protocol inside
-/// `opencode.json`. `@ai-sdk/openai-compatible` speaks Chat Completions and
-/// `@ai-sdk/anthropic` speaks Anthropic Messages; the AI SDK packages exposed
-/// by OpenCode have no member that faithfully speaks the Responses API, so
-/// that protocol cannot be persisted.
+/// SDK package for the configured upstream protocol. OpenCode loads the
+/// OpenAI SDK, whose default language model uses the Responses API.
 fn protocol_npm_package(protocol: ProtocolKind) -> Result<&'static str, StorageError> {
     match protocol {
         ProtocolKind::OpenaiChatCompletions => Ok("@ai-sdk/openai-compatible"),
         ProtocolKind::AnthropicMessages => Ok("@ai-sdk/anthropic"),
-        ProtocolKind::OpenaiResponses | ProtocolKind::Unknown => Err(StorageError::new(
+        ProtocolKind::OpenaiResponses => Ok("@ai-sdk/openai"),
+        ProtocolKind::Unknown => Err(StorageError::new(
             "OPENCODE_PROTOCOL_UNSUPPORTED",
-            "OpenCode provider protocol must be Chat Completions or Anthropic Messages to persist",
+            "Unknown OpenCode provider protocols cannot be persisted",
         )),
     }
 }
@@ -430,6 +428,7 @@ fn protocol_from_npm(npm: Option<&str>) -> ProtocolKind {
     match npm {
         Some("@ai-sdk/openai-compatible") => ProtocolKind::OpenaiChatCompletions,
         Some("@ai-sdk/anthropic") => ProtocolKind::AnthropicMessages,
+        Some("@ai-sdk/openai") => ProtocolKind::OpenaiResponses,
         _ => ProtocolKind::Unknown,
     }
 }
@@ -1893,7 +1892,7 @@ mod tests {
         let path = root.join("opencode.json");
         fs::write(
             &path,
-            br#"{"provider":{"openai":{"npm":"@ai-sdk/openai","models":{"gpt-5":{}}},"custom":{"models":{"m":{}}}}}"#,
+            br#"{"provider":{"openai":{"npm":"@example/custom-sdk","models":{"gpt-5":{}}},"custom":{"models":{"m":{}}}}}"#,
         )
         .unwrap();
         let view = read_opencode_profile(&target, &path).unwrap();
@@ -1919,7 +1918,7 @@ mod tests {
         )
         .unwrap();
         let raw = String::from_utf8(fs::read(&path).unwrap()).unwrap();
-        assert!(raw.contains("\"npm\":\"@ai-sdk/openai\""));
+        assert!(raw.contains("\"npm\":\"@example/custom-sdk\""));
         fs::remove_dir_all(root).unwrap();
     }
 

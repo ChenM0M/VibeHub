@@ -1979,15 +1979,7 @@ fn patch_for_opencode(
     for provider in &managed.providers {
         let protocol = match provider.protocol.native_protocol.trim() {
             "unknown" | "" => None,
-            wire => match protocol_from_wire(wire)? {
-                ProtocolKind::OpenaiResponses => {
-                    return Err(AgentProfileCommandError::unsupported(
-                        "AGENT_PROFILE_OPENCODE_PROTOCOL_UNSUPPORTED",
-                        "OpenCode providers cannot persist the OpenAI Responses wire API; select Chat Completions or Anthropic Messages",
-                    ));
-                }
-                persisted => Some(persisted),
-            },
+            wire => Some(protocol_from_wire(wire)?),
         };
         let secret = credential_secret(&provider.credential);
         let clear_api_key = provider.credential.clear_secret && secret.is_none();
@@ -4238,7 +4230,7 @@ mod tests {
 
         let mut input: AgentProfileDocumentInput = serde_json::from_value(document).unwrap();
         input.managed.providers[0].protocol.native_protocol = "openai_responses".to_owned();
-        let responses_error = save_on_target(
+        let responses_result = save_on_target(
             target.clone(),
             AgentProfileSaveRequest {
                 agent: AgentKind::Opencode,
@@ -4248,11 +4240,17 @@ mod tests {
                 profile: input.clone(),
             },
         )
-        .unwrap_err();
+        .unwrap();
         assert_eq!(
-            responses_error.code,
-            "AGENT_PROFILE_OPENCODE_PROTOCOL_UNSUPPORTED"
+            responses_result.profile["managed"]["providers"][0]["protocol"]["native_protocol"],
+            "openai_responses"
         );
+        assert!(
+            fs::read_to_string(opencode_config_dir(&root).join("opencode.jsonc"))
+                .unwrap()
+                .contains("@ai-sdk/openai")
+        );
+        input = serde_json::from_value(responses_result.profile).unwrap();
 
         input.managed.providers[0].protocol.native_protocol = "openai_chat_completions".to_owned();
         input
