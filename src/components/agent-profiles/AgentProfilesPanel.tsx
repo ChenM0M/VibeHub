@@ -10,6 +10,7 @@ import { ThinkingParametersEditor, type ThinkingParameters } from './ThinkingPar
 import { modelFromUpstream } from './upstreamModels';
 import type { UpstreamModelMetadata } from '@/services/tauri';
 import { profileForAction } from './profileActions';
+import { modelIsDefault, updateDefaultAfterModelEdit } from './modelDefaults';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -260,11 +261,6 @@ function agentLabel(agent: AgentKind): string {
 
 function profileModelKey(providerId: string, modelId: string): string {
     return `${providerId}/${modelId}`;
-}
-
-function modelIsDefault(profile: AgentProfileDocument, providerId: string, modelId: string): boolean {
-    const current = profile.managed.default_model_id;
-    return current === modelId || current === profileModelKey(providerId, modelId);
 }
 
 function updateManagedModel(profile: AgentProfileDocument, providerId: string, modelId: string): AgentProfileDocument {
@@ -996,18 +992,7 @@ export function AgentProfilesPanel() {
             if (index >= 0) target.models[index] = nextModel;
             else target.models.push(nextModel);
             const wasDefault = modelEditor.modelId ? modelIsDefault(current, modelEditor.providerId, modelEditor.modelId) : !current.managed.default_model_id;
-            const replacementProvider = next.managed.providers.find((item) => item.models.some((model) => model.enabled));
-            const replacement = replacementProvider?.models.find((model) => model.enabled);
-            if (current.agent !== 'opencode') {
-                next.managed.default_provider_id = nextModel.enabled ? modelEditor.providerId : null;
-                next.managed.default_model_id = nextModel.enabled ? modelId : null;
-            } else if (nextModel.enabled && (wasDefault || !next.managed.default_model_id)) {
-                next.managed.default_provider_id = modelEditor.providerId;
-                next.managed.default_model_id = profileModelKey(modelEditor.providerId, modelId);
-            } else if (!nextModel.enabled && wasDefault) {
-                next.managed.default_provider_id = replacementProvider?.provider_id || null;
-                next.managed.default_model_id = replacement && replacementProvider ? profileModelKey(replacementProvider.provider_id, replacement.model_id) : null;
-            }
+            updateDefaultAfterModelEdit(next, modelEditor.providerId, modelId, nextModel.enabled, wasDefault);
             return next;
         });
         closeModelEditor();
