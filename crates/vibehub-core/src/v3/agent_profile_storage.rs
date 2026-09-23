@@ -397,10 +397,21 @@ pub fn read_document(
     target: &RuntimeTarget,
     path: impl AsRef<Path>,
 ) -> Result<ConfigDocument, StorageError> {
+    let format = ConfigFormat::from_path(path.as_ref())
+        .map_err(|error| error.with_path_context(path.as_ref()))?;
+    read_document_with_format(target, path, format)
+}
+
+/// Use an adapter's syntax rules while retaining all path and revision checks.
+/// OpenCode uses JSONC even for files whose extension is `.json`.
+pub fn read_document_with_format(
+    target: &RuntimeTarget,
+    path: impl AsRef<Path>,
+    format: ConfigFormat,
+) -> Result<ConfigDocument, StorageError> {
     let requested_path = path.as_ref().to_path_buf();
     let path = validate_target_path(target, &requested_path, false)
         .map_err(|error| error.with_path_context(&requested_path))?;
-    let format = ConfigFormat::from_path(&path).map_err(|error| error.with_path_context(&path))?;
     let metadata = fs::symlink_metadata(&path).map_err(|error| {
         let code = if error.kind() == io::ErrorKind::NotFound {
             "CONFIG_NOT_FOUND"
@@ -445,10 +456,21 @@ pub fn write_document(
     expected_revision: Option<&DocumentRevision>,
     content: &[u8],
 ) -> Result<WriteReport, StorageError> {
+    let format = ConfigFormat::from_path(path.as_ref())
+        .map_err(|error| error.with_path_context(path.as_ref()))?;
+    write_document_with_format(target, path, expected_revision, content, format)
+}
+
+pub fn write_document_with_format(
+    target: &RuntimeTarget,
+    path: impl AsRef<Path>,
+    expected_revision: Option<&DocumentRevision>,
+    content: &[u8],
+    format: ConfigFormat,
+) -> Result<WriteReport, StorageError> {
     let requested_path = path.as_ref().to_path_buf();
     let path = validate_target_path(target, &requested_path, true)
         .map_err(|error| error.with_path_context(&requested_path))?;
-    let format = ConfigFormat::from_path(&path).map_err(|error| error.with_path_context(&path))?;
     if content.len() as u64 > MAX_CONFIG_BYTES {
         return Err(StorageError::new(
             "CONFIG_TOO_LARGE",
@@ -460,7 +482,7 @@ pub fn write_document(
         .validate(content)
         .map_err(|error| error.with_path_context(&path))?;
 
-    let current = match read_document(target, &path) {
+    let current = match read_document_with_format(target, &path, format) {
         Ok(document) => Some(document),
         Err(error) if error.code == "CONFIG_NOT_FOUND" => None,
         Err(error) => return Err(error),
@@ -509,6 +531,18 @@ pub fn restore_document(
     backup_path: impl AsRef<Path>,
     expected_current_revision: &DocumentRevision,
 ) -> Result<WriteReport, StorageError> {
+    let format = ConfigFormat::from_path(path.as_ref())
+        .map_err(|error| error.with_path_context(path.as_ref()))?;
+    restore_document_with_format(target, path, backup_path, expected_current_revision, format)
+}
+
+pub fn restore_document_with_format(
+    target: &RuntimeTarget,
+    path: impl AsRef<Path>,
+    backup_path: impl AsRef<Path>,
+    expected_current_revision: &DocumentRevision,
+    format: ConfigFormat,
+) -> Result<WriteReport, StorageError> {
     let requested_path = path.as_ref().to_path_buf();
     let requested_backup_path = backup_path.as_ref().to_path_buf();
     let path = validate_target_path(target, &requested_path, false)
@@ -516,14 +550,14 @@ pub fn restore_document(
     let backup_path = validate_target_path(target, &requested_backup_path, false)
         .map_err(|error| error.with_path_context(&requested_backup_path))?;
     let backup = read_raw_regular_file(&backup_path)?;
-    let current = read_document(target, &path)?;
+    let current = read_document_with_format(target, &path, format)?;
     if current.revision != *expected_current_revision {
         return Err(StorageError::new(
             "CONFIG_REVISION_CONFLICT",
             "the file changed after the failed save; refusing to restore an old backup",
         ));
     }
-    write_document(target, &path, Some(&current.revision), &backup)
+    write_document_with_format(target, &path, Some(&current.revision), &backup, format)
 }
 
 fn same_revision(expected: Option<&DocumentRevision>, actual: Option<&DocumentRevision>) -> bool {
