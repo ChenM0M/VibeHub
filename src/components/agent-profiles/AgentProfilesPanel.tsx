@@ -1554,7 +1554,7 @@ export function AgentProfilesPanel() {
             </Dialog>
 
             <Dialog open={modelEditor !== null} onOpenChange={(open) => !open && closeModelEditor()}>
-                <DialogContent className={cn('max-w-2xl', interactionGroupClass)}>
+                <DialogContent className={cn('max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto', interactionGroupClass)}>
                     <DialogHeader><DialogTitle>{t(modelEditor?.mode === 'create' ? 'agentProfiles.dialogs.model.createTitle' : 'agentProfiles.dialogs.model.editTitle')}</DialogTitle><DialogDescription>{t('agentProfiles.dialogs.model.description')}</DialogDescription></DialogHeader>
                     {modelForm && (
                         <div className="space-y-4">
