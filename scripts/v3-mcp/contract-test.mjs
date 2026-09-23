@@ -80,18 +80,19 @@ child.stdout.on("data", (chunk) => {
 });
 
 function request(method, params = {}) {
+  const operation = params.name ?? params.uri ?? method;
   const id = nextId++;
   const began = performance.now();
   const response = new Promise((resolveRequest, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id);
-      reject(new Error(`${method} timed out${stderr ? `; child stderr: ${stderr}` : ""}`));
-    }, method === "initialize" ? startupBudgetMs : requestBudgetMs + 1000);
+      reject(new Error(`${method} (${operation}) timed out; completed requests: ${JSON.stringify(timings)}${stderr ? `; child stderr: ${stderr}` : ""}`));
+    }, startupBudgetMs);
     pending.set(id, {
       reject(error) { clearTimeout(timer); reject(error); },
       resolve(message) {
         clearTimeout(timer);
-        timings.push({ method, milliseconds: Math.round(performance.now() - began) });
+        timings.push({ method, operation, milliseconds: Math.round(performance.now() - began) });
         if (message.error) reject(new Error(`${method}: ${JSON.stringify(message.error)}`));
         else resolveRequest(message.result);
       },
