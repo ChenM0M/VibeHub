@@ -3,8 +3,8 @@ name: Build and Test
 on:
   push:
     branches: [ main, dev, 'feature/**', 'release/**' ]
+  # Stacked PRs target feature branches and need the same gates as main/dev.
   pull_request:
-    branches: [ main, dev ]
 
 concurrency:
   group: build-${{ github.ref }}
