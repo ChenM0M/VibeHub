@@ -57,6 +57,11 @@ jobs:
       - name: Validate V3 contracts
         run: npm run v3:contracts:check
 
+      - name: Validate Agent profile behavior and locale parity
+        run: |
+          npm run v3:agent-profiles:check
+          npm run v3:i18n:check
+
       - name: Format Rust code
         run: cargo fmt --all -- --check
 

@@ -1,6 +1,6 @@
 use super::agent_profile_storage::{
     read_document_with_format, write_document_with_format, AgentKind, ConfigDocument, ConfigFormat,
-    DocumentRevision, ParsedConfig, RuntimePlatform, RuntimeTarget, StorageError, WriteReport,
+    DocumentRevision, ParsedConfig, RuntimeTarget, StorageError, WriteReport,
 };
 use super::opencode_paths::opencode_config_paths;
 use super::protocol_runtime::ProtocolKind;
