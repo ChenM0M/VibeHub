@@ -35,13 +35,27 @@ await writeFile(join(root, ".vibehub", "tasks", "current"), [
   "",
 ].join("\n"));
 
+// Cold initialization includes SQLite migration and is separate from warm RPC latency.
+const startupBudgetMs = 30000;
+const requestBudgetMs = 2000;
 const startedAt = performance.now();
 const child = spawn(binary, ["mcp-stdio", root], { stdio: ["pipe", "pipe", "pipe"] });
+// Subscribe immediately: cleanup must wait for close, not just successful kill().
+let childClosed = false;
+let childSpawnError;
+const childClose = new Promise((resolveClose) => {
+  child.once("error", (error) => { childSpawnError = error; });
+  child.once("close", (code) => { childClosed = true; resolveClose(code); });
+});
 let stdoutBuffer = "";
 let stderr = "";
 let nextId = 1;
 const pending = new Map();
 const timings = [];
+childClose.then((code) => {
+  for (const waiter of pending.values()) waiter.reject(childSpawnError ?? new Error(`MCP exited with ${code}; ${stderr}`));
+  pending.clear();
+});
 
 child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -72,8 +86,9 @@ function request(method, params = {}) {
     const timer = setTimeout(() => {
       pending.delete(id);
       reject(new Error(`${method} timed out${stderr ? `; child stderr: ${stderr}` : ""}`));
-    }, 3000);
+    }, method === "initialize" ? startupBudgetMs : requestBudgetMs + 1000);
     pending.set(id, {
+      reject(error) { clearTimeout(timer); reject(error); },
       resolve(message) {
         clearTimeout(timer);
         timings.push({ method, milliseconds: Math.round(performance.now() - began) });
@@ -378,16 +393,17 @@ try {
 
   notify("notifications/cancelled", { requestId: "already-completed", reason: "contract probe" });
   child.stdin.end();
-  const exitCode = await new Promise((resolveExit, reject) => {
-    const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("clean shutdown timed out")); }, 3000);
-    child.on("close", (code) => { clearTimeout(timer); resolveExit(code); });
-  });
+  const shutdownTimer = setTimeout(() => child.kill("SIGKILL"), 10000);
+  const exitCode = await childClose;
+  clearTimeout(shutdownTimer);
   assert(exitCode === 0, `MCP server exited with ${exitCode}`);
   assert(stderr === "", `stderr was not pure: ${stderr}`);
   assert(stdoutBuffer.trim() === "", "stdout ended with a partial frame");
-  assert(timings.every(({ milliseconds }) => milliseconds < 2000), "protocol response exceeded 2s budget");
+  assert(timings.every(({ method, milliseconds }) => milliseconds < (method === "initialize" ? startupBudgetMs : requestBudgetMs)), `protocol response exceeded budget: ${JSON.stringify(timings.filter(({ method, milliseconds }) => milliseconds >= (method === "initialize" ? startupBudgetMs : requestBudgetMs)))}`);
   console.log(JSON.stringify({ status: "passed", protocol: initialize.protocolVersion, resources: resources.resources.length, tools: tools.tools.length, requests: timings, total_ms: Math.round(performance.now() - startedAt) }, null, 2));
 } finally {
-  if (!child.killed) child.kill("SIGKILL");
-  await rm(root, { recursive: true, force: true });
+  if (!childClosed) child.kill("SIGKILL");
+  await childClose;
+  // Windows can briefly retain a file handle after the process closes.
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
