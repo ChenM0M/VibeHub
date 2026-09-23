@@ -1445,6 +1445,18 @@ mod tests {
     use std::fs;
     use uuid::Uuid;
 
+    static OPENCODE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn isolate_opencode_environment() -> std::sync::MutexGuard<'static, ()> {
+        let guard = OPENCODE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        env::remove_var("XDG_CONFIG_HOME");
+        env::remove_var("OPENCODE_CONFIG");
+        env::remove_var("OPENCODE_CONFIG_DIR");
+        guard
+    }
+
     fn temp_target() -> (RuntimeTarget, PathBuf) {
         let root = env::temp_dir().join(format!("vibehub-opencode-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
@@ -2146,6 +2158,7 @@ mod tests {
     // readable candidates instead of aborting the whole scan.
     #[test]
     fn tolerant_discovery_records_error_and_keeps_valid_candidate() {
+        let _opencode_env = isolate_opencode_environment();
         let root = env::temp_dir().join(format!("vibehub-opencode-disc-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let target = windows_target(root.clone());

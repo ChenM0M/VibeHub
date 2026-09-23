@@ -3615,6 +3615,18 @@ mod tests {
         }
     }
 
+    static OPENCODE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn isolate_opencode_environment() -> std::sync::MutexGuard<'static, ()> {
+        let guard = OPENCODE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("XDG_CONFIG_HOME");
+        std::env::remove_var("OPENCODE_CONFIG");
+        std::env::remove_var("OPENCODE_CONFIG_DIR");
+        guard
+    }
+
     #[test]
     fn upstream_capabilities_do_not_guess_from_names_or_missing_fields() {
         let models = parse_upstream_models(&json!({"data":[
@@ -3731,6 +3743,7 @@ mod tests {
 
     #[test]
     fn opencode_initialization_creates_once_and_preserves_existing_invalid_files() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-initialize-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let target = RuntimeTarget::host(root.clone());
@@ -3781,6 +3794,7 @@ mod tests {
 
     #[test]
     fn opencode_disable_preserves_model_and_reenable_updates_native_filters() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-disable-{}", Uuid::new_v4()));
         let target = RuntimeTarget::host(root.clone());
         let path = root.join(".config/opencode/opencode.jsonc");
@@ -3880,6 +3894,7 @@ mod tests {
 
     #[test]
     fn opencode_reasoning_absent_true_false_and_clear_round_trip() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-reasoning-state-{}", Uuid::new_v4()));
         let path = opencode_config_dir(&root).join("opencode.jsonc");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -3921,6 +3936,7 @@ mod tests {
 
     #[test]
     fn selected_opencode_file_is_bound_to_child_environment() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-launch-config-{}", Uuid::new_v4()));
         let dir = opencode_config_dir(&root);
         fs::create_dir_all(&dir).unwrap();
@@ -3990,6 +4006,7 @@ mod tests {
 
     #[test]
     fn opencode_small_model_and_variant_can_be_kept_set_and_cleared() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-clear-defaults-{}", Uuid::new_v4()));
         let path = opencode_config_dir(&root).join("opencode.jsonc");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -4071,6 +4088,7 @@ mod tests {
 
     #[test]
     fn invalid_opencode_candidate_remains_discoverable_and_read_reports_original_error() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-discovery-error-{}", Uuid::new_v4()));
         let dir = opencode_config_dir(&root);
         fs::create_dir_all(&dir).unwrap();
@@ -4111,6 +4129,7 @@ mod tests {
 
     #[test]
     fn typed_profile_flow_discovers_reads_and_saves_all_three_adapters() {
+        let _opencode_env = isolate_opencode_environment();
         let root =
             std::env::temp_dir().join(format!("vibehub-agent-profile-command-{}", Uuid::new_v4()));
         fs::create_dir_all(opencode_config_dir(&root)).unwrap();
@@ -4197,6 +4216,7 @@ mod tests {
 
     #[test]
     fn opencode_protocol_selection_persists_to_npm_and_reads_back() {
+        let _opencode_env = isolate_opencode_environment();
         let root =
             std::env::temp_dir().join(format!("vibehub-agent-profile-protocol-{}", Uuid::new_v4()));
         fs::create_dir_all(opencode_config_dir(&root)).unwrap();
@@ -4295,6 +4315,7 @@ mod tests {
 
     #[test]
     fn typed_profile_flow_covers_conflict_recovery_default_guard_and_launch_args() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!(
             "vibehub-agent-profile-integration-{}",
             Uuid::new_v4()
@@ -4486,6 +4507,7 @@ mod tests {
 
     #[test]
     fn save_writes_opencode_and_codex_literal_keys_without_exposing_them_in_views() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!(
             "vibehub-agent-profile-literal-key-{}",
             Uuid::new_v4()
@@ -4728,6 +4750,7 @@ mod tests {
 
     #[test]
     fn stored_provider_secret_reads_literal_keys_from_native_configs() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!(
             "vibehub-agent-profile-list-secret-{}",
             Uuid::new_v4()
@@ -4884,6 +4907,7 @@ mod tests {
 
     #[test]
     fn compatibility_uses_selected_model_and_distinguishes_unknown_capabilities() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-capability-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join(".config/opencode")).unwrap();
         let path = root.join(".config/opencode/opencode.jsonc");
@@ -4934,6 +4958,7 @@ mod tests {
 
     #[test]
     fn token_limits_validate_and_round_trip_without_losing_other_model_fields() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-limits-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join(".config/opencode")).unwrap();
         let path = root.join(".config/opencode/opencode.jsonc");
@@ -5009,6 +5034,7 @@ mod tests {
 
     #[test]
     fn modalities_round_trip_preserves_unknown_empty_and_declared_states() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-modalities-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join(".config/opencode")).unwrap();
         let path = root.join(".config/opencode/opencode.jsonc");
@@ -5067,6 +5093,7 @@ mod tests {
 
     #[test]
     fn thinking_parameters_round_trip_without_replacing_unmanaged_options() {
+        let _opencode_env = isolate_opencode_environment();
         let root = std::env::temp_dir().join(format!("vibehub-thinking-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join(".config/opencode")).unwrap();
         let path = root.join(".config/opencode/opencode.jsonc");
@@ -5147,6 +5174,7 @@ mod tests {
 
     #[test]
     fn opencode_patch_preserves_complex_variant_values_across_tauri_boundary() {
+        let _opencode_env = isolate_opencode_environment();
         let mut variant_values = BTreeMap::new();
         variant_values.insert(
             "high".to_owned(),
