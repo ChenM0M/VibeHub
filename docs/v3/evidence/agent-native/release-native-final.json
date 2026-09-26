@@ -32,6 +32,6 @@
     "native_ui": "not verified: accessibility permission unavailable"
   },
   "G05": "blocked: macOS native UI chain is not verified; historical all-A-to-F prerequisites are not inferred from this focused run",
-  "evidence_attachments": "Prepared and retained under local-only; public upload rejected by automatic approval review, awaiting explicit user authorization",
+  "evidence_attachments": "User explicitly requested local-only retention; saved under local-only/ and excluded from Git; do not upload",
   "cleanup_requirement": "Not fully met: initial Windows SSH cleanup permanently removed 55 temporary entries; remaining entries were verified in Recycle Bin. See cleanup-all-windows.json. macOS final 788 entries moved to Trash."
 }
