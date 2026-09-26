@@ -101,6 +101,8 @@ fn main() {
             commands::v3_memory_query,
             commands::v3_orchestration_command,
             commands::v3_load_view_bundle,
+            commands::v3_read_view_revision,
+            commands::v3_load_view_sections,
             commands::v3_load_node_brief,
             commands::v3_query_project_structure,
             commands::v3_query_archived_tasks,

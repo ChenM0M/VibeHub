@@ -222,8 +222,9 @@ assert(sourceMatrixSource.includes("**There is no V3 production mock data path.*
 assert(sourceMatrixSource.includes("No fixture command escalation."), "G04 data-source matrix declares fixture command isolation");
 assert(/productionLoader=\{loadV3ProductionViews\}/.test(homeSource), "production route injects the dedicated V3 production view loader");
 assert(/legacyLoader=\{loadLegacyV2Archive\}[\s\S]{0,120}usageLoader=\{tauriApi\.vibehubReadLocalAgentUsage\}/.test(homeSource), "production route injects independent legacy and usage readers");
-assert(/invoke<NativeV3ViewBundle>\("v3_load_view_bundle"/.test(productionViewsSource), "production view loader invokes only v3_load_view_bundle");
-assert(/projectOverview: native\.project_overview[\s\S]{0,300}nodeBrief: native\.node_brief/.test(productionViewsSource), "production view loader maps the complete native V3 view bundle");
+assert(/invoke<NativeV3ViewBundle>\("v3_load_view_bundle"/.test(productionViewsSource), "production foreground loader retains v3_load_view_bundle");
+await import("../v3-cockpit/agent-native-cache.mjs");
+assert(true, "production loader mapping and incremental cache pass executable mocked-native behavior checks");
 assert(/invoke<LegacyV2Archive>\("legacy_v2_load_archive"/.test(legacyV2Source), "legacy-v2 reader uses its independent archive command");
 const fixtureRouteMatch = homeSource.match(/if \(showV3Playground\) \{([\s\S]*?)\n\s*\}\n\s*\n\s*if \(!config\)/);
 const fixtureRouteSource = fixtureRouteMatch?.[1] ?? "";

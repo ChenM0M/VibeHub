@@ -254,12 +254,18 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       if (refreshInFlight.current) return;
       refreshInFlight.current = true;
-      void loadCurrentBundle(undefined, { background: true }).finally(() => {
+      void loadCurrentBundle(undefined, { background: true, panels: ["project_overview", "node_brief", activeTab === "overview" ? "agent_results" : activeTab === "timeline" ? "task_timeline" : activeTab === "plan" ? "plan_graph" : "project_structure"] }).finally(() => {
         refreshInFlight.current = false;
       });
     }, 4000);
     return () => window.clearInterval(interval);
-  }, [sourceMode, projectPath, productionLoader, layoutStatus?.state, loadCurrentBundle]);
+  }, [sourceMode, projectPath, productionLoader, layoutStatus?.state, activeTab, loadCurrentBundle]);
+
+  useEffect(() => {
+    if (sourceMode === "production" && bundle && layoutStatus?.state === "v3") {
+      void loadCurrentBundle(undefined, { background: true, panels: ["project_overview", "node_brief", activeTab === "overview" ? "agent_results" : activeTab === "timeline" ? "task_timeline" : activeTab === "plan" ? "plan_graph" : "project_structure"] });
+    }
+  }, [sourceMode, activeTab, activeProjectPath, layoutStatus?.state, loadCurrentBundle]);
 
   useEffect(() => {
     setArchivedDetail(null);
@@ -504,20 +510,20 @@ export function V3Cockpit({ onBack, initialSourceMode, debugMode = false, projec
   }] : [];
   const projectWarnings = Array.from(new Map([
     ...overview.warnings,
-    ...timeline.warnings,
-    ...planGraph.warnings,
-    ...structure.warnings,
+    ...(activeTab === "timeline" ? timeline.warnings : []),
+    ...(activeTab === "plan" ? planGraph.warnings : []),
+    ...(activeTab === "structure" ? structure.warnings : []),
     ...syntheticStructureWarnings,
     ...nodeBrief.warnings,
-    ...agentResults.warnings,
+    ...(activeTab === "overview" ? agentResults.warnings : []),
   ].map((warning) => [`${warning.code}:${warning.message_key}`, warning])).values());
   const projectErrors = Array.from(new Map([
     ...overview.errors,
-    ...timeline.errors,
-    ...planGraph.errors,
-    ...structure.errors,
+    ...(activeTab === "timeline" ? timeline.errors : []),
+    ...(activeTab === "plan" ? planGraph.errors : []),
+    ...(activeTab === "structure" ? structure.errors : []),
     ...nodeBrief.errors,
-    ...agentResults.errors,
+    ...(activeTab === "overview" ? agentResults.errors : []),
   ].map((item) => [`${item.code}:${item.message_key}`, item])).values());
 
   const criteria = selectedTask?.criteria ?? timeline.criteria;

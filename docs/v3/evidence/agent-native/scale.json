@@ -1,0 +1,56 @@
+{
+  "fixture": "deterministic repetitions of validator-produced progress; real validator continuation checked",
+  "cases": [
+    {
+      "brief_bytes": 1848,
+      "brief_p50_ms": 48.989375,
+      "brief_p95_ms": 50.019792,
+      "other_task_history": false,
+      "probe_p50_ms": 13.888124999999999,
+      "probe_p95_ms": 14.012625,
+      "read_work": {
+        "bundles": 0,
+        "decoded_events": 0,
+        "project_history_reads": 0,
+        "task_history_reads": 0
+      },
+      "samples": 30,
+      "synthetic_progress_events": 1000,
+      "warmup": 5
+    },
+    {
+      "brief_bytes": 1845,
+      "brief_p50_ms": 73.969458,
+      "brief_p95_ms": 76.233458,
+      "other_task_history": true,
+      "probe_p50_ms": 20.955000000000002,
+      "probe_p95_ms": 23.050625,
+      "read_work": {
+        "bundles": 0,
+        "decoded_events": 0,
+        "project_history_reads": 0,
+        "task_history_reads": 0
+      },
+      "samples": 30,
+      "synthetic_progress_events": 100000,
+      "warmup": 5
+    },
+    {
+      "brief_bytes": 1850,
+      "brief_p50_ms": 100.958542,
+      "brief_p95_ms": 104.519959,
+      "other_task_history": false,
+      "probe_p50_ms": 20.409833,
+      "probe_p95_ms": 21.912292,
+      "read_work": {
+        "bundles": 0,
+        "decoded_events": 0,
+        "project_history_reads": 0,
+        "task_history_reads": 0
+      },
+      "samples": 30,
+      "synthetic_progress_events": 100000,
+      "warmup": 5
+    }
+  ]
+}

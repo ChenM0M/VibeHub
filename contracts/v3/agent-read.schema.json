@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibehub.dev/contracts/v3/agent-read/1/response.schema.json",
+  "title": "AgentReadResponse",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "ok",
+    "scope"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "agent-read/1"
+    },
+    "ok": {
+      "const": true
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "project_id"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "freshness": {
+      "enum": [
+        "fresh",
+        "stale",
+        "rebuilding",
+        "failed"
+      ]
+    },
+    "completeness": {
+      "enum": [
+        "partial",
+        "complete"
+      ]
+    },
+    "unchanged": {
+      "const": true
+    },
+    "data": {
+      "type": "object"
+    },
+    "budget": {
+      "type": "object"
+    },
+    "next_step": {
+      "$ref": "#/$defs/next_step"
+    },
+    "content_trust": {
+      "const": "untrusted_data"
+    },
+    "evidence_dictionary": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "unchanged",
+        "revision",
+        "freshness"
+      ],
+      "not": {
+        "required": [
+          "data"
+        ]
+      }
+    },
+    {
+      "required": [
+        "data"
+      ],
+      "not": {
+        "required": [
+          "unchanged"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "next_step": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "summary",
+            "scope",
+            "inputs",
+            "criterion_ids"
+          ],
+          "properties": {
+            "kind": {
+              "const": "work_required"
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "type": "object"
+            },
+            "inputs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "criterion_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "summary",
+            "scope",
+            "criterion_ids",
+            "evidence_categories"
+          ],
+          "properties": {
+            "kind": {
+              "const": "evidence_required"
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "type": "object"
+            },
+            "criterion_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "evidence_categories": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "summary",
+            "scope",
+            "question",
+            "reason",
+            "required_input"
+          ],
+          "properties": {
+            "kind": {
+              "const": "input_required"
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "type": "object"
+            },
+            "question": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "required_input": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "summary",
+            "dependency",
+            "resume_condition",
+            "recheck"
+          ],
+          "properties": {
+            "kind": {
+              "const": "wait_external"
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dependency": {
+              "type": "string"
+            },
+            "resume_condition": {
+              "type": "string"
+            },
+            "recheck": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "summary",
+            "scope",
+            "state"
+          ],
+          "properties": {
+            "kind": {
+              "const": "done"
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "type": "object"
+            },
+            "state": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "tool",
+            "params",
+            "scope",
+            "revision",
+            "invalidated_by"
+          ],
+          "properties": {
+            "kind": {
+              "const": "tool_call"
+            },
+            "tool": {
+              "type": "string",
+              "minLength": 1
+            },
+            "params": {
+              "type": "object"
+            },
+            "scope": {
+              "type": "object"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "invalidated_by": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

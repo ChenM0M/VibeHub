@@ -1,0 +1,37 @@
+{
+  "binary_sha256": "b8b5a789488489171615a8f8a20bfbb8b2bbf327257418498580341b64592a70",
+  "binary_changed_during_run": false,
+  "host": "opencode",
+  "model_requested": "cmoms-paid/gpt-5.6-sol",
+  "host_version": "1.18.32",
+  "process": {
+    "exit": 1,
+    "host": "opencode",
+    "elapsed_seconds": 7.25
+  },
+  "status": "blocked_or_incomplete",
+  "facts": {
+    "event_count": 0,
+    "event_types": [],
+    "closed": false,
+    "task_completed": false
+  },
+  "tool_trace": [],
+  "aggregate_host_usage": null,
+  "reported_steps": [],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "not exposed; configured host default",
+  "samples": 1,
+  "limitations": [
+    "Not a fixed-model multi-run evaluation",
+    "Does not test host reconnection or resource rendering"
+  ],
+  "host_errors": [
+    {
+      "name": "APIError",
+      "message": "Missing required parameter: 'tools[0].name'.",
+      "status_code": 400
+    }
+  ]
+}

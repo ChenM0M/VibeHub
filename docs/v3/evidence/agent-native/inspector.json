@@ -1,0 +1,12 @@
+{
+  "versions_found": [
+    "2.8.0"
+  ],
+  "binary_sha256": "6d562403dc921469006f146e5b64bf61ecddadbaba07f2e9af87775d314b5aff",
+  "tools": 12,
+  "task_brief_succeeded": true,
+  "strict_exit": 0,
+  "schema_errors": 0,
+  "schema_warnings": 56,
+  "warning_scope": "Legal nullable type arrays across tools and preserved legacy free-form details. Not evidence of universal provider compatibility."
+}

@@ -112,6 +112,9 @@ jobs:
           echo "::error title=Packaged MCP contract failed::$summary"
           exit 1
 
+      - name: Validate Agent-native reads and recovery
+        run: npm run v3:agent-native:check
+
       - name: Validate patch hygiene
         run: git diff --check
 

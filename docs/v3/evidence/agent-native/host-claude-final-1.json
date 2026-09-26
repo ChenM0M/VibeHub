@@ -1,0 +1,235 @@
+{
+  "binary_sha256": "6a5a5ec1b89071614d5db813ba3d62852c12e167f573f39ab8715c4042237d06",
+  "binary_changed_during_run": false,
+  "host": "claude",
+  "model_requested": "step-3.5-flash-2603",
+  "host_version": "2.1.273 (Claude Code)",
+  "process": {
+    "exit": 0,
+    "host": "claude",
+    "elapsed_seconds": 21.9
+  },
+  "status": "closed_but_error_repair_not_verified",
+  "facts": {
+    "event_count": 5,
+    "event_types": [
+      "session.task_bound",
+      "session.opened",
+      "progress.logged",
+      "agent.result_recorded",
+      "session.closed"
+    ],
+    "closed": true,
+    "task_completed": false
+  },
+  "tool_trace": [
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_start",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__workspace_context",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_record",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__session_finish",
+      "status": "requested"
+    }
+  ],
+  "aggregate_host_usage": {
+    "input_tokens": 47553,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 9920,
+    "output_tokens": 2105,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "reported_steps": [],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "step-3.5-flash-2603",
+  "samples": 1,
+  "limitations": [
+    "Not a fixed-model multi-run evaluation",
+    "Does not test host reconnection or resource rendering"
+  ],
+  "host_errors": [],
+  "verified_checks": {
+    "unknown_field_rejected": false,
+    "subsequent_brief_succeeded": false,
+    "independent_facts_match": true
+  },
+  "tool_results": [
+    {
+      "tool": "mcp__fixture__task_brief",
+      "unknown_field_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "unknown_field_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__task_start",
+      "unknown_field_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__workspace_context",
+      "unknown_field_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__task_record",
+      "unknown_field_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__session_finish",
+      "unknown_field_requested": false,
+      "codes": [],
+      "success": true
+    }
+  ],
+  "model_request_measurement": {
+    "source": "actual outgoing host HTTP requests; no bodies/credentials retained",
+    "tokenizer": "tiktoken 0.12.0/o200k_base reference encoding, not provider-specific billing tokens",
+    "requests": [
+      {
+        "request_model": "step-3.7-flash",
+        "tools": {
+          "bytes": 2,
+          "o200k_reference_tokens": 1
+        },
+        "tool_count": 0,
+        "visible_tool_results": {
+          "bytes": 2,
+          "o200k_reference_tokens": 1
+        },
+        "visible_tool_result_count": 0
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 2,
+          "o200k_reference_tokens": 1
+        },
+        "visible_tool_result_count": 0
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 2127,
+          "o200k_reference_tokens": 519
+        },
+        "visible_tool_result_count": 1
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 4253,
+          "o200k_reference_tokens": 1036
+        },
+        "visible_tool_result_count": 2
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 5205,
+          "o200k_reference_tokens": 1300
+        },
+        "visible_tool_result_count": 3
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 7868,
+          "o200k_reference_tokens": 1965
+        },
+        "visible_tool_result_count": 4
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 8632,
+          "o200k_reference_tokens": 2158
+        },
+        "visible_tool_result_count": 5
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 9509,
+          "o200k_reference_tokens": 2389
+        },
+        "visible_tool_result_count": 6
+      }
+    ]
+  }
+}

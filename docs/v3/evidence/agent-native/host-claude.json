@@ -1,0 +1,26 @@
+{
+  "host": "claude",
+  "host_version": "2.1.273 (Claude Code)",
+  "process": {
+    "exit": 1,
+    "host": "claude",
+    "elapsed_seconds": 1.21
+  },
+  "status": "blocked_or_incomplete",
+  "facts": {
+    "event_count": 0,
+    "event_types": [],
+    "closed": false,
+    "task_completed": false
+  },
+  "tool_trace": [],
+  "aggregate_host_usage": null,
+  "failure": "Not logged in · Please run /login",
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "not exposed; configured host default",
+  "samples": 1,
+  "limitations": [
+    "Not a fixed-model multi-run evaluation",
+    "Does not test host reconnection or resource rendering"
+  ]
+}

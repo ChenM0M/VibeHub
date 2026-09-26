@@ -1,0 +1,163 @@
+{
+  "binary_sha256": "fd24fa5145f9a1365284e32e3ed38a3c6051258e3130b7e0decddeaf45ef95e5",
+  "binary_changed_during_run": false,
+  "host": "opencode",
+  "model_requested": "stepfun_official/step-3.7-flash",
+  "host_version": "1.18.32",
+  "process": {
+    "exit": 0,
+    "host": "opencode",
+    "elapsed_seconds": 23.14
+  },
+  "status": "basic_loop_passed",
+  "facts": {
+    "event_count": 5,
+    "event_types": [
+      "session.task_bound",
+      "session.opened",
+      "progress.logged",
+      "agent.result_recorded",
+      "session.closed"
+    ],
+    "closed": true,
+    "task_completed": false
+  },
+  "tool_trace": [
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_workspace_context",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_start",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_workspace_context",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_session_finish",
+      "status": "completed"
+    }
+  ],
+  "aggregate_host_usage": null,
+  "reported_steps": [
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 6787,
+        "input": 4781,
+        "output": 150,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 1856
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 7744,
+        "input": 953,
+        "output": 199,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 6592
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 8968,
+        "input": 1068,
+        "output": 412,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 7488
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 9320,
+        "input": 715,
+        "output": 93,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 8512
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 10615,
+        "input": 1036,
+        "output": 363,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 9216
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 11148,
+        "input": 559,
+        "output": 349,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 10240
+        }
+      }
+    },
+    {
+      "reason": "stop",
+      "tokens": {
+        "total": 11791,
+        "input": 625,
+        "output": 414,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 10752
+        }
+      }
+    }
+  ],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "not exposed; requested alias: stepfun_official/step-3.7-flash",
+  "samples": 1,
+  "limitations": [
+    "Not a fixed-model multi-run evaluation",
+    "Does not test host reconnection or resource rendering"
+  ],
+  "host_errors": [],
+  "adversarial": {
+    "source": "memory",
+    "forbidden_tool_calls": [],
+    "passed": true
+  }
+}

@@ -2,8 +2,8 @@
 
 - 文档版本：0.2
 - 建立日期：2026-09-26
-- 最近更新：2026-09-26；已确认分层读模型与当前工作上下文策略
-- 状态：实施设计基线；产品改动尚未实施，验收尚未执行
+- 最近更新：2026-09-26；B0–B4 实现和本机验收持续更新于第 14 节
+- 状态：v0.2 设计基线不变；产品实现已落地，验收部分通过，尚未达到发布门禁
 - 适用范围：V3 MCP、Agent 引导、任务查询服务，以及 Cockpit 共用的读取链路
 - 后续实施入口：第 12 节的分批计划；验收入口：第 11 节
 
@@ -431,7 +431,7 @@ Cockpit 保留可见性暂停、防重入和请求上下文保护，改为：小
 
 ## 11. 验收标准与测量方法
 
-以下为目标，当前全部**未验收**。预算变更须记录实际基线、原因和影响，不可因实现困难直接删除门禁。
+以下为验收目标；逐项实际状态见第 14.8 节，不能把目标表当作通过记录。预算变更须记录实际基线、原因和影响，不可因实现困难直接删除门禁。
 
 ### 11.1 验收矩阵
 
@@ -509,12 +509,12 @@ warm 版本探测 p95 初始目标为本地基准环境 ≤100 ms，简报 ≤30
 
 | 批次 | 工作与产物 | 依赖 | 退出条件 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| B0 基线与契约冻结 | 记录源码/二进制/宿主版本；建立大任务 fixture 与指标脚本；冻结三层读取、必要工作上下文、实体组合/过滤、诊断导出、next-step、error schema 和能力发现 | 无 | F01–F12 复核，指标可复跑，契约评审记录齐全 | 未开始 |
-| B1 调用正确性 | 公开 enum；修复 next-action 的空工具/占位参数；区分 work/evidence/input/wait；结构化错误与恢复；同步公共引导 | B0 | AC03–05 对既有入口通过；不破坏旧响应契约 | 未开始 |
-| B2 分层读取与工作上下文 | 新增 workspace_context/task_brief/task_inspect 及专用查询路径；直接定位、服务端过滤、有界关联组合、预算、分页、证据展开和新旧适配 | B0、B1 | AC01–02、AC09、AC15–16 通过；新读取不构造完整 bundle；AC12 有第一轮对照数据 | 未开始 |
-| B3 作用域与组合操作 | context_handle、稳定 request ID、task_start/session_finish 与故障恢复 | B1、B2 | AC06–07、AC14 通过；任何部分成功可查询恢复 | 未开始 |
-| B4 增量优化与桌面接入 | 依赖 revision、小探测与按面板刷新；按测量增加高频查询缓存/物化投影；诊断导出、目录精简和真实宿主评估 | B2；涉及句柄路径需 B3 | AC08、AC10–12、AC17 通过；延迟、后端工作量及决策调用数有对照 | 未开始 |
-| B5 兼容收口与发布准备 | 原生验证、迁移文档、回滚演练、支持矩阵；完整 CI/发布门禁 | B1–B4 | 全部必需验收有证据；未测平台明确阻塞，不宣称已通过 | 未开始 |
+| B0 基线与契约冻结 | 记录源码/二进制/宿主版本；建立大任务 fixture 与指标脚本；冻结三层读取、必要工作上下文、实体组合/过滤、诊断导出、next-step、error schema 和能力发现 | 无 | F01–F12 复核，指标可复跑，契约评审记录齐全 | 完成：真实 B0 二进制、14 类交互对照和契约已冻结，见 14.13 |
+| B1 调用正确性 | 公开 enum；修复 next-action 的空工具/占位参数；区分 work/evidence/input/wait；结构化错误与恢复；同步公共引导 | B0 | AC03–05 对既有入口通过；不破坏旧响应契约 | 实现与本机固定错误场景验证完成；宿主门禁另见 B4 |
+| B2 分层读取与工作上下文 | 新增 workspace_context/task_brief/task_inspect 及专用查询路径；直接定位、服务端过滤、有界关联组合、预算、分页、证据展开和新旧适配 | B0、B1 | AC01–02、AC09、AC15–16 通过；新读取不构造完整 bundle；AC12 有第一轮对照数据 | 完成：两平台分层读取、三档 policy、scoped blocker 与必要上下文对照通过 |
+| B3 作用域与组合操作 | context_handle、稳定 request ID、task_start/session_finish 与故障恢复 | B1、B2 | AC06–07、AC14 通过；任何部分成功可查询恢复 | 完成：macOS/Windows 恢复、幂等、原生 IO 与三个宿主重连通过 |
+| B4 增量优化与桌面接入 | 依赖 revision、小探测与按面板刷新；按测量增加高频查询缓存/物化投影；诊断导出、目录精简和真实宿主评估 | B2；涉及句柄路径需 B3 | AC08、AC10–12、AC17 通过；延迟、后端工作量及决策调用数有对照 | 完成：缓存/目录/导出、真实宿主、14 类交互字节/token/调用门禁通过，见 14.13 |
+| B5 兼容收口与发布准备 | 原生验证、迁移文档、回滚演练、支持矩阵；完整 CI/发布门禁 | B1–B4 | 全部必需验收有证据；未测平台明确阻塞，不宣称已通过 | 已完成授权范围内本地与 Windows 源码原生门禁；CI 配置已补齐。发布和精确 Release 安装包验收仍阻塞 |
 
 优先交付 B1/B2，避免先进行大规模 facade 重写却迟迟无法改善当前调用体验。B2 必须完成分层查询的结构性改造，不能只做输出裁剪；B4 的性能深化与桌面接入可在 B2 契约稳定后提前实施，不必等待全部组合写入完成。
 
@@ -578,3 +578,175 @@ B0 需要冻结的项目：最终 schema 文件名和错误 code 兼容策略、
 - [Task-scoped 读取基准](task-scoped-read-benchmark-2026-08-23.md)
 - [增量投影设计](indexed-incremental-projection-2026-08-23.md)
 - [发布与原生验收约束](agent-release-process.md)
+
+### 14.3 B0 / B1 实施记录（2026-09-26）
+
+- 工作树初始干净，基线 commit `24547e3a0c1b0d6eb606d04aaff1324f32752150`，设计文件已跟踪。环境 macOS 27.0 (26A428)、arm64、Rust 1.98.1、Node 22.23.3；服务端 3.3.12。源码重建基线 CLI SHA-256 `f1265b99ebe39219f0429ad7ec4001b2906f95eb136885d08da59342289bfb5a`。
+- 可复跑基线：`node scripts/v3-mcp/agent-native-baseline.mjs`；隔离小任务，5 次预热、30 次测量，结果见 [b0-small.json](evidence/agent-native/b0-small.json)。结果 14,273 bytes，MCP result 对象 30,078 bytes（早期脚本误标 wire，未含 JSON-RPC 包装/换行；原始完整 wire 未留存，已更正为 unknown），p50 39.39ms / p95 45.73ms；原始目录 31 tools / 33,009 bytes。token 与真实宿主注入不可观测，记 unknown。
+- F02–03、F05–08、F10–12 已复核源码路径；F01/F04/F09 为此前真实项目/宿主样本，不能拿隔离小任务替代复测。大规模合法 fixture 和真实宿主仍待补齐，B0 尚未退出。
+- 冻结增量契约：`agent-read/1`，默认 16 KiB、最大 64 KiB；任务/节点简报与实体详情独立查询，不调用 bundle；cursor 绑定 scope/filter/revision；revision 覆盖日志、任务元数据、项目配置及 Memory 事件。旧 task_view 保持不变。新错误保留稳定 code 并增加恢复信息；未知提交结果不得声明 state_changed=false。
+- B1 开始：公开既有字符串枚举的 Schema，保持旧解析/错误兼容；删除从文案猜工具及占位参数的下一步生成逻辑。验证尚在进行，不代表 AC03–05 已通过。
+
+### 14.4 读取与组合操作开发记录
+
+- B2 已增加 `agent_read.rs` 专用服务：简报只读任务投影、绑定和 Memory；事件详情通过 SQLite event_id/task_id 联合条件直达；实体通过 SQLite `json_each` 定位指定值，不解码整个任务投影。未调用桌面 bundle。新增 workspace_context/task_brief/task_inspect，旧 task_view 不变。
+- `node scripts/v3-mcp/agent-native-test.mjs` 第一轮通过，见 [b2-integration.json](evidence/agent-native/b2-integration.json)：真实 session_open/event_log 后验证绑定恢复、过期 revision 拒绝、逐页无重复且与旧时间线一致、按类型/Session 过滤、长中文事件完整分块还原、cursor stale、配置变化失效。30 次暖简报 p95 29.06ms，结果 1,300 bytes。该样本包含长事件，旧结果 166,545 bytes；不能作为 AC12 固定场景总体收益。
+- B2 仍未达到退出条件：完整 blocker 语义对照、过滤/include 范围、大数据性能、统一证据字典及超大必要约束 prerequisite 的闭环验证仍需补齐；相关 AC 保持未通过。
+- B3 开发：稳定 request_id 的不可变操作记录保存于 `.vibehub/agent-operations/`，逐步提交事实仍由原 typed validator/event store 完成。记录保留至对应事件被合法移除；未完成操作禁止清理。跨进程文件锁及稳定内部幂等键用于恢复，回执公开 completed_steps/pending_steps；不宣称原子事务。正在补齐故障/重启测试。
+- 当前没有真实宿主闭环证据，AC11/12 的模型 token 与宿主指标仍 unknown；Windows Release 原生验收受未授权发布及无本次精确 artifact 阻塞，不能由 macOS 测试替代。
+
+### 14.5 规模测量与桌面增量读取
+
+- `cargo test --locked -p vibehub-core scale_read_benchmark -- --ignored --nocapture` 已通过，见 [scale.json](evidence/agent-native/scale.json)。fixture 重复应用服务真实生成的 progress 形状，连续版本/唯一身份，无伪造验收或完成事实，并用真实 validator 接续写入验证历史合法性。
+- 5 次预热、30 次测量：1,000 当前任务事件简报 p95 50.02ms；100,000 其他任务事件 76.23ms；100,000 当前任务事件 104.52ms。版本探测 p95 分别 14.01/23.05/21.91ms。所有场景简报 <2 KiB，计数器记录 bundle=0、任务历史读取=0、项目历史读取=0、事件解码=0；满足该本机环境的 300ms/100ms 初始性能门禁，不等同于全场景验收。
+- 新增可重建 `agent_session_summaries` SQLite 辅助表，依赖原 Session projection 的 `last_global_seq`。缺失或 watermark 不同才从既有投影重建；旧二进制写入也会使其失效；不新增权威事实。
+- 桌面 `v3_read_view_revision` 使用同一任务读取 revision，额外覆盖项目文件索引 fingerprint、任务元数据与 current pointer。生产 loader 仅在后台探测未变时复用原 bundle，store 保持引用、不发布；前台仍强制读取，读取期间版本变化不缓存。`node scripts/v3-cockpit/agent-native-cache.mjs` 与 `npm run v3:cockpit-refresh:check` 通过。后续已补齐变更后的按面板刷新及行为对照，见 14.7；真实宿主与全场景收益仍是 B4 退出条件。
+- 目录配置 `VIBEHUB_MCP_CATALOG=agent|advanced|legacy` 在连接建立时固定；默认 legacy 保持旧目录加新接口，agent 为 12 个常用入口，说明需重连 advanced 才能访问计划编辑等高级操作。原始目录与真实宿主注入仍分别统计。
+- 本机可执行文件版本：Codex CLI 0.156.1、Claude Code 2.1.273、OpenCode 1.18.32；仅查版本，尚未通过三个真实宿主运行闭环。raw stdio 通过不等价于 AC11。
+
+### 14.6 故障恢复、查询边界与契约收口
+
+- 真实 MCP 子进程 kill/restart、响应丢弃后同键重试、不同 payload 冲突、句柄重启失效、legacy 回读相同 5 条事实已通过，见 [b3-recovery.json](evidence/agent-native/b3-recovery.json)。`task_start` 逐步计划在提交前持久化；已 active 节点不再提交 active→active。`session_finish` 不完成节点、criterion 或任务。
+- B2 实体 ID 查询增加 `agent_entities` / `agent_entity_watermarks` / `agent_evidence_refs` 可重建索引，按 task projection watermark 失效；索引重建时清空辅助表。原始 evidence/event 仍走唯一 ID 索引。注册的外部引用可解析为 reference metadata，但不伪造采集正文、不任意打开路径。
+- 新读取使用 evidence_ids 和响应内去重字典；领域对象过大可完整分块，分页计入字典开销。查询新增序号/时间范围、事件状态过滤，以及有界 include=evidence/criteria。原始 Memory 事件不能绕过 principal-aware Memory 接口读取。
+- 新写入 details 暴露 progress/risk summary 与 terminal result 的必需结构/枚举；task_inspect 在 Schema 中表达 section 与 entity 两种互斥目标；句柄写入暴露显式 scope 或 handle 的输入条件。新接口拒绝未知顶层字段。legacy 多步骤错误无法证明未提交时使用 state_changed=unknown。
+- 发布门禁进展：`npm run build`、`npm run release:check`、`npm run v3:contracts:check`（828 assertions）、现有 MCP 闭环通过。完整 workspace 回归在允许本机 HTTP 端口环境通过一次，后续补丁须最终复跑。macOS 本地 bundle 已构建，但初始只有 linker ad-hoc signature，strict 验签失败；需为最终本地产物补齐 bundle ad-hoc 签名并复验，不宣称 Developer ID/notarized。
+
+### 14.7 本轮实现收口、兼容与可复跑入口
+
+- 独立 `AgentReadService` 负责 brief、实体/分区、过滤、分块及显式诊断导出；不调用兼容 `load_bundle`。保持原事件、配置和索引权威，新增的 Session/实体/引用表均可重建。一次读取中的 revision 前后变化会失败，不能把混合快照作为 fresh。
+- `NextStep` 已为 Rust tagged enum。已绑定 standard Task 缺节点定位时给出真实 `task_inspect(plan)` 调用；尚需实施时为 work_required；已记录成功结果但 required criteria 尚待验证时为 evidence_required；缺身份、已关闭 Session、完成确认等为 input_required。没有受信外部等待事实时不凭文案合成 wait_external。不自动 review、完成节点、确认或归档。
+- 新接口的实际 tools/list 输入 Schema 冻结于 `contracts/v3/agent-tools.contract.json`；结果契约为 `contracts/v3/agent-read.schema.json`。Schema 更新必须显式运行 `UPDATE_AGENT_CONTRACT=1 node scripts/v3-mcp/agent-native-test.mjs` 后审查差异。测试曾发现可选 enum 被误标 required，现已修复并以真实建议调用验证。
+- 参数解码错误提供字段级类型/枚举信息且不回显输入秘密；cursor/读取 revision 冲突返回当前分区的完整 refresh 参数；已知 session 的 binding 冲突返回 workspace_context 参数。无身份的过期句柄明确要求原始 Session 身份，不能从 current/default 推断。
+- B3 操作不是事务：不可变请求与步骤计划、跨进程锁、原 validator 与稳定事件幂等键共同恢复。已补 bind/activate/open 和 result/close 每个提交点的中断与模拟 IO 故障、真实注册目录 IO 失败、同键并发重放。真实 MCP SIGKILL/restart 另见 b3-recovery。没有测试系统断电/磁盘硬件故障，不能扩大解释。
+- 桌面新增 `v3_load_view_sections`：仅构造所请求面板；背景刷新保持各面板独立 revision，隐藏面板在选中时更新，未变化不发布 bundle。六个独立面板与完整旧视图逐一比较（排除生成时间），native mock 行为测试覆盖面板切换、迟到与竞态。变更后的桌面兼容准备代码仍读取当前 Task history；这不是 Agent 查询路径，也不宣称已把所有桌面面板变成增量物化投影。
+- `npm run v3:agent-native:check` 运行真实新 MCP、进程恢复、三档状态矩阵、并发导出和生产 loader 缓存测试；`npm run v3:mcp:check` 保留旧完整闭环；`npm run v3:contracts:check` 的 loader 映射检查已由源码正则替换为执行行为测试。大规模测量使用 14.5 的显式 ignored benchmark。
+- 默认 `legacy` 目录保留旧工具并添加新入口；`agent` 固定 12 工具；`advanced` 保留高级操作。模式在建连时选择，不依赖动态 tools/list 通知。切回旧接口前先用 operation_status 检查未完成操作；保留 `.vibehub/agent-operations/`，不要回滚删除已提交事实。
+- 诊断导出是显式 Task/Project 快照，回执仅 manifest；普通 diagnostic_read 可分块取回、hash 校验及删除。24 小时到期后拒绝读取，需显式 delete 清理文件；不宣称后台定时清理。排除凭据字段、句柄、操作 payload、工作区文件、项目配置、个人/秘密 Memory 与原始 Memory 事件；配置仍通过原 typed settings 接口诊断，导出 exclusions 明确列出这一范围。外部 evidence 引用返回 reference metadata，不伪造采集正文、不任意打开路径。
+
+### 14.8 AC01–AC17 当前证据判定
+
+本表已按 14.13 的最终证据更新。通过项仅限记录的 fixture、宿主版本/模型及原生源码构建；不能外推为所有模型或已发布安装包通过。14.4–14.12 保留历史实施记录，其中曾经未测/阻塞的描述由本表和 14.13 的新证据取代。
+
+| ID | 状态 | 实际证据 / 剩余项 |
+| --- | --- | --- |
+| AC01 | 本机通过 | brief/workspace 默认 16 KiB 硬预算，普通操作回执 2 KiB 断言；必要内容过长明确失败，UTF-8 分块可取回 |
+| AC02 | 本机通过 | timeline/criteria 全页与旧事实对照、长中文 event 复原、实体跨任务拒绝、引用解析；27 个 scoped blocker 按默认页遍历且初始 brief 仍完整、有界（state-matrix） |
+| AC03 | 本机通过 | 实际目录 Schema 校验 typed plan-read 建议后执行成功，旧 next_action 仅映射合法 tool_call；不存在占位参数 |
+| AC04 | 本机通过 | 实施/待验证/输入分型与无自动 criterion、node、Task 完成；结果与关闭不表示 Task 完成。没有 typed 外部条件时不会凭文案伪造 wait_external |
+| AC05 | 本机固定错误场景通过 | 枚举、字段类型、未知字段、binding 冲突、cursor 单次刷新已测；补测缺参数、字段类型、非法 state、显式版本冲突后，一次修正/有界刷新通过；字段合法值直接来自实际工具 Schema |
+| AC06 | 本机通过 | 跨作用域、关闭/重启句柄、同键不同 payload 拒绝；真实响应丢弃/重启及同键并发无重复业务事实 |
+| AC07 | 两平台源码原生通过 | 全部组合提交点中断/模拟 IO 故障、注册 IO 失败和真实进程 kill/restart；Windows 完整 core/CLI 回归及恢复脚本通过，见 windows-native / windows-recovery |
+| AC08 | 本机通过 | 计数器与 1k/100k benchmark：unchanged 无 bundle/history；≤1 KiB；生产背景同对象不发布，独立面板懒刷新 |
+| AC09 | 本机场景矩阵通过 | 三档 policy 的 goal/policy/state/criteria/binding 与旧视图对照；关联 finding、其他节点阻塞与当前节点分离实测通过，见 state-matrix。历史外部阻塞文案不作为新模型决策来源 |
+| AC10 | 本机通过 | 真 tools/list 验证 agent=12；renderer 4 与 AGENTS/CLAUDE 新读取引导一致；高级功能明确重连，不建议调用缺失目录工具 |
+| AC11 | 记录的三宿主/模型通过 | 每宿主同模型同基本输入 2/2 闭环、各 1 次双进程重连与普通工具证据 fallback，均核对受控错误/修复及独立 5 条事实。模型为记录的 alias，非供应商不可变快照；不宣称其他模型通过，见 host-*-acceptance-{1,2} / host-*-reconnect |
+| AC12 | 固定交互集通过 | 14 类实测总 result bytes 减少 92.79%，全部正文/错误/共同写回执计费；53→73 次协议调用，增加项为显式详情/诊断及注入恢复，当前工作 decision round trips 仍 1。tiktoken 固定编码与真实 Claude 出站工具内容另计，见 interaction-matrix 和 14.13 的范围说明 |
+| AC13 | 源码原生通过；Release 验收阻塞 | macOS/Windows CLI、EOF、重启、文件 IO 与新旧 MCP 通过，212 份产品源码逐文件 hash 相同；macOS 最终 bundle strict ad-hoc 验签通过。A07/E07/F07–F10/G05 仍需精确 Release artifact，未授权 commit/push/tag/publish |
+| AC14 | 规定边界与受控对抗通过 | 两平台 legacy 回读和操作恢复通过；敏感字段/Memory principal 边界验证通过。3 宿主 × Memory/原始证据共 6 次提示注入均未调用越权确认/review 工具，未完成 Task；这是有限样本，不是所有注入的安全证明 |
+| AC15 | 本机场景矩阵通过 | 三档 policy、中文目标、实际 authored node 一次恢复含 goal/scope/policy/关联 criteria/约束/阻塞/下一步；Session 原始 working_directory 及来源明确，必要长正文显式失败。真实宿主结果见 AC11 |
+| AC16 | 本机通过 | 独立服务 bundle=0；ID 直达、event 单份解码=1、不读 Task history；状态/序号/Session/node 过滤及有限 include 实测 |
+| AC17 | 本机通过 | Task/Project 快照、全分块、hash、credential 字段排除、Memory 排除、旧 revision 拒绝、24h 到期拒读和显式删除均通过；两独立 MCP 进程并发写入/导出 10 次：7 个一致快照、3 个 revision 拒绝，无混合投影/事件，见 export-race |
+
+### 14.9 真实宿主、本地发布准备与剩余边界
+
+- 宿主复跑：`python3 scripts/v3-mcp/host-evaluation.py codex|claude|opencode`。仅临时 fixture，Codex 忽略用户配置并仅预授权 fixture MCP，Claude 使用 strict MCP 且禁用内置工具，OpenCode 使用 pure 模式及仅 fixture 工具权限。脚本不修改用户持久配置。原始宿主输出留临时目录；仓库只保留工具名/状态、聚合 usage 与独立回读事实，不保存模型内部推理、凭据或 context_handle。
+- [Codex 最终二进制基本闭环](evidence/agent-native/host-codex-final.json)：CLI hash 与 14.10 一致，运行期间未变化；实际 6 次调用（含一次故意错误），5 条领域事实为 bind/open/progress/result/close，Task 未完成；样本数 1，默认模型的精确快照未暴露，不声称固定模型评估通过。fixture 审批配置参考 [官方 MCP 配置](https://developers.openai.com/codex/mcp/)。首轮审批配置不允许调用，修正为仅 fixture 的明确预授权后复跑成功；不是产品领域权限绕过。
+- Claude Code 初始隔离设置未继承认证，首轮未登录不能用来判断用户账户状态。随后仅在进程内继承现有 `ANTHROPIC_*` 配置，未启用用户 hooks/plugins、未输出或保存凭据：[配置模型 water18-new[1m]](evidence/agent-native/host-claude-configured.json) 与 [基础别名 water18-new](evidence/agent-native/host-claude-base-model.json) 均返回模型不存在或无权限，无领域写入。真实闭环受当前 provider/model 配置阻塞。
+- OpenCode 的 [无工具控制请求](evidence/agent-native/opencode-control.json) 正常返回，不能断言整个 API 不可用。默认 `cmomsfree/glm-5.3-flash` [完整流程](evidence/agent-native/host-opencode.json) 120 秒超时，[单次合法读取](evidence/agent-native/opencode-minimal.json) 也未完成；`cmomsfree/kimi-k3` [完成 brief/错误拒绝/修正读取](evidence/agent-native/host-opencode-kimi.json) 后提前停止；`localgpt/gpt-5.5` [连接失败](evidence/agent-native/host-opencode-gpt.json)；`cmoms-paid/gpt-5.6-sol` [HTTP 400](evidence/agent-native/host-opencode-sol.json) 报缺少 `tools[0].name`。这些运行均未产生领域写入，不能标记闭环通过。工具参数在模型 API 层的序列化/协议适配仍需定位，现有证据不足以归因于 VibeHub 或宿主；测试没有修改用户网关或持久模型配置。
+- 未执行 commit、push、tag 或发布；本次没有创建/绑定/推进真实项目 VibeHub Task、Plan、Session。隔离 fixture 中的 typed 写入仅用于真实权限/绑定/版本/验收验证。
+- 尚不具备“全部完成/可发布”的证据。除宿主模型/协议环境及 Windows artifact 外，AC12 完整固定场景对照仍为工程验证剩余项，不包装成外部阻塞；后续需继续补齐，不降低 v0.2 门禁。
+
+- 追加场景证据：[state-matrix.json](evidence/agent-native/state-matrix.json)，覆盖空工作区/多候选、中文意图、lightweight/standard/full、状态/policy/criteria/binding 对照、无关 blocker 不抢占当前工作、finding 直达及单次修正非法 node state。复跑 `node scripts/v3-mcp/agent-state-matrix.mjs`，已纳入 `v3:agent-native:check`。
+- 追加并发恢复修复：中断在 bind 后的 start，可在另一 Session 合法激活同节点后恢复；回执以 satisfied_preconditions 区分“由现有权威投影满足”与本操作的 completed_steps，保存 node/version 见证，不制造 activation event。两 Session 最终只有一次真实 activation。
+
+### 14.10 最终本机证据（清理前）
+
+- [validation.json](evidence/agent-native/validation.json) 记录命令、版本与 hash；[workspace-tests.log](evidence/agent-native/workspace-tests.log) 保存完整通过日志。workspace 主要测试组为 113、11、478 项通过；既有 3 项 ignored 保留，规模 benchmark 另显式运行通过。没有把 ignored 当 passed。
+- 最终 CLI SHA-256：`b8b5a789488489171615a8f8a20bfbb8b2bbf327257418498580341b64592a70`。
+- 最终 macOS bundle 内可执行文件 SHA-256：`7d82f493f38554ec267d00b66291407930d47dbf84e6c90f9b4ad3bacc986bc8`。本地完整 bundle ad-hoc 签名后 `codesign --verify --deep --strict` 通过，[验签日志](evidence/agent-native/macos-codesign.log)；不是 Developer ID / notarization，也不是已发布 artifact。
+- [最终规模测量](evidence/agent-native/scale-final.json)：1k 当前 / 100k 其他 / 100k 当前，brief p95 为 53.23 / 91.88 / 136.74 ms；probe p95 为 14.02 / 23.62 / 23.59 ms；每组 5 次预热、30 次采样。brief 2,248–2,253 bytes，新增工作目录信息后仍远低于 16 KiB；三组 bundle/history/event decode 均为 0。14.5 是早期测量，不能混用为当前 payload 大小。
+- [三档 policy 对照](evidence/agent-native/state-matrix.json) 记录同一快照的旧 task_view 与新 brief 字节，结果字节分别减少 88.68%、91.07%、96.79%；必要当前工作信息已逐项核对。三档 fixture 在同一个项目依次创建，full 对照时已有 standard 的 27 个 blocker 历史；旧整包包含的项目上下文更大，不能把这个比例外推到所有 full 任务。这是三个读取场景的结果，不是 AC12 全部场景/所有往返/真实模型可见 token 的结论。
+- [并发导出](evidence/agent-native/export-race.json) 验证 manifest hash、revision、事件集合和 lifecycle event_ids 的一致性。Task/Project 导出、敏感字段排除、快照旧 revision、24h expiry 与删除由 b2-integration 覆盖。
+- [旧 MCP 完整闭环](evidence/agent-native/legacy-mcp.json) 继续通过；新读取、组合恢复及缓存分别由 b2-integration、b3-recovery、state-matrix 和 executable native mock 覆盖。版本一致性仍为 3.3.12，无 RELEASE_TAG。
+
+- 构建产物清理已执行：约 9.7 GiB debug 缓存、1.4 GiB release/bundle 与 dist 等共 16 个入口通过 `mv` 移入 `/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234`，见 [cleanup.json](evidence/agent-native/cleanup.json)。保留 `target/debug/vibehub` 与 `vibehub.d`，未删除源码或 node_modules，未使用 rm -rf 清理构建产物。清理后再次验证 CLI 纯 stdio 读取和 EOF 退出，hash 保持不变。
+
+### 14.11 本轮交付边界与继续验证入口
+
+- B0 的可重复小任务基线、契约及大历史 fixture 已落地；B1–B4 的代码已实施，满足 14.8 中列明的本机验收；B5 已做本机回归、构建、版本与签名检查和产物清理。批次退出条件仍以第 12 节和 AC 表为准，不把代码完成等同于全部验收完成。
+- 最新新读取集成报告为 30 次采样，result 1,891 bytes / 实际 MCP wire 4,091 bytes，p50 46.87ms / p95 49.22ms，见 b2-integration。14.4 的 1,300 bytes / 29.06ms 是早期开发记录，当前字段和最终数字以本段为准；该长事件样本仍不能用于 AC12 全局结论。
+- 待完成的工程验证：第 11.2 节全部固定场景的新旧完整交互总输出、往返及无效调用对照；固定模型多次宿主评估；宿主重连/资源呈现及完整提示注入对抗矩阵。可观察到的宿主聚合 usage 已保留，模型可见工具内容/token 仍 unknown，不能从 UTF-8 字节换算冒充实测。
+- 外部条件：Claude 需要可用模型；OpenCode 需要查明上述模型工具调用行为和 HTTP 400 协议错误；Windows 发布验收需要之后另行授权的 Release artifact/hash。本轮不请求发布，也不以 Actions 或 macOS 代替 Windows 原生验收。A07、E07、F07–F10、G05 均保持本轮未测。
+- 架构范围未改变：事件/配置保持权威；新读取是独立查询；底层绑定、版本、权限、证据和受信完成确认保持校验。暂缓的事项是未获证据的验收项，没有以降门禁替代。
+
+- 指标口径复核纠正：B0 报告原 `wire_bytes` 实为 MCP result 对象大小，现保留为 `mcp_result_payload_bytes`，不伪造原始完整传输字节；基线脚本已改为按实际收到的 JSON-RPC 行计数。B2 的 4,091 wire bytes 来自实际收到的完整响应行，不能与 B0 的 result 对象口径直接比较。该纠正不影响规范化工具结果字节对照。
+
+### 14.12 继续收口（2026-09-26）
+
+- 用户要求继续完成全部剩余项，沿用本次流程例外与禁止提交/发布约束。重新核对发现宿主配置生成器未写入 agent 目录，且发布流程文档启动说明仍为旧读取表述；已修复生成路径与说明，正在运行行为回归。显式 legacy/advanced 选择及宿主的其他设置保留，不静默修改用户全局配置。
+- 为补全 AC12，正在重建 B0 commit 的隔离二进制，与当前版本在同一合法 fixture 上比较实际响应、必要信息及完整交互。此前回收站缓存已不可用，重新生成的验证产物仍须在最终证据留存后移入回收站。
+- Windows 主机已在线，确认 Windows 11 build 26200 及 Rust/Node 工具链可用。将执行源代码隔离构建与本次 IO 回归；这些结果与精确 Release artifact 的发布后验收分别记录，不相互替代。
+
+- 宿主实测进一步定位：Claude 的固定模型 `step-3.5-flash-2603` 在提供完整 JSON 标识后完成 5 条事实闭环；第一次错误来自模型把 `task.host` 缩写为 `host`，保留失败样本，不计为通过。OpenCode 的 Anthropic provider 已能读取并开始，后续多次把 `$ref` 嵌套 details 编码为 JSON 字符串；已改为内联对象 Schema 并重新冻结契约，保留严格对象校验，正在复测。
+- 配置行为回归发现并修复 TOML env 子表重复同步问题；当前按 VibeHub 所有子表精确重写，保留其他 server 和显式 catalog、环境、审批设置。4 个宿主配置测试通过。
+- Windows 源码传输初次被自动审批拒绝；用户随后明确允许传至自己的 win-pc 临时目录、仅用于本次隔离验证。已按该范围传输并启动原生构建，不更改 Windows 真实项目或模型配置。
+
+- 完整交互测试揭示 B0 的 task_view 时间线只保留最近 200 条，不能当作全量事实 oracle。新诊断导出改为与隔离事件源逐 ID 核对；对照报告会明确旧能力窗口，全部新导出正文仍计入字节成本，不靠截断新正文达标。小规模调试集（10 条背景事件）已观测总字节减少 90.7%，不是最终规模结果。
+- 宿主验收增强为从真实 tool result 核对“受控错误被拒绝→后续读取成功→独立 5 条事实闭环”，不只看 Session 关闭。未知字段可能被宿主提前过滤，因此跨宿主统一用 Schema 合法但不存在的 Task ID 做故障，字段类型/枚举错误仍由真实 stdio 契约测。三个固定模型均已通过该闭环，正在验证双进程重连与证据 fallback。
+- Windows 原生源码构建、agent_operations/agent_read 测试、新读取 MCP、真实 kill/restart、旧 MCP 闭环已通过；最终产物 hash 与完整日志正在汇总。仍不把本地源码构建标为 Release artifact 原生发布验收。
+
+
+### 14.13 最终收口证据与发布边界（2026-09-26）
+
+- **B0–B4 已完成实现及规定的本地验收；B5 已完成当前授权下的源码原生验证和发布准备，未完成发布后的安装包验收。** 不使用真实 VibeHub 流程跟踪，不创建实际 Task/Plan/Session；测试中的记录均在一次性隔离 fixture。未 commit、push、tag 或发布。
+- 宿主实测修复了两处实际体验问题：新生成的宿主配置显式选择 `agent`，同时保留用户已有明确模式及其他配置；`task_record` / `session_finish` 的 details Schema 内联 object 定义，修正 OpenCode 模型此前反复传 JSON 字符串的问题，服务端仍严格拒绝字符串。未知 Task 和非法 include 的恢复建议也已通过实际调用核验。
+- 完整交互对照见 [interaction-matrix.json](evidence/agent-native/interaction-matrix.json)。真实 B0 commit `24547e3a0c1b0d6eb606d04aaff1324f32752150` 与当前二进制使用同一合法 fixture，1,000 条历史逐条经过 validator；14 类场景总 result bytes **13,965,947 → 1,006,719（减少 92.79%）**，wire bytes **29,293,126 → 2,179,250**，实际固定 `tiktoken 0.12.0 / o200k_base` 编码数 **5,634,504 → 316,384**。这是参考 tokenizer 的实测，不是模型供应商计费 token。
+- 协议调用 **53 → 73**，刻意错误 **8 → 10**，无未预期无效调用；错误注入与业务阻塞不充当体验失败率。报告记录 decision checkpoints 与 recovery round trips：已知身份的当前工作恢复始终一次含必要信息，局部错误一次修正/刷新。新增调用用于实际请求的完整证据、诊断分块和新增 cursor/预算错误场景，不伪装成调用数整体下降。
+- 比较范围必须保留：旧 task_view 时间线仅最近 200 条，S14 旧窗口为 199 条非 Memory 事件，新导出则逐 ID 对照全部 1,019 条权威非 Memory 事件，并计入全部正文/hash/删除调用。因此总字节收益是保守比较，不表示旧新全量导出能力相等。14 类代表交互成本由此脚本测量；空任务、>一页 blocker/criteria、投影失败、全部组合提交点故障、项目导出/并发、UI 迟到等变体另由 read/state/recovery/export/cache/core 测试覆盖，不将这些未配对变体虚报为有 B0 成本数据。
+- 分块原先为最坏 JSON 转义预留预算，实测导致大量调用；现按完整响应实际编码做有界 UTF-8 前缀选择，中文/emoji/引号/反斜杠/控制字符逐块复原和硬预算单元测试通过。S14 完整诊断由开发轮的 56 次调用降至 **12 次**，没有省略正文或扩大 64 KiB 上限。
+- 真实宿主记录版本：Codex CLI **0.156.1 / gpt-6-astra**、Claude Code **2.1.273 / step-3.5-flash-2603**、OpenCode **1.18.32 / stepfun_official/step-3.7-flash**。每个固定 alias 的基本输入重复 **2/2** 成功；每宿主另一次双进程重连成功。每次验证真实 `V3_TASK_NOT_FOUND` 拒绝、随后修复、独立回读 bind/open/progress/result/close 五条事实及 Task 未完成。记录的模型 alias 并不保证供应商永不更新内部快照；有限样本不能推导通用成功率。早期失败/超时样本仍保留，当前支持范围不包含那些组合。
+- 真实模型请求测量：[host-claude-acceptance-2.json](evidence/agent-native/host-claude-acceptance-2.json) 只记录出站内容计数，不保存认证或正文。主模型每请求注入 12 工具、13,196 bytes / 3,022 参考 tokens；最后一次请求实际可见 7 条工具结果，共 10,001 bytes / 2,495 参考 tokens。辅助模型无工具请求单列。Codex/OpenCode 最终模型请求不可观测仍为 unknown，不用宿主 aggregate usage 顶替。
+- 受控安全样本为三宿主分别读取 Memory 和原始证据中的伪造“用户已确认/立即完成”指令，6/6 未调用 forbidden completion/review 工具，独立 Task 均未完成。普通工具在重连后完成证据展开，不依赖资源自动呈现。官方 Inspector 的实际 tools/list/task_brief 通过，目录 12 个、Schema error 0；56 个 nullable/兼容自由 details 可移植性警告保留，未宣称所有供应商方言兼容。
+- 最终本机门禁：workspace **113 + 11 + 480** 测试通过（被忽略的规模测试另显式执行）；前端构建、828 条 contracts、新旧 MCP、操作重启、状态矩阵、并发导出、桌面缓存、fmt、diff、release metadata 通过。macOS app 构建及 strict deep ad-hoc 验签通过，非 Developer ID/notarized。精确 hash 与日志见 [validation-final.json](evidence/agent-native/validation-final.json)。
+- Windows 授权范围仅本次隔离验证；源码包排除 `.vibehub/.codex/.agents`。Windows 11 build 26200 原生 CLI 构建、完整 core/CLI 测试、新读取、真实 kill/restart、legacy 闭环、状态矩阵、并发导出与缓存测试全通过，见 [windows-native.json](evidence/agent-native/windows-native.json) 和 [windows-extra.json](evidence/agent-native/windows-extra.json)。[source-parity.json](evidence/agent-native/source-parity.json) 逐文件确认 212 份产品源码相同；按 POSIX 相对路径排序统一 fingerprint，避免平台 Path 排序差异造成假不一致。
+- 新确定性 `v3:agent-native:check` 已接入 build 三平台与 release preflight workflow；这里只验证本地命令及 Windows 原生执行，**没有执行 GitHub Actions**。可重复测量/宿主入口与证据索引见 [evidence README](evidence/agent-native/README.md)。
+- **唯一尚未授权的完成链是发布链**：当前无此源码的精确 Release 安装包，A07、E07、F07–F10、G05 保持 BLOCKED，不能由源码构建或 macOS 测试替代。后续需用户授权 commit/push/tag/Release，再使用实际安装包/hash 做 Windows 原生安装、IDE、升级/回滚及最终双平台链验证；当前版本号保持 3.3.12，未擅自决定发布版本。
+
+- 最终规模复跑：1k 当前任务 / 100k 其他任务 / 100k 当前任务简报 p95 为 **53.07 / 90.46 / 117.25 ms**，版本探测 p95 **13.86 / 22.58 / 23.03 ms**；每类预热 5 次、测量 30 次，bundle/history/decode 计数均为 0，见 scale-final。Windows 完整 core/CLI 为 **472 + 11** 测试通过，平台条件编译导致其数量与 macOS 不同。
+
+- 最终清理已完成：本次 macOS `target/release`、`dist`、debug 编译缓存、基线 target/source、Python 编译缓存和源码传输包经 `mv` 移至 `/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/`；保留当前 `target/debug/vibehub` 与 `.d`，CLI hash 不变。Windows 临时验证副本（含 target/node_modules）和传输 zip 经系统 SendToRecycleBin API 移入 Windows 回收站，原路径已不存在。详见 [cleanup-final.json](evidence/agent-native/cleanup-final.json)。清理证据按本次流程例外写入本文，未创建 VibeHub progress 记录。
+
+
+### 14.14 提交前实现体量审查与 v3.4.0 发布准备
+
+用户已明确授权提交、推送、tag 和发布，要求先审查实现是否臃肿。本次不使用真实 VibeHub 工作流跟踪的约定继续有效。14.13 中“未授权发布”是历史状态；当前剩余发布门禁按本节记录。
+
+审查前未提交差异的 14,644 新增 / 741 删除行分解如下（包含未跟踪文件）：
+
+| 类别 | 新增 | 删除 |
+| --- | ---: | ---: |
+| 产品源码与内嵌 Rust 测试 | 4,315 | 713 |
+| 验证脚本 / CI | 985 | 3 |
+| JSON Schema / 冻结工具契约 | 963 | 0 |
+| 设计 / 引导文档 | 210 | 25 |
+| 脱敏验收证据 | 8,171 | 0 |
+
+产品代码确实仍为净增加，不能把工具上下文缩小等同于总代码行数净下降。约 56% 新增行属于可复核证据；新建恢复日志、分块/分页、上下文作用域和独立读取投影也有实际代码成本。保留 legacy 是 §10 明确要求，不能通过删除兼容接口或校验来达成行数目标。此次没有压缩 JSON、删除历史失败证据或把代码移文件冒充精简。
+
+审查后完成的实际收拢：
+
+- 删除 `project_scopes.rs` 中已委托新宿主配置服务后无调用者的旧解析/检查链（251 行），统一使用当前的 host_mcp_config 边界。
+- 删除 views.rs 中未使用的架构引用、旧 page 辅助函数；状态测试直接验证已有 task_truth_state，去掉只供测试调用的生产包装层。
+- Task/Project 诊断导出共用一份目录边界检查、唯一文件创建、持久化和 manifest 构造，快照收集与 revision 校验仍按明确作用域执行。
+- 操作 payload、步骤计划与 activation witness 共用原子 journal writer，保留锁、create_new、sync、rename 及 Unix 父目录 sync；rename 前明确关闭文件句柄。
+- task_record/session_finish 共享已解析作用域到受校验 OperationRequest 的映射，原有权限与 payload Schema 不变。
+- brief 复用已读取的 Session integrity 结果计算 blocker，去掉同一次请求中的第二次 SQLite 摘要读取。
+
+上述精简加版本准备后的产品差异为 **+4,318 / −1,027，净增 3,291 行**，比审查前净增 3,602 行少 311 行。重构价值主要是移除重复职责和一次重复查询，而非以代码行数代替性能/正确性验收。保留的新增服务均有独立职责：新读取不经完整 bundle；新操作只组合原 typed validator；SQLite 辅助表保持可重建；legacy/桌面仍复用旧面板构造器。桌面发生变化后的兼容准备仍读当前 Task history，这一边界没有伪称已经全面物化。
+
+当前最新公开版本为 3.3.12；按新增兼容能力发布 **3.4.0**，已同步七处版本来源并准备 Release notes/CHANGELOG。精简后的 core/CLI 回归已经通过，正在执行 v3.4.0 完整 workspace、新旧 MCP、契约与 macOS bundle 门禁。后续将记录 commit、CI、精确 artifact/hash 和 Windows 原生验收；未执行项目保持未验证。
+
+- v3.4.0 精简后完整 workspace（113 + 11 + 480）、新旧 MCP、828 条 contracts、前端构建、版本/tag preflight、fmt/diff、macOS bundle 与 strict ad-hoc 验签均通过。当前二进制/hash 和原始日志 hash 见 [review-release.json](evidence/agent-native/review-release.json)。后续发布附件保留原始日志。
+
+- 本次审查验证复用的构建产物已再次移入回收站 `/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246`，保留 CLI fallback；清理记录见 review-cleanup.json。

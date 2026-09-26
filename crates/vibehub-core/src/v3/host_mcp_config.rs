@@ -955,7 +955,26 @@ fn rewrite_json_project(
                 "host MCP table must be a JSON object",
             )
         })?;
-    let mut server = serde_json::Map::new();
+    let mut server = table
+        .get("vibehub")
+        .or_else(|| table.get("vibehub-v3"))
+        .and_then(serde_json::Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let env_field = if opencode { "environment" } else { "env" };
+    let environment = server
+        .entry(env_field.to_owned())
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| {
+            invalid_config(
+                "V3_HOST_MCP_SERVER_UNSUPPORTED",
+                "MCP environment must be an object",
+            )
+        })?;
+    environment
+        .entry("VIBEHUB_MCP_CATALOG".to_owned())
+        .or_insert_with(|| serde_json::json!("agent"));
     if opencode {
         server.insert("type".to_owned(), serde_json::json!("local"));
         server.insert(
@@ -967,6 +986,7 @@ fn rewrite_json_project(
         server.insert("command".to_owned(), serde_json::json!(binary));
         server.insert("args".to_owned(), serde_json::json!(["mcp-stdio", root]));
     }
+    table.remove("vibehub-v3");
     table.insert("vibehub".to_owned(), serde_json::Value::Object(server));
     serde_json::to_vec_pretty(&value)
         .map(|mut bytes| {
@@ -977,24 +997,82 @@ fn rewrite_json_project(
 }
 
 fn rewrite_codex_project(existing: &str, binary: &str, root: &str) -> Result<Vec<u8>, V3Error> {
-    let block = format!(
-        "[mcp_servers.vibehub]\ncommand = {}\nargs = [\"mcp-stdio\", {}]\n",
-        toml_string(binary),
-        toml_string(root)
+    let parsed: toml::Value = toml::from_str(existing)
+        .map_err(|error| invalid_config("V3_HOST_MCP_CONFIG_INVALID_TOML", error.to_string()))?;
+    let mut server = parsed
+        .get("mcp_servers")
+        .and_then(|servers| servers.get("vibehub").or_else(|| servers.get("vibehub-v3")))
+        .and_then(toml::Value::as_table)
+        .cloned()
+        .unwrap_or_default();
+    server.insert("command".to_owned(), toml::Value::String(binary.to_owned()));
+    server.insert(
+        "args".to_owned(),
+        toml::Value::Array(vec![
+            toml::Value::String("mcp-stdio".to_owned()),
+            toml::Value::String(root.to_owned()),
+        ]),
     );
+    let environment = server
+        .entry("env".to_owned())
+        .or_insert_with(|| toml::Value::Table(Default::default()))
+        .as_table_mut()
+        .ok_or_else(|| {
+            invalid_config(
+                "V3_HOST_MCP_SERVER_UNSUPPORTED",
+                "MCP environment must be a table",
+            )
+        })?;
+    environment
+        .entry("VIBEHUB_MCP_CATALOG".to_owned())
+        .or_insert_with(|| toml::Value::String("agent".to_owned()));
+    let document = toml::Value::Table(
+        [(
+            "mcp_servers".to_owned(),
+            toml::Value::Table(
+                [("vibehub".to_owned(), toml::Value::Table(server))]
+                    .into_iter()
+                    .collect(),
+            ),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    let block = toml::to_string(&document).map_err(|error| {
+        invalid_config("V3_HOST_MCP_CONFIG_SERIALIZE_FAILED", error.to_string())
+    })?;
     let mut text = existing.to_owned();
     if !text.is_empty() && !text.ends_with('\n') {
         text.push('\n');
     }
-    if let Some(range) = find_codex_server_range(&text, "vibehub")? {
-        text.replace_range(range, &block);
-    } else if let Some(range) = find_codex_server_range(&text, "vibehub-v3")? {
-        text.replace_range(range, &block);
-    } else {
+    let sections = toml_sections(&text)?;
+    let ranges: Vec<_> = sections
+        .iter()
+        .enumerate()
+        .filter(|(_, section)| {
+            section.path.len() >= 2
+                && section.path[0] == "mcp_servers"
+                && CODEX_SERVER_NAMES.contains(&section.path[1].as_str())
+        })
+        .map(|(index, section)| {
+            section.start
+                ..sections
+                    .get(index + 1)
+                    .map(|next| next.start)
+                    .unwrap_or(text.len())
+        })
+        .collect();
+    if ranges.is_empty() {
         if !text.is_empty() {
             text.push('\n');
         }
         text.push_str(&block);
+    } else {
+        let first = ranges[0].start;
+        for range in ranges.into_iter().rev() {
+            text.replace_range(range, "");
+        }
+        text.insert_str(first, &block);
     }
     Ok(text.into_bytes())
 }
@@ -1117,23 +1195,6 @@ fn toml_sections(text: &str) -> Result<Vec<TomlSection>, V3Error> {
         offset += line.len();
     }
     Ok(sections)
-}
-
-fn find_codex_server_range(
-    text: &str,
-    name: &str,
-) -> Result<Option<std::ops::Range<usize>>, V3Error> {
-    let sections = toml_sections(text)?;
-    for (index, section) in sections.iter().enumerate() {
-        if section.path.as_slice() == ["mcp_servers".to_owned(), name.to_owned()] {
-            let end = sections
-                .get(index + 1)
-                .map(|next| next.start)
-                .unwrap_or(text.len());
-            return Ok(Some(section.start..end));
-        }
-    }
-    Ok(None)
 }
 
 fn resolve_inspection_path(
@@ -1400,10 +1461,6 @@ fn home_directory() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn toml_string(value: &str) -> String {
-    toml::Value::String(value.to_owned()).to_string()
-}
-
 fn hash(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -1526,6 +1583,18 @@ mod tests {
         let opencode: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(root.join("opencode.json")).unwrap()).unwrap();
         assert_eq!(opencode["mcp"]["vibehub"]["command"][1], "mcp-stdio");
+        assert_eq!(
+            codex["mcp_servers"]["vibehub"]["env"]["VIBEHUB_MCP_CATALOG"].as_str(),
+            Some("agent")
+        );
+        assert_eq!(
+            claude["mcpServers"]["vibehub"]["env"]["VIBEHUB_MCP_CATALOG"],
+            "agent"
+        );
+        assert_eq!(
+            opencode["mcp"]["vibehub"]["environment"]["VIBEHUB_MCP_CATALOG"],
+            "agent"
+        );
         let inspections = inspect_host_mcp_configs(
             &resolve_project_scopes(&root, None).unwrap(),
             &[AgentSpecTarget::Codex],
@@ -1536,6 +1605,51 @@ mod tests {
             .any(|item| item.scope == HostConfigScope::Project
                 && item.status == HostConfigStatus::InSync));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn catalog_sync_preserves_explicit_mode_and_unrelated_host_options() {
+        let original = "# outside\n[mcp_servers.other]\ncommand = 'other'\n[mcp_servers.vibehub-v3]\ncommand = '/old/vibehub'\nargs = ['mcp-stdio', '/old']\ntool_timeout_sec = 90\n[mcp_servers.vibehub-v3.env]\nVIBEHUB_MCP_CATALOG = 'advanced'\nKEPT = 'value'\n[mcp_servers.vibehub-v3.tools.task_view]\napproval_mode = 'prompt'\n";
+        let rewritten = rewrite_codex_project(original, "/new/vibehub", "/new").unwrap();
+        let text = std::str::from_utf8(&rewritten).unwrap();
+        let value: toml::Value = toml::from_str(text).unwrap();
+        let server = &value["mcp_servers"]["vibehub"];
+        assert_eq!(
+            server["env"]["VIBEHUB_MCP_CATALOG"].as_str(),
+            Some("advanced")
+        );
+        assert_eq!(server["env"]["KEPT"].as_str(), Some("value"));
+        assert_eq!(
+            server["tools"]["task_view"]["approval_mode"].as_str(),
+            Some("prompt")
+        );
+        assert_eq!(server["tool_timeout_sec"].as_integer(), Some(90));
+        assert_eq!(
+            value["mcp_servers"]["other"]["command"].as_str(),
+            Some("other")
+        );
+        for (table, environment, opencode) in
+            [("mcpServers", "env", false), ("mcp", "environment", true)]
+        {
+            let original = serde_json::json!({table: {"vibehub-v3": {environment: {"VIBEHUB_MCP_CATALOG": "legacy", "KEPT": "value"}, "timeout": 90000}, "other": {"enabled": false}}});
+            let bytes = rewrite_json_project(
+                Some(&serde_json::to_vec(&original).unwrap()),
+                table,
+                "/new/vibehub",
+                "/new",
+                opencode,
+            )
+            .unwrap();
+            let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(
+                value[table]["vibehub"][environment]["VIBEHUB_MCP_CATALOG"],
+                "legacy"
+            );
+            assert_eq!(value[table]["vibehub"][environment]["KEPT"], "value");
+            assert_eq!(value[table]["vibehub"]["timeout"], 90000);
+            assert_eq!(value[table]["other"]["enabled"], false);
+            assert!(value[table].get("vibehub-v3").is_none());
+        }
     }
 
     fn sync_host_mcp_configs_with_home(

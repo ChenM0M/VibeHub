@@ -1,0 +1,269 @@
+{
+  "binary_sha256": "6d562403dc921469006f146e5b64bf61ecddadbaba07f2e9af87775d314b5aff",
+  "binary_changed_during_run": false,
+  "host": "claude",
+  "model_requested": "step-3.5-flash-2603",
+  "host_version": "2.1.273 (Claude Code)",
+  "process": {
+    "exit": 0,
+    "host": "claude",
+    "elapsed_seconds": 21.07
+  },
+  "status": "basic_loop_passed",
+  "facts": {
+    "event_count": 5,
+    "event_types": [
+      "session.task_bound",
+      "session.opened",
+      "progress.logged",
+      "agent.result_recorded",
+      "session.closed"
+    ],
+    "closed": true,
+    "task_completed": false
+  },
+  "tool_trace": [
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_start",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__workspace_context",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_record",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__session_finish",
+      "status": "requested"
+    }
+  ],
+  "aggregate_host_usage": {
+    "input_tokens": 53824,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 11648,
+    "output_tokens": 1674,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "reported_steps": [],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "step-3.5-flash-2603",
+  "samples": 1,
+  "limitations": [
+    "One isolated sample; aggregate with other recorded samples for repeatability",
+    "Uses recorded model alias; immutable provider snapshot is not guaranteed",
+    "Resource rendering is not required; ordinary-tool fallback is tested in reconnection mode"
+  ],
+  "host_errors": [],
+  "phases": [
+    {
+      "exit": 0,
+      "phase": 1,
+      "seconds": 21.07
+    }
+  ],
+  "reconnection_test": false,
+  "verified_checks": {
+    "missing_task_rejected": true,
+    "subsequent_brief_succeeded": true,
+    "independent_facts_match": true
+  },
+  "tool_results": [
+    {
+      "tool": "mcp__fixture__task_brief",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "negative_case_requested": true,
+      "codes": [
+        "V3_TASK_NOT_FOUND"
+      ],
+      "success": false
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__task_start",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__workspace_context",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__task_record",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__session_finish",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    }
+  ],
+  "model_request_measurement": {
+    "source": "actual outgoing host HTTP requests; no bodies/credentials retained",
+    "tokenizer": "tiktoken 0.12.0/o200k_base reference encoding, not provider-specific billing tokens",
+    "requests": [
+      {
+        "request_model": "step-3.7-flash",
+        "tools": {
+          "bytes": 2,
+          "o200k_reference_tokens": 1
+        },
+        "tool_count": 0,
+        "visible_tool_results": {
+          "bytes": 2,
+          "o200k_reference_tokens": 1
+        },
+        "visible_tool_result_count": 0
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 2,
+          "o200k_reference_tokens": 1
+        },
+        "visible_tool_result_count": 0
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 2127,
+          "o200k_reference_tokens": 521
+        },
+        "visible_tool_result_count": 1
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 2619,
+          "o200k_reference_tokens": 639
+        },
+        "visible_tool_result_count": 2
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 4745,
+          "o200k_reference_tokens": 1156
+        },
+        "visible_tool_result_count": 3
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 5697,
+          "o200k_reference_tokens": 1414
+        },
+        "visible_tool_result_count": 4
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 8360,
+          "o200k_reference_tokens": 2079
+        },
+        "visible_tool_result_count": 5
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 9124,
+          "o200k_reference_tokens": 2267
+        },
+        "visible_tool_result_count": 6
+      },
+      {
+        "request_model": "step-3.5-flash-2603",
+        "tools": {
+          "bytes": 13196,
+          "o200k_reference_tokens": 3022
+        },
+        "tool_count": 12,
+        "visible_tool_results": {
+          "bytes": 10001,
+          "o200k_reference_tokens": 2495
+        },
+        "visible_tool_result_count": 7
+      }
+    ]
+  }
+}

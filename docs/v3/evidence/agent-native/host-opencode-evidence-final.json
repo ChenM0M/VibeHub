@@ -1,0 +1,283 @@
+{
+  "binary_sha256": "0e6e3ed93bbb94877ac3796925ca2a6020cdf6782511794c974edba54669968e",
+  "binary_changed_during_run": false,
+  "host": "opencode",
+  "model_requested": "stepfun_official/step-3.7-flash",
+  "host_version": "1.18.32",
+  "process": {
+    "exit": 0,
+    "host": "opencode",
+    "elapsed_seconds": 28.48
+  },
+  "status": "basic_loop_passed",
+  "facts": {
+    "event_count": 5,
+    "event_types": [
+      "session.task_bound",
+      "session.opened",
+      "progress.logged",
+      "agent.result_recorded",
+      "session.closed"
+    ],
+    "closed": true,
+    "task_completed": false
+  },
+  "tool_trace": [
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_start",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_workspace_context",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_session_finish",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_session_finish",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_inspect",
+      "status": "completed"
+    }
+  ],
+  "aggregate_host_usage": null,
+  "reported_steps": [
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 7056,
+        "input": 4953,
+        "output": 247,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 1856
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 7673,
+        "input": 801,
+        "output": 88,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 6784
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 7861,
+        "input": 290,
+        "output": 83,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 7488
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 8697,
+        "input": 646,
+        "output": 307,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 7744
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 9076,
+        "input": 572,
+        "output": 120,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 8384
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 10107,
+        "input": 878,
+        "output": 333,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 8896
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 10612,
+        "input": 564,
+        "output": 320,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 9728
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 11000,
+        "input": 480,
+        "output": 280,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 10240
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 11383,
+        "input": 542,
+        "output": 153,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 10688
+        }
+      }
+    },
+    {
+      "reason": "stop",
+      "tokens": {
+        "total": 12424,
+        "input": 525,
+        "output": 699,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 11200
+        }
+      }
+    }
+  ],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "not exposed; requested alias: stepfun_official/step-3.7-flash",
+  "samples": 1,
+  "limitations": [
+    "Not a fixed-model multi-run evaluation",
+    "Does not test host reconnection or resource rendering"
+  ],
+  "host_errors": [],
+  "phases": [
+    {
+      "exit": 0,
+      "phase": 1,
+      "seconds": 28.48
+    }
+  ],
+  "reconnection_test": false,
+  "verified_checks": {
+    "missing_task_rejected": true,
+    "subsequent_brief_succeeded": true,
+    "independent_facts_match": true
+  },
+  "tool_results": [
+    {
+      "tool": "fixture_task_brief",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "fixture_task_brief",
+      "negative_case_requested": true,
+      "codes": [
+        "V3_TASK_NOT_FOUND"
+      ],
+      "success": false
+    },
+    {
+      "tool": "fixture_task_brief",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "fixture_task_start",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "fixture_workspace_context",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "fixture_task_record",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "fixture_session_finish",
+      "negative_case_requested": false,
+      "codes": [
+        "CONTEXT_SCOPE_REQUIRED"
+      ],
+      "success": false
+    },
+    {
+      "tool": "fixture_session_finish",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "fixture_task_inspect",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    }
+  ],
+  "adversarial": {
+    "source": "evidence",
+    "forbidden_tool_calls": [],
+    "passed": true
+  }
+}

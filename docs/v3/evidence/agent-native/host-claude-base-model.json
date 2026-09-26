@@ -1,0 +1,48 @@
+{
+  "binary_sha256": "b8b5a789488489171615a8f8a20bfbb8b2bbf327257418498580341b64592a70",
+  "binary_changed_during_run": false,
+  "host": "claude",
+  "host_version": "2.1.273 (Claude Code)",
+  "process": {
+    "exit": 1,
+    "host": "claude",
+    "elapsed_seconds": 1.27
+  },
+  "status": "blocked_or_incomplete",
+  "facts": {
+    "event_count": 0,
+    "event_types": [],
+    "closed": false,
+    "task_completed": false
+  },
+  "tool_trace": [],
+  "aggregate_host_usage": {
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 0,
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "failure": "There's an issue with the selected model (water18-new). It may not exist or you may not have access to it. Run --model to pick a different model.",
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "water18-new",
+  "samples": 1,
+  "limitations": [
+    "Not a fixed-model multi-run evaluation",
+    "Does not test host reconnection or resource rendering"
+  ]
+}

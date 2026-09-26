@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "agent_tools": 12,
+  "catalog_bytes": 13066,
+  "catalog_tokens": "unknown",
+  "checks": [
+    "fixed agent catalog",
+    "actual process kill/restart",
+    "expired handle rejected",
+    "same request replay returns same receipt",
+    "different payload rejected",
+    "terminal result and close",
+    "legacy rollback reads same five facts",
+    "no automatic task completion"
+  ],
+  "model_visible_tokens": "unknown",
+  "host": "raw stdio"
+}

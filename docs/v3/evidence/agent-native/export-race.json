@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "independent_mcp_processes": 2,
+  "concurrent_exports": 10,
+  "outcomes": {
+    "coherent_before": 7,
+    "coherent_after": 0,
+    "revision_rejected": 3
+  }
+}

@@ -1,4 +1,6 @@
+pub mod agent_operations;
 pub mod agent_profile_storage;
+pub mod agent_read;
 pub mod agent_specs;
 pub mod application;
 pub mod blockers;
@@ -22,6 +24,7 @@ pub mod project_scopes;
 pub mod project_settings;
 pub mod projection;
 pub mod protocol_runtime;
+pub mod read_metrics;
 pub mod routing;
 pub mod task_creation;
 pub mod task_quarantine;

@@ -1,0 +1,204 @@
+{
+  "status": "passed",
+  "protocol": "2025-11-25",
+  "resources": 7,
+  "tools": 40,
+  "requests": [
+    {
+      "method": "initialize",
+      "operation": "initialize",
+      "milliseconds": 40
+    },
+    {
+      "method": "resources/list",
+      "operation": "resources/list",
+      "milliseconds": 11
+    },
+    {
+      "method": "tools/list",
+      "operation": "tools/list",
+      "milliseconds": 2
+    },
+    {
+      "method": "resources/read",
+      "operation": "vibehub://v3/1.0/projects/project.mcp-contract/overview",
+      "milliseconds": 85
+    },
+    {
+      "method": "resources/read",
+      "operation": "vibehub://v3/1.0/projects/project.mcp-contract/structure",
+      "milliseconds": 49
+    },
+    {
+      "method": "resources/read",
+      "operation": "vibehub://v3/1.0/tasks/task.contract/timeline",
+      "milliseconds": 49
+    },
+    {
+      "method": "resources/read",
+      "operation": "vibehub://v3/1.0/tasks/task.contract/plan",
+      "milliseconds": 50
+    },
+    {
+      "method": "resources/read",
+      "operation": "vibehub://v3/1.0/tasks/task.contract/nodes/current/brief",
+      "milliseconds": 49
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_candidates",
+      "milliseconds": 18
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_view",
+      "milliseconds": 40
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_list",
+      "milliseconds": 19
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_list",
+      "milliseconds": 16
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_archive_page",
+      "milliseconds": 19
+    },
+    {
+      "method": "tools/call",
+      "operation": "projection_status",
+      "milliseconds": 6
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_commits",
+      "milliseconds": 12
+    },
+    {
+      "method": "tools/call",
+      "operation": "commit_tasks",
+      "milliseconds": 27
+    },
+    {
+      "method": "tools/call",
+      "operation": "projection_rebuild",
+      "milliseconds": 7
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_route",
+      "milliseconds": 18
+    },
+    {
+      "method": "tools/call",
+      "operation": "session_task_bind",
+      "milliseconds": 36
+    },
+    {
+      "method": "tools/call",
+      "operation": "plan_node_add",
+      "milliseconds": 43
+    },
+    {
+      "method": "tools/call",
+      "operation": "plan_node_add",
+      "milliseconds": 29
+    },
+    {
+      "method": "tools/call",
+      "operation": "plan_node_add",
+      "milliseconds": 30
+    },
+    {
+      "method": "tools/call",
+      "operation": "plan_node_add",
+      "milliseconds": 41
+    },
+    {
+      "method": "tools/call",
+      "operation": "plan_dependencies_set",
+      "milliseconds": 27
+    },
+    {
+      "method": "tools/call",
+      "operation": "plan_node_state_set",
+      "milliseconds": 37
+    },
+    {
+      "method": "resources/read",
+      "operation": "vibehub://v3/1.0/tasks/task.contract/plan",
+      "milliseconds": 49
+    },
+    {
+      "method": "tools/call",
+      "operation": "session_open",
+      "milliseconds": 53
+    },
+    {
+      "method": "tools/call",
+      "operation": "session_open",
+      "milliseconds": 46
+    },
+    {
+      "method": "tools/call",
+      "operation": "event_log",
+      "milliseconds": 52
+    },
+    {
+      "method": "tools/call",
+      "operation": "agent_result_record",
+      "milliseconds": 53
+    },
+    {
+      "method": "resources/read",
+      "operation": "vibehub://v3/1.0/tasks/task.contract/timeline",
+      "milliseconds": 49
+    },
+    {
+      "method": "tools/call",
+      "operation": "session_close",
+      "milliseconds": 64
+    },
+    {
+      "method": "tools/call",
+      "operation": "criterion_review",
+      "milliseconds": 42
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_completion_propose",
+      "milliseconds": 58
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_complete",
+      "milliseconds": 40
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_view",
+      "milliseconds": 45
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_archive_page",
+      "milliseconds": 19
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_create",
+      "milliseconds": 101
+    },
+    {
+      "method": "tools/call",
+      "operation": "task_view",
+      "milliseconds": 39
+    }
+  ],
+  "total_ms": 1568
+}

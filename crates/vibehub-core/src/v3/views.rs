@@ -1010,6 +1010,54 @@ impl V3ViewRepository {
         task_id: &str,
         requested_node_id: Option<&str>,
     ) -> Result<V3ViewBundle, V3Error> {
+        super::read_metrics::bundle();
+        let mut sections = self.load_view_sections(
+            task_id,
+            requested_node_id,
+            &[
+                "project_overview",
+                "project_structure",
+                "agent_results",
+                "task_timeline",
+                "plan_graph",
+                "node_brief",
+            ],
+        )?;
+        Ok(V3ViewBundle {
+            project_overview: sections.remove("project_overview").unwrap(),
+            project_structure: sections.remove("project_structure").unwrap(),
+            agent_results: sections.remove("agent_results").unwrap(),
+            task_timeline: sections.remove("task_timeline").unwrap(),
+            plan_graph: sections.remove("plan_graph").unwrap(),
+            node_brief: sections.remove("node_brief").unwrap(),
+        })
+    }
+
+    /// Compatibility panel projections share the original builders, but only the
+    /// requested panels are constructed. Agent queries use agent_read instead.
+    pub fn load_view_sections(
+        &self,
+        task_id: &str,
+        requested_node_id: Option<&str>,
+        sections: &[&str],
+    ) -> Result<BTreeMap<String, Value>, V3Error> {
+        const ALLOWED: &[&str] = &[
+            "project_overview",
+            "project_structure",
+            "agent_results",
+            "task_timeline",
+            "plan_graph",
+            "node_brief",
+        ];
+        if sections.is_empty() || sections.iter().any(|name| !ALLOWED.contains(name)) {
+            return Err(V3Error::new(
+                "V3_VIEW_SECTION_INVALID",
+                V3ErrorCategory::Validation,
+                false,
+                "Choose one or more explicit view sections",
+            ));
+        }
+        let wants = |name: &str| sections.contains(&name);
         validate_id("task_id", task_id)?;
         let task = self.read_task(task_id)?;
         let project_id = self.project_id();
@@ -1049,7 +1097,14 @@ impl V3ViewRepository {
             &task_integrity,
             projection_stale,
         );
-        let task_read = self.read_tasks()?;
+        let task_read = if wants("project_overview") {
+            self.read_tasks()?
+        } else {
+            TaskReadResult {
+                tasks: Vec::new(),
+                warnings: Vec::new(),
+            }
+        };
         let task_metadata_warnings = task_read.warnings;
         let project_tasks = task_read.tasks;
         let effective_current_task_id = self.current_task_id_from_projection(
@@ -1243,34 +1298,43 @@ impl V3ViewRepository {
             .filter(|(_, binding)| binding.bound_task_id.as_deref() == Some(task_id))
             .collect::<BTreeMap<_, _>>();
 
-        let project_overview = json!({
-            "schema_version": "1.0", "project_id": project_id, "name": self.root.file_name().and_then(|v| v.to_str()).unwrap_or("Project"),
-            "root": native_root, "generated_at": generated_at, "model_version": MODEL_VERSION,
-            "scopes": scope_inspection,
-            "freshness": view_freshness, "completeness": overview_completeness,
-            "repository": {"state": if resolved_scopes.git_root.is_some() {"available"} else {"not_repository"}, "branch": Value::Null, "head": Value::Null, "dirty": Value::Null, "worktree_count": if resolved_scopes.git_root.is_some() {1} else {0}},
-            "model": {"state": model_state, "last_evidence_at": generated_at, "generator_version": structure_model_version, "indexed_files": indexed_files},
-            "architecture": {"declared_docs": declared_docs, "modules": architecture_modules, "relationships": architecture_relationships, "confidence": architecture_confidence, "evidence_refs": architecture_evidence_refs},
-            "current_task_id": effective_current_task_id,
-            "current_default_task_id": effective_current_task_id,
-            "ui_selected_task_id": Value::Null,
-            "session_bindings": selected_session_bindings,
-            "active_tasks": active_tasks,
-            "archived_tasks": [],
-            "archived_task_count": archived_task_count,
-            "archived_tasks_query": {"surface": "task_archive_page", "default_limit": ARCHIVED_TASK_PAGE_LIMIT},
-            "protocol_coverage": {"state": protocol_coverage(opened_sessions, closed_sessions, explicit_session_gaps), "opened_sessions": opened_sessions, "closed_sessions": closed_sessions, "gaps": explicit_session_gaps},
-            "evidence_refs": evidence_refs, "warnings": overview_warnings, "errors": architecture_errors
-        });
-        let agent_results = agent_results_view(
-            &project_id,
-            task_id,
-            &generated_at,
-            &task_events,
-            &evidence_refs,
-        );
+        let project_overview = if wants("project_overview") {
+            json!({
+                "schema_version": "1.0", "project_id": project_id, "name": self.root.file_name().and_then(|v| v.to_str()).unwrap_or("Project"),
+                "root": native_root, "generated_at": generated_at, "model_version": MODEL_VERSION,
+                "scopes": scope_inspection,
+                "freshness": view_freshness, "completeness": overview_completeness,
+                "repository": {"state": if resolved_scopes.git_root.is_some() {"available"} else {"not_repository"}, "branch": Value::Null, "head": Value::Null, "dirty": Value::Null, "worktree_count": if resolved_scopes.git_root.is_some() {1} else {0}},
+                "model": {"state": model_state, "last_evidence_at": generated_at, "generator_version": structure_model_version, "indexed_files": indexed_files},
+                "architecture": {"declared_docs": declared_docs, "modules": architecture_modules, "relationships": architecture_relationships, "confidence": architecture_confidence, "evidence_refs": architecture_evidence_refs},
+                "current_task_id": effective_current_task_id,
+                "current_default_task_id": effective_current_task_id,
+                "ui_selected_task_id": Value::Null,
+                "session_bindings": selected_session_bindings,
+                "active_tasks": active_tasks,
+                "archived_tasks": [],
+                "archived_task_count": archived_task_count,
+                "archived_tasks_query": {"surface": "task_archive_page", "default_limit": ARCHIVED_TASK_PAGE_LIMIT},
+                "protocol_coverage": {"state": protocol_coverage(opened_sessions, closed_sessions, explicit_session_gaps), "opened_sessions": opened_sessions, "closed_sessions": closed_sessions, "gaps": explicit_session_gaps},
+                "evidence_refs": evidence_refs, "warnings": overview_warnings, "errors": architecture_errors
+            })
+        } else {
+            Value::Null
+        };
+        let agent_results = if wants("agent_results") {
+            agent_results_view(
+                &project_id,
+                task_id,
+                &generated_at,
+                &task_events,
+                &evidence_refs,
+            )
+        } else {
+            Value::Null
+        };
 
-        let lanes: Vec<Value> = lifecycle
+        let task_timeline = if wants("task_timeline") {
+            let lanes: Vec<Value> = lifecycle
             .sessions
             .values()
             .map(|session| {
@@ -1283,29 +1347,34 @@ impl V3ViewRepository {
                 })
             })
             .collect();
-        let all_timeline_events: Vec<Value> = task_events.iter().map(timeline_event).collect();
-        let timeline_start = all_timeline_events
-            .len()
-            .saturating_sub(TASK_TIMELINE_WINDOW_LIMIT);
-        let timeline_events = all_timeline_events[timeline_start..].to_vec();
-        let task_bindings = session_binding_projection
-            .iter()
-            .filter(|(_, binding)| binding.bound_task_id.as_deref() == Some(task_id))
-            .collect::<BTreeMap<_, _>>();
-        let mut timeline_warnings = task_metadata_warnings.clone();
-        if let Some(warning) = projection_warning.clone() {
-            timeline_warnings.push(warning);
-        }
-        let task_timeline = json!({
-            "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "title": task.title, "state": current_task_state,
-            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else {"complete"},
-            "criteria": current_criteria, "blocker_details": current_blocker_details.clone(), "completion": completion_view(&lifecycle), "lanes": lanes, "events": timeline_events, "session_bindings": task_bindings,
-            "window": bounded_window(all_timeline_events.len(), timeline_start, TASK_TIMELINE_WINDOW_LIMIT),
-            "evidence_refs": evidence_refs, "warnings": timeline_warnings, "errors": []
-        });
+            let all_timeline_events: Vec<Value> = task_events.iter().map(timeline_event).collect();
+            let timeline_start = all_timeline_events
+                .len()
+                .saturating_sub(TASK_TIMELINE_WINDOW_LIMIT);
+            let timeline_events = all_timeline_events[timeline_start..].to_vec();
+            let task_bindings = session_binding_projection
+                .iter()
+                .filter(|(_, binding)| binding.bound_task_id.as_deref() == Some(task_id))
+                .collect::<BTreeMap<_, _>>();
+            let mut timeline_warnings = task_metadata_warnings.clone();
+            if let Some(warning) = projection_warning.clone() {
+                timeline_warnings.push(warning);
+            }
+            let task_timeline = json!({
+                "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "title": task.title, "state": current_task_state,
+                "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else {"complete"},
+                "criteria": current_criteria, "blocker_details": current_blocker_details.clone(), "completion": completion_view(&lifecycle), "lanes": lanes, "events": timeline_events, "session_bindings": task_bindings,
+                "window": bounded_window(all_timeline_events.len(), timeline_start, TASK_TIMELINE_WINDOW_LIMIT),
+                "evidence_refs": evidence_refs, "warnings": timeline_warnings, "errors": []
+            });
+            task_timeline
+        } else {
+            Value::Null
+        };
 
-        let (parallel_layers, parallel_layer_counts) = effective_plan_layers(&lifecycle);
-        let graph_nodes: Vec<Value> = lifecycle
+        let plan_graph = if wants("plan_graph") {
+            let (parallel_layers, parallel_layer_counts) = effective_plan_layers(&lifecycle);
+            let graph_nodes: Vec<Value> = lifecycle
             .effective_nodes()
             .map(|(_, node)| {
                 let session_ids = lifecycle
@@ -1381,7 +1450,7 @@ impl V3ViewRepository {
                 })
             })
             .collect();
-        let scheduling_edges: Vec<Value> = lifecycle
+            let scheduling_edges: Vec<Value> = lifecycle
             .effective_nodes()
             .flat_map(|(_, node)| {
                 node.dependencies
@@ -1393,279 +1462,287 @@ impl V3ViewRepository {
                     .collect::<Vec<_>>()
             })
             .collect();
-        let trace_relations: Vec<Value> = lifecycle.findings.values().flat_map(|finding| finding.attempt_ids.iter().map(|attempt_id| json!({
+            let trace_relations: Vec<Value> = lifecycle.findings.values().flat_map(|finding| finding.attempt_ids.iter().map(|attempt_id| json!({
             "relation_id": format!("trace.{}.{}", attempt_id, finding.finding_id), "from_id": attempt_id, "to_id": finding.finding_id, "kind": "addresses", "evidence_refs": []
         }))).collect();
-        let node_id = select_node_id(&lifecycle, requested_node_id)?;
-        let mut plan_warnings = task_metadata_warnings.clone();
-        if let Some(warning) = projection_warning.clone() {
-            plan_warnings.push(warning);
-        }
-        let effective_plan_is_empty = lifecycle.effective_nodes().next().is_none();
-        if effective_plan_is_empty && task.workflow_profile != "lightweight" {
-            plan_warnings.push(json!({
-                "code": "V3_PLAN_NOT_RECORDED",
-                "severity": "warning",
-                "message_key": "v3.warning.plan_not_recorded",
-                "details": {},
-                "evidence_refs": evidence_refs
-            }));
-        }
-        let planned_worktrees = orchestration.worktrees.len();
-        let observed_worktrees = orchestration
-            .worktrees
-            .values()
-            .filter(|worktree| worktree.event_ids.len() > 1)
-            .count();
-        let plan_graph = json!({
-            "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "plan_version": lifecycle.version,
-            "workflow_profile": task.workflow_profile, "planning_required": task.workflow_profile != "lightweight",
-            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else if effective_plan_is_empty && task.workflow_profile == "lightweight" {"complete"} else if effective_plan_is_empty {"unknown"} else {"partial"}, "graph_state": "valid",
-            "nodes": graph_nodes,
-            "scheduling_edges": scheduling_edges, "trace_relations": trace_relations,
-            "execution": {"planned_sessions": 0, "observed_sessions": sessions.len(), "planned_worktrees": planned_worktrees, "observed_worktrees": observed_worktrees},
-            "evidence_refs": evidence_refs, "warnings": plan_warnings, "errors": []
-        });
 
-        let mut node_warnings = task_metadata_warnings;
-        node_warnings.extend(architecture_warnings.clone());
-        if let Some(warning) = projection_warning.clone() {
-            node_warnings.push(warning);
-        }
-        let (
-            max_tokens,
-            estimated_tokens,
-            legacy_milestone_policy,
-            legacy_planning_required,
-            legacy_review_required,
-        ) = match task.workflow_profile.as_str() {
-            "lightweight" => (2000, 400, "minimal", false, false),
-            "full" => (16000, 2000, "full", true, true),
-            _ => (8000, 1000, "standard", true, true),
-        };
-        let effective_profile = if task.effective_profile.is_empty() {
-            task.workflow_profile.clone()
-        } else {
-            task.effective_profile.clone()
-        };
-        let recommended_profile = if task.recommended_profile.is_empty() {
-            task.workflow_profile.clone()
-        } else {
-            task.recommended_profile.clone()
-        };
-        let effective_policy = lifecycle
-            .execution_policy
-            .as_ref()
-            .or(task.execution_policy.as_ref());
-        let policy_version = effective_policy
-            .map(|policy| policy.policy_version)
-            .unwrap_or(task.policy_version);
-        let enforcement_epoch = effective_policy
-            .map(|policy| policy.enforcement_epoch.clone())
-            .unwrap_or_else(|| task.enforcement_epoch.clone());
-        let milestone_policy = effective_policy
-            .map(|policy| policy.milestone_policy.as_str())
-            .unwrap_or(legacy_milestone_policy);
-        let planning_required = effective_policy
-            .map(|policy| policy.planning_required)
-            .unwrap_or(legacy_planning_required);
-        let review_required = effective_policy
-            .map(|policy| policy.review_required)
-            .unwrap_or(legacy_review_required);
-        let required_records = effective_policy
-            .map(|policy| policy.required_records.clone())
-            .unwrap_or_else(|| {
-                if task.workflow_profile == "lightweight" {
-                    vec![
-                        "session".to_owned(),
-                        "result".to_owned(),
-                        "risk_if_any".to_owned(),
-                    ]
-                } else {
-                    vec![
-                        "plan".to_owned(),
-                        "session".to_owned(),
-                        "progress".to_owned(),
-                        "result".to_owned(),
-                        "review".to_owned(),
-                    ]
-                }
+            let mut plan_warnings = task_metadata_warnings.clone();
+            if let Some(warning) = projection_warning.clone() {
+                plan_warnings.push(warning);
+            }
+            let effective_plan_is_empty = lifecycle.effective_nodes().next().is_none();
+            if effective_plan_is_empty && task.workflow_profile != "lightweight" {
+                plan_warnings.push(json!({
+                    "code": "V3_PLAN_NOT_RECORDED",
+                    "severity": "warning",
+                    "message_key": "v3.warning.plan_not_recorded",
+                    "details": {},
+                    "evidence_refs": evidence_refs
+                }));
+            }
+            let planned_worktrees = orchestration.worktrees.len();
+            let observed_worktrees = orchestration
+                .worktrees
+                .values()
+                .filter(|worktree| worktree.event_ids.len() > 1)
+                .count();
+            let plan_graph = json!({
+                "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "plan_version": lifecycle.version,
+                "workflow_profile": task.workflow_profile, "planning_required": task.workflow_profile != "lightweight",
+                "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else if effective_plan_is_empty && task.workflow_profile == "lightweight" {"complete"} else if effective_plan_is_empty {"unknown"} else {"partial"}, "graph_state": "valid",
+                "nodes": graph_nodes,
+                "scheduling_edges": scheduling_edges, "trace_relations": trace_relations,
+                "execution": {"planned_sessions": 0, "observed_sessions": sessions.len(), "planned_worktrees": planned_worktrees, "observed_worktrees": observed_worktrees},
+                "evidence_refs": evidence_refs, "warnings": plan_warnings, "errors": []
             });
-        let record_present = |record: &str| match record {
-            "plan" => lifecycle.effective_nodes().next().is_some(),
-            "session" => task_events
-                .iter()
-                .any(|event| event.event_type == "session.opened"),
-            "progress" => task_events
-                .iter()
-                .any(|event| event.event_type == "progress.logged"),
-            "result" => task_events
-                .iter()
-                .any(|event| event.event_type == "agent.result_recorded"),
-            "review" => lifecycle.criteria.values().any(|criterion| {
-                matches!(
-                    criterion.state,
-                    CriterionState::Passed | CriterionState::Failed | CriterionState::Blocked
-                )
-            }),
-            "risk_if_any" => true,
-            _ => false,
-        };
-        let protocol_records=required_records.iter().map(|record|{let present=record_present(record);json!({"record":record,"status":if present{"complete"}else{"missing"},"repair_action":if present{Value::Null}else{Value::String(format!("record_{record}_via_typed_command"))}})}).collect::<Vec<_>>();
-        let protocol_state = if protocol_records
-            .iter()
-            .all(|record| record["status"] == "complete")
-        {
-            "complete"
+            plan_graph
         } else {
-            "partial"
+            Value::Null
         };
-        let incomplete_nodes = lifecycle
-            .effective_nodes()
-            .filter(|(_, node)| !is_terminal_plan_node_state(node.state.as_str()))
-            .map(|(_, node)| format!("{}={}", node.node_id, node.state))
-            .collect::<Vec<_>>();
-        let unsettled_sessions = lifecycle
-            .sessions
-            .values()
-            .filter(|session| session.state != "closed")
-            .map(|session| format!("{}={}", session.session_id, session.state))
-            .chain(
-                task_integrity
-                    .blocking_session_ids()
-                    .into_iter()
-                    .filter(|session_id| !lifecycle.sessions.contains_key(session_id))
-                    .map(|session_id| format!("{session_id}=unknown_or_incomplete")),
-            )
-            .collect::<Vec<_>>();
-        let opened_session_ids = task_events
-            .iter()
-            .filter(|event| event.event_type == "session.opened")
-            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
-            .collect::<BTreeSet<_>>();
-        let terminal_result_session_ids = task_events
-            .iter()
-            .filter(|event| {
-                event.event_type == "agent.result_recorded"
-                    && matches!(
-                        event.payload.get("status").and_then(Value::as_str),
-                        Some("succeeded" | "failed")
+
+        let node_id = select_node_id(&lifecycle, requested_node_id)?;
+        let node_brief = if wants("node_brief") {
+            let mut node_warnings = task_metadata_warnings;
+            node_warnings.extend(architecture_warnings.clone());
+            if let Some(warning) = projection_warning.clone() {
+                node_warnings.push(warning);
+            }
+            let (
+                max_tokens,
+                estimated_tokens,
+                legacy_milestone_policy,
+                legacy_planning_required,
+                legacy_review_required,
+            ) = match task.workflow_profile.as_str() {
+                "lightweight" => (2000, 400, "minimal", false, false),
+                "full" => (16000, 2000, "full", true, true),
+                _ => (8000, 1000, "standard", true, true),
+            };
+            let effective_profile = if task.effective_profile.is_empty() {
+                task.workflow_profile.clone()
+            } else {
+                task.effective_profile.clone()
+            };
+            let recommended_profile = if task.recommended_profile.is_empty() {
+                task.workflow_profile.clone()
+            } else {
+                task.recommended_profile.clone()
+            };
+            let effective_policy = lifecycle
+                .execution_policy
+                .as_ref()
+                .or(task.execution_policy.as_ref());
+            let policy_version = effective_policy
+                .map(|policy| policy.policy_version)
+                .unwrap_or(task.policy_version);
+            let enforcement_epoch = effective_policy
+                .map(|policy| policy.enforcement_epoch.clone())
+                .unwrap_or_else(|| task.enforcement_epoch.clone());
+            let milestone_policy = effective_policy
+                .map(|policy| policy.milestone_policy.as_str())
+                .unwrap_or(legacy_milestone_policy);
+            let planning_required = effective_policy
+                .map(|policy| policy.planning_required)
+                .unwrap_or(legacy_planning_required);
+            let review_required = effective_policy
+                .map(|policy| policy.review_required)
+                .unwrap_or(legacy_review_required);
+            let required_records = effective_policy
+                .map(|policy| policy.required_records.clone())
+                .unwrap_or_else(|| {
+                    if task.workflow_profile == "lightweight" {
+                        vec![
+                            "session".to_owned(),
+                            "result".to_owned(),
+                            "risk_if_any".to_owned(),
+                        ]
+                    } else {
+                        vec![
+                            "plan".to_owned(),
+                            "session".to_owned(),
+                            "progress".to_owned(),
+                            "result".to_owned(),
+                            "review".to_owned(),
+                        ]
+                    }
+                });
+            let record_present = |record: &str| match record {
+                "plan" => lifecycle.effective_nodes().next().is_some(),
+                "session" => task_events
+                    .iter()
+                    .any(|event| event.event_type == "session.opened"),
+                "progress" => task_events
+                    .iter()
+                    .any(|event| event.event_type == "progress.logged"),
+                "result" => task_events
+                    .iter()
+                    .any(|event| event.event_type == "agent.result_recorded"),
+                "review" => lifecycle.criteria.values().any(|criterion| {
+                    matches!(
+                        criterion.state,
+                        CriterionState::Passed | CriterionState::Failed | CriterionState::Blocked
                     )
-            })
-            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
-            .collect::<BTreeSet<_>>();
-        let sessions_without_result = opened_session_ids
-            .difference(&terminal_result_session_ids)
-            .cloned()
-            .collect::<Vec<_>>();
-        let progress_session_ids = task_events
-            .iter()
-            .filter(|event| event.event_type == "progress.logged")
-            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
-            .collect::<BTreeSet<_>>();
-        let recovered_session_ids = task_events
-            .iter()
-            .filter(|event| event.event_type == "session.recovered")
-            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
-            .collect::<BTreeSet<_>>();
-        let risk_session_ids = task_events
-            .iter()
-            .filter(|event| event.event_type == "risk.logged")
-            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
-            .collect::<BTreeSet<_>>();
-        let failed_result_session_ids = task_events
-            .iter()
-            .filter(|event| {
-                event.event_type == "agent.result_recorded"
-                    && event.payload.get("status").and_then(Value::as_str) == Some("failed")
-            })
-            .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
-            .collect::<BTreeSet<_>>();
-        let sessions_without_progress = if required_records.contains(&"progress".to_owned()) {
-            opened_session_ids
+                }),
+                "risk_if_any" => true,
+                _ => false,
+            };
+            let protocol_records=required_records.iter().map(|record|{let present=record_present(record);json!({"record":record,"status":if present{"complete"}else{"missing"},"repair_action":if present{Value::Null}else{Value::String(format!("record_{record}_via_typed_command"))}})}).collect::<Vec<_>>();
+            let protocol_state = if protocol_records
                 .iter()
-                .filter(|session_id| {
-                    !progress_session_ids.contains(*session_id)
-                        && !recovered_session_ids.contains(*session_id)
-                        && !(risk_session_ids.contains(*session_id)
-                            && failed_result_session_ids.contains(*session_id))
-                })
-                .cloned()
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
-        let criterion_issues = lifecycle
-            .criteria
-            .values()
-            .filter_map(|criterion| {
-                if !matches!(
-                    criterion.state,
-                    CriterionState::Passed | CriterionState::NotApplicable
-                ) {
-                    Some(format!("{}={:?}", criterion.criterion_id, criterion.state))
-                } else if criterion.state != CriterionState::NotApplicable
-                    && !criterion
-                        .evidence_refs
-                        .iter()
-                        .any(|reference| valid_evidence_ref(reference))
-                {
-                    Some(format!(
-                        "{}=invalid_or_stale_evidence",
-                        criterion.criterion_id
-                    ))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        let open_findings = lifecycle
-            .findings
-            .values()
-            .filter(|finding| finding.state != "closed")
-            .map(|finding| format!("{}={}", finding.finding_id, finding.state))
-            .collect::<Vec<_>>();
-        let unsettled_worktrees = orchestration
-            .worktrees
-            .values()
-            .filter_map(|worktree| {
-                let lease_active = worktree
-                    .lease
-                    .as_ref()
-                    .is_some_and(|lease| lease.state == LeaseState::Active);
-                (!matches!(
-                    worktree.state,
-                    WorktreeState::Integrated | WorktreeState::Cleaned | WorktreeState::Abandoned
-                ) || lease_active)
-                    .then(|| {
-                        format!(
-                            "{}={:?},lease_active={lease_active}",
-                            worktree.worktree_id, worktree.state
-                        )
-                    })
-            })
-            .collect::<Vec<_>>();
-        let external_blockers = current_blocker_details
-            .iter()
-            .filter(|blocker| {
-                matches!(
-                    blocker.get("kind").and_then(Value::as_str),
-                    Some("external_precondition" | "permission")
+                .all(|record| record["status"] == "complete")
+            {
+                "complete"
+            } else {
+                "partial"
+            };
+            let incomplete_nodes = lifecycle
+                .effective_nodes()
+                .filter(|(_, node)| !is_terminal_plan_node_state(node.state.as_str()))
+                .map(|(_, node)| format!("{}={}", node.node_id, node.state))
+                .collect::<Vec<_>>();
+            let unsettled_sessions = lifecycle
+                .sessions
+                .values()
+                .filter(|session| session.state != "closed")
+                .map(|session| format!("{}={}", session.session_id, session.state))
+                .chain(
+                    task_integrity
+                        .blocking_session_ids()
+                        .into_iter()
+                        .filter(|session_id| !lifecycle.sessions.contains_key(session_id))
+                        .map(|session_id| format!("{session_id}=unknown_or_incomplete")),
                 )
-            })
-            .filter_map(|blocker| {
-                blocker
-                    .get("blocker_id")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .collect::<Vec<_>>();
-        let missing_records = protocol_records
-            .iter()
-            .filter(|record| record["status"] == "missing")
-            .filter_map(|record| record["record"].as_str().map(str::to_owned))
-            .collect::<Vec<_>>();
-        let items = vec![
+                .collect::<Vec<_>>();
+            let opened_session_ids = task_events
+                .iter()
+                .filter(|event| event.event_type == "session.opened")
+                .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+                .collect::<BTreeSet<_>>();
+            let terminal_result_session_ids = task_events
+                .iter()
+                .filter(|event| {
+                    event.event_type == "agent.result_recorded"
+                        && matches!(
+                            event.payload.get("status").and_then(Value::as_str),
+                            Some("succeeded" | "failed")
+                        )
+                })
+                .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+                .collect::<BTreeSet<_>>();
+            let sessions_without_result = opened_session_ids
+                .difference(&terminal_result_session_ids)
+                .cloned()
+                .collect::<Vec<_>>();
+            let progress_session_ids = task_events
+                .iter()
+                .filter(|event| event.event_type == "progress.logged")
+                .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+                .collect::<BTreeSet<_>>();
+            let recovered_session_ids = task_events
+                .iter()
+                .filter(|event| event.event_type == "session.recovered")
+                .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+                .collect::<BTreeSet<_>>();
+            let risk_session_ids = task_events
+                .iter()
+                .filter(|event| event.event_type == "risk.logged")
+                .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+                .collect::<BTreeSet<_>>();
+            let failed_result_session_ids = task_events
+                .iter()
+                .filter(|event| {
+                    event.event_type == "agent.result_recorded"
+                        && event.payload.get("status").and_then(Value::as_str) == Some("failed")
+                })
+                .filter_map(|event| event.session_id.as_ref().map(|id| id.0.clone()))
+                .collect::<BTreeSet<_>>();
+            let sessions_without_progress = if required_records.contains(&"progress".to_owned()) {
+                opened_session_ids
+                    .iter()
+                    .filter(|session_id| {
+                        !progress_session_ids.contains(*session_id)
+                            && !recovered_session_ids.contains(*session_id)
+                            && !(risk_session_ids.contains(*session_id)
+                                && failed_result_session_ids.contains(*session_id))
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            let criterion_issues = lifecycle
+                .criteria
+                .values()
+                .filter_map(|criterion| {
+                    if !matches!(
+                        criterion.state,
+                        CriterionState::Passed | CriterionState::NotApplicable
+                    ) {
+                        Some(format!("{}={:?}", criterion.criterion_id, criterion.state))
+                    } else if criterion.state != CriterionState::NotApplicable
+                        && !criterion
+                            .evidence_refs
+                            .iter()
+                            .any(|reference| valid_evidence_ref(reference))
+                    {
+                        Some(format!(
+                            "{}=invalid_or_stale_evidence",
+                            criterion.criterion_id
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            let open_findings = lifecycle
+                .findings
+                .values()
+                .filter(|finding| finding.state != "closed")
+                .map(|finding| format!("{}={}", finding.finding_id, finding.state))
+                .collect::<Vec<_>>();
+            let unsettled_worktrees = orchestration
+                .worktrees
+                .values()
+                .filter_map(|worktree| {
+                    let lease_active = worktree
+                        .lease
+                        .as_ref()
+                        .is_some_and(|lease| lease.state == LeaseState::Active);
+                    (!matches!(
+                        worktree.state,
+                        WorktreeState::Integrated
+                            | WorktreeState::Cleaned
+                            | WorktreeState::Abandoned
+                    ) || lease_active)
+                        .then(|| {
+                            format!(
+                                "{}={:?},lease_active={lease_active}",
+                                worktree.worktree_id, worktree.state
+                            )
+                        })
+                })
+                .collect::<Vec<_>>();
+            let external_blockers = current_blocker_details
+                .iter()
+                .filter(|blocker| {
+                    matches!(
+                        blocker.get("kind").and_then(Value::as_str),
+                        Some("external_precondition" | "permission")
+                    )
+                })
+                .filter_map(|blocker| {
+                    blocker
+                        .get("blocker_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+                .collect::<Vec<_>>();
+            let missing_records = protocol_records
+                .iter()
+                .filter(|record| record["status"] == "missing")
+                .filter_map(|record| record["record"].as_str().map(str::to_owned))
+                .collect::<Vec<_>>();
+            let items = vec![
             completion_gate_item("required_records", "completion.records_missing", missing_records.is_empty(), "所有 effective policy required_records 均存在", format!("缺少记录：{}", missing_records.join(", ")), missing_records.clone(), Vec::new(), missing_records.iter().map(|record| format!("通过 typed command 记录 {record}" )).collect()),
             completion_gate_item("plan_terminal", "completion.plan_non_terminal", !planning_required || (lifecycle.effective_nodes().next().is_some() && incomplete_nodes.is_empty()), "所有必需 plan node 均为 completed/waived/superseded/cancelled", format!("未终结节点：{}", incomplete_nodes.join(", ")), incomplete_nodes.clone(), Vec::new(), vec!["按 DAG 顺序完成、waive、supersede 或 cancel 未终结节点".to_owned()]),
             completion_gate_item("sessions_settled", "completion.session_unsettled", unsettled_sessions.is_empty(), "所有 session 均 closed，gap 已 recover", format!("未结 session：{}", unsettled_sessions.join(", ")), unsettled_sessions.clone(), Vec::new(), vec!["对 gapped session 先 session_recovery(recover)，记录 terminal result 后 session_close".to_owned()]),
@@ -1676,78 +1753,86 @@ impl V3ViewRepository {
             completion_gate_item("orchestration_settled", "completion.worktree_or_lease_unsettled", unsettled_worktrees.is_empty(), "所有 worktree 已 integrated/cleaned/abandoned，且无 active lease", format!("未结 orchestration：{}", unsettled_worktrees.join("；")), unsettled_worktrees.clone(), current_blocker_details.iter().filter(|blocker| matches!(blocker.get("source_type").and_then(Value::as_str), Some("worktree" | "lease" | "integration"))).filter_map(|blocker| blocker.get("blocker_id").and_then(Value::as_str).map(str::to_owned)).collect(), vec!["完成或安全放弃 integration，并 release/reclaim lease".to_owned()]),
             completion_gate_item("external_preconditions", "completion.external_or_permission_blocked", external_blockers.is_empty(), "无等待外部环境或权限的 blocker", format!("外部/权限 blocker：{}", external_blockers.join(", ")), external_blockers.clone(), external_blockers.clone(), vec!["按 blocker repair_actions 在指定环境或受信人工渠道解除前置条件".to_owned()]),
         ];
-        let completion_gate = json!({
-            "all_passed": items.iter().all(|item| item["passed"] == true),
-            "blocked_chain": items.iter().filter(|item| item["passed"] == false).map(|item| item["gate"].clone()).collect::<Vec<_>>(),
-            "items": items
-        });
-        let selected_node = lifecycle.effective_node(&node_id);
-        let memory_scope = selected_node
-            .map(|node| node.scope.clone())
-            .unwrap_or_default();
-        let actor = task_events
-            .iter()
-            .rev()
-            .find(|event| {
-                event.task_id.0 == task.task_id
-                    && event.node_id.as_ref().is_some_and(|id| id.0 == node_id)
-            })
-            .map(|event| format!("user:{}", event.actor))
-            .unwrap_or_else(|| "team".to_owned());
-        let memory_projection = match project_projection.project_memory.clone() {
-            Some(projection) => projection,
-            None => self.store.project_memory_projection(&project_id)?,
-        };
-        let injected_memory = super::project_memory::query(&memory_projection, &super::MemoryQuery { kinds: Vec::new(), scope: memory_scope.clone(), principal_scope: Some(actor), include_stale: false, include_disputed: false, token_budget: max_tokens / 4 }).into_iter().filter(|entry| !super::prompt_injection_suspected(&entry.content)).map(|entry| json!({
+            let completion_gate = json!({
+                "all_passed": items.iter().all(|item| item["passed"] == true),
+                "blocked_chain": items.iter().filter(|item| item["passed"] == false).map(|item| item["gate"].clone()).collect::<Vec<_>>(),
+                "items": items
+            });
+            let selected_node = lifecycle.effective_node(&node_id);
+            let memory_scope = selected_node
+                .map(|node| node.scope.clone())
+                .unwrap_or_default();
+            let actor = task_events
+                .iter()
+                .rev()
+                .find(|event| {
+                    event.task_id.0 == task.task_id
+                        && event.node_id.as_ref().is_some_and(|id| id.0 == node_id)
+                })
+                .map(|event| format!("user:{}", event.actor))
+                .unwrap_or_else(|| "team".to_owned());
+            let memory_projection = match project_projection.project_memory.clone() {
+                Some(projection) => projection,
+                None => self.store.project_memory_projection(&project_id)?,
+            };
+            let injected_memory = super::project_memory::query(&memory_projection, &super::MemoryQuery { kinds: Vec::new(), scope: memory_scope.clone(), principal_scope: Some(actor), include_stale: false, include_disputed: false, token_budget: max_tokens / 4 }).into_iter().filter(|entry| !super::prompt_injection_suspected(&entry.content)).map(|entry| json!({
             "entry_id": entry.entry_id, "kind": entry.kind, "source": "project_memory", "revision": entry.revision, "status": entry.status,
             "evidence_refs": entry.evidence_refs, "content": entry.content, "why_injected": format!("scope/freshness/precedence match; precedence={}", super::memory_precedence(&entry.kind)),
             "instructional": false, "security_boundary": "untrusted_data_only"
         })).collect::<Vec<_>>();
-        let node_brief = json!({
-            "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "node_id": node_id,
-            "workflow_profile": task.workflow_profile,
-            "execution_policy": {
-                "recommended_profile": recommended_profile,
-                "effective_profile": effective_profile,
-                "policy_version": policy_version,
-                "enforcement_epoch": enforcement_epoch,
-                "trigger_reasons": task.trigger_reasons,
-                "override_record": effective_policy.and_then(|policy| policy.override_record.clone()),
-                "upgrade_history": effective_policy.map(|policy| policy.upgrade_history.clone()).unwrap_or_default(),
-                "milestone_policy": milestone_policy,
-                "planning_required": planning_required,
-                "review_required": review_required,
-                "required_records": required_records
-            },
-            "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else {structure_completeness},
-            "goal": selected_node.map(|node| node.goal.as_str()).unwrap_or(&task.intent),
-            "scope": selected_node.map(|node| node.scope.clone()).unwrap_or_default(), "non_scope": [],
-            "dependencies": selected_node.map(|node| node.dependencies.iter().cloned().collect::<Vec<_>>()).unwrap_or_default(),
-            "accepted_decisions": [],
-            "project_memory": injected_memory,
-            "protocol_records": protocol_records,
-            "coverage_mode": if effective_policy.is_some() {"enforced"} else {"legacy_degraded"},
-            "completion_gate": completion_gate,
-            "research_summary": [], "criteria": current_criteria, "files": [workspace_native_root],
-            // `state` remains the selected plan-node state for the plan drawer.
-            // `task_state` is the canonical task conclusion shared with the
-            // timeline, overview and candidates; keeping both named avoids
-            // turning a historical node/task mismatch into a silent rewrite.
-            "validation_commands": [], "state": selected_node.map(|node| view_node_state(&node.state)).unwrap_or_else(|| node_state(&task)), "task_state": current_task_state, "next_intent": task.phase,
-            "blocker_details": current_blocker_details,
-            "budget": {"max_tokens": max_tokens, "estimated_tokens": estimated_tokens, "truncated_sections": []},
-            "source_versions": {"view_model": MODEL_VERSION, "project_model": structure_model_version}, "protocol_coverage": if explicit_session_gaps>0{"gapped"}else{protocol_state},
-            "evidence_refs": evidence_refs, "warnings": node_warnings, "errors": architecture_errors
-        });
+            let node_brief = json!({
+                "schema_version": "1.0", "project_id": project_id, "task_id": task.task_id, "node_id": node_id,
+                "workflow_profile": task.workflow_profile,
+                "execution_policy": {
+                    "recommended_profile": recommended_profile,
+                    "effective_profile": effective_profile,
+                    "policy_version": policy_version,
+                    "enforcement_epoch": enforcement_epoch,
+                    "trigger_reasons": task.trigger_reasons,
+                    "override_record": effective_policy.and_then(|policy| policy.override_record.clone()),
+                    "upgrade_history": effective_policy.map(|policy| policy.upgrade_history.clone()).unwrap_or_default(),
+                    "milestone_policy": milestone_policy,
+                    "planning_required": planning_required,
+                    "review_required": review_required,
+                    "required_records": required_records
+                },
+                "generated_at": generated_at, "model_version": MODEL_VERSION, "freshness": view_freshness, "completeness": if projection_stale {"partial"} else {structure_completeness},
+                "goal": selected_node.map(|node| node.goal.as_str()).unwrap_or(&task.intent),
+                "scope": selected_node.map(|node| node.scope.clone()).unwrap_or_default(), "non_scope": [],
+                "dependencies": selected_node.map(|node| node.dependencies.iter().cloned().collect::<Vec<_>>()).unwrap_or_default(),
+                "accepted_decisions": [],
+                "project_memory": injected_memory,
+                "protocol_records": protocol_records,
+                "coverage_mode": if effective_policy.is_some() {"enforced"} else {"legacy_degraded"},
+                "completion_gate": completion_gate,
+                "research_summary": [], "criteria": current_criteria, "files": [workspace_native_root],
+                // `state` remains the selected plan-node state for the plan drawer.
+                // `task_state` is the canonical task conclusion shared with the
+                // timeline, overview and candidates; keeping both named avoids
+                // turning a historical node/task mismatch into a silent rewrite.
+                "validation_commands": [], "state": selected_node.map(|node| view_node_state(&node.state)).unwrap_or_else(|| node_state(&task)), "task_state": current_task_state, "next_intent": task.phase,
+                "blocker_details": current_blocker_details,
+                "budget": {"max_tokens": max_tokens, "estimated_tokens": estimated_tokens, "truncated_sections": []},
+                "source_versions": {"view_model": MODEL_VERSION, "project_model": structure_model_version}, "protocol_coverage": if explicit_session_gaps>0{"gapped"}else{protocol_state},
+                "evidence_refs": evidence_refs, "warnings": node_warnings, "errors": architecture_errors
+            });
+            node_brief
+        } else {
+            Value::Null
+        };
 
-        Ok(V3ViewBundle {
-            project_overview,
-            project_structure,
-            agent_results,
-            task_timeline,
-            plan_graph,
-            node_brief,
-        })
+        Ok([
+            ("project_overview", project_overview),
+            ("project_structure", project_structure),
+            ("agent_results", agent_results),
+            ("task_timeline", task_timeline),
+            ("plan_graph", plan_graph),
+            ("node_brief", node_brief),
+        ]
+        .into_iter()
+        .filter(|(name, _)| wants(name))
+        .map(|(name, value)| (name.to_owned(), value))
+        .collect())
     }
 
     /// Load only the NodeBrief of one explicitly requested plan node.
@@ -1759,8 +1844,9 @@ impl V3ViewRepository {
     pub fn load_node_brief(&self, task_id: &str, node_id: &str) -> Result<Value, V3Error> {
         validate_id("node_id", node_id)?;
         Ok(self
-            .load_bundle_for_node(task_id, Some(node_id))?
-            .node_brief)
+            .load_view_sections(task_id, Some(node_id), &["node_brief"])?
+            .remove("node_brief")
+            .unwrap())
     }
 
     pub fn workspace_root(&self, task_id: &str) -> Result<PathBuf, V3Error> {
@@ -2310,46 +2396,6 @@ fn fallback_workspace(
 fn accessible_directory(value: &str) -> Option<PathBuf> {
     let path = PathBuf::from(value);
     path.is_dir().then(|| path.canonicalize().ok()).flatten()
-}
-
-fn architecture_view_evidence_refs(project_structure: &Value) -> Vec<Value> {
-    let mut seen = BTreeSet::new();
-    let mut output = Vec::new();
-    let mut add = |reference: &Value| {
-        if output.len() >= 32 {
-            return;
-        }
-        if reference
-            .get("evidence_id")
-            .and_then(Value::as_str)
-            .is_some_and(|id| seen.insert(id.to_owned()))
-        {
-            output.push(reference.clone());
-        }
-    };
-    for reference in project_structure["evidence_refs"]
-        .as_array()
-        .into_iter()
-        .flatten()
-    {
-        add(reference);
-    }
-    for claim in project_structure["architecture_nodes"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .chain(
-            project_structure["architecture_edges"]
-                .as_array()
-                .into_iter()
-                .flatten(),
-        )
-    {
-        for reference in claim["evidence_refs"].as_array().into_iter().flatten() {
-            add(reference);
-        }
-    }
-    output
 }
 
 fn architecture_view(
@@ -5092,10 +5138,6 @@ fn windows_path_kind(native: &str) -> &'static str {
     }
 }
 
-fn page(returned: usize) -> Value {
-    json!({"cursor": Value::Null, "next_cursor": Value::Null, "limit": 200, "returned": returned, "total_estimate": returned, "truncated": false, "truncation_reason": "none", "model_version": MODEL_VERSION})
-}
-
 fn bounded_window(total: usize, start: usize, limit: usize) -> Value {
     let truncated = start > 0;
     json!({
@@ -5137,10 +5179,6 @@ fn node_state(task: &TaskDocument) -> &'static str {
     } else {
         "active"
     }
-}
-
-fn projected_task_state(lifecycle: &TaskLifecycleProjection) -> &str {
-    task_truth_state(lifecycle, None, false, false).as_str()
 }
 
 fn task_state_for(
@@ -5256,16 +5294,31 @@ mod tests {
                 origin_contract_version: 1,
             },
         );
-        assert_eq!(projected_task_state(&lifecycle), "blocked");
+        assert_eq!(
+            task_truth_state(&lifecycle, None, false, false).as_str(),
+            "blocked"
+        );
         lifecycle.nodes.get_mut("node.test").unwrap().state = "active".to_owned();
-        assert_eq!(projected_task_state(&lifecycle), "active");
+        assert_eq!(
+            task_truth_state(&lifecycle, None, false, false).as_str(),
+            "active"
+        );
         lifecycle.nodes.get_mut("node.test").unwrap().state = "completed".to_owned();
-        assert_eq!(projected_task_state(&lifecycle), "review");
+        assert_eq!(
+            task_truth_state(&lifecycle, None, false, false).as_str(),
+            "review"
+        );
         lifecycle.state = "completed".to_owned();
-        assert_eq!(projected_task_state(&lifecycle), "completed");
+        assert_eq!(
+            task_truth_state(&lifecycle, None, false, false).as_str(),
+            "completed"
+        );
         lifecycle.nodes.get_mut("node.test").unwrap().state = "blocked".to_owned();
         lifecycle.state = "closed_with_exceptions".to_owned();
-        assert_eq!(projected_task_state(&lifecycle), "closed_with_exceptions");
+        assert_eq!(
+            task_truth_state(&lifecycle, None, false, false).as_str(),
+            "closed_with_exceptions"
+        );
     }
 
     #[test]
@@ -5308,6 +5361,43 @@ mod tests {
         ] {
             assert_eq!(view["project_id"], project_id);
             assert_eq!(view["schema_version"], "1.0");
+        }
+        // Compare separately computed panels against the legacy full snapshot.
+        fn without_clock(value: &mut Value) {
+            match value {
+                Value::Object(map) => {
+                    map.remove("generated_at");
+                    map.remove("captured_at");
+                    map.remove("last_evidence_at");
+                    for v in map.values_mut() {
+                        without_clock(v);
+                    }
+                }
+                Value::Array(items) => {
+                    for v in items {
+                        without_clock(v);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (name, full) in [
+            ("project_overview", &bundle.project_overview),
+            ("project_structure", &bundle.project_structure),
+            ("agent_results", &bundle.agent_results),
+            ("task_timeline", &bundle.task_timeline),
+            ("plan_graph", &bundle.plan_graph),
+            ("node_brief", &bundle.node_brief),
+        ] {
+            crate::v3::read_metrics::reset();
+            let mut panels = repo.load_view_sections("task.test", None, &[name]).unwrap();
+            assert_eq!(panels.len(), 1);
+            assert_eq!(crate::v3::read_metrics::snapshot().bundles, 0);
+            let mut actual = panels.remove(name).unwrap();
+            let mut expected = full.clone();
+            without_clock(&mut actual);
+            without_clock(&mut expected);
+            assert_eq!(actual, expected, "panel {name}");
         }
         let timeline_events = bundle.task_timeline["events"].as_array().unwrap();
         assert_eq!(timeline_events.len(), 2);

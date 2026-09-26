@@ -79,6 +79,12 @@ const entry = `
   assert.equal(useV3Store.getState().error, null, "a successful background refresh must clear a stale error");
   assert.equal(useV3Store.getState().loading, false, "a successful background refresh must not leave the loading flag set");
 
+  const unchangedStates = [];
+  const stopUnchanged = useV3Store.subscribe(state => unchangedStates.push(state));
+  await useV3Store.getState().loadCurrentBundle(undefined, { background: true });
+  stopUnchanged();
+  assert.equal(unchangedStates.length, 0, "unchanged successful background refresh must preserve object identity without publishing");
+
   // 3) The setup form must survive prop refreshes that carry identical server data.
   const serverValues = () => ({ language: "zh-CN", gitUrl: "", tools: ["opencode", "codex"], revision: 3 });
   const first = projectSetupSignature(serverValues());

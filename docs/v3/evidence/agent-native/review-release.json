@@ -1,0 +1,48 @@
+{
+  "version": "3.4.0",
+  "review_before": {
+    "product_added": 4315,
+    "product_deleted": 713,
+    "evidence_added": 8171,
+    "all_added": 14644,
+    "all_deleted": 741
+  },
+  "review_after": {
+    "product_added": 4318,
+    "product_deleted": 1027,
+    "net_product_lines_removed": 311
+  },
+  "cli_sha256": "c74b95892c8eab9a9d1811b5accd4efc0ddb3f98a9c0210c372eb1f1766b44c8",
+  "app_sha256": "7cc55b71cb2873e9eb977e23d081047474537940aa3a2afa8c2d3976ad44a700",
+  "workspace": [
+    "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 115 filtered out; finished in 0.06s",
+    "test result: ok. 113 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 1.14s",
+    "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.42s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 480 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 20.63s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+  ],
+  "new_mcp": "passed",
+  "legacy_mcp": "passed",
+  "contracts_assertions": 828,
+  "release_preflight": {
+    "ok": true,
+    "version": "3.4.0",
+    "release_tag": "v3.4.0"
+  },
+  "signature": "ad-hoc strict verified",
+  "raw_log_assets": {
+    "vibehub-release-workspace.log": "a0484e152b3852be970590aa05d5c63271fdc21ca525129d7bcafeb7656fdeb9",
+    "vibehub-release-agent.log": "e821e474462f8b8ed59df49c445615a2e8e7d7d4501aa74284111f8df01eeb04",
+    "vibehub-release-legacy.log": "ff89eaec66d7cc14d83cc1a7a71a74dafcbbf8b2b1be2eb5545d71f2a8afabd7",
+    "vibehub-release-contracts.log": "0226b62155c1e640d2be6e6e20f043ff438794f038ee4d54f729c47be0445100",
+    "vibehub-release-web.log": "12671427dd71be50a73564865fbc68f3153b883de806f50147144881f22f234b",
+    "vibehub-release-preflight.log": "c8618978e0595a7f961dc7a8264b50fa8345b99720ed0b2109d3e0f77f266a7f",
+    "vibehub-release-app.log": "6794ed960d9a5f08de2114712bc9800b166bf3ebc5821c7d7b31b8ffbd5e9c2e",
+    "vibehub-release-codesign.log": "6bf2c010e599e0813fdc3305a7392dd126a9ca112d6a0ed1644f0cedb913a30b"
+  },
+  "raw_log_archive": "VibeHub_3.4.0_validation-evidence.zip",
+  "release_artifact_native": "pending exact Release artifact"
+}

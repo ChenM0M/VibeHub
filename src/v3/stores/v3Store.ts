@@ -43,10 +43,14 @@ export interface V3ProjectSettingsApi {
 
 export type V3UsageLoader = (projectPath: string, taskId: string | null) => Promise<LocalAgentUsageOverview>;
 
+export type V3ViewPanel = "project_overview" | "project_structure" | "agent_results" | "task_timeline" | "plan_graph" | "node_brief";
+export type V3RefreshOptions = { background?: boolean; panels?: V3ViewPanel[] };
+
 export type V3ProductionLoader = (
   projectPath: string,
   taskId: string | null,
   expectedProjectId: string | null,
+  options?: V3RefreshOptions,
 ) => Promise<V3FixtureBundle>;
 
 export type V3NodeBriefLoader = (
@@ -151,7 +155,7 @@ interface V3State {
   leaveProject: () => void;
   inspectProjectLayout: () => Promise<V3ProjectLayoutStatus | null>;
   runLifecycleAction: (action: V3LifecycleAction, taskId?: string) => Promise<void>;
-  loadCurrentBundle: (taskIdOverride?: string | null, options?: { background?: boolean }) => Promise<V3FixtureBundle | null>;
+  loadCurrentBundle: (taskIdOverride?: string | null, options?: V3RefreshOptions) => Promise<V3FixtureBundle | null>;
   loadLegacyArchive: () => Promise<void>;
   loadUsage: () => Promise<void>;
   loadTaskUsage: (taskId: string | null) => Promise<void>;
@@ -453,11 +457,12 @@ export const useV3Store = create<V3State>((set, get) => ({
       const requestedTaskId = taskIdOverride === undefined ? get().selectedTaskId : taskIdOverride;
       const bundle = scenario
         ? await v3Repository.loadScenario(scenario)
-        : await loader!(projectPath!, requestedTaskId, previousProjectId);
+        : await loader!(projectPath!, requestedTaskId, previousProjectId, options);
       if (requestId !== loadRequestId || get().projectPath !== projectPath || get().currentScenario !== scenario) return null;
       if (previousProjectId && bundle.projectOverview.project_id !== previousProjectId) {
         throw new Error("V3_IDENTITY_MISMATCH: refresh returned a different project");
       }
+      if (background && bundle === get().bundle && !get().error && !get().loading) return bundle;
       const previousTaskId = get().selectedTaskId;
       const previousNodeId = get().selectedNodeId;
       const projectedUiSelectedTaskId = bundle.projectOverview.ui_selected_task_id ?? null;

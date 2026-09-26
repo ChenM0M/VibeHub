@@ -1,0 +1,88 @@
+{
+  "binary_sha256": "598162a20663454e7ab6d3da1cab3325b4d67a34968a6910166fdb2058f10526",
+  "binary_changed_during_run": false,
+  "host": "claude",
+  "model_requested": "step-3.5-flash-2603",
+  "host_version": "2.1.273 (Claude Code)",
+  "process": {
+    "exit": 0,
+    "host": "claude",
+    "elapsed_seconds": 43.58
+  },
+  "status": "blocked_or_incomplete",
+  "facts": {
+    "event_count": 0,
+    "event_types": [],
+    "closed": false,
+    "task_completed": false
+  },
+  "tool_trace": [
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_start",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_start",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__workspace_context",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_record",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__session_finish",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__session_finish",
+      "status": "requested"
+    }
+  ],
+  "aggregate_host_usage": {
+    "input_tokens": 72360,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 14784,
+    "output_tokens": 4629,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "reported_steps": [],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "step-3.5-flash-2603",
+  "samples": 1,
+  "limitations": [
+    "Not a fixed-model multi-run evaluation",
+    "Does not test host reconnection or resource rendering"
+  ],
+  "host_errors": []
+}

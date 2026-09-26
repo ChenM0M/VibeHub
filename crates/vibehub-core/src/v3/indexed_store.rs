@@ -378,7 +378,11 @@ impl IndexedProjectStore {
             .map_err(sqlite_error("V3_INDEX_TRANSACTION_FAILED"))?;
         transaction
             .execute_batch(
-                "DELETE FROM task_projections;
+                "DROP TABLE IF EXISTS agent_session_summaries;
+                 DROP TABLE IF EXISTS agent_entities;
+                 DROP TABLE IF EXISTS agent_entity_watermarks;
+                 DROP TABLE IF EXISTS agent_evidence_refs;
+                 DELETE FROM task_projections;
                  DELETE FROM session_projections;
                  DELETE FROM session_bindings;
                  DELETE FROM worktree_projections;
@@ -449,6 +453,184 @@ impl IndexedProjectStore {
                 |row| row.get(0),
             )
             .map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))
+    }
+
+    pub(crate) fn read_session_integrity(
+        &self,
+        task_id: &str,
+    ) -> Result<Vec<serde_json::Value>, V3Error> {
+        let connection = self.connection()?;
+        // Rebuildable adjunct cache. Legacy binaries can continue updating the main
+        // session projection: its watermark invalidates this summary on the next read.
+        connection.execute_batch("CREATE TABLE IF NOT EXISTS agent_session_summaries(session_id TEXT PRIMARY KEY,task_id TEXT NOT NULL,last_global_seq INTEGER NOT NULL,summary_json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_agent_session_summary_task ON agent_session_summaries(task_id)").map_err(sqlite_error("V3_INDEX_SCHEMA_FAILED"))?;
+        connection.execute("INSERT INTO agent_session_summaries(session_id,task_id,last_global_seq,summary_json)
+            SELECT session_id,task_id,last_global_seq,json_object('session_id',session_id,'state',json_extract(projection_json,'$.state'),'progress_entries',json_extract(projection_json,'$.progress_entries'),'risk_entries',json_extract(projection_json,'$.risk_entries'),'terminal_result',EXISTS(SELECT 1 FROM json_each(projection_json,'$.agent_results') WHERE json_extract(value,'$.status') IN ('succeeded','failed')),'last_result_status',(SELECT json_extract(value,'$.status') FROM json_each(projection_json,'$.agent_results') ORDER BY CAST(key AS INTEGER) DESC LIMIT 1),'working_directory',(SELECT json_extract(event_json,'$.payload.working_directory') FROM events WHERE events.task_id=source.task_id AND events.session_id=source.session_id AND event_type='session.opened' ORDER BY global_seq DESC LIMIT 1))
+            FROM session_projections AS source WHERE task_id=?1 AND NOT EXISTS(SELECT 1 FROM agent_session_summaries AS cached WHERE cached.session_id=source.session_id AND cached.last_global_seq=source.last_global_seq AND json_type(cached.summary_json,'$.last_result_status') IS NOT NULL AND json_type(cached.summary_json,'$.working_directory') IS NOT NULL)
+            ON CONFLICT(session_id) DO UPDATE SET task_id=excluded.task_id,last_global_seq=excluded.last_global_seq,summary_json=excluded.summary_json",params![task_id]).map_err(sqlite_error("V3_INDEX_UPDATE_FAILED"))?;
+        let mut statement=connection.prepare("SELECT summary_json FROM agent_session_summaries AS cached WHERE task_id=?1 AND EXISTS(SELECT 1 FROM session_projections AS source WHERE source.session_id=cached.session_id AND source.task_id=cached.task_id AND source.last_global_seq=cached.last_global_seq) ORDER BY session_id").map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        let rows = statement
+            .query_map(params![task_id], |r| r.get::<_, String>(0))
+            .map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        rows.map(|r| decode_json(&r.map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?))
+            .collect()
+    }
+
+    pub(crate) fn read_worktrees(&self, task_id: &str) -> Result<Vec<serde_json::Value>, V3Error> {
+        let connection = self.connection()?;
+        let mut statement=connection.prepare("SELECT projection_json FROM worktree_projections WHERE task_id=?1 ORDER BY worktree_id").map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        let rows = statement
+            .query_map(params![task_id], |r| r.get::<_, String>(0))
+            .map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        rows.map(|r| decode_json(&r.map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?))
+            .collect()
+    }
+
+    fn ensure_agent_entities(&self, task_id: &str) -> Result<(), V3Error> {
+        let mut connection = self.connection()?;
+        connection.execute_batch("CREATE TABLE IF NOT EXISTS agent_entities(task_id TEXT NOT NULL,kind TEXT NOT NULL,entity_id TEXT NOT NULL,entity_json TEXT NOT NULL,PRIMARY KEY(task_id,kind,entity_id));
+            CREATE TABLE IF NOT EXISTS agent_entity_watermarks(task_id TEXT PRIMARY KEY,last_global_seq INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS agent_evidence_refs(task_id TEXT NOT NULL,evidence_id TEXT NOT NULL,owner_kind TEXT NOT NULL,owner_id TEXT NOT NULL,PRIMARY KEY(task_id,evidence_id,owner_kind,owner_id));").map_err(sqlite_error("V3_INDEX_SCHEMA_FAILED"))?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(sqlite_error("V3_INDEX_TRANSACTION_FAILED"))?;
+        let changed:bool=transaction.query_row("SELECT EXISTS(SELECT 1 FROM task_projections AS source WHERE task_id=?1 AND NOT EXISTS(SELECT 1 FROM agent_entity_watermarks AS cached WHERE cached.task_id=source.task_id AND cached.last_global_seq=source.last_global_seq))",params![task_id],|row|row.get(0)).map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        if changed {
+            transaction
+                .execute(
+                    "DELETE FROM agent_entities WHERE task_id=?1",
+                    params![task_id],
+                )
+                .map_err(sqlite_error("V3_INDEX_UPDATE_FAILED"))?;
+            transaction
+                .execute(
+                    "DELETE FROM agent_evidence_refs WHERE task_id=?1",
+                    params![task_id],
+                )
+                .map_err(sqlite_error("V3_INDEX_UPDATE_FAILED"))?;
+            for collection in ["nodes", "criteria", "findings", "sessions"] {
+                transaction.execute("INSERT INTO agent_entities SELECT task_id,?2,entity.key,entity.value FROM task_projections,json_each(projection_json,?3) AS entity WHERE task_id=?1",params![task_id,collection,format!("$.{collection}")]).map_err(sqlite_error("V3_INDEX_UPDATE_FAILED"))?;
+            }
+            transaction.execute("INSERT OR IGNORE INTO agent_evidence_refs SELECT task_id,refs.value,kind,entity_id FROM agent_entities,json_each(entity_json,'$.evidence_refs') AS refs WHERE task_id=?1 AND refs.type='text'",params![task_id]).map_err(sqlite_error("V3_INDEX_UPDATE_FAILED"))?;
+            transaction.execute("INSERT INTO agent_entity_watermarks SELECT task_id,last_global_seq FROM task_projections WHERE task_id=?1 ON CONFLICT(task_id) DO UPDATE SET last_global_seq=excluded.last_global_seq",params![task_id]).map_err(sqlite_error("V3_INDEX_UPDATE_FAILED"))?;
+        }
+        transaction
+            .commit()
+            .map_err(sqlite_error("V3_INDEX_COMMIT_FAILED"))
+    }
+    pub(crate) fn read_entity(
+        &self,
+        task_id: &str,
+        collection: &str,
+        id: &str,
+    ) -> Result<Option<serde_json::Value>, V3Error> {
+        self.ensure_agent_entities(task_id)?;
+        let connection = self.connection()?;
+        let value:Option<String>=connection.query_row("SELECT entity_json FROM agent_entities WHERE task_id=?1 AND kind=?2 AND entity_id=?3",params![task_id,collection,id],|row|row.get(0)).optional().map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        value.map(|v| decode_json(&v)).transpose()
+    }
+    pub(crate) fn read_evidence_reference(
+        &self,
+        task_id: &str,
+        id: &str,
+    ) -> Result<Option<serde_json::Value>, V3Error> {
+        self.ensure_agent_entities(task_id)?;
+        let connection = self.connection()?;
+        let mut statement=connection.prepare("SELECT owner_kind,owner_id FROM agent_evidence_refs WHERE task_id=?1 AND evidence_id=?2 ORDER BY owner_kind,owner_id LIMIT 6").map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        let rows=statement.query_map(params![task_id,id],|row|Ok(serde_json::json!({"kind":row.get::<_,String>(0)?,"entity_id":row.get::<_,String>(1)?}))).map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        let mut owners = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        if owners.is_empty() {
+            return Ok(None);
+        }
+        let more = owners.len() > 5;
+        owners.truncate(5);
+        Ok(Some(
+            serde_json::json!({"evidence_id":id,"source":"registered_reference","evidence_grade":null,"owners":owners,"more_owners":more,"body_available":false,"locator":id,"content_trust":"untrusted_data","note":"The authoritative fact stores this reference, not a captured body. No arbitrary file path is opened."}),
+        ))
+    }
+
+    pub(crate) fn read_revision(&self) -> Result<u64, V3Error> {
+        max_global_sequence(&self.connection()?)
+    }
+
+    pub(crate) fn read_binding(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<super::SessionTaskBinding>, V3Error> {
+        self.query_optional_json(
+            "SELECT projection_json FROM session_bindings WHERE session_id = ?1",
+            session_id,
+        )
+    }
+
+    pub(crate) fn read_event(
+        &self,
+        task_id: &str,
+        event_id: &str,
+    ) -> Result<Option<V3EventEnvelope>, V3Error> {
+        let connection = self.connection()?;
+        let value: Option<String> = connection
+            .query_row(
+                "SELECT event_json FROM events WHERE event_id = ?1 AND task_id = ?2",
+                params![event_id, task_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        value
+            .map(|json| {
+                super::read_metrics::events(1);
+                decode_json(&json)
+            })
+            .transpose()
+    }
+
+    pub(crate) fn read_events_page(
+        &self,
+        task_id: &str,
+        after: u64,
+        limit: usize,
+        event_type: Option<&str>,
+        session_id: Option<&str>,
+        filters: &super::agent_read::InspectQuery,
+    ) -> Result<Vec<(u64, V3EventEnvelope)>, V3Error> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT global_seq, event_json FROM events WHERE task_id = ?1 AND global_seq > ?2
+             AND (?3 IS NULL OR event_type = ?3) AND (?4 IS NULL OR session_id = ?4)
+             AND (?6 IS NULL OR global_seq >= ?6) AND (?7 IS NULL OR global_seq <= ?7)
+             AND (?8 IS NULL OR julianday(recorded_at) >= julianday(?8)) AND (?9 IS NULL OR julianday(recorded_at) <= julianday(?9))
+             AND (?10 IS NULL OR json_extract(event_json,'$.node_id')=?10 OR json_extract(event_json,'$.payload.node_id')=?10)
+             AND (?11 IS NULL OR json_extract(event_json,'$.payload.status')=?11 OR json_extract(event_json,'$.payload.outcome')=?11 OR json_extract(event_json,'$.payload.state')=?11 OR substr(event_type,-length(?11)-1)='.'||?11)
+             ORDER BY global_seq LIMIT ?5",
+            )
+            .map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        let rows = statement
+            .query_map(
+                params![
+                    task_id,
+                    after,
+                    event_type,
+                    session_id,
+                    limit as u64,
+                    filters.sequence_from,
+                    filters.sequence_to,
+                    filters.time_from,
+                    filters.time_to,
+                    filters.node_id,
+                    filters.state
+                ],
+                |row| Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+        rows.map(|row| {
+            let (seq, json) = row.map_err(sqlite_error("V3_INDEX_QUERY_FAILED"))?;
+            super::read_metrics::events(1);
+            Ok((seq, decode_json(&json)?))
+        })
+        .collect()
     }
 
     pub(crate) fn all_events(&self) -> Result<Vec<V3EventEnvelope>, V3Error> {

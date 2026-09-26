@@ -340,7 +340,90 @@ impl V3EventStore {
             .unwrap_or(ProjectionRuntimeState::Idle)
     }
 
+    pub fn read_session_integrity(
+        &self,
+        project_id: &str,
+        task_id: &str,
+    ) -> Result<Vec<Value>, V3Error> {
+        self.synced_index(project_id)?
+            .0
+            .read_session_integrity(task_id)
+    }
+    pub fn read_worktrees(&self, project_id: &str, task_id: &str) -> Result<Vec<Value>, V3Error> {
+        self.synced_index(project_id)?.0.read_worktrees(task_id)
+    }
+    pub fn read_evidence_reference(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        id: &str,
+    ) -> Result<Option<Value>, V3Error> {
+        self.synced_index(project_id)?
+            .0
+            .read_evidence_reference(task_id, id)
+    }
+    pub fn read_entity(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        kind: &str,
+        id: &str,
+    ) -> Result<Option<Value>, V3Error> {
+        let collection = match kind {
+            "node" => "nodes",
+            "criterion" => "criteria",
+            "finding" => "findings",
+            "session" => "sessions",
+            _ => {
+                return Err(V3Error::new(
+                    "ENTITY_KIND_INVALID",
+                    V3ErrorCategory::Validation,
+                    false,
+                    "Invalid entity kind",
+                ))
+            }
+        };
+        self.synced_index(project_id)?
+            .0
+            .read_entity(task_id, collection, id)
+    }
+    pub fn read_revision(&self, project_id: &str) -> Result<u64, V3Error> {
+        self.synced_index(project_id)?.0.read_revision()
+    }
+    pub fn read_binding(
+        &self,
+        project_id: &str,
+        session_id: &str,
+    ) -> Result<Option<super::SessionTaskBinding>, V3Error> {
+        self.synced_index(project_id)?.0.read_binding(session_id)
+    }
+    pub fn read_event(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        event_id: &str,
+    ) -> Result<Option<V3EventEnvelope>, V3Error> {
+        self.synced_index(project_id)?
+            .0
+            .read_event(task_id, event_id)
+    }
+    pub fn read_events_page(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        after: u64,
+        limit: usize,
+        event_type: Option<&str>,
+        session_id: Option<&str>,
+        filters: &super::agent_read::InspectQuery,
+    ) -> Result<Vec<(u64, V3EventEnvelope)>, V3Error> {
+        self.synced_index(project_id)?
+            .0
+            .read_events_page(task_id, after, limit, event_type, session_id, filters)
+    }
+
     pub fn load_project(&self, project_id: &str) -> Result<Vec<V3EventEnvelope>, V3Error> {
+        super::read_metrics::project_history();
         let (index, _) = self.synced_index(project_id)?;
         index.all_events()
     }
@@ -350,6 +433,7 @@ impl V3EventStore {
         project_id: &str,
         task_id: &str,
     ) -> Result<Vec<V3EventEnvelope>, V3Error> {
+        super::read_metrics::task_history();
         let (index, _) = self.synced_index(project_id)?;
         index.task_events(task_id)
     }

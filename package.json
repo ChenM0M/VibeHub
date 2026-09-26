@@ -1,6 +1,6 @@
 {
     "name": "vibehub",
-    "version": "3.3.12",
+    "version": "3.4.0",
     "description": "A cross-platform launcher for development tools",
     "license": "Apache-2.0",
     "type": "module",
@@ -25,7 +25,9 @@
         "tauri": "tauri",
         "startdev": "./start-dev.sh",
         "startdev:mac": "./start-dev.sh",
-        "check:mac": "./start-dev.sh --check"
+        "check:mac": "./start-dev.sh --check",
+        "v3:agent-native:measure": "node scripts/v3-mcp/agent-interaction-matrix.mjs",
+        "v3:agent-native:check": "node scripts/v3-mcp/agent-native-test.mjs && node scripts/v3-mcp/agent-operation-test.mjs && node scripts/v3-mcp/agent-state-matrix.mjs && node scripts/v3-mcp/agent-export-race.mjs && node scripts/v3-cockpit/agent-native-cache.mjs"
     },
     "dependencies": {
         "@dnd-kit/core": "^6.3.1",

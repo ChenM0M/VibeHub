@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { V3FixtureBundle } from "@/v3/contracts/fixtureRepository";
-import type { V3ProductionLoader } from "@/v3/stores/v3Store";
+import type { V3ProductionLoader, V3ViewPanel } from "@/v3/stores/v3Store";
 import type { NodeBrief } from "@/v3/contracts/generated/node-brief";
 import type { ProjectStructureView } from "@/v3/contracts/generated/project-structure-view";
 import type { ProjectOverviewView } from "@/v3/contracts/generated/project-overview-view";
@@ -14,24 +14,39 @@ interface NativeV3ViewBundle {
   node_brief: V3FixtureBundle["nodeBrief"];
 }
 
-export const loadV3ProductionViews: V3ProductionLoader = async (
-  projectPath,
-  taskId,
-  expectedProjectId,
-) => {
-  const native = await invoke<NativeV3ViewBundle>("v3_load_view_bundle", {
-    projectPath,
-    taskId,
-    expectedProjectId,
-  });
-  return {
-    projectOverview: native.project_overview,
-    projectStructure: native.project_structure,
-    agentResults: native.agent_results,
-    taskTimeline: native.task_timeline,
-    planGraph: native.plan_graph,
-    nodeBrief: native.node_brief,
-  };
+// Bounded process-local cache. Foreground refresh always loads; background probes
+// validate all legacy bundle dependencies and preserve object identity if unchanged.
+const panelNames: Record<V3ViewPanel, keyof V3FixtureBundle> = {
+  project_overview: "projectOverview", project_structure: "projectStructure", agent_results: "agentResults",
+  task_timeline: "taskTimeline", plan_graph: "planGraph", node_brief: "nodeBrief",
+};
+const allPanels = Object.keys(panelNames) as V3ViewPanel[];
+const productionCache = new Map<string, { revisions: Partial<Record<V3ViewPanel, string>>; bundle: V3FixtureBundle }>();
+
+export const loadV3ProductionViews: V3ProductionLoader = async (projectPath, taskId, expectedProjectId, options) => {
+  const key = JSON.stringify([projectPath, taskId, expectedProjectId]);
+  const probe = () => taskId ? invoke<string>("v3_read_view_revision", { projectPath, taskId, expectedProjectId }) : Promise.resolve(null);
+  const revision = await probe();
+  const cached = productionCache.get(key);
+  const wanted = options?.background && options.panels?.length ? options.panels : allPanels;
+  const stale = wanted.filter(panel => cached?.revisions[panel] !== revision);
+  if (options?.background && revision && cached && stale.length === 0) return cached.bundle;
+  const partial = Boolean(options?.background && cached && revision && options.panels?.length);
+  const requested = partial ? stale : allPanels;
+  const native = partial
+    ? await invoke<Partial<NativeV3ViewBundle>>("v3_load_view_sections", { projectPath, taskId, expectedProjectId, expectedRevision: revision, sections: requested })
+    : await invoke<NativeV3ViewBundle>("v3_load_view_bundle", { projectPath, taskId, expectedProjectId });
+  for (const panel of requested) if (!native[panel]) throw new Error(`V3_PANEL_MISSING: ${panel}`);
+  const updates = Object.fromEntries(requested.map(panel => [panelNames[panel], native[panel]]));
+  const bundle = { ...(partial ? cached!.bundle : {}), ...updates } as unknown as V3FixtureBundle;
+  // A hidden panel keeps its previous revision and is fetched when selected.
+  if (revision && revision === await probe()) {
+    const revisions = { ...(partial ? cached!.revisions : {}) };
+    for (const panel of requested) revisions[panel] = revision;
+    if (productionCache.size >= 4 && !productionCache.has(key)) productionCache.delete(productionCache.keys().next().value!);
+    productionCache.set(key, { revisions, bundle });
+  }
+  return bundle;
 };
 
 export const loadV3NodeBrief = async (

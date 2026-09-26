@@ -613,6 +613,96 @@ pub async fn v3_orchestration_command(
 }
 
 #[tauri::command]
+pub async fn v3_read_view_revision(
+    project_path: String,
+    task_id: String,
+    expected_project_id: Option<String>,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let repository = V3ViewRepository::open(&project_path).map_err(|e| e.to_string())?;
+        if expected_project_id
+            .as_ref()
+            .is_some_and(|id| id != &repository.project_id())
+        {
+            return Err("V3_IDENTITY_MISMATCH: revision project changed".to_owned());
+        }
+        let reads = vibehub_core::v3::agent_read::AgentReadService::open(&project_path)
+            .map_err(|e| e.to_string())?;
+        let mut revision = reads.revision(&task_id).map_err(|e| e.to_string())?;
+        let index = vibehub_core::v3::ProjectIndexService::open(&project_path)
+            .map_err(|e| e.to_string())?;
+        revision.push_str(&index.read_revision());
+        // Overview depends on other task metadata/current pointer too; only inspect
+        // metadata, never load event history or construct a view bundle.
+        let tasks = std::path::Path::new(&project_path).join(".vibehub/tasks");
+        let mut metadata = std::fs::read_dir(&tasks)
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect::<Vec<_>>();
+        metadata.sort_by_key(|entry| entry.file_name());
+        use std::hash::{Hash, Hasher};
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        for entry in metadata {
+            let path = entry.path();
+            let path = if path.is_dir() {
+                path.join("task.yaml")
+            } else {
+                path
+            };
+            if path.is_file() {
+                std::fs::read(&path)
+                    .map_err(|e| e.to_string())?
+                    .hash(&mut hash);
+            }
+        }
+        revision.push_str(&format!("{:x}", hash.finish()));
+        Ok(revision)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn v3_load_view_sections(
+    project_path: String,
+    task_id: String,
+    expected_project_id: Option<String>,
+    expected_revision: String,
+    sections: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    if v3_read_view_revision(
+        project_path.clone(),
+        task_id.clone(),
+        expected_project_id.clone(),
+    )
+    .await?
+        != expected_revision
+    {
+        return Err("V3_READ_REVISION_CHANGED: refresh panel revisions".into());
+    }
+    let root = project_path.clone();
+    let task = task_id.clone();
+    let value = tokio::task::spawn_blocking(move || {
+        let repository = V3ViewRepository::open(root).map_err(|e| e.to_string())?;
+        repository
+            .load_view_sections(
+                &task,
+                None,
+                &sections.iter().map(String::as_str).collect::<Vec<_>>(),
+            )
+            .map_err(|e| e.to_string())
+            .and_then(|sections| serde_json::to_value(sections).map_err(|e| e.to_string()))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if v3_read_view_revision(project_path, task_id, expected_project_id).await? != expected_revision
+    {
+        return Err("V3_READ_REVISION_CHANGED: facts changed while reading panels".into());
+    }
+    Ok(value)
+}
+
+#[tauri::command]
 pub async fn v3_load_view_bundle(
     project_path: String,
     task_id: Option<String>,

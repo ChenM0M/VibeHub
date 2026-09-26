@@ -1,0 +1,74 @@
+{
+  "trash_directory": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234",
+  "method": "mv; no recursive delete",
+  "preserved": [
+    "target/debug/vibehub",
+    "target/debug/vibehub.d"
+  ],
+  "moved": [
+    {
+      "from": "target/debug/.cargo-artifact-lock",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/.cargo-artifact-lock"
+    },
+    {
+      "from": "target/debug/.cargo-build-lock",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/.cargo-build-lock"
+    },
+    {
+      "from": "target/debug/.cargo-lock",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/.cargo-lock"
+    },
+    {
+      "from": "target/debug/.fingerprint",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/.fingerprint"
+    },
+    {
+      "from": "target/debug/build",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/build"
+    },
+    {
+      "from": "target/debug/deps",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/deps"
+    },
+    {
+      "from": "target/debug/examples",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/examples"
+    },
+    {
+      "from": "target/debug/incremental",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/incremental"
+    },
+    {
+      "from": "target/debug/libvibehub_adapters.d",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/libvibehub_adapters.d"
+    },
+    {
+      "from": "target/debug/libvibehub_adapters.rlib",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/libvibehub_adapters.rlib"
+    },
+    {
+      "from": "target/debug/vibehub-cli",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/vibehub-cli"
+    },
+    {
+      "from": "target/debug/vibehub-cli.d",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/debug/vibehub-cli.d"
+    },
+    {
+      "from": "target/release",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/release"
+    },
+    {
+      "from": "target/.rustc_info.json",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/.rustc_info.json"
+    },
+    {
+      "from": "target/CACHEDIR.TAG",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/CACHEDIR.TAG"
+    },
+    {
+      "from": "dist",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-20260926-130234/dist"
+    }
+  ]
+}

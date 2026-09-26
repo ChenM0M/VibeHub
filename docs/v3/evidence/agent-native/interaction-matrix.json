@@ -1,0 +1,702 @@
+{
+  "interaction_metrics": {
+    "decision_round_trips": [
+      {
+        "scenario": "S01",
+        "checkpoint": 1,
+        "baseline": 1,
+        "new": 1,
+        "tool": "workspace_context",
+        "semantic_assertions": [
+          "same goal, state, effective policy and explicit constraints",
+          "unchanged response, no supplementary context queries"
+        ]
+      },
+      {
+        "scenario": "S01",
+        "checkpoint": 2,
+        "baseline": 1,
+        "new": 1,
+        "tool": "task_brief",
+        "semantic_assertions": [
+          "same goal, state, effective policy and explicit constraints",
+          "unchanged response, no supplementary context queries"
+        ]
+      },
+      {
+        "scenario": "S03",
+        "checkpoint": 1,
+        "baseline": 1,
+        "new": 1,
+        "tool": "workspace_context",
+        "semantic_assertions": [
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints"
+        ]
+      },
+      {
+        "scenario": "S03",
+        "checkpoint": 2,
+        "baseline": 1,
+        "new": 1,
+        "tool": "task_brief",
+        "semantic_assertions": [
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints"
+        ]
+      },
+      {
+        "scenario": "S03",
+        "checkpoint": 3,
+        "baseline": 1,
+        "new": 1,
+        "tool": "task_brief",
+        "semantic_assertions": [
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints"
+        ]
+      },
+      {
+        "scenario": "S07",
+        "checkpoint": 1,
+        "baseline": 1,
+        "new": 1,
+        "tool": "workspace_context",
+        "semantic_assertions": [
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints",
+          "both concurrent facts survive; explicit scope switching; UI late-response checks in cache harness"
+        ]
+      },
+      {
+        "scenario": "S07",
+        "checkpoint": 2,
+        "baseline": 1,
+        "new": 1,
+        "tool": "workspace_context",
+        "semantic_assertions": [
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints",
+          "both concurrent facts survive; explicit scope switching; UI late-response checks in cache harness"
+        ]
+      },
+      {
+        "scenario": "S07",
+        "checkpoint": 3,
+        "baseline": 1,
+        "new": 1,
+        "tool": "task_brief",
+        "semantic_assertions": [
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints",
+          "same goal, state, effective policy and explicit constraints",
+          "both concurrent facts survive; explicit scope switching; UI late-response checks in cache harness"
+        ]
+      },
+      {
+        "scenario": "S12",
+        "checkpoint": 1,
+        "baseline": 1,
+        "new": 1,
+        "tool": "workspace_context",
+        "semantic_assertions": [
+          "same goal, state, effective policy and explicit constraints",
+          "single response contains goal/scope/criteria/constraints/blockers/next step; baseline conservatively charged one bundle, not multiple resources"
+        ]
+      }
+    ],
+    "recovery_round_trips": {
+      "S06": {
+        "baseline": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "new": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "note": "enum correction, binding refresh, version refresh, missing argument correction; new cursor refresh adds one independently injected case"
+      }
+    },
+    "invalid_calls": {
+      "baseline": 0,
+      "new": 0,
+      "definition": "Unexpected parameter/binding/order failures; every intentional negative call is asserted and listed separately"
+    },
+    "controlled_error_calls": {
+      "baseline": 8,
+      "new": 10
+    },
+    "detail_and_diagnostic_calls": {
+      "baseline": 5,
+      "new": 24
+    },
+    "note": "Calls are protocol calls, not model reasoning turns. Explicit large-body/diagnostic expansion is separate from obtaining current-work context."
+  },
+  "history_events": 1000,
+  "catalogs": {
+    "baseline": {
+      "tools": 31,
+      "bytes": 33009,
+      "reference_tokens": 7621
+    },
+    "new": {
+      "tools": 40,
+      "bytes": 43209,
+      "reference_tokens": 9961
+    }
+  },
+  "status": "byte_gate_passed",
+  "baseline_commit": "24547e3a0c1b0d6eb606d04aaff1324f32752150",
+  "baseline_sha256": "8fe3276a4cfc28e55895f6b16c636afe25fb05722f811008b9245059ad2f03d4",
+  "current_sha256": "6d562403dc921469006f146e5b64bf61ecddadbaba07f2e9af87775d314b5aff",
+  "tokenizer": {
+    "package": "tiktoken",
+    "version": "0.12.0",
+    "encoding": "o200k_base",
+    "scope": "exact normalized tool result JSON; reference tokenizer, not host model-visible token attribution"
+  },
+  "totals": {
+    "baseline": {
+      "calls": 53,
+      "result_bytes": 13965947,
+      "wire_bytes": 29293126,
+      "reference_tokens": 5634504,
+      "error_calls": 8
+    },
+    "new": {
+      "calls": 73,
+      "result_bytes": 1006719,
+      "wire_bytes": 2179250,
+      "reference_tokens": 316384,
+      "error_calls": 10
+    }
+  },
+  "output_reduction": 0.9279161663723914,
+  "scenarios": [
+    {
+      "id": "S01",
+      "label": "Bound continuation and unchanged read",
+      "baseline": {
+        "calls": 2,
+        "result_bytes": 50372,
+        "wire_bytes": 106062,
+        "reference_tokens": 16128,
+        "error_calls": 0,
+        "tools": [
+          "task_view",
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 2,
+        "result_bytes": 3070,
+        "wire_bytes": 6698,
+        "reference_tokens": 854,
+        "error_calls": 0,
+        "tools": [
+          "workspace_context",
+          "task_brief"
+        ]
+      },
+      "assertions": [
+        "same goal, state, effective policy and explicit constraints",
+        "unchanged response, no supplementary context queries"
+      ],
+      "output_reduction": 0.9390534423886286
+    },
+    {
+      "id": "S02",
+      "label": "Read-only selection, Chinese intent and scope rejection",
+      "baseline": {
+        "calls": 3,
+        "result_bytes": 26352,
+        "wire_bytes": 55683,
+        "reference_tokens": 8400,
+        "error_calls": 1,
+        "tools": [
+          "task_candidates",
+          "task_view",
+          "event_log"
+        ]
+      },
+      "new": {
+        "calls": 3,
+        "result_bytes": 3743,
+        "wire_bytes": 8173,
+        "reference_tokens": 978,
+        "error_calls": 1,
+        "tools": [
+          "workspace_context",
+          "task_brief",
+          "event_log"
+        ]
+      },
+      "assertions": [
+        "same goal, state, effective policy and explicit constraints",
+        "read-only queries do not bind; mismatched project rejected"
+      ],
+      "output_reduction": 0.857961445051609
+    },
+    {
+      "id": "S03",
+      "label": "Three effective policies and scoped node context",
+      "baseline": {
+        "calls": 3,
+        "result_bytes": 98845,
+        "wire_bytes": 208198,
+        "reference_tokens": 32660,
+        "error_calls": 0,
+        "tools": [
+          "task_view",
+          "task_view",
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 3,
+        "result_bytes": 8847,
+        "wire_bytes": 19052,
+        "reference_tokens": 2399,
+        "error_calls": 0,
+        "tools": [
+          "workspace_context",
+          "task_brief",
+          "task_brief"
+        ]
+      },
+      "assertions": [
+        "same goal, state, effective policy and explicit constraints",
+        "same goal, state, effective policy and explicit constraints",
+        "same goal, state, effective policy and explicit constraints"
+      ],
+      "output_reduction": 0.9104962314735191
+    },
+    {
+      "id": "S04",
+      "label": "Actual work, evidence review, close and awaiting user confirmation",
+      "baseline": {
+        "calls": 7,
+        "result_bytes": 71744,
+        "wire_bytes": 151670,
+        "reference_tokens": 24136,
+        "error_calls": 0,
+        "tools": [
+          "event_log",
+          "agent_result_record",
+          "task_view",
+          "criterion_review",
+          "session_close",
+          "task_completion_propose",
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 7,
+        "result_bytes": 9403,
+        "wire_bytes": 20606,
+        "reference_tokens": 2736,
+        "error_calls": 0,
+        "tools": [
+          "event_log",
+          "agent_result_record",
+          "workspace_context",
+          "criterion_review",
+          "session_close",
+          "task_completion_propose",
+          "task_brief"
+        ]
+      },
+      "assertions": [
+        "actual assertion evidence reviewed; proposal remains unconfirmed; no task_complete"
+      ],
+      "output_reduction": 0.8689367752007137
+    },
+    {
+      "id": "S05",
+      "label": "Unmet dependencies, missing evidence, failed review and open finding",
+      "baseline": {
+        "calls": 5,
+        "result_bytes": 54604,
+        "wire_bytes": 115044,
+        "reference_tokens": 17118,
+        "error_calls": 2,
+        "tools": [
+          "plan_node_state_set",
+          "criterion_review",
+          "criterion_review",
+          "finding_manage",
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 5,
+        "result_bytes": 5443,
+        "wire_bytes": 12068,
+        "reference_tokens": 1503,
+        "error_calls": 2,
+        "tools": [
+          "plan_node_state_set",
+          "criterion_review",
+          "criterion_review",
+          "finding_manage",
+          "task_brief"
+        ]
+      },
+      "assertions": [
+        "same goal, state, effective policy and explicit constraints",
+        "dependency and evidence gates reject; actual failed criterion/finding remain visible"
+      ],
+      "output_reduction": 0.9003186579737749
+    },
+    {
+      "id": "S06",
+      "label": "Enum/type errors, binding/version conflict and cursor repair",
+      "baseline": {
+        "calls": 11,
+        "result_bytes": 378062,
+        "wire_bytes": 791182,
+        "reference_tokens": 113951,
+        "error_calls": 4,
+        "tools": [
+          "plan_node_state_set",
+          "plan_node_state_set",
+          "event_log",
+          "task_view",
+          "event_log",
+          "task_view",
+          "task_view",
+          "task_view",
+          "task_view",
+          "event_log",
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 12,
+        "result_bytes": 14637,
+        "wire_bytes": 32297,
+        "reference_tokens": 3998,
+        "error_calls": 5,
+        "tools": [
+          "plan_node_state_set",
+          "plan_node_state_set",
+          "event_log",
+          "workspace_context",
+          "event_log",
+          "workspace_context",
+          "task_brief",
+          "task_brief",
+          "task_inspect",
+          "event_log",
+          "task_inspect",
+          "task_inspect"
+        ]
+      },
+      "assertions": [
+        "one local correction or bounded refresh per injected failure"
+      ],
+      "output_reduction": 0.9612841280001693
+    },
+    {
+      "id": "S07",
+      "label": "Concurrent sessions and explicit task/node switching",
+      "baseline": {
+        "calls": 7,
+        "result_bytes": 215958,
+        "wire_bytes": 452874,
+        "reference_tokens": 67509,
+        "error_calls": 0,
+        "tools": [
+          "session_task_bind",
+          "session_open",
+          "event_log",
+          "event_log",
+          "task_view",
+          "task_view",
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 7,
+        "result_bytes": 12471,
+        "wire_bytes": 27178,
+        "reference_tokens": 3430,
+        "error_calls": 0,
+        "tools": [
+          "session_task_bind",
+          "session_open",
+          "event_log",
+          "event_log",
+          "workspace_context",
+          "workspace_context",
+          "task_brief"
+        ]
+      },
+      "assertions": [
+        "same goal, state, effective policy and explicit constraints",
+        "same goal, state, effective policy and explicit constraints",
+        "same goal, state, effective policy and explicit constraints",
+        "both concurrent facts survive; explicit scope switching; UI late-response checks in cache harness"
+      ],
+      "output_reduction": 0.9422526602394911
+    },
+    {
+      "id": "S08",
+      "label": "Lost response and process restart with stable operation ID",
+      "baseline": {
+        "calls": 3,
+        "result_bytes": 86727,
+        "wire_bytes": 181781,
+        "reference_tokens": 27077,
+        "error_calls": 1,
+        "tools": [
+          "event_log",
+          "event_log",
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 3,
+        "result_bytes": 2001,
+        "wire_bytes": 4546,
+        "reference_tokens": 519,
+        "error_calls": 0,
+        "tools": [
+          "task_record",
+          "operation_status",
+          "task_record"
+        ]
+      },
+      "assertions": [
+        "real process restart; repeated request returns original receipt; B0 legacy version normalization rejects replay; readback required; new stable operation succeeds"
+      ],
+      "output_reduction": 0.9769276004012591
+    },
+    {
+      "id": "S09",
+      "label": "1000 events and complete large evidence expansion",
+      "baseline": {
+        "calls": 1,
+        "result_bytes": 1408676,
+        "wire_bytes": 2954498,
+        "reference_tokens": 578966,
+        "error_calls": 0,
+        "tools": [
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 5,
+        "result_bytes": 29213,
+        "wire_bytes": 59749,
+        "reference_tokens": 5070,
+        "error_calls": 0,
+        "tools": [
+          "task_brief",
+          "task_inspect",
+          "task_inspect",
+          "task_inspect",
+          "task_inspect"
+        ]
+      },
+      "assertions": [
+        "same goal, state, effective policy and explicit constraints",
+        "entire requested evidence restored; normal brief still includes current blockers"
+      ],
+      "output_reduction": 0.9792620872365256
+    },
+    {
+      "id": "S10",
+      "label": "Memory/config invalidation and projection repair",
+      "baseline": {
+        "calls": 6,
+        "result_bytes": 5886216,
+        "wire_bytes": 12345314,
+        "reference_tokens": 2414994,
+        "error_calls": 0,
+        "tools": [
+          "task_view",
+          "memory_write",
+          "task_view",
+          "task_view",
+          "projection_rebuild",
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 6,
+        "result_bytes": 259704,
+        "wire_bytes": 545121,
+        "reference_tokens": 100527,
+        "error_calls": 0,
+        "tools": [
+          "task_brief",
+          "memory_write",
+          "task_brief",
+          "task_brief",
+          "projection_rebuild",
+          "task_brief"
+        ]
+      },
+      "assertions": [
+        "same goal, state, effective policy and explicit constraints",
+        "Memory/config changes invalidate revision; rebuild preserves domain truth"
+      ],
+      "output_reduction": 0.9558792949494208
+    },
+    {
+      "id": "S11",
+      "label": "Known IDs direct and out-of-scope rejection",
+      "baseline": {
+        "calls": 2,
+        "result_bytes": 1456447,
+        "wire_bytes": 3054846,
+        "reference_tokens": 594543,
+        "error_calls": 0,
+        "tools": [
+          "task_view",
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 4,
+        "result_bytes": 2822,
+        "wire_bytes": 6413,
+        "reference_tokens": 744,
+        "error_calls": 1,
+        "tools": [
+          "task_inspect",
+          "task_inspect",
+          "task_inspect",
+          "task_inspect"
+        ]
+      },
+      "assertions": [
+        "three known entity kinds reachable directly; wrong task rejected"
+      ],
+      "output_reduction": 0.9980624080381916
+    },
+    {
+      "id": "S12",
+      "label": "One complete work context vs fragmented legacy resource reads",
+      "baseline": {
+        "calls": 1,
+        "result_bytes": 1410648,
+        "wire_bytes": 2958658,
+        "reference_tokens": 579674,
+        "error_calls": 0,
+        "tools": [
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 1,
+        "result_bytes": 4238,
+        "wire_bytes": 9096,
+        "reference_tokens": 1096,
+        "error_calls": 0,
+        "tools": [
+          "workspace_context"
+        ]
+      },
+      "assertions": [
+        "same goal, state, effective policy and explicit constraints",
+        "single response contains goal/scope/criteria/constraints/blockers/next step; baseline conservatively charged one bundle, not multiple resources"
+      ],
+      "output_reduction": 0.9969957069375209
+    },
+    {
+      "id": "S13",
+      "label": "Server filters, associations and exhausted budget",
+      "baseline": {
+        "calls": 1,
+        "result_bytes": 1410648,
+        "wire_bytes": 2958658,
+        "reference_tokens": 579674,
+        "error_calls": 0,
+        "tools": [
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 3,
+        "result_bytes": 2091,
+        "wire_bytes": 4753,
+        "reference_tokens": 614,
+        "error_calls": 1,
+        "tools": [
+          "task_inspect",
+          "task_inspect",
+          "task_brief"
+        ]
+      },
+      "assertions": [
+        "state/session filtering returns the matching facts; insufficient necessary-context budget rejects explicitly"
+      ],
+      "output_reduction": 0.9985177025026796
+    },
+    {
+      "id": "S14",
+      "label": "Explicit diagnostic snapshot and tool-only complete fallback",
+      "baseline": {
+        "calls": 1,
+        "result_bytes": 1410648,
+        "wire_bytes": 2958658,
+        "reference_tokens": 579674,
+        "error_calls": 0,
+        "tools": [
+          "task_view"
+        ]
+      },
+      "new": {
+        "calls": 12,
+        "result_bytes": 649036,
+        "wire_bytes": 1423500,
+        "reference_tokens": 191916,
+        "error_calls": 0,
+        "tools": [
+          "diagnostic_export",
+          "diagnostic_read",
+          "diagnostic_read",
+          "diagnostic_read",
+          "diagnostic_read",
+          "diagnostic_read",
+          "diagnostic_read",
+          "diagnostic_read",
+          "diagnostic_read",
+          "diagnostic_read",
+          "diagnostic_read",
+          "diagnostic_read"
+        ]
+      },
+      "assertions": [
+        "all diagnostic chunks charged; every baseline-window event included; complete export hash/explicit deletion; concurrent snapshot rejection in export-race harness"
+      ],
+      "baseline_diagnostic_complete": false,
+      "diagnostic_event_counts": {
+        "new_complete": 1019,
+        "baseline_window": 199
+      },
+      "output_reduction": 0.5399022293300668
+    }
+  ],
+  "limitations": [
+    "Deterministic actual tool workflow, not an LLM success-rate evaluation",
+    "Same unchanged typed-write receipt charged equally to both lanes",
+    "Read scenarios use the real B0 binary against the same authoritative fixture",
+    "S14 charges every new export byte but B0 task_view only exposes a 200-event window; aggregate savings are a conservative byte lower bound, not equal export capability",
+    "Large-history/setup writes are excluded from both lanes; each measured workflow call is counted",
+    "Host final model-visible formatting is measured separately"
+  ]
+}

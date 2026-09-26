@@ -1,0 +1,40 @@
+{
+  "moved": [
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/release",
+      "to": "/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246/0-release"
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/dist",
+      "to": "/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246/1-dist"
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/deps",
+      "to": "/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246/2-deps"
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/build",
+      "to": "/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246/3-build"
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/incremental",
+      "to": "/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246/4-incremental"
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/examples",
+      "to": "/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246/5-examples"
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/.fingerprint",
+      "to": "/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246/6-.fingerprint"
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/.rustc_info.json",
+      "to": "/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246/7-.rustc_info.json"
+    }
+  ],
+  "preserved": [
+    "target/debug/vibehub",
+    "target/debug/vibehub.d"
+  ]
+}

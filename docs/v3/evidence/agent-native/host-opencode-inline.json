@@ -1,0 +1,222 @@
+{
+  "binary_sha256": "fd24fa5145f9a1365284e32e3ed38a3c6051258e3130b7e0decddeaf45ef95e5",
+  "binary_changed_during_run": false,
+  "host": "opencode",
+  "model_requested": "stepfun_official/step-3.7-flash",
+  "host_version": "1.18.32",
+  "process": {
+    "exit": 0,
+    "host": "opencode",
+    "elapsed_seconds": 32.92
+  },
+  "status": "basic_loop_passed",
+  "facts": {
+    "event_count": 5,
+    "event_types": [
+      "session.task_bound",
+      "session.opened",
+      "progress.logged",
+      "agent.result_recorded",
+      "session.closed"
+    ],
+    "closed": true,
+    "task_completed": false
+  },
+  "tool_trace": [
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_start",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_workspace_context",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_session_finish",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_session_finish",
+      "status": "completed"
+    }
+  ],
+  "aggregate_host_usage": null,
+  "reported_steps": [
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 6901,
+        "input": 4825,
+        "output": 284,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 1792
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 7501,
+        "input": 906,
+        "output": 67,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 6528
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 8592,
+        "input": 674,
+        "output": 558,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 7360
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 9646,
+        "input": 1189,
+        "output": 521,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 7936
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 9960,
+        "input": 876,
+        "output": 60,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 9024
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 10849,
+        "input": 870,
+        "output": 187,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 9792
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 11145,
+        "input": 387,
+        "output": 198,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 10560
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 11524,
+        "input": 373,
+        "output": 271,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 10880
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 12018,
+        "input": 571,
+        "output": 311,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 11136
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 12333,
+        "input": 542,
+        "output": 207,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 11584
+        }
+      }
+    },
+    {
+      "reason": "stop",
+      "tokens": {
+        "total": 13316,
+        "input": 528,
+        "output": 756,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 12032
+        }
+      }
+    }
+  ],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "not exposed; requested alias: stepfun_official/step-3.7-flash",
+  "samples": 1,
+  "limitations": [
+    "Not a fixed-model multi-run evaluation",
+    "Does not test host reconnection or resource rendering"
+  ],
+  "host_errors": []
+}

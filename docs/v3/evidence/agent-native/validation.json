@@ -1,0 +1,86 @@
+{
+  "head": "24547e3a0c1b0d6eb606d04aaff1324f32752150",
+  "working_tree_changes_committed": false,
+  "cli_sha256": "b8b5a789488489171615a8f8a20bfbb8b2bbf327257418498580341b64592a70",
+  "macos_bundle_binary_sha256": "7d82f493f38554ec267d00b66291407930d47dbf84e6c90f9b4ad3bacc986bc8",
+  "codesign": "ad-hoc; strict/deep verify passed; not Developer ID or notarized",
+  "workspace_test_summaries": [
+    "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 115 filtered out; finished in 0.07s",
+    "test result: ok. 113 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 1.69s",
+    "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.91s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 478 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 40.17s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+  ],
+  "commands": [
+    {
+      "command": "cargo test --locked --workspace",
+      "status": "passed",
+      "note": "localhost tests require unsandboxed local test environment"
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "status": "passed"
+    },
+    {
+      "command": "cargo build --locked -p vibehub-cli",
+      "status": "passed"
+    },
+    {
+      "command": "npm run build",
+      "status": "passed"
+    },
+    {
+      "command": "npm run release:check",
+      "status": "passed",
+      "version": "3.3.12",
+      "release_tag": null
+    },
+    {
+      "command": "npm run v3:contracts:check",
+      "status": "passed",
+      "assertions": 828
+    },
+    {
+      "command": "npm run tauri -- build --bundles app",
+      "status": "passed"
+    },
+    {
+      "command": "node scripts/v3-cockpit/agent-native-cache.mjs",
+      "status": "passed"
+    },
+    {
+      "command": "npm run v3:cockpit-refresh:check",
+      "status": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "windows_native_release": "not tested: no authorized publication or exact new Release artifact/hash",
+  "limitations": [
+    "Full fixed-scenario host/token evaluation remains incomplete",
+    "No Developer ID signing or notarization",
+    "No publish, commit, push or tag"
+  ],
+  "post_cleanup_runtime": "retained CLI stdio workspace read and EOF shutdown passed; SHA256 unchanged",
+  "cleanup_manifest": "cleanup.json",
+  "host_reports": {
+    "codex": "host-codex-final.json",
+    "claude": "host-claude-configured.json",
+    "opencode": [
+      "host-opencode-kimi.json",
+      "host-opencode-gpt.json",
+      "host-opencode-sol.json"
+    ]
+  },
+  "evidence_review": {
+    "json_parsing": "passed",
+    "credential_pattern_scan": "no matches; not a proof of comprehensive absence",
+    "post_cleanup_cli_hash": "unchanged",
+    "baseline_wire_measurement": "original mislabeled field corrected; full original wire unknown"
+  }
+}

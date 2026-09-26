@@ -1,0 +1,21 @@
+{
+  "control": "no fixture MCP configured; reply OK; tools denied",
+  "timeout_seconds": null,
+  "exit_code": 0,
+  "text_output_observed": true,
+  "steps": [
+    {
+      "reason": "stop",
+      "tokens": {
+        "total": 2287,
+        "input": 2258,
+        "output": 29,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "method": "mv to macOS Trash; no permanent removal",
+  "macos": [
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/release",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/0-release",
+      "source_absent": true
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/dist",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/1-dist",
+      "source_absent": true
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/deps",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/2-deps",
+      "source_absent": true
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/build",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/3-build",
+      "source_absent": true
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/incremental",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/4-incremental",
+      "source_absent": true
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/examples",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/5-examples",
+      "source_absent": true
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/debug/.fingerprint",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/6-.fingerprint",
+      "source_absent": true
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/target/.rustc_info.json",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/7-.rustc_info.json",
+      "source_absent": true
+    },
+    {
+      "from": "/Users/chenm0m/LocalRepo/VibeHub/scripts/v3-mcp/__pycache__",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/10-__pycache__",
+      "source_absent": true
+    },
+    {
+      "from": "/tmp/vibehub-b0-target",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/11-vibehub-b0-target",
+      "source_absent": true
+    },
+    {
+      "from": "/tmp/vibehub-b0-source",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/12-vibehub-b0-source",
+      "source_absent": true
+    },
+    {
+      "from": "/tmp/vibehub-native-source.zip",
+      "to": "/Users/chenm0m/.Trash/vibehub-agent-native-final-20260926T145919/13-vibehub-native-source.zip",
+      "source_absent": true
+    }
+  ],
+  "preserved": [
+    "/Users/chenm0m/LocalRepo/VibeHub/target/debug/vibehub",
+    "/Users/chenm0m/LocalRepo/VibeHub/target/debug/vibehub.d"
+  ],
+  "cli_sha256": "6d562403dc921469006f146e5b64bf61ecddadbaba07f2e9af87775d314b5aff",
+  "windows": [
+    {
+      "destination": "Windows Recycle Bin",
+      "source": "C:\\Users\\11231\\AppData\\Local\\Temp\\vibehub-agent-native-validation",
+      "source_absent": true
+    },
+    {
+      "destination": "Windows Recycle Bin",
+      "source": "C:\\Users\\11231\\AppData\\Local\\Temp\\vibehub-native-source.zip",
+      "source_absent": true
+    }
+  ]
+}

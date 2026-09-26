@@ -1,0 +1,44 @@
+{
+  "status": "passed",
+  "checks": [
+    "empty workspace",
+    "Chinese intent",
+    "three policy profiles",
+    "single-read necessary context",
+    "legacy semantic parity",
+    "unrelated blockers stay scoped",
+    "direct finding and associations",
+    "more than one default page of blockers with complete initial context",
+    "multiple candidates never bind",
+    "Session/Task mismatch"
+  ],
+  "cases": [
+    {
+      "profile": "lightweight",
+      "goal_policy_binding_state_parity": true,
+      "one_read_context": true,
+      "scoped_blockers": false,
+      "result_bytes": 2824,
+      "legacy_result_bytes": 24942,
+      "output_reduction": 0.8867773233902654
+    },
+    {
+      "profile": "standard",
+      "goal_policy_binding_state_parity": true,
+      "one_read_context": true,
+      "scoped_blockers": true,
+      "result_bytes": 3206,
+      "legacy_result_bytes": 35918,
+      "output_reduction": 0.910741132579765
+    },
+    {
+      "profile": "full",
+      "goal_policy_binding_state_parity": true,
+      "one_read_context": true,
+      "scoped_blockers": true,
+      "result_bytes": 3138,
+      "legacy_result_bytes": 97699,
+      "output_reduction": 0.9678809404395132
+    }
+  ]
+}

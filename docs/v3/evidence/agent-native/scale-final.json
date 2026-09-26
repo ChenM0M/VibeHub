@@ -1,0 +1,56 @@
+{
+  "environment": "macOS 27.0 arm64; final source; 5 warmup / 30 samples",
+  "cases": [
+    {
+      "brief_bytes": 2251,
+      "brief_p50_ms": 49.104792,
+      "brief_p95_ms": 53.065083,
+      "other_task_history": false,
+      "probe_p50_ms": 11.899375000000001,
+      "probe_p95_ms": 13.862417,
+      "read_work": {
+        "bundles": 0,
+        "decoded_events": 0,
+        "project_history_reads": 0,
+        "task_history_reads": 0
+      },
+      "samples": 30,
+      "synthetic_progress_events": 1000,
+      "warmup": 5
+    },
+    {
+      "brief_bytes": 2248,
+      "brief_p50_ms": 85.68704100000001,
+      "brief_p95_ms": 90.46320800000001,
+      "other_task_history": true,
+      "probe_p50_ms": 21.462542000000003,
+      "probe_p95_ms": 22.57675,
+      "read_work": {
+        "bundles": 0,
+        "decoded_events": 0,
+        "project_history_reads": 0,
+        "task_history_reads": 0
+      },
+      "samples": 30,
+      "synthetic_progress_events": 100000,
+      "warmup": 5
+    },
+    {
+      "brief_bytes": 2253,
+      "brief_p50_ms": 114.617833,
+      "brief_p95_ms": 117.251125,
+      "other_task_history": false,
+      "probe_p50_ms": 21.000541000000002,
+      "probe_p95_ms": 23.034167,
+      "read_work": {
+        "bundles": 0,
+        "decoded_events": 0,
+        "project_history_reads": 0,
+        "task_history_reads": 0
+      },
+      "samples": 30,
+      "synthetic_progress_events": 100000,
+      "warmup": 5
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "binary_sha256": "6d562403dc921469006f146e5b64bf61ecddadbaba07f2e9af87775d314b5aff",
+  "binary_changed_during_run": false,
+  "host": "codex",
+  "model_requested": "gpt-6-astra",
+  "host_version": "codex-cli 0.156.1",
+  "process": {
+    "exit": 0,
+    "host": "codex",
+    "elapsed_seconds": 59.35
+  },
+  "status": "basic_loop_passed",
+  "facts": {
+    "event_count": 5,
+    "event_types": [
+      "session.task_bound",
+      "session.opened",
+      "progress.logged",
+      "agent.result_recorded",
+      "session.closed"
+    ],
+    "closed": true,
+    "task_completed": false
+  },
+  "tool_trace": [
+    {
+      "tool": "task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "task_brief",
+      "status": "failed"
+    },
+    {
+      "tool": "task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "task_start",
+      "status": "completed"
+    },
+    {
+      "tool": "workspace_context",
+      "status": "completed"
+    },
+    {
+      "tool": "task_record",
+      "status": "completed"
+    },
+    {
+      "tool": "session_finish",
+      "status": "completed"
+    }
+  ],
+  "aggregate_host_usage": {
+    "input_tokens": 157513,
+    "cached_input_tokens": 146048,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 889,
+    "reasoning_output_tokens": 0
+  },
+  "reported_steps": [],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "not exposed; requested alias: gpt-6-astra",
+  "samples": 1,
+  "limitations": [
+    "One isolated sample; aggregate with other recorded samples for repeatability",
+    "Uses recorded model alias; immutable provider snapshot is not guaranteed",
+    "Resource rendering is not required; ordinary-tool fallback is tested in reconnection mode"
+  ],
+  "host_errors": [],
+  "phases": [
+    {
+      "exit": 0,
+      "phase": 1,
+      "seconds": 59.35
+    }
+  ],
+  "reconnection_test": false,
+  "verified_checks": {
+    "missing_task_rejected": true,
+    "subsequent_brief_succeeded": true,
+    "independent_facts_match": true
+  },
+  "tool_results": [
+    {
+      "tool": "task_brief",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "task_brief",
+      "negative_case_requested": true,
+      "codes": [
+        "V3_TASK_NOT_FOUND",
+        "V3_TASK_NOT_FOUND"
+      ],
+      "success": false
+    },
+    {
+      "tool": "task_brief",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "task_start",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "workspace_context",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "task_record",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "session_finish",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    }
+  ]
+}

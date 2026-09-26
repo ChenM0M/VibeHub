@@ -1,0 +1,23 @@
+{
+  "server": {
+    "name": "vibehub-v3",
+    "title": "VibeHub V3 MCP",
+    "version": "3.3.12"
+  },
+  "platform": "darwin",
+  "arch": "arm64",
+  "node": "v22.23.3",
+  "fixture": "isolated small task; authoritative metadata, no fabricated event log",
+  "warmup": 5,
+  "samples": 30,
+  "p50_ms": 39.39195800000016,
+  "p95_ms": 45.73370799999998,
+  "result_bytes": 14273,
+  "catalog_bytes": 33009,
+  "tool_count": 31,
+  "model_visible_tokens": "unknown",
+  "host": "raw stdio; not host acceptance",
+  "mcp_result_payload_bytes": 30078,
+  "wire_bytes": null,
+  "measurement_correction": "Original wire_bytes counted the MCP result object only, excluding JSON-RPC envelope/newline. Preserved as mcp_result_payload_bytes; original full wire was not retained. Baseline script now counts received lines on future runs."
+}

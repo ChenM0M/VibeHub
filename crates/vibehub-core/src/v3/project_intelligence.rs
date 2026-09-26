@@ -176,6 +176,12 @@ impl ProjectIndexService {
         self.page(".", None, DEFAULT_PAGE_SIZE)
     }
 
+    /// Same dependency fingerprint as current_snapshot, without building/loading it.
+    pub fn read_revision(&self) -> String {
+        let head = git_output(&self.root, &["rev-parse", "HEAD"]);
+        model_version(&self.root, head.as_deref(), &git_status(&self.root))
+    }
+
     pub fn snapshot_path(&self) -> PathBuf {
         self.root.join(PROJECT_MODEL_INDEX_PATH)
     }

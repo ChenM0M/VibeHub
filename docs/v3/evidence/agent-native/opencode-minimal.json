@@ -1,0 +1,99 @@
+{
+  "scenario": "one schema-valid MCP read; no deliberate invalid input",
+  "timeout_seconds": 40,
+  "goal_observed": false,
+  "trace": [],
+  "steps": [
+    {
+      "reason": "unknown",
+      "tokens": {
+        "total": 6061,
+        "input": 6061,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      }
+    },
+    {
+      "reason": "unknown",
+      "tokens": {
+        "total": 6061,
+        "input": 6061,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      }
+    },
+    {
+      "reason": "unknown",
+      "tokens": {
+        "total": 6061,
+        "input": 6061,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      }
+    },
+    {
+      "reason": "unknown",
+      "tokens": {
+        "total": 6061,
+        "input": 6061,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      }
+    },
+    {
+      "reason": "unknown",
+      "tokens": {
+        "total": 6061,
+        "input": 6061,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      }
+    },
+    {
+      "reason": "unknown",
+      "tokens": {
+        "total": 6061,
+        "input": 6061,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      }
+    },
+    {
+      "reason": "unknown",
+      "tokens": {
+        "total": 6061,
+        "input": 6061,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      }
+    }
+  ]
+}

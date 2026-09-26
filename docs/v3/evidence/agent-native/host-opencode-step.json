@@ -1,0 +1,478 @@
+{
+  "binary_sha256": "598162a20663454e7ab6d3da1cab3325b4d67a34968a6910166fdb2058f10526",
+  "binary_changed_during_run": false,
+  "host": "opencode",
+  "model_requested": "stepfun_official/step-3.7-flash",
+  "host_version": "1.18.32",
+  "process": {
+    "timeout_seconds": 120,
+    "host": "opencode",
+    "elapsed_seconds": 120.02
+  },
+  "status": "blocked_or_incomplete",
+  "facts": {
+    "event_count": 2,
+    "event_types": [
+      "session.task_bound",
+      "session.opened"
+    ],
+    "closed": false,
+    "task_completed": false
+  },
+  "tool_trace": [
+    {
+      "tool": "fixture_task_brief",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_brief",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_start",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_workspace_context",
+      "status": "completed"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_record",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_task_finish",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_session_finish",
+      "status": "error"
+    },
+    {
+      "tool": "fixture_session_finish",
+      "status": "error"
+    }
+  ],
+  "aggregate_host_usage": null,
+  "reported_steps": [
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 7102,
+        "input": 4869,
+        "output": 505,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 1728
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 7513,
+        "input": 670,
+        "output": 315,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 6528
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 8661,
+        "input": 940,
+        "output": 617,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 7104
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 9854,
+        "input": 1256,
+        "output": 662,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 7936
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 10738,
+        "input": 1297,
+        "output": 353,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 9088
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 11583,
+        "input": 965,
+        "output": 314,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 10304
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 13189,
+        "input": 914,
+        "output": 1075,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 11200
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 13553,
+        "input": 1416,
+        "output": 105,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 12032
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 14703,
+        "input": 872,
+        "output": 455,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 13376
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 15864,
+        "input": 680,
+        "output": 1040,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 14144
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 16511,
+        "input": 1265,
+        "output": 526,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 14720
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 17226,
+        "input": 760,
+        "output": 594,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 15872
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 17953,
+        "input": 780,
+        "output": 661,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 16512
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 18971,
+        "input": 858,
+        "output": 897,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 17216
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 20062,
+        "input": 1108,
+        "output": 970,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 17984
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 20446,
+        "input": 1175,
+        "output": 263,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 19008
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 20951,
+        "input": 470,
+        "output": 385,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 20096
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 21320,
+        "input": 570,
+        "output": 270,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 20480
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 21639,
+        "input": 513,
+        "output": 198,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 20928
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 22450,
+        "input": 384,
+        "output": 690,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 21376
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 23164,
+        "input": 875,
+        "output": 593,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 21696
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 23667,
+        "input": 821,
+        "output": 382,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 22464
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 24317,
+        "input": 620,
+        "output": 529,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 23168
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 25548,
+        "input": 758,
+        "output": 1110,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 23680
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 26190,
+        "input": 1321,
+        "output": 549,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 24320
+        }
+      }
+    },
+    {
+      "reason": "tool-calls",
+      "tokens": {
+        "total": 26903,
+        "input": 855,
+        "output": 512,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 25536
+        }
+      }
+    }
+  ],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "not exposed; requested alias: stepfun_official/step-3.7-flash",
+  "samples": 1,
+  "limitations": [
+    "Not a fixed-model multi-run evaluation",
+    "Does not test host reconnection or resource rendering"
+  ],
+  "host_errors": []
+}

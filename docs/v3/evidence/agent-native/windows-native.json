@@ -1,0 +1,63 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "source_files": 212,
+  "product_source_sha256": "ea7c303da5f1c249104e0bbc18c8e6ae87e1dfd9206c224f9fb9b465bf1db6ae",
+  "runs": [
+    {
+      "label": "final-build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "-p",
+        "vibehub-cli",
+        "--bin",
+        "vibehub"
+      ],
+      "exit": 0,
+      "seconds": 15.86
+    },
+    {
+      "label": "full-core-cli",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "vibehub-core",
+        "-p",
+        "vibehub-cli"
+      ],
+      "exit": 0,
+      "seconds": 68.52
+    },
+    {
+      "label": "final-wire-read",
+      "command": [
+        "node",
+        "scripts/v3-mcp/agent-native-test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 23.31
+    },
+    {
+      "label": "final-wire-restart",
+      "command": [
+        "node",
+        "scripts/v3-mcp/agent-operation-test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 3.16
+    },
+    {
+      "label": "final-legacy-wire",
+      "command": [
+        "node",
+        "scripts/v3-mcp/contract-test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 9.95
+    }
+  ],
+  "binary_sha256": "26261208b4a8edc8df5c235da6fbcff102cc607418b79664c5e21d1c5ed78752"
+}

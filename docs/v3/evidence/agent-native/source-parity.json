@@ -1,0 +1,11 @@
+{
+  "file_count": 212,
+  "canonical_product_source_sha256": "1afccd536a04f1d036ab9d1e511d68455a767dec546db0a0a495befdf8a76cd2",
+  "macos_windows_files_identical": true,
+  "scope": [
+    "crates/**/*.rs|toml",
+    "src-tauri/src/**/*.rs",
+    "src/**/*.ts|tsx"
+  ],
+  "note": "Earlier native report uses platform Path ordering. This canonical hash sorts POSIX relative strings identically on both platforms."
+}

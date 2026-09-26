@@ -68,6 +68,7 @@ jobs:
           cargo test --locked --workspace
           cargo build --locked -p vibehub-cli --bin vibehub
           npm run v3:mcp:check
+          npm run v3:agent-native:check
 
       - name: Validate patch hygiene
         run: git diff --check

@@ -9,10 +9,15 @@ Agent Specification；任务、计划、事件和 session 的事实来源仍然�
 
 开始前必须：
 
-1. 通过 V3 MCP 读取 current task、task lifecycle、plan 和 session 投影；MCP
-   不可用时使用当前源码构建的 `target/debug/vibehub` CLI JSON fallback。
-2. 明确目标 plan node；先将 node 置为 `active`，再执行 `session_open`，记录
-   task、node、Agent 和真实 working directory。
+1. 通过 V3 MCP 的 `workspace_context(session_id)` 或 `task_brief(task_id)`
+   读取当前目标、范围、有效策略、验收与绑定；详情使用 `task_inspect`，
+   `task_view` 仅用于显式完整诊断。MCP 不可用时使用当前源码构建的
+   `target/debug/vibehub` CLI JSON fallback。
+2. 显式确定执行目标并建立 Session binding。standard/full 先激活依赖已满足
+   的真实 plan node，再用 `session_open` 记录 task、node、Agent 和真实 working
+   directory；lightweight 按 effective policy 使用最小事件流程。`task_start`
+   可组合这些受校验步骤；稳定 `request_id` 在重试时保留，未知提交结果先查
+   `operation_status`。不得从 current/default 推断写入绑定。
 3. 不直接编辑 `.vibehub` 的事件日志、投影或 current pointer；所有状态改变使用
    typed command 或 V3 MCP tool。
 4. 每个可核验里程碑写 `progress`；发现阻塞、外部依赖、证据缺口或范围漂移，

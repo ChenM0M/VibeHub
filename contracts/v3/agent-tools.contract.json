@@ -1,0 +1,656 @@
+{
+  "contract_version": "agent-tools/1",
+  "tools": [
+    {
+      "name": "diagnostic_export",
+      "inputSchema": {
+        "$defs": {
+          "DiagnosticScope": {
+            "enum": [
+              "task",
+              "project"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "if_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DiagnosticScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "diagnostic_read",
+      "inputSchema": {
+        "$defs": {
+          "DiagnosticAction": {
+            "enum": [
+              "read",
+              "delete"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DiagnosticAction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "export_id": {
+            "type": "string"
+          },
+          "max_bytes": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "offset": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "export_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "operation_status",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "session_id",
+          "request_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "session_finish",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "context_handle"
+            ]
+          },
+          {
+            "required": [
+              "project_id",
+              "task_id",
+              "session_id",
+              "actor",
+              "binding_revision"
+            ]
+          }
+        ],
+        "properties": {
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "binding_revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "context_handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "details": {
+            "additionalProperties": true,
+            "properties": {
+              "instruction": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "execution",
+                  "evaluation"
+                ],
+                "type": "string"
+              },
+              "request_source": {
+                "enum": [
+                  "user_request",
+                  "evaluation_instruction"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "succeeded",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "request_source",
+              "instruction",
+              "status",
+              "summary"
+            ],
+            "type": "object"
+          },
+          "node_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "details"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task_brief",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "if_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_bytes": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "node_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task_inspect",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "entity_kind"
+                  ]
+                },
+                {
+                  "required": [
+                    "entity_id"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "section"
+            ]
+          },
+          {
+            "not": {
+              "required": [
+                "section"
+              ]
+            },
+            "required": [
+              "entity_kind",
+              "entity_id"
+            ]
+          }
+        ],
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entity_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entity_kind": {
+            "default": null,
+            "enum": [
+              "node",
+              "criterion",
+              "finding",
+              "session",
+              "event",
+              "evidence"
+            ],
+            "type": "string"
+          },
+          "event_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "if_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "include": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_bytes": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "node_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offset": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "section": {
+            "default": null,
+            "enum": [
+              "task",
+              "plan",
+              "criteria",
+              "blockers",
+              "sessions",
+              "results",
+              "timeline",
+              "evidence",
+              "constraints"
+            ],
+            "type": "string"
+          },
+          "sequence_from": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sequence_to": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "time_from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task_record",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "context_handle"
+            ]
+          },
+          {
+            "required": [
+              "project_id",
+              "task_id",
+              "session_id",
+              "actor",
+              "binding_revision"
+            ]
+          }
+        ],
+        "properties": {
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "binding_revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "context_handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "details": {
+            "additionalProperties": true,
+            "properties": {
+              "evidence_refs": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "summary"
+            ],
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "progress",
+              "risk"
+            ],
+            "type": "string"
+          },
+          "node_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "kind",
+          "details"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task_start",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "expected_binding_revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "interaction_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "working_directory": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "project_id",
+          "task_id",
+          "session_id",
+          "actor",
+          "interaction_id",
+          "working_directory"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "workspace_context",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "if_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_bytes": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "node_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "macos": "27.0",
+  "architecture": "arm64",
+  "rust": "rustc 1.98.1 (48a229cea 2026-09-01) (Homebrew)",
+  "node": "v22.23.3",
+  "cli_sha256": "6d562403dc921469006f146e5b64bf61ecddadbaba07f2e9af87775d314b5aff",
+  "app_executable_sha256": "1d7373a70708e65415f36bb4af385f83094cacfc2a67d0576323c9dbc278e3d5",
+  "signature": "ad-hoc; strict deep verification passed; not Developer ID/notarized",
+  "workspace_results": [
+    "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 115 filtered out; finished in 0.08s",
+    "test result: ok. 113 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 1.65s",
+    "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.89s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 480 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 25.66s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+    "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+  ],
+  "release_preflight": {
+    "ok": true,
+    "version": "3.3.12",
+    "release_tag": null
+  },
+  "github_ci": "not executed: no push authorized",
+  "windows_release_acceptance": {
+    "A07": "blocked: exact Release artifact unavailable; commit/push/tag/publication not authorized",
+    "E07": "blocked: exact Release artifact unavailable; commit/push/tag/publication not authorized",
+    "F07": "blocked: exact Release artifact unavailable; commit/push/tag/publication not authorized",
+    "F08": "blocked: exact Release artifact unavailable; commit/push/tag/publication not authorized",
+    "F09": "blocked: exact Release artifact unavailable; commit/push/tag/publication not authorized",
+    "F10": "blocked: exact Release artifact unavailable; commit/push/tag/publication not authorized",
+    "G05": "blocked: exact Release artifact unavailable; commit/push/tag/publication not authorized"
+  }
+}
