@@ -23,14 +23,13 @@ pub fn open_windows_path(path: &std::path::Path) -> Result<(), String> {
         },
     };
     require_existing_path(path)?;
-    // Shell handlers expect a shell path, not canonicalize's extended-length prefix.
-    let raw = path.to_string_lossy();
-    let shell_path = if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{unc}")
-    } else {
-        raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_owned()
-    };
-    let wide: Vec<u16> = shell_path.encode_utf16().chain(Some(0)).collect();
+    use std::os::windows::ffi::OsStrExt;
+    // Simplify only when the path denotes the same file; preserve extended-path semantics.
+    let wide: Vec<u16> = dunce::simplified(path)
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
     // A fresh STA owns COM initialization; no UI-thread or runtime-pool apartment assumptions.
     std::thread::Builder::new()
         .name("native-file-open".into())

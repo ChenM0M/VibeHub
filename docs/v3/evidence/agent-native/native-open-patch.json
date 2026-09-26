@@ -1,12 +1,15 @@
 {
   "version": "3.4.1",
-  "windows_production_helper_sha256": "c621c69b4b637cdbd93ebcd8ff36fd459b8e2d140cd041bab51afa07c59cc9de",
+  "windows_production_helper_sha256": "fed59599e5041e25b6ff23811713ab74bfb8b58ca941ee0b7949cd72373a1df3",
   "macos_app_sha256": "e7d162b0057ace028ee0eb8c5690d003d2f86cf0cd5fb2481accd999771b1c0a",
   "macos_codesign": "ad-hoc strict passed",
   "targeted_tests": 2,
   "contracts": 828,
   "native_probe": {
-    "native_windows": [],
+    "native_windows": [
+      "36548|native-release-check.vibehub-native-test-v341 - Visual Studio Code",
+      "36548|native-release-check.vibehub-native-test-v341 - Visual Studio Code"
+    ],
     "calls": [
       {
         "stdout": "OPEN_OK\n",
@@ -62,5 +65,6 @@
       "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.1-local-build-20260926T163139/target-debug-.fingerprint"
     }
   ],
-  "temporary_fixtures": "retained for final cross-platform recycling after evidence preservation"
+  "temporary_fixtures": "retained for final cross-platform recycling after evidence preservation",
+  "path_conversion": "dunce 1.0.5 simplified; existing dependency reused to preserve special Windows path semantics"
 }
