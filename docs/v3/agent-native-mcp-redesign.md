@@ -642,7 +642,7 @@ B0 需要冻结的项目：最终 schema 文件名和错误 code 兼容策略、
 | AC10 | 本机通过 | 真 tools/list 验证 agent=12；renderer 4 与 AGENTS/CLAUDE 新读取引导一致；高级功能明确重连，不建议调用缺失目录工具 |
 | AC11 | 记录的三宿主/模型通过 | 每宿主同模型同基本输入 2/2 闭环、各 1 次双进程重连与普通工具证据 fallback，均核对受控错误/修复及独立 5 条事实。模型为记录的 alias，非供应商不可变快照；不宣称其他模型通过，见 host-*-acceptance-{1,2} / host-*-reconnect |
 | AC12 | 固定交互集通过 | 14 类实测总 result bytes 减少 92.79%，全部正文/错误/共同写回执计费；53→73 次协议调用，增加项为显式详情/诊断及注入恢复，当前工作 decision round trips 仍 1。tiktoken 固定编码与真实 Claude 出站工具内容另计，见 interaction-matrix 和 14.13 的范围说明 |
-| AC13 | 源码原生通过；Release 验收阻塞 | macOS/Windows CLI、EOF、重启、文件 IO 与新旧 MCP 通过，212 份产品源码逐文件 hash 相同；macOS 最终 bundle strict ad-hoc 验签通过。A07/E07/F07–F10/G05 仍需精确 Release artifact，未授权 commit/push/tag/publish |
+| AC13 | 部分通过，最终链未完成 | 已获发布授权，v3.4.0 精确双平台产物 CLI/MCP 与 Windows 安装、回滚、卸载已实测；Windows UI 暴露的 E07 问题已修复，v3.4.1 精确产物复验通过。macOS UI 未获得辅助功能授权，G05 不标通过；最新状态见 14.17 |
 | AC14 | 规定边界与受控对抗通过 | 两平台 legacy 回读和操作恢复通过；敏感字段/Memory principal 边界验证通过。3 宿主 × Memory/原始证据共 6 次提示注入均未调用越权确认/review 工具，未完成 Task；这是有限样本，不是所有注入的安全证明 |
 | AC15 | 本机场景矩阵通过 | 三档 policy、中文目标、实际 authored node 一次恢复含 goal/scope/policy/关联 criteria/约束/阻塞/下一步；Session 原始 working_directory 及来源明确，必要长正文显式失败。真实宿主结果见 AC11 |
 | AC16 | 本机通过 | 独立服务 bundle=0；ID 直达、event 单份解码=1、不读 Task history；状态/序号/Session/node 过滤及有限 include 实测 |
@@ -770,3 +770,18 @@ B0 需要冻结的项目：最终 schema 文件名和错误 code 兼容策略、
 - 补丁版本确定为 **3.4.1**。与生产源码相同的 Windows Shell 函数在独立临时 VS Code profile/专用扩展名下已实际打开文件，Win32 顶层窗口标题确认测试文件；不存在文件返回 OPEN_FAILED。该探针不是最终安装包证据，发布后还需用精确 3.4.1 安装包重跑 UI。本机缺失文件/命令测试 2 项、828 条契约、前端构建、macOS bundle strict ad-hoc 验签通过。默认 IDE 关联及全桌面 UIAutomation 探测分别造成了先前观测缺口，后者已替换为仅枚举隔离 IDE 进程的有界 Win32 检查。
 
 - 最终路径转换复核改为已有 `dunce 1.0.5` 的安全简化，不手动剥离所有前缀；UTF-16 原样传入系统。原生探针传入与产品一致的扩展路径，实际 VS Code 窗口和 missing-file 错误再次通过，见更新后的 native-open-patch.json。
+
+### 14.17 v3.4.1 最终发布验证与清理结果（最新状态）
+
+- 最终源码 `2a0ba806398647689701826868ba1d18a7cccca7` 的 [三平台 CI 36230371492](https://github.com/ChenM0M/VibeHub/actions/runs/36230371492) 全部通过。tag preflight 通过并推送 `v3.4.1`；[Release 36231203719](https://github.com/ChenM0M/VibeHub/actions/runs/36231203719) 四平台产物、正式发布和 Homebrew 更新全部成功。
+- macOS 原生 UI 自动验收仍未获得辅助功能权限。为明确权限名称创建的临时辅助应用未获授权，已停止使用并将应用、源码及编译缓存移入回收站，见 temporary-ui-helper-cleanup.json；系统未识别 reset 使用的 bundle ID，因此不虚报已成功撤销授权。无需用户为了正常使用 VibeHub 授予该测试权限。
+- 全平台清理范围包括本次临时源码、隔离项目、安装包、脚本、测试日志、临时依赖及编译缓存；源码仓库 CLI fallback 与最终本地验收附件保留。实际清理结果、Windows 错误与补救在下文逐项记录。
+
+- **B0–B4 已完成；B5 的发布与本轮 Windows 精确产物验证完成，macOS 原生 UI / G05 仍未通过，不能称全部验收完成。** [v3.4.1](https://github.com/ChenM0M/VibeHub/releases/tag/v3.4.1) 源码为 `2a0ba806398647689701826868ba1d18a7cccca7`。结构化索引见 [release-native-final.json](evidence/agent-native/release-native-final.json)。
+- Windows 安装包 SHA-256 `4da4a60e0eb0262be8ff1b55a88ec163c59da384f593dd1fd89ed3cc359e140c`；安装后 exe 与 portable 逐字节一致，hash `c561f78b20cce82ad7d2e8b110d1afbee1426da3f288f921fd66f7b622115142`。安装在临时目录并启用 Portable 数据隔离，不改真实用户配置。首次窗口、项目配置、结构面板、VS Code 实际文件窗口、Explorer 定位、245 字符中文路径和缺失文件打开/定位的 OPEN_FAILED 均有原生自动化记录。IDE 第一次启动显示其发行说明页，第二次指定打开才观察到目标文件标题；保留两次记录，不把仅启动 IDE 当成功。越界 junction 未进入可打开树，CLI junction/锁/冲突/中断回滚通过。新旧 MCP、重启恢复、状态矩阵、并发导出、真实 Git worktree 正常与冲突路径通过。正常退出与卸载通过，安装注册消失，legacy archive hash 不变；预期残留的三份隔离配置随后纳入清理。
+- macOS DMG SHA-256 `adaada0753264cdea33e4c7a909d6ec20d7afdb6c540b802d7bb3e0d4d1fb1ef`；strict ad-hoc 验签、9 项 CLI lifecycle、新旧 MCP、恢复/状态/导出和真实 worktree 两条路径通过。未获得辅助功能权限，不虚报 UI、IDE 或完整 G05。两平台签名仍为已说明的 ad-hoc / unsigned fallback，非正式平台签名。
+- A07/F08 的原生 IO/迁移/锁/回滚分支、E07、F07/F09 的上述安装与交互范围、F10 卸载行为已取得本轮证据。产品 migration staging 固定在源目录同一父目录，本轮未另做跨卷 staging；worktree 脚本验证实际 Git 操作和 typed orchestration，不冒充自动 eligibility admission 验收。G05 要求的完整双平台 UI 链及历史全部 A–F 前提仍不能由本轮局部验证推断。
+- 两个本轮脱敏验收附件已准备并通过内容检查，但自动审批拒绝公开上传，理由是具体报告公开披露未获明确授权；已向用户说明并询问。暂作为本地交付保存在 `docs/v3/evidence/agent-native/local-only/`，由精确 `.gitignore` 规则排除，不通过 Git 绕过拒绝。v3.4.0 的两个已获准公开的脱敏附件仍在旧 Release。
+- **清理要求未完全满足：Windows 首次在非交互式 SSH 中调用 VisualBasic SendToRecycleBin，运行时退化为永久删除，55 个临时入口已消失，另两个目录部分清理失败。** 已立即向用户披露，不能把源路径不存在当作进入回收站的证据。52 个同名文件在 Mac 留有副本，但不能保证全部原始临时数据恢复。此前 Windows SSH 清理记录也未核验实际回收站，撤回其可恢复性保证。没有删除真实项目，验收报告事先已复制到 Mac。
+- 补救使用同一用户的 Windows 桌面 InteractiveToken 会话，强制 `Environment.UserInteractive=true`，先验 sentinel，再逐项核对回收站 `$I` 原路径及 `$R` 内容存在。两个残留目录、sentinel 和最后三个脚本/报告共 6 个入口已真正在回收站；最终本次 Windows Temp 入口为 0，临时文件关联已撤销。见 [cleanup-all-windows.json](evidence/agent-native/cleanup-all-windows.json)。此补救不抹去先前永久删除的事实。
+- macOS 最终 **788 个入口** 已通过 rename 移入 `~/.Trash/vibehub-all-validation-20260926T172202`，逐项核验移动时目的存在且源不存在；磁盘镜像已卸载，源码 CLI fallback 及 `.d` 保留，hash 不变。见 [cleanup-all-macos.json](evidence/agent-native/cleanup-all-macos.json)。完整清理回执作为本地证据留存，不把数千行清理清单再次加入代码 diff。

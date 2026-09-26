@@ -1,0 +1,37 @@
+{
+  "version": "3.4.1",
+  "source_commit": "2a0ba806398647689701826868ba1d18a7cccca7",
+  "release_url": "https://github.com/ChenM0M/VibeHub/releases/tag/v3.4.1",
+  "build_test_run": 36230371492,
+  "release_run": 36231203719,
+  "ci_all_three_platforms": "passed",
+  "release_all_four_targets_and_homebrew": "passed",
+  "windows": {
+    "installer_sha256": "4da4a60e0eb0262be8ff1b55a88ec163c59da384f593dd1fd89ed3cc359e140c",
+    "installed_binary_sha256": "c561f78b20cce82ad7d2e8b110d1afbee1426da3f288f921fd66f7b622115142",
+    "installed_matches_portable": true,
+    "installation_mode": "Temporary install directory, Portable data isolation; no real user project/config migration",
+    "cli_lifecycle_checks": 13,
+    "new_and_legacy_mcp": "passed",
+    "process_restart_state_export": "passed",
+    "real_git_happy_and_conflict_worktrees": "passed",
+    "native_first_launch_and_close": "passed",
+    "native_ide_open_and_explorer_reveal": "passed",
+    "native_missing_file_open_and_reveal_error": "passed",
+    "native_unicode_long_path_characters": 245,
+    "outside_junction": "Excluded from native file tree; scoped CLI junction operations reject escape",
+    "uninstall_and_archive_preservation": "passed"
+  },
+  "macos": {
+    "dmg_sha256": "adaada0753264cdea33e4c7a909d6ec20d7afdb6c540b802d7bb3e0d4d1fb1ef",
+    "binary_sha256": "1a9d90eee0960e2b9636df345dc0a6595ae3a6d99e3b4359d1da4550dc8669ec",
+    "strict_adhoc_codesign": "passed",
+    "cli_lifecycle_checks": 9,
+    "new_and_legacy_mcp_restart_state_export": "passed",
+    "real_git_happy_and_conflict_worktrees": "passed",
+    "native_ui": "not verified: accessibility permission unavailable"
+  },
+  "G05": "blocked: macOS native UI chain is not verified; historical all-A-to-F prerequisites are not inferred from this focused run",
+  "evidence_attachments": "Prepared and retained under local-only; public upload rejected by automatic approval review, awaiting explicit user authorization",
+  "cleanup_requirement": "Not fully met: initial Windows SSH cleanup permanently removed 55 temporary entries; remaining entries were verified in Recycle Bin. See cleanup-all-windows.json. macOS final 788 entries moved to Trash."
+}

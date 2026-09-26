@@ -1,0 +1,42 @@
+{
+  "method": "filesystem rename into macOS Trash; no recursive deletion",
+  "destination": "~/.Trash/vibehub-all-validation-20260926T172202",
+  "failures": [],
+  "count": 788,
+  "fallback_preserved": true,
+  "fallback_sha256": "bdb4e0964c482c04ddabeb302aabe8224302e7ca164af5a900226cfe35dca762",
+  "count_by_root": {
+    "tmp": 255,
+    "runtime-temp": 533
+  },
+  "all_sources_absent": true,
+  "all_destinations_observed_at_move": true,
+  "full_receipt_sha256": "472ddbe119690e21a981ce212de49aa6d0d558810268e81d443ef04c1fa30707",
+  "full_receipt_asset": "local-only/cleanup-all-macos.log (not public)",
+  "supplemental_receipt_working_copies": {
+    "destination": "~/.Trash/vibehub-final-receipt-working-copies-20260926T172413",
+    "entries": [
+      {
+        "name": "cleanup-all-windows.log",
+        "source_absent": true,
+        "destination_exists_at_move": true
+      },
+      {
+        "name": "cleanup-windows-desktop.log",
+        "source_absent": true,
+        "destination_exists_at_move": true
+      },
+      {
+        "name": "cleanup-windows-desktop-final.log",
+        "source_absent": true,
+        "destination_exists_at_move": true
+      },
+      {
+        "name": "cleanup-all-macos.log",
+        "source_absent": true,
+        "destination_exists_at_move": true
+      }
+    ],
+    "local_final_evidence_preserved": true
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "status": "requirement_not_fully_met",
+  "initial_method": "Microsoft.VisualBasic SendToRecycleBin called from noninteractive SSH; Windows used permanent-delete fallback",
+  "initial_interactive": false,
+  "initial_entries": 57,
+  "initial_entries_removed_without_recycle_receipt": 55,
+  "initial_partial_directories": 2,
+  "local_mac_file_copies_available": 52,
+  "copies_are_not_proof_of_full_original_recovery": true,
+  "remediation_method": "Desktop InteractiveToken, require Environment.UserInteractive=true, verify matching Recycle Bin $I original path and existing $R payload",
+  "remediation_entries": 6,
+  "remediation_all_receipts_verified": true,
+  "temporary_registry_keys_absent": true,
+  "full_receipts": "local-only/",
+  "historical_windows_cleanup_note": "Earlier SSH SendToRecycleBin reports only proved source absence. Their recycle-bin claim is not verified and must not be treated as proof of recoverability.",
+  "final_owned_temp_entries_remaining": 0
+}

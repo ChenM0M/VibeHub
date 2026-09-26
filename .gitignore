@@ -54,3 +54,6 @@ npm-debug.log*
 
 # Local scripts
 release.ps1
+
+# Local validation evidence awaiting explicit publication authorization
+/docs/v3/evidence/agent-native/local-only/

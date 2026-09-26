@@ -1,0 +1,41 @@
+{
+  "destination": "~/.Trash/vibehub-temporary-ui-helper-20260926T165741",
+  "items": [
+    {
+      "name": "VibeHub Native Validation.app",
+      "source_absent": true,
+      "destination_exists": true
+    },
+    {
+      "name": "vibehub-mac-validation-app.swift",
+      "source_absent": true,
+      "destination_exists": true
+    },
+    {
+      "name": "vibehub-mac-ui",
+      "source_absent": true,
+      "destination_exists": true
+    },
+    {
+      "name": "vibehub-mac-ui.swift",
+      "source_absent": true,
+      "destination_exists": true
+    },
+    {
+      "name": "vibehub-swift-cache",
+      "source_absent": true,
+      "destination_exists": true
+    },
+    {
+      "name": "vibehub-mac-ui-response.json",
+      "source_absent": true,
+      "destination_exists": true
+    }
+  ],
+  "accessibility": {
+    "last_observed_trusted": false,
+    "reset_attempt_bundle_id": "com.vibehub.native-validation",
+    "reset_exit": 64,
+    "reset_result": "Bundle identifier not found (OSStatus -10814); no successful revocation claimed."
+  }
+}

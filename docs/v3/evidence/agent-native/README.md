@@ -68,7 +68,8 @@ python3 scripts/v3-mcp/host-evaluation.py opencode stepfun_official/step-3.7-fla
 句柄或模型内部输出，不得复制到公开证据。
 
 验证后按仓库规定将本次构建产物/缓存移入回收站，保留当前源码的 CLI fallback。
-Windows 测试在用户专门授权的临时源码副本执行；当前没有精确 Release artifact，
-A07/E07/F07–F10/G05 保持 BLOCKED。未进行 Git 提交、push、tag、Release 或 GitHub CI。
+Windows 源码及精确发布产物测试均在用户授权的临时副本执行。v3.4.0 已发布，原生 UI 实测发现文件消失后打开仍返回成功，已修复且 v3.4.1 精确安装包复验通过；macOS 原生 UI 因辅助功能权限未获授权而未验证。最新逐项状态以设计文档 §14.17 为准。
 
-提交前精简及 v3.4.0 门禁见 `review-release.json`。原始编译/测试 `.log` 受仓库通用忽略规则排除，作为 Release 附件 `VibeHub_3.4.0_validation-evidence.zip` 提供；其逐文件 SHA-256 记录在该 JSON 中。源码仓库保留脱敏结构化证据，避免把重复测试输出全部加入代码 diff。
+提交前精简及 v3.4.0 门禁见 `review-release.json`。原始编译/测试 `.log` 受仓库通用忽略规则排除，公开前脱敏后作为 Release 附件 `VibeHub_3.4.0_validation-evidence-redacted.zip` 提供。`review-release.json` 记录原始日志 hash，附件内 `PUBLIC-REDACTION-MANIFEST.json` 映射原始与脱敏后的 hash。Windows 原生记录另见 `VibeHub_3.4.0_native-windows-evidence-redacted.zip`；两个公开包的校验清单为 `SHA256SUMS-v3.4.0-validation-redacted.txt`。源码仓库保留脱敏结构化证据，避免把重复测试输出全部加入代码 diff。
+
+最新发布与原生验证见 `release-native-final.json` 和设计 §14.17。v3.4.1 已发布，但 macOS UI/G05 未验证。此次 Windows 清理有永久删除错误，详情见 `cleanup-all-windows.json`；不要把早期“源目录消失”理解为已进入回收站。`cleanup-all-macos.json` 记录最终 Mac 移动结果。`local-only/` 保留尚未获公开上传授权的最终验收附件和完整清理回执，不纳入 Git。

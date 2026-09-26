@@ -44,5 +44,8 @@
     "vibehub-release-codesign.log": "6bf2c010e599e0813fdc3305a7392dd126a9ca112d6a0ed1644f0cedb913a30b"
   },
   "raw_log_archive": "VibeHub_3.4.0_validation-evidence.zip",
-  "release_artifact_native": "pending exact Release artifact"
+  "release_artifact_native": "Historical local preflight report; final native status is recorded in design section 14.17.",
+  "public_log_archive": "VibeHub_3.4.0_validation-evidence-redacted.zip",
+  "public_log_archive_sha256": "2f9cfa46243f0f809a1f6dae0ba8224246eba0c2ebdd4e4584281d0282d13e5a",
+  "raw_log_archive_note": "Original local archive; public attachment is redacted and contains original/public hash mapping."
 }
