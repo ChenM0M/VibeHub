@@ -1,0 +1,150 @@
+{
+  "binary_sha256": "533afe32ebe31e14d4ec3288517007bd6d9729cc0b53b666ea6e9ce65915edf4",
+  "binary_changed_during_run": false,
+  "host": "claude",
+  "model_requested": "step-3.5-flash-2603",
+  "host_version": "2.1.273 (Claude Code)",
+  "process": {
+    "exit": 0,
+    "host": "claude",
+    "elapsed_seconds": 22.01
+  },
+  "status": "basic_loop_passed",
+  "facts": {
+    "event_count": 5,
+    "event_types": [
+      "session.task_bound",
+      "session.opened",
+      "progress.logged",
+      "agent.result_recorded",
+      "session.closed"
+    ],
+    "closed": true,
+    "task_completed": false
+  },
+  "tool_trace": [
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_start",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__workspace_context",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__task_record",
+      "status": "requested"
+    },
+    {
+      "tool": "mcp__fixture__session_finish",
+      "status": "requested"
+    }
+  ],
+  "aggregate_host_usage": {
+    "input_tokens": 55388,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 11712,
+    "output_tokens": 2341,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "reported_steps": [],
+  "failure": null,
+  "model_visible_tool_tokens": "unknown",
+  "exact_model_snapshot": "step-3.5-flash-2603",
+  "samples": 1,
+  "limitations": [
+    "One isolated sample; aggregate with other recorded samples for repeatability",
+    "Uses recorded model alias; immutable provider snapshot is not guaranteed",
+    "Resource rendering is not required; ordinary-tool fallback is tested in reconnection mode"
+  ],
+  "guidance_files": {
+    "AGENTS.md": "f14f14cf351fa77d510c5316165fb6d99529563c3393d29559c6c8bf6f86b2a8",
+    "CLAUDE.md": "c4dedc33396f2abcd9f53d84dc4424e0f4b995d143537171475d4dbd08157cb9"
+  },
+  "host_errors": [],
+  "phases": [
+    {
+      "exit": 0,
+      "phase": 1,
+      "seconds": 22.01
+    }
+  ],
+  "reconnection_test": false,
+  "verified_checks": {
+    "missing_task_rejected": true,
+    "subsequent_brief_succeeded": true,
+    "independent_facts_match": true
+  },
+  "tool_results": [
+    {
+      "tool": "mcp__fixture__task_brief",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "negative_case_requested": true,
+      "codes": [
+        "V3_TASK_NOT_FOUND"
+      ],
+      "success": false
+    },
+    {
+      "tool": "mcp__fixture__task_brief",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__task_start",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__workspace_context",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__task_record",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    },
+    {
+      "tool": "mcp__fixture__session_finish",
+      "negative_case_requested": false,
+      "codes": [],
+      "success": true
+    }
+  ]
+}

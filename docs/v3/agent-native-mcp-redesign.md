@@ -750,3 +750,7 @@ B0 需要冻结的项目：最终 schema 文件名和错误 code 兼容策略、
 - v3.4.0 精简后完整 workspace（113 + 11 + 480）、新旧 MCP、828 条 contracts、前端构建、版本/tag preflight、fmt/diff、macOS bundle 与 strict ad-hoc 验签均通过。当前二进制/hash 和原始日志 hash 见 [review-release.json](evidence/agent-native/review-release.json)。后续发布附件保留原始日志。
 
 - 本次审查验证复用的构建产物已再次移入回收站 `/Users/chenm0m/.Trash/vibehub-v3.4.0-review-20260926T151246`，保留 CLI fallback；清理记录见 review-cleanup.json。
+
+- 第二次引导审查发现常用目录仍被旧文字要求直接调用 task_route/session_task_bind。已在中/繁/英规则与 MCP instructions 中明确：常用路径 task_start/task_record/session_finish，高级目录才使用分步操作；依赖、身份、工作目录、确认及 request_id 约束保留。移除繁/英重复的逐投影启动要求。此前 fixture 没有加载生成的规则，新增 `VIBEHUB_HOST_GUIDANCE=1` 将实际 managed AGENTS/CLAUDE 规则放入隔离 fixture，以真实宿主复验这一缺口。原提交三平台 CI 已全部通过（run 36226119561）；引导修复将独立提交并复验，尚未创建发布 tag。
+
+- 引导修复验证：12 个规范测试、11 个 CLI 测试、新 MCP、828 条契约及前端构建通过。Codex / Claude Code / OpenCode 加载真实 managed 规则各复跑 1 次，全部完成受控错误恢复与独立 5 条事实闭环；见 host-*-guided-release.json，CLI SHA-256 `533afe32ebe31e14d4ec3288517007bd6d9729cc0b53b666ea6e9ce65915edf4`。这些是指定宿主/模型样本，不代表所有模型表现。
