@@ -1,0 +1,66 @@
+{
+  "version": "3.4.1",
+  "windows_production_helper_sha256": "c621c69b4b637cdbd93ebcd8ff36fd459b8e2d140cd041bab51afa07c59cc9de",
+  "macos_app_sha256": "e7d162b0057ace028ee0eb8c5690d003d2f86cf0cd5fb2481accd999771b1c0a",
+  "macos_codesign": "ad-hoc strict passed",
+  "targeted_tests": 2,
+  "contracts": 828,
+  "native_probe": {
+    "native_windows": [],
+    "calls": [
+      {
+        "stdout": "OPEN_OK\n",
+        "case": "existing",
+        "stderr": "",
+        "exit": 0
+      },
+      {
+        "stdout": "",
+        "case": "missing",
+        "stderr": "OPEN_FAILED: path does not exist: C:\\Users\\11231\\AppData\\Local\\Temp\\vibehub-v341-open-probe\\missing.rs\n",
+        "exit": 1
+      }
+    ]
+  },
+  "actual_ide_window": {
+    "windows": [
+      "36548|native-release-check.vibehub-native-test-v341 - Visual Studio Code"
+    ],
+    "scope": "only processes with isolated VS Code profile argument"
+  },
+  "scope": "source helper and local bundle; final Release artifact native validation pending",
+  "new_mcp": "passed",
+  "legacy_mcp": "passed",
+  "cli_sha256": "bdb4e0964c482c04ddabeb302aabe8224302e7ca164af5a900226cfe35dca762",
+  "build_cleanup": [
+    {
+      "source": "target/release",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.1-local-build-20260926T163139/target-release"
+    },
+    {
+      "source": "dist",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.1-local-build-20260926T163139/dist"
+    },
+    {
+      "source": "target/debug/deps",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.1-local-build-20260926T163139/target-debug-deps"
+    },
+    {
+      "source": "target/debug/build",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.1-local-build-20260926T163139/target-debug-build"
+    },
+    {
+      "source": "target/debug/incremental",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.1-local-build-20260926T163139/target-debug-incremental"
+    },
+    {
+      "source": "target/debug/examples",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.1-local-build-20260926T163139/target-debug-examples"
+    },
+    {
+      "source": "target/debug/.fingerprint",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.1-local-build-20260926T163139/target-debug-.fingerprint"
+    }
+  ],
+  "temporary_fixtures": "retained for final cross-platform recycling after evidence preservation"
+}

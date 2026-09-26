@@ -754,3 +754,17 @@ B0 需要冻结的项目：最终 schema 文件名和错误 code 兼容策略、
 - 第二次引导审查发现常用目录仍被旧文字要求直接调用 task_route/session_task_bind。已在中/繁/英规则与 MCP instructions 中明确：常用路径 task_start/task_record/session_finish，高级目录才使用分步操作；依赖、身份、工作目录、确认及 request_id 约束保留。移除繁/英重复的逐投影启动要求。此前 fixture 没有加载生成的规则，新增 `VIBEHUB_HOST_GUIDANCE=1` 将实际 managed AGENTS/CLAUDE 规则放入隔离 fixture，以真实宿主复验这一缺口。原提交三平台 CI 已全部通过（run 36226119561）；引导修复将独立提交并复验，尚未创建发布 tag。
 
 - 引导修复验证：12 个规范测试、11 个 CLI 测试、新 MCP、828 条契约及前端构建通过。Codex / Claude Code / OpenCode 加载真实 managed 规则各复跑 1 次，全部完成受控错误恢复与独立 5 条事实闭环；见 host-*-guided-release.json，CLI SHA-256 `533afe32ebe31e14d4ec3288517007bd6d9729cc0b53b666ea6e9ce65915edf4`。这些是指定宿主/模型样本，不代表所有模型表现。
+
+### 14.15 精确发布产物验收（进行中）
+
+- 实现提交 `563b7570baafaf015de04511cabce115c271caa3`，引导修复提交 `3fc3930fe0f91ad39abd76fa4e3ac2d223698a13`；author/committer 均核验为 ChenM0M 的 GitHub noreply 身份，已推送 main。最终代码三平台 CI [36227406790](https://github.com/ChenM0M/VibeHub/actions/runs/36227406790) 全部通过。版本 preflight 再次通过后创建 `v3.4.0` tag，Release [36227977418](https://github.com/ChenM0M/VibeHub/actions/runs/36227977418) 已启动，尚未据此宣称发布/原生验收完成。
+- 最终引导源码的 macOS bundle 再构建并 strict ad-hoc 验签通过；hash/日志见 guidance-release.json，构建产物已移入回收站，保留 CLI，见 guidance-cleanup.json。
+- macOS 当前环境 `AXIsProcessTrusted=false`，原生 UI 自动操作缺少辅助功能权限；已询问用户启用，其余发布及原生 CLI/Windows 验证继续。未获权限时不把 macOS UI 标记通过。
+
+### 14.16 Windows 精确产物实测发现与补丁修复
+
+- v3.4.0 四平台构建、发布和 Homebrew 更新已全部成功。实际 Windows 安装包 SHA-256 `608ac52fa74cbc83ccc241a3288796dfb4261f4de0fff42c15ca20b00b1eb964`，安装二进制与发布 portable 一致（`70d6350609105baeef7063443c30bea4801f86d292824834be98fc33b835ecc1`）。新旧 MCP、重启、状态矩阵、并发导出、原生锁/junction/迁移回滚和真实 worktree 两条路径通过；正常关闭/卸载、注册清理、legacy archive 保留也通过。
+- **E07 未通过**：真实 UI 中将已选文件改名后点击打开，Windows 仍返回成功且没有界面错误。旧实现仅检查 explorer 进程 spawn；该结果不足以证明 shell 打开成功。Explorer 定位目录已实测通过；默认 IDE 打开尚未观察到成功，不伪造验收。正在用 ShellExecuteExW 的实际结果、独立 STA/COM 初始化及调用前文件存在性检查修复，随后发布新补丁；不重写已发布 v3.4.0 tag。官方 API 契约：https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecuteexw 。
+- 用户再次明确要求所有平台的本次临时文件都进入回收站。后续本地/Windows MCP 脚本以 `VIBEHUB_TEST_RETAIN_TEMP=1` 保留测试目录，由统一清理流程在证据归档后移入各平台回收站；新增缺失文件测试通过改名模拟消失并保留 fixture。临时脚本、安装包、隔离项目、日志、依赖及缓存均纳入清单，不使用直接递归删除作为收尾。
+
+- 补丁版本确定为 **3.4.1**。与生产源码相同的 Windows Shell 函数在独立临时 VS Code profile/专用扩展名下已实际打开文件，Win32 顶层窗口标题确认测试文件；不存在文件返回 OPEN_FAILED。该探针不是最终安装包证据，发布后还需用精确 3.4.1 安装包重跑 UI。本机缺失文件/命令测试 2 项、828 条契约、前端构建、macOS bundle strict ad-hoc 验签通过。默认 IDE 关联及全桌面 UIAutomation 探测分别造成了先前观测缺口，后者已替换为仅枚举隔离 IDE 进程的有界 Win32 检查。

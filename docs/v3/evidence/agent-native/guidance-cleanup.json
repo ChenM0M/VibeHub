@@ -1,0 +1,34 @@
+{
+  "moved": [
+    {
+      "source": "target/release",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.0-guidance-20260926T154333/target-release"
+    },
+    {
+      "source": "dist",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.0-guidance-20260926T154333/dist"
+    },
+    {
+      "source": "target/debug/deps",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.0-guidance-20260926T154333/target-debug-deps"
+    },
+    {
+      "source": "target/debug/build",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.0-guidance-20260926T154333/target-debug-build"
+    },
+    {
+      "source": "target/debug/incremental",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.0-guidance-20260926T154333/target-debug-incremental"
+    },
+    {
+      "source": "target/debug/examples",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.0-guidance-20260926T154333/target-debug-examples"
+    },
+    {
+      "source": "target/debug/.fingerprint",
+      "destination": "/Users/chenm0m/.Trash/vibehub-v3.4.0-guidance-20260926T154333/target-debug-.fingerprint"
+    }
+  ],
+  "fallback_preserved": true,
+  "fallback_sha256": "533afe32ebe31e14d4ec3288517007bd6d9729cc0b53b666ea6e9ce65915edf4"
+}

@@ -31,4 +31,4 @@ try {
  const legacy=await client.call("task_view",{task_id:"task.test"});assert.equal(legacy.structuredContent.result.task_timeline.events.length,5);
  assert.notEqual(legacy.structuredContent.result.node_brief.task_state,"completed","Session finishing must not complete task");
  console.log(JSON.stringify({status:"passed",agent_tools:catalog.tools.length,catalog_bytes:Buffer.byteLength(JSON.stringify(catalog)),catalog_tokens:"unknown",checks:["fixed agent catalog","actual process kill/restart","expired handle rejected","same request replay returns same receipt","different payload rejected","terminal result and close","legacy rollback reads same five facts","no automatic task completion"],model_visible_tokens:"unknown",host:"raw stdio"},null,2));
-} finally {if(client)await client.kill();await rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+} finally {if(client)await client.kill();if (process.env.VIBEHUB_TEST_RETAIN_TEMP !== "1") await rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

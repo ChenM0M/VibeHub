@@ -270,5 +270,5 @@ try {
   child.stdin.end();await childClose;
 } finally {
   if(!childClosed)child.kill("SIGKILL");await childClose;
-  await rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});
+  if (process.env.VIBEHUB_TEST_RETAIN_TEMP !== "1") await rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});
 }

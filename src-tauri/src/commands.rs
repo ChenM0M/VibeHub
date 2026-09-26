@@ -1522,12 +1522,15 @@ pub async fn launch_custom(
 
 #[tauri::command]
 pub async fn open_in_explorer(path: String) -> Result<(), String> {
+    #[cfg(not(target_os = "windows"))]
+    crate::process_util::require_existing_path(std::path::Path::new(&path))?;
     #[cfg(target_os = "windows")]
     {
-        silent_command("explorer")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        tokio::task::spawn_blocking(move || {
+            crate::process_util::open_windows_path(std::path::Path::new(&path))
+        })
+        .await
+        .map_err(|error| format!("OPEN_FAILED: {error}"))??;
     }
     #[cfg(target_os = "macos")]
     {
@@ -1880,6 +1883,7 @@ pub async fn vibehub_reveal_project_file(
         .map_err(|error| error.to_string())?;
     let (_, path, _) = project_structure::resolve_project_file_path(workspace_root, relative_path)
         .map_err(|e| e.to_string())?;
+    crate::process_util::require_existing_path(&path)?;
     let target = if path.is_dir() {
         path
     } else {

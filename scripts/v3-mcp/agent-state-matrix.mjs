@@ -65,4 +65,4 @@ try {
  const foreign=candidates.data.candidates.find(t=>t.task_id!==bound.scope.task_id).task_id;
  const mismatch=await c.call('task_brief',{task_id:foreign,session_id:'session.lightweight'});assert.equal(mismatch.structuredContent.code,'V3_SCOPE_MISMATCH');
  console.log(JSON.stringify({status:'passed',checks:['empty workspace','Chinese intent','three policy profiles','single-read necessary context','legacy semantic parity','unrelated blockers stay scoped','direct finding and associations','more than one default page of blockers with complete initial context','multiple candidates never bind','Session/Task mismatch'],cases:evidence},null,2));
-}finally{if(c)await c.kill();await rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+}finally{if(c)await c.kill();if (process.env.VIBEHUB_TEST_RETAIN_TEMP !== "1") await rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

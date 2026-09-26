@@ -30,4 +30,4 @@ try {
   await good(reader,'diagnostic_read',{export_id:manifest.export_id,action:'delete'});
  }
  console.log(JSON.stringify({status:'passed',independent_mcp_processes:2,concurrent_exports:10,outcomes},null,2));
-}finally{await Promise.all([reader?.kill(),writer?.kill()]);await rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+}finally{await Promise.all([reader?.kill(),writer?.kill()]);if (process.env.VIBEHUB_TEST_RETAIN_TEMP !== "1") await rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

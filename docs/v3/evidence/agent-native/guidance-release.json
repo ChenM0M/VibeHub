@@ -1,0 +1,21 @@
+{
+  "source_commit": "3fc3930fe0f91ad39abd76fa4e3ac2d223698a13",
+  "version": "3.4.0",
+  "cli_sha256": "533afe32ebe31e14d4ec3288517007bd6d9729cc0b53b666ea6e9ce65915edf4",
+  "macos_local_app_sha256": "5ce8307258dc85496e07c51961046ddcb5697e9921976e39783dd3277c74129e",
+  "codesign": "ad-hoc strict verification passed",
+  "guidance_tests": 12,
+  "cli_tests": 11,
+  "new_mcp": "passed",
+  "contracts": 828,
+  "raw_logs": {
+    "vibehub-guide-app.log": "b54ebcfa8440dfdd60335cc54b3920135a2bf7c0b6f4918763dcad4d99302697",
+    "vibehub-guide-cli-tests.log": "d45112fc6ca0baf8700c01628fff445dca966dc30df0c2479597c1262fe8f7cb",
+    "vibehub-guide-web.log": "9070d9aa0bbf2d9d8a7cc58fb5c014f1b7d8d1bd1a642df2dd2089315e3522ba",
+    "vibehub-guide-codesign.log": "a236d6e09e9de8f0f73cad527dee0dca6213e3c3e5a6430dd35338d3da79623b",
+    "vibehub-guide-tests.log": "d222ff72184d9e5c2fb13f2f51a572191674e02c4f6448b8f1c7183a3b91bfa7",
+    "vibehub-guide-contracts.log": "0226b62155c1e640d2be6e6e20f043ff438794f038ee4d54f729c47be0445100",
+    "vibehub-guide-build.log": "6f4f70196fead738342c0d4c558ab70744fa689e888543209315e974d07bcc75"
+  },
+  "scope": "local final guidance revision; not Release artifact identity"
+}
