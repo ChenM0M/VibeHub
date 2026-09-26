@@ -38,5 +38,12 @@
       }
     ],
     "local_final_evidence_preserved": true
+  },
+  "tokenizer_cache": {
+    "cache": "data-gym-cache/o200k_base",
+    "bytes": 3613922,
+    "destination": "~/.Trash/vibehub-tokenizer-cache-20260926T172621",
+    "source_absent": true,
+    "destination_exists_at_move": true
   }
 }
