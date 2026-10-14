@@ -174,7 +174,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1 desktop-file-utils xvfb xauth xdotool imagemagick
 
       - name: Install frontend dependencies
         run: npm ci
@@ -340,6 +340,21 @@ jobs:
         if: matrix.platform == 'linux'
         run: npm run tauri -- build
 
+      - name: Verify final Linux AppImages
+        if: matrix.platform == 'linux'
+        run: |
+          python3 scripts/release/test_appimage.py
+          python3 scripts/release/verify-appimage.py --search-root target --search-root src-tauri/target --smoke --output "$RUNNER_TEMP/appimage-evidence"
+
+      - name: Upload Linux AppImage verification evidence
+        if: always() && matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage-verification-${{ github.run_id }}
+          path: ${{ runner.temp }}/appimage-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Collect and hash Linux assets
         if: matrix.platform == 'linux'
         shell: bash
@@ -394,7 +409,8 @@ jobs:
             'VibeHub_.*_x64\.dmg' \
             '(.*\.msi|.*-setup\.exe)' \
             'VibeHub_.*_portable_x64\.exe' \
-            '(.*\.deb|.*\.AppImage)' \
+            '.*\.deb' \
+            '.*\.AppImage' \
             'VibeHub_.*_portable_amd64\.tar\.gz' \
             'SHA256SUMS-macos-aarch64\.txt' \
             'SHA256SUMS-macos-x64\.txt' \
