@@ -118,6 +118,10 @@ jobs:
       - name: Validate patch hygiene
         run: git diff --check
 
+      - name: Prepare portable AppImage launcher permissions
+        if: matrix.os == 'ubuntu-22.04'
+        run: python3 scripts/release/prepare-appimage.py
+
       - name: Build Tauri app (macOS / Linux)
         if: matrix.platform != 'windows-latest'
         run: npm run tauri -- build

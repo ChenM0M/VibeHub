@@ -336,6 +336,10 @@ jobs:
             "$hash  $($_.Name)"
           } | Set-Content -Encoding ascii release-assets/SHA256SUMS-windows-x64.txt
 
+      - name: Prepare portable AppImage launcher permissions
+        if: matrix.platform == 'linux'
+        run: python3 scripts/release/prepare-appimage.py
+
       - name: Build Linux bundles
         if: matrix.platform == 'linux'
         run: npm run tauri -- build

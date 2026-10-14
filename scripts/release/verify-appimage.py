@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check final, trusted VibeHub AppImages outside their build directory.
 
-Requires Linux, desktop-file-utils, xvfb, xauth, xdotool and ImageMagick.
+Requires Linux, sudo, desktop-file-utils, xvfb, xauth, xdotool, ImageMagick and Tesseract.
 The --appdir mode is also usable on macOS for structural regression tests.
 """
 import argparse
@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -48,8 +49,17 @@ def require_file(root, path):
 def validate_appdir(directory):
     root = Path(directory).resolve()
     entry = require_file(root, root / "AppRun")
-    if not os.access(entry, os.X_OK):
-        raise ValueError("AppRun is not executable")
+    if entry.stat().st_mode & 0o111 != 0o111:
+        raise ValueError("AppRun is not executable by all users")
+    # Ownership changes on mounted AppImages (e.g. firejail uses root:root).
+    # os.access() as the builder would silently accept a 0770 launcher.
+    for path in [root, *root.rglob("*")]:
+        if path.is_symlink():
+            continue
+        mode = path.stat().st_mode
+        required = 0o555 if path.is_dir() or mode & 0o111 else 0o444
+        if mode & required != required:
+            raise ValueError(f"AppDir path is not readable/executable by all users: {path.relative_to(root)} ({mode & 0o777:o})")
     icon = require_file(root, root / ".DirIcon")
     if icon.read_bytes()[:8] != PNG_SIGNATURE:
         raise ValueError(".DirIcon must resolve to a PNG")
@@ -87,7 +97,13 @@ def smoke(image, output):
                    XDG_STATE_HOME=f"{home}/state", XDG_RUNTIME_DIR=f"{home}/runtime",
                    LANG="en_US.UTF-8", LC_ALL="en_US.UTF-8", LANGUAGE="en_US:en",
                    APPIMAGE_EXTRACT_AND_RUN="1")
+        if image.name == "AppRun":
+            env["APPDIR"] = str(image.parent)
         Path(env["XDG_RUNTIME_DIR"]).mkdir(mode=0o700)
+        (output / "startup-identity.json").write_text(json.dumps({
+            "uid": os.getuid(), "launcher_uid": image.stat().st_uid,
+            "launcher_mode": oct(image.stat().st_mode & 0o777),
+        }, indent=2) + "\n")
         with (output / "startup.log").open("w") as log:
             process = subprocess.Popen([str(image)], cwd=home, env=env,
                                        stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -135,6 +151,31 @@ def smoke(image, output):
                     process.wait(timeout=5)
 
 
+def smoke_as_non_owner(appdir, output):
+    """Exercise final extracted bytes as nobody, while every app file is root-owned."""
+    import pwd
+    account = pwd.getpwnam("nobody")
+    temporary = appdir.parent
+    temporary.chmod(0o755)
+    harness = temporary / "verify-appimage.py"
+    shutil.copyfile(__file__, harness)
+    evidence = temporary / "non-owner-evidence"
+    evidence.mkdir()
+    original_owner = f"{os.getuid()}:{os.getgid()}"
+    subprocess.run(["sudo", "-n", "chown", "-hR", "0:0", str(appdir)], check=True)
+    try:
+        subprocess.run(["sudo", "-n", "chown", f"{account.pw_uid}:{account.pw_gid}", str(evidence)], check=True)
+        subprocess.run(["sudo", "-n", "-u", "nobody", "--", "xvfb-run", "--auto-servernum",
+                        sys.executable, str(harness), "--smoke-child", str(appdir / "AppRun"),
+                        "--output", str(evidence)], check=True, timeout=120)
+    finally:
+        subprocess.run(["sudo", "-n", "chown", "-hR", original_owner, str(appdir), str(evidence)], check=True)
+        shutil.copytree(evidence, output, dirs_exist_ok=True)
+    identity = json.loads((output / "startup-identity.json").read_text())
+    if identity["uid"] != account.pw_uid or identity["launcher_uid"] != 0:
+        raise ValueError("Non-owner smoke did not run as nobody against a root-owned launcher")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("images", nargs="*")
@@ -174,6 +215,9 @@ def main():
             appdir = Path(temporary) / "squashfs-root"
             report.update(validate_appdir(appdir))
             subprocess.run(["desktop-file-validate", str(appdir / report["desktop"])], check=True, timeout=10)
+            if args.smoke:
+                smoke_as_non_owner(appdir, destination / "non-owner")
+                report["non_owner_startup"] = "passed (nobody running root-owned AppDir; rendered English UI)"
         report["structure"] = "passed"
         if args.smoke:
             subprocess.run(["xvfb-run", "--auto-servernum", sys.executable, str(Path(__file__).resolve()),
