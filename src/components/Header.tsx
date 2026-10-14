@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Moon, Sun, Bell, Minus, Square, X } from 'lucide-react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -10,6 +11,7 @@ interface HeaderProps {
 }
 
 export function Header({ onSearch }: HeaderProps) {
+    const { t } = useTranslation();
     const { effectiveTheme, setTheme } = useAppStore();
     const isDark = effectiveTheme === 'dark';
     const [searchValue, setSearchValue] = useState('');
@@ -70,7 +72,7 @@ export function Header({ onSearch }: HeaderProps) {
                 <Input
                     ref={inputRef}
                     value={searchValue}
-                    placeholder="搜索项目..."
+                    placeholder={t('home.searchPlaceholder')}
                     className="pl-10 pr-8 h-9 bg-secondary/30 backdrop-blur-sm border-border/50 focus-visible:bg-background/80 focus-visible:border-primary/50 transition-all rounded-lg shadow-sm"
                     onChange={(e) => { setSearchValue(e.target.value); onSearch(e.target.value); }}
                     onBlur={() => {
