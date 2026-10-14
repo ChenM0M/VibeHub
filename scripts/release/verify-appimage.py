@@ -105,11 +105,24 @@ def smoke(image, output):
                     time.sleep(0.5)
                 if window is None:
                     raise ValueError("No visible VibeHub window within 40 seconds")
-                time.sleep(3)
-                if process.poll() is not None:
-                    raise ValueError("AppImage exited after opening its window")
-                subprocess.run(["import", "-window", window, str(output / "startup.png")], check=True, timeout=10)
-                print("PASS: visible VibeHub window in clean English locale")
+                # WebKit may map a white window before React has rendered.
+                # Wait for actual English project UI, not just a window title.
+                deadline = time.monotonic() + 40
+                while time.monotonic() < deadline:
+                    if process.poll() is not None:
+                        raise ValueError("AppImage exited after opening its window")
+                    subprocess.run(["import", "-window", window, str(output / "startup.png")],
+                                   check=True, timeout=10)
+                    ocr = subprocess.run(["tesseract", str(output / "startup.png"), "stdout", "-l", "eng"],
+                                         check=True, capture_output=True, text=True, timeout=10)
+                    (output / "startup.ocr.txt").write_text(ocr.stdout)
+                    rendered = ocr.stdout.lower()
+                    if "projects" in rendered and "search projects" in rendered:
+                        break
+                    time.sleep(2)
+                else:
+                    raise ValueError("Visible window did not render the English project UI within 40 seconds")
+                print("PASS: rendered English project UI in clean locale")
             finally:
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
@@ -164,8 +177,8 @@ def main():
         report["structure"] = "passed"
         if args.smoke:
             subprocess.run(["xvfb-run", "--auto-servernum", sys.executable, str(Path(__file__).resolve()),
-                            "--smoke-child", str(image), "--output", str(destination)], check=True, timeout=70)
-            report["startup"] = "passed (visible window; not full UI acceptance)"
+                            "--smoke-child", str(image), "--output", str(destination)], check=True, timeout=120)
+            report["startup"] = "passed (rendered English project UI; not full UI acceptance)"
         (destination / "verification.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))
 
