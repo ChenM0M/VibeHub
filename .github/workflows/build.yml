@@ -43,7 +43,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1 desktop-file-utils xvfb xauth xdotool imagemagick tesseract-ocr
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1 desktop-file-utils xvfb xauth xdotool imagemagick tesseract-ocr squashfs-tools
 
       - name: Install frontend dependencies
         run: npm ci
@@ -117,10 +117,6 @@ jobs:
 
       - name: Validate patch hygiene
         run: git diff --check
-
-      - name: Prepare portable AppImage launcher permissions
-        if: matrix.os == 'ubuntu-22.04'
-        run: python3 scripts/release/prepare-appimage.py
 
       - name: Build Tauri app (macOS / Linux)
         if: matrix.platform != 'windows-latest'

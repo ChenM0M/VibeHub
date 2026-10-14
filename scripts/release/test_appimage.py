@@ -1,48 +1,13 @@
 """Regression cases for AppImage catalog failures; no third-party dependencies."""
 import importlib.util
-import hashlib
 import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 
 spec = importlib.util.spec_from_file_location("verify_appimage", Path(__file__).with_name("verify-appimage.py"))
 validator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validator)
-
-
-prepare_spec = importlib.util.spec_from_file_location("prepare_appimage", Path(__file__).with_name("prepare-appimage.py"))
-preparer = importlib.util.module_from_spec(prepare_spec)
-prepare_spec.loader.exec_module(preparer)
-
-
-class LauncherPreparationTests(unittest.TestCase):
-    def test_cached_restricted_launcher_is_repaired_without_changing_bytes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "AppRun-x86_64"
-            data = b"trusted launcher fixture"
-            path.write_bytes(data)
-            path.chmod(0o770)
-            with mock.patch.object(preparer, "SHA256", hashlib.sha256(data).hexdigest()):
-                preparer.prepare(path)
-            self.assertEqual(path.stat().st_mode & 0o777, 0o755)
-            self.assertEqual(path.read_bytes(), data)
-
-    def test_clean_cache_gets_verified_executable_launcher(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "tauri/AppRun-x86_64"
-            data = b"trusted launcher fixture"
-            with mock.patch.object(preparer, "SHA256", hashlib.sha256(data).hexdigest()):
-                preparer.prepare(path, download=lambda: data)
-            self.assertEqual(path.stat().st_mode & 0o777, 0o755)
-
-    def test_unexpected_download_is_rejected_before_writing(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "AppRun-x86_64"
-            with self.assertRaisesRegex(ValueError, "digest"):
-                preparer.prepare(path, download=lambda: b"unexpected")
-            self.assertFalse(path.exists())
 
 
 class AppImageTests(unittest.TestCase):
@@ -107,6 +72,19 @@ class AppImageTests(unittest.TestCase):
         (self.root / "usr").chmod(0o750)
         with self.assertRaisesRegex(ValueError, "all users: usr"):
             validator.validate_appdir(self.root)
+
+    def test_stored_permissions_reject_restricted_launcher(self):
+        listing = "drwxr-xr-x 0/0 123 2026-10-14 07:00 squashfs-root\n-rwxrwx--- 0/0 31552 2026-10-14 07:00 squashfs-root/AppRun.wrapped\n"
+        with self.assertRaisesRegex(ValueError, "AppRun.wrapped"):
+            validator.validate_stored_permissions(listing)
+
+    def test_stored_permissions_accept_portable_modes(self):
+        listing = "drwxr-xr-x 0/0 123 2026-10-14 07:00 squashfs-root\n-rwxr-xr-x 0/0 31552 2026-10-14 07:00 squashfs-root/AppRun.wrapped\n-rw-r--r-- 0/0 99 2026-10-14 07:00 squashfs-root/icon.png\n"
+        self.assertEqual(validator.validate_stored_permissions(listing), 3)
+
+    def test_empty_permissions_listing_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "No stored"):
+            validator.validate_stored_permissions("unrecognized output")
 
     def test_multiple_desktops_rejected(self):
         (self.root / "other.desktop").write_text("")

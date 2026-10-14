@@ -174,7 +174,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1 desktop-file-utils xvfb xauth xdotool imagemagick tesseract-ocr
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev javascriptcoregtk-4.1 desktop-file-utils xvfb xauth xdotool imagemagick tesseract-ocr squashfs-tools
 
       - name: Install frontend dependencies
         run: npm ci
@@ -335,10 +335,6 @@ jobs:
             $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
             "$hash  $($_.Name)"
           } | Set-Content -Encoding ascii release-assets/SHA256SUMS-windows-x64.txt
-
-      - name: Prepare portable AppImage launcher permissions
-        if: matrix.platform == 'linux'
-        run: python3 scripts/release/prepare-appimage.py
 
       - name: Build Linux bundles
         if: matrix.platform == 'linux'

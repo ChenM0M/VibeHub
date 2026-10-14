@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check final, trusted VibeHub AppImages outside their build directory.
 
-Requires Linux, sudo, desktop-file-utils, xvfb, xauth, xdotool, ImageMagick and Tesseract.
+Requires Linux, sudo, squashfs-tools, desktop-file-utils, Xvfb, xdotool, ImageMagick and Tesseract.
 The --appdir mode is also usable on macOS for structural regression tests.
 """
 import argparse
@@ -9,6 +9,7 @@ import configparser
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import shutil
@@ -44,6 +45,27 @@ def require_file(root, path):
     if not current.is_file():
         raise ValueError(f"Missing file or dangling symlink: {relative}")
     return current
+
+
+def validate_stored_permissions(listing):
+    """Check permissions actually stored in SquashFS, before extraction changes them."""
+    count = 0
+    for line in listing.splitlines():
+        parts = line.split(None, 5)
+        if len(parts) != 6 or not re.fullmatch(r"[d\-l][rwxstST-]{9}", parts[0]):
+            continue
+        mode, name = parts[0], parts[5]
+        count += 1
+        if mode.startswith("l"):
+            continue
+        readable = all(mode[i] == "r" for i in (1, 4, 7))
+        executable = [mode[i] in "xst" for i in (3, 6, 9)]
+        needs_execute = mode.startswith("d") or any(executable)
+        if not readable or (needs_execute and not all(executable)):
+            raise ValueError(f"Stored AppImage permissions restrict other users: {name} ({mode})")
+    if count == 0:
+        raise ValueError("No stored SquashFS permission entries were parsed")
+    return count
 
 
 def validate_appdir(directory):
@@ -209,10 +231,21 @@ def main():
         report = {"artifact": image.name, "sha256": digest.hexdigest()}
         # Extract away from target/: absolute build-path symlinks must never pass.
         with tempfile.TemporaryDirectory(prefix="vibehub-appimage-") as temporary:
-            with (destination / "extract.log").open("w") as log:
-                subprocess.run([str(image), "--appimage-extract"], cwd=temporary,
-                               stdout=log, stderr=subprocess.STDOUT, check=True, timeout=120)
+            offset = subprocess.run([str(image), "--appimage-offset"], check=True,
+                                    capture_output=True, text=True, timeout=10).stdout.strip()
+            if not offset.isdigit():
+                raise ValueError("AppImage runtime did not return a numeric SquashFS offset")
+            listing = subprocess.run(["unsquashfs", "-lln", "-o", offset, str(image)],
+                                     check=True, capture_output=True, text=True, timeout=60).stdout
+            (destination / "stored-permissions.log").write_text(listing)
+            report["stored_permission_entries"] = validate_stored_permissions(listing)
             appdir = Path(temporary) / "squashfs-root"
+            # The runtime's --appimage-extract creates directories as 0700.
+            # unsquashfs preserves the stored modes needed for this acceptance test.
+            with (destination / "extract.log").open("w") as log:
+                subprocess.run(["unsquashfs", "-no-progress", "-no-xattrs", "-d", str(appdir),
+                                "-o", offset, str(image)], stdout=log, stderr=subprocess.STDOUT,
+                               check=True, timeout=120)
             report.update(validate_appdir(appdir))
             subprocess.run(["desktop-file-validate", str(appdir / report["desktop"])], check=True, timeout=10)
             if args.smoke:
